@@ -123,7 +123,7 @@ if [ ! -f .env ]; then
 fi
 
 # 5. Smart Networking (IP & Mode Detection)
-IP=$(curl -s --max-time 2 https://ifconfig.me || hostname -I | awk '{print $1}')
+IP=$(curl -s -4 --max-time 2 https://ifconfig.me || hostname -I | tr ' ' '\n' | grep -v ':' | head -n 1)
 DOMAIN=""
 EMAIL="admin@example.com"
 START_BITCART="n"
