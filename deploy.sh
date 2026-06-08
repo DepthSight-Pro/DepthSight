@@ -53,7 +53,8 @@ fi
 
 # 2. Self-healing (Fix CRLF issues if files were uploaded from Windows)
 echo -e "${BLUE}[*] Sanitizing file endings (CRLF -> LF)...${NC}"
-find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
+# Exclude the running script itself to prevent file offset corruption during execution
+find . -type f -name "*.sh" ! -name "$(basename "$0")" -exec sed -i 's/\r$//' {} +
 find . -type f -name "Caddyfile" -exec sed -i 's/\r$//' {} +
 find . -type f -name ".env*" -exec sed -i 's/\r$//' {} +
 find . -type f -name "Dockerfile*" -exec sed -i 's/\r$//' {} +
@@ -131,19 +132,23 @@ PROTOCOL="http"
 if [ -t 0 ]; then
     echo -e "${BLUE}[?] Are you deploying to a Public Cloud Server (Vultr/Contabo)? (y/N):${NC}"
     read -r IS_PUBLIC
+    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r')
     
     if [ "$IS_PUBLIC" == "y" ] || [ "$IS_PUBLIC" == "Y" ]; then
         echo -e "${BLUE}[?] Enter your domain (or leave blank for ${IP}.sslip.io):${NC}"
         read -r DOMAIN
+        DOMAIN=$(echo "$DOMAIN" | tr -d '\r')
         [ -z "$DOMAIN" ] && DOMAIN="${IP}.sslip.io"
         PROTOCOL="https"
         SITE_ADDRESS="$DOMAIN"
 
         echo -e "${BLUE}[?] Enter your email for SSL alerts (Let's Encrypt):${NC}"
         read -r EMAIL
+        EMAIL=$(echo "$EMAIL" | tr -d '\r')
 
         echo -e "${BLUE}[?] Enable Bitcart (Crypto Payments)? (y/N):${NC}"
         read -r START_BITCART
+        START_BITCART=$(echo "$START_BITCART" | tr -d '\r')
     else
         # Local/Private mode - Fast track
         DOMAIN=$(hostname -I | awk '{print $1}')
