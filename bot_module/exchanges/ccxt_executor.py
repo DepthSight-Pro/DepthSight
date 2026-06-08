@@ -58,6 +58,14 @@ class CcxtExecutor:
             else:
                 exchange_options["defaultSubType"] = "swap"
                 exchange_options["fetchMarkets"] = ["swap"]
+
+        # Inject Bybit Broker ID if configured
+        if self.exchange_id == "bybit":
+            broker_id = getattr(config, "BYBIT_BROKER_ID", None)
+            if broker_id:
+                exchange_options["brokerId"] = broker_id
+                logger.info(f"CcxtExecutor: Using Bybit Broker ID: {broker_id}")
+
         elif "spot" in self.market_type:
             exchange_options["defaultType"] = "spot"
             # exchange_options['fetchMarkets'] = ['spot'] # Can cause KeyErrors in some sandbox environments
@@ -87,6 +95,14 @@ class CcxtExecutor:
             "enableRateLimit": True,
             "options": exchange_options,
         }
+
+        # Add X-Referer header for Bybit if Broker ID is present
+        if self.exchange_id == "bybit":
+            broker_id = getattr(config, "BYBIT_BROKER_ID", None)
+            if broker_id:
+                if "headers" not in exchange_config:
+                    exchange_config["headers"] = {}
+                exchange_config["headers"]["X-Referer"] = broker_id
 
         # Resolve password / passphrase for exchanges that require it (e.g. Bitget, OKX)
         password = kwargs.get("password") or kwargs.get("api_password")

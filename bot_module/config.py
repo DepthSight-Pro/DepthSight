@@ -52,6 +52,9 @@ ACTIVE_TRADING_ENVIRONMENT = (
 # Binance API Credentials
 # ==============================================================================
 
+# Bybit Broker ID (if applicable)
+BYBIT_BROKER_ID = os.environ.get("BYBIT_BROKER_ID", "Gt001094").strip()
+
 # --- NEW BLOCK: Loading ALL keys from .env ---
 # Mainnet Keys
 MAINNET_SPOT_API_KEY = os.environ.get("MAINNET_BINANCE_SPOT_API_KEY", "")

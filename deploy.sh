@@ -223,7 +223,9 @@ fi
 echo -e "${BLUE}[*] Running database migrations...${NC}"
 # Wait 15 seconds for Postgres to finish its first-run initialization (especially on slower VPS servers)
 sleep 15
-$COMPOSE_CMD exec -T api alembic upgrade head || true
+if ! $COMPOSE_CMD exec -T api alembic upgrade head; then
+    echo -e "${RED}[!] Migration failed! Trying to continue anyway...${NC}"
+fi
 
 # 7. Setup Auto-Updater Cron Job on Host
 echo -e "${BLUE}[*] Configuring host-side cron job for auto-updates...${NC}"

@@ -6,11 +6,13 @@ LOCK_FILE="/tmp/migrations.lock"
 echo "Waiting for migration lock..."
 
 # Running alembic upgrade head.
-# || true at the end is a trick. It means: "If the command on the left (alembic)
-# fails, treat the whole line as successful (true)".
-# This prevents the script from crashing if alembic complains about already existing tables.
-flock -x "$LOCK_FILE" -c "alembic upgrade head || true"
-echo "Migrations check completed."
+echo "Running migrations..."
+if flock -x "$LOCK_FILE" -c "alembic upgrade head"; then
+    echo "Migrations check completed successfully."
+else
+    echo "WARNING: Migrations failed. Check the logs above. Application might fail if tables are missing."
+fi
+
 
 echo "Starting application..."
 exec "$@"
