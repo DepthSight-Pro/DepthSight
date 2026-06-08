@@ -25,7 +25,7 @@ six==1.17.0
 tzdata==2025.2
 urllib3>=2.7.0
 vine==5.1.0
-wcwidth==0.2.13
+wcwidth==0.8.1
 websockets>=10.0,<15.0
 uvicorn[standard]>=0.20.0,<0.30.0
 pytest>=9.0.3
