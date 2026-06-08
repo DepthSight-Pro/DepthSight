@@ -132,23 +132,25 @@ PROTOCOL="http"
 if [ -t 0 ]; then
     echo -e "${BLUE}[?] Are you deploying to a Public Cloud Server (Vultr/Contabo)? (y/N):${NC}"
     read -r IS_PUBLIC
-    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r')
+    # Clean input: remove carriage returns, spaces, and convert to lowercase
+    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r' | xargs | tr '[:upper:]' '[:lower:]')
+    echo -e "${BLUE}[*] Debug: Entered value is '$IS_PUBLIC'${NC}"
     
-    if [ "$IS_PUBLIC" == "y" ] || [ "$IS_PUBLIC" == "Y" ]; then
+    if [ "$IS_PUBLIC" = "y" ] || [ "$IS_PUBLIC" = "yes" ] || [ "$IS_PUBLIC" = "у" ] || [ "$IS_PUBLIC" = "д" ] || [ "$IS_PUBLIC" = "да" ]; then
         echo -e "${BLUE}[?] Enter your domain (or leave blank for ${IP}.sslip.io):${NC}"
         read -r DOMAIN
-        DOMAIN=$(echo "$DOMAIN" | tr -d '\r')
+        DOMAIN=$(echo "$DOMAIN" | tr -d '\r' | xargs)
         [ -z "$DOMAIN" ] && DOMAIN="${IP}.sslip.io"
         PROTOCOL="https"
         SITE_ADDRESS="$DOMAIN"
 
         echo -e "${BLUE}[?] Enter your email for SSL alerts (Let's Encrypt):${NC}"
         read -r EMAIL
-        EMAIL=$(echo "$EMAIL" | tr -d '\r')
+        EMAIL=$(echo "$EMAIL" | tr -d '\r' | xargs)
 
         echo -e "${BLUE}[?] Enable Bitcart (Crypto Payments)? (y/N):${NC}"
         read -r START_BITCART
-        START_BITCART=$(echo "$START_BITCART" | tr -d '\r')
+        START_BITCART=$(echo "$START_BITCART" | tr -d '\r' | xargs | tr '[:upper:]' '[:lower:]')
     else
         # Local/Private mode - Fast track
         DOMAIN=$(hostname -I | awk '{print $1}')
@@ -191,7 +193,7 @@ echo "IS_CENTRAL_HUB=false" >> .env
 
 # 6. Start Engine
 COMPOSE_CMD="docker compose"
-if [ "$START_BITCART" == "y" ] || [ "$START_BITCART" == "Y" ]; then
+if [ "$START_BITCART" = "y" ] || [ "$START_BITCART" = "yes" ] || [ "$START_BITCART" = "у" ] || [ "$START_BITCART" = "д" ] || [ "$START_BITCART" = "да" ]; then
     echo -e "${BLUE}[*] Starting DepthSight with Bitcart...${NC}"
     $COMPOSE_CMD -f docker-compose.yml -f docker-compose.bitcart.yml up -d --build
 else
