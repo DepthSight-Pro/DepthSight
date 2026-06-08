@@ -1,0 +1,101 @@
+{
+	"pageTitle": "Mission Control",
+	"connectionStatus": {
+		"connecting": "Connecting...",
+		"live": "Live",
+		"closing": "Closing...",
+		"disconnected": "Disconnected",
+		"initializing": "Initializing...",
+		"tooltipConnecting": "Attempting to connect to the server.",
+		"tooltipLive": "Connection is stable and receiving live data.",
+		"tooltipClosing": "Closing the connection.",
+		"tooltipDisconnected": "Connection lost. The app will attempt to reconnect automatically.",
+		"tooltipInitializing": "The WebSocket connection has not been initiated yet."
+	},
+	"dailyPnl": {
+		"title": "Daily PnL",
+		"title1D": "PnL (24h)",
+		"title7D": "PnL (7d)",
+		"titleMTD": "PnL (MTD)",
+		"errors": {
+			"loadFailed": "Failed to load PnL data"
+		},
+		"dataNotAvailable": "PnL data not available.",
+		"period1D": "1D",
+		"period7D": "7D",
+		"periodMTD": "MTD",
+		"notEnoughDataForChart": "Not enough data for chart."
+	},
+	"activePositions": {
+		"title": "Active Positions",
+		"description": "Overview of your currently open positions.",
+		"colSymbol": "Symbol",
+		"colSide": "Side",
+		"colSize": "Size",
+		"colEntry": "Entry Price",
+		"colMark": "Mark Price",
+		"colPnlUsd": "PnL ($)",
+		"colPnlPercent": "PnL (%)",
+		"noPositions": "No active positions.",
+		"noOpenPositions": "No open positions.",
+		"colStrategy": "Strategy",
+		"colUnrealizedPnlUsd": "Unrealized PnL ($)",
+		"detailsButton": "Details"
+	},
+	"portfolioOverview": {
+		"title": "Portfolio Overview",
+		"balance": "Balance",
+		"unrealizedPnl": "Unrealized PnL",
+		"equity": "Equity",
+		"marginUsage": "Margin Usage",
+		"noPortfolioDataAvailable": "No portfolio data available.",
+		"totalBalance": "Total Balance",
+		"available": "Available",
+		"accountBreakdown": "Account Breakdown"
+	},
+	"topStrategies": {
+		"title": "Top Performing Strategies",
+		"description": "Highlighting strategies with the highest Profit and Loss.",
+		"colName": "Name",
+		"colSymbol": "Symbol",
+		"colStatus": "Status",
+		"colPnl": "PnL",
+		"colRuntime": "Runtime",
+		"noData": "No strategy performance data available.",
+		"errors": {
+			"loadFailed": "Error loading top strategies"
+		},
+		"title24h": "Top Strategies (24h)",
+		"colPnl24h": "PnL (24h)",
+		"colTrades": "Trades",
+		"colWinRate": "Win Rate"
+	},
+	"errors": {
+		"errorLoadingActivePositions": "Error loading active positions",
+		"failedToLoadPortfolioOverview": "Failed to load portfolio overview"
+	},
+	"liveEventFeed": {
+		"title": "Critical Events",
+		"heartbeatSystemOperational": "System heartbeat: All systems operational.",
+		"waitingForEvents": "Waiting for important events..."
+	},
+	"systemHealth": {
+		"title": "System Health",
+		"failedToLoadSystemStatus": "Failed to load system status",
+		"noSystemComponentsStatusAvailable": "No system component statuses available.",
+		"status": {
+			"ok": "OK",
+			"error": "Error",
+			"unknown": "Unknown"
+		},
+		"componentStatus": "Component {{component}} status: {{status}}",
+		"components": {
+			"api": "API Server",
+			"websocket": "WebSocket Server",
+			"bot": "Trading Bot",
+			"celery_worker": "Celery Worker",
+			"redis": "Redis",
+			"postgres": "PostgreSQL"
+		}
+	}
+}

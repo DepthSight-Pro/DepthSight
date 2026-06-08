@@ -1,0 +1,36 @@
+{
+	"pageTitle": "Визуализатор Оснований",
+	"parametersCard": {
+		"title": "Параметры"
+	},
+	"form": {
+		"symbol": "Символ",
+		"startDate": "Дата начала",
+		"endDate": "Дата окончания",
+		"timeframe": "Таймфрейм",
+		"selectTimeframe": "Выберите таймфрейм",
+		"foundationTypes": "Типы Оснований",
+		"visualizeButton": "Визуализировать",
+		"loadingButton": "Загрузка..."
+	},
+	"chartCard": {
+		"title": "График",
+		"noData": "Нет данных для отображения. Запустите визуализацию."
+	},
+	"foundations": {
+		"significant_level": "Значимые Уровни",
+		"local_level": "Локальные Уровни",
+		"round_level": "Круглые Уровни",
+		"classic_pattern": "Классические Паттерны",
+		"volume_confirmation": "Подтверждение Объемом",
+		"price_consolidation": "Консолидация Цены",
+		"trend_direction": "Направление Тренда",
+		"open_interest": "Открытый Интерес",
+		"correlation": "Корреляция",
+		"tape_acceleration": "Ускорение Ленты",
+		"ma_crossover": "Пересечение MA",
+		"rsi_condition": "Условие по RSI",
+		"macd_condition": "Условие по MACD",
+		"stochastic_condition": "Условие по Стохастику"
+	}
+}

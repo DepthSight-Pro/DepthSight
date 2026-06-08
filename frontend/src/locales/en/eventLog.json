@@ -1,0 +1,16 @@
+{
+	"pageTitle": "Event Log",
+	"resumeButton": "Resume",
+	"pauseButton": "Pause",
+	"exportButton": "Export",
+	"clearButton": "Clear",
+	"searchPlaceholder": "Search logs...",
+	"allLevels": "All Levels",
+	"allSources": "All Sources",
+	"levelError": "Error",
+	"levelWarning": "Warning",
+	"levelSuccess": "Success",
+	"levelInfo": "Info",
+	"levelDebug": "Debug",
+	"noLogs": "No logs to display."
+}

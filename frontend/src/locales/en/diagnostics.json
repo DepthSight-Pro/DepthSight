@@ -1,0 +1,36 @@
+{
+	"pageTitle": "Foundation Visualizer",
+	"parametersCard": {
+		"title": "Parameters"
+	},
+	"form": {
+		"symbol": "Symbol",
+		"startDate": "Start Date",
+		"endDate": "End Date",
+		"timeframe": "Timeframe",
+		"selectTimeframe": "Select timeframe",
+		"foundationTypes": "Foundation Types",
+		"visualizeButton": "Visualize",
+		"loadingButton": "Loading..."
+	},
+	"chartCard": {
+		"title": "Chart",
+		"noData": "No data to display. Please run a visualization."
+	},
+	"foundations": {
+		"significant_level": "Significant Levels",
+		"local_level": "Local Levels",
+		"round_level": "Round Levels",
+		"classic_pattern": "Classic Patterns",
+		"volume_confirmation": "Volume Confirmation",
+		"price_consolidation": "Price Consolidation",
+		"trend_direction": "Trend Direction",
+		"open_interest": "Open Interest",
+		"correlation": "Correlation",
+		"tape_acceleration": "Tape Acceleration",
+		"ma_crossover": "MA Crossover",
+		"rsi_condition": "RSI Condition",
+		"macd_condition": "MACD",
+		"stochastic_condition": "Stochastic"
+	}
+}

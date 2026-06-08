@@ -1,0 +1,91 @@
+/* ============================================================
+   Strategy Canvas — Block Appear / Clear Animations
+   Uses only transform + opacity (GPU-composited) for perf.
+   box-shadow glow is the only "paint" prop, used briefly.
+   ============================================================ */
+
+/* ── Appear: fade-in + slide-up + scale ────────────────────── */
+@keyframes blockAppear {
+	0% {
+		opacity: 0;
+		transform: translateY(16px) scale(0.96);
+	}
+	60% {
+		opacity: 1;
+		transform: translateY(-2px) scale(1.005);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+/* ── Glow pulse on border (zone-colored) ───────────────────── */
+@keyframes glowPulse {
+	0% {
+		box-shadow: 0 0 0 0 var(--glow-color, rgba(99, 102, 241, 0.4));
+	}
+	50% {
+		box-shadow: 0 0 12px 3px var(--glow-color, rgba(99, 102, 241, 0.3));
+	}
+	100% {
+		box-shadow: 0 0 0 0 var(--glow-color, rgba(99, 102, 241, 0));
+	}
+}
+
+/* ── Clear: fade-out + scale-down ──────────────────────────── */
+@keyframes blockDisappear {
+	0% {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+	100% {
+		opacity: 0;
+		transform: translateY(-8px) scale(0.92);
+	}
+}
+
+/* ── Appear class (applied to each block wrapper) ──────────── */
+.block-appear {
+	animation:
+		blockAppear 350ms cubic-bezier(0.22, 1, 0.36, 1) both,
+		glowPulse 600ms ease-out 200ms both;
+	animation-delay:
+		calc(var(--appear-index, 0) * 60ms),
+		calc(var(--appear-index, 0) * 60ms + 200ms);
+	will-change: transform, opacity;
+}
+
+/* Zone-specific glow colors */
+.block-appear--filters {
+	--glow-color: rgba(34, 211, 238, 0.35); /* cyan-400 */
+}
+
+.block-appear--entry {
+	--glow-color: rgba(250, 204, 21, 0.3); /* yellow-400 */
+}
+
+.block-appear--management {
+	--glow-color: rgba(168, 85, 247, 0.35); /* purple-400 */
+}
+
+/* ── Canvas clearing state ─────────────────────────────────── */
+.canvas-clearing .drop-zone > * {
+	animation: blockDisappear 250ms cubic-bezier(0.55, 0, 1, 0.45) both;
+}
+
+/* Sections staggered during clearing */
+.canvas-clearing section:nth-child(1) .drop-zone > * {
+	animation-delay: 0ms;
+}
+.canvas-clearing section:nth-child(2) .drop-zone > * {
+	animation-delay: 50ms;
+}
+.canvas-clearing section:nth-child(4) .drop-zone > * {
+	animation-delay: 100ms;
+}
+
+/* ── Utility: after animation ends, remove will-change ─────── */
+.block-appear-done {
+	will-change: auto;
+}

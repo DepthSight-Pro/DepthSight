@@ -1,0 +1,300 @@
+{
+	"pageTitle": "My Account",
+	"accountTab": "Account",
+	"achievementsTab": "Achievements",
+	"myPlanCard.title": "My Plan",
+	"myPlanCard.description": "Current subscription plan.",
+	"myPlanCard.changePlanButton": "Change Plan",
+	"myPlanCard.planActiveUntil": "Plan active until",
+	"paperAccountCard.title": "Paper Account",
+	"paperAccountCard.description": "Practice trading with a simulated balance.",
+	"paperAccountCard.resetButton": "Reset",
+	"paperAccountCard.confirmReset.title": "Reset Paper Account?",
+	"paperAccountCard.confirmReset.description": "This will reset your paper trading balance to the default amount. All paper positions and history will be lost.",
+	"quotaUsageCard.title": "Quota Usage",
+	"quotaUsageCard.description": "Your usage resets periodically.",
+	"quotaUsageCard.unlimited": "Unlimited",
+	"referralCard.title": "Refer a Friend",
+	"referralCard.description": "Share your code to get {{referrerBonus}} backtests, and your friend will get {{referredBonus}}!",
+	"referralCard.codeLabel": "Your Referral Code",
+	"referralCard.linkLabel": "Your Referral Link",
+	"bonusesCard.title": "My Bonuses",
+	"bonusesCard.description": "One-time bonuses that are used after your regular quota is exhausted.",
+	"bonusesCard.features.run_backtest": "Bonus Backtests",
+	"bonusesCard.pending": "pending",
+	"bonusesCard.pendingNote": "Pending bonuses will be activated when the referred user adds their first unique API key.",
+	"paymentStatus.success.title": "Payment Successful",
+	"paymentStatus.success.description": "Your plan has been upgraded. Thank you!",
+	"paymentStatus.failed.title": "Payment Failed",
+	"paymentStatus.failed.description": "There was an issue with your payment. Please try again.",
+	"paymentStatus.cancelled.title": "Payment Cancelled",
+	"paymentStatus.cancelled.description": "Your payment process was cancelled.",
+	"plans": {
+		"free": "Free",
+		"standard": "Standard",
+		"pro": "Professional"
+	},
+	"quotas": {
+		"run_backtest_per_day": "Backtests per day",
+		"run_portfolio_backtest_per_day": "Portfolio backtests per day",
+		"run_optimization_per_month": "Optimizations per month",
+		"run_genetic_search_per_month": "Genetic searches per month",
+		"generate_dataset_per_month": "Dataset generations per month",
+		"train_model_per_month": "Model trainings per month",
+		"run_kline_backtest_per_day": "Kline backtests per day",
+		"run_vector_backtest_per_day": "Vector backtests per day",
+		"use_ai_assistant_per_day": "AI Assistant uses per day"
+	},
+	"geneticsLabCard": {
+		"title": "Genetics Lab",
+		"description": "Discovered strategy genes",
+		"genesDiscovered": "Genes Discovered",
+		"legend": "Legend",
+		"epic": "Epic",
+		"rare": "Rare",
+		"common": "Common",
+		"viewCollectionButton": "View Collection"
+	},
+	"achievements": {
+		"loading": "Loading Achievements...",
+		"unlocked": "Unlocked",
+		"locked": "Locked",
+		"progress": "Progress",
+		"totalXP": "Total XP",
+		"tooltip": {
+			"unlocked": "Unlocked",
+			"locked": "Locked"
+		}
+	},
+	"rank": {
+		"grandmaster": "Grandmaster",
+		"legend": "Legend",
+		"master": "Master",
+		"veteran": "Veteran",
+		"expert": "Expert",
+		"specialist": "Specialist",
+		"analyst": "Analyst",
+		"researcher": "Researcher",
+		"apprentice": "Apprentice",
+		"novice": "Novice"
+	},
+	"level": "Level",
+	"experience": "Experience",
+	"xp": "XP",
+	"xpToLevel": "XP to Level",
+	"totalXP": "Total XP",
+	"genesFound": "Genes Found",
+	"first_backtest": {
+		"name": "Pioneer",
+		"description": "Run your first backtest"
+	},
+	"first_save": {
+		"name": "First Blueprint",
+		"description": "Save your first strategy configuration"
+	},
+	"used_ai_assistant": {
+		"name": "Dialogue with the Machine",
+		"description": "Use the AI assistant to create or analyze a strategy"
+	},
+	"first_optimization": {
+		"name": "In Search of the Ideal",
+		"description": "Run your first parameter optimization"
+	},
+	"first_api_key": {
+		"name": "Keymaster",
+		"description": "Add your first API key for trading"
+	},
+	"first_paper_trade": {
+		"name": "Paper Tiger",
+		"description": "Run your first strategy in Paper Trading mode"
+	},
+	"reset_paper": {
+		"name": "Clean Slate",
+		"description": "Reset your Paper Trading account balance"
+	},
+	"10_backtests": {
+		"name": "Junior Researcher",
+		"description": "Conduct 10 backtests"
+	},
+	"100_backtests": {
+		"name": "Senior Researcher",
+		"description": "Conduct 100 backtests"
+	},
+	"500_backtests": {
+		"name": "Head of the Lab",
+		"description": "Conduct 500 backtests"
+	},
+	"1000_trades_backtests": {
+		"name": "Market Veteran",
+		"description": "Simulate 1,000 trades in backtests"
+	},
+	"10000_trades_backtests": {
+		"name": "Wall Street Legend",
+		"description": "Simulate 10,000 trades in backtests"
+	},
+	"50_optimizations": {
+		"name": "Mad Scientist",
+		"description": "Conduct 50 optimizations"
+	},
+	"save_10_strategies": {
+		"name": "Strategist",
+		"description": "Save 10 different strategy configurations"
+	},
+	"sniper": {
+		"name": "Sniper",
+		"description": "Complete a backtest (min. 20 trades) with a Win Rate > 80%"
+	},
+	"marathon_runner": {
+		"name": "Marathon Runner",
+		"description": "Conduct a successful backtest over a period of more than 1 year"
+	},
+	"hard_nut": {
+		"name": "Hard Nut",
+		"description": "Complete a backtest (min. 50 trades) with a max drawdown < 5%"
+	},
+	"alpha_hunter": {
+		"name": "Alpha Hunter",
+		"description": "Complete a backtest with a Sharpe Ratio > 2.0"
+	},
+	"money_printer": {
+		"name": "Money Printer",
+		"description": "Complete a backtest with a Profit Factor > 3.0"
+	},
+	"winning_streak": {
+		"name": "On a Roll",
+		"description": "Get 10 profitable trades in a row in a single backtest"
+	},
+	"phoenix": {
+		"name": "Phoenix",
+		"description": "A strategy recovered from a drawdown >10% and reached a new equity high"
+	},
+	"flawless_victory": {
+		"name": "Flawless Victory",
+		"description": "Complete a backtest (min. 10 trades) with a 100% Win Rate"
+	},
+	"clairvoyant": {
+		"name": "Clairvoyant",
+		"description": "Use the Foundation Visualizer"
+	},
+	"diversifier": {
+		"name": "Diversifier",
+		"description": "Run your first portfolio backtest"
+	},
+	"show_off": {
+		"name": "Show Off",
+		"description": "Share your backtest result"
+	},
+	"contender": {
+		"name": "Contender",
+		"description": "Publish your result to the Leaderboard"
+	},
+	"the_intervention": {
+		"name": "The Intervention",
+		"description": "Manually close a position through the interface"
+	},
+	"pulling_the_plug": {
+		"name": "Pulling the Plug",
+		"description": "Use the Emergency Stop function"
+	},
+	"the_professor": {
+		"name": "The Professor",
+		"description": "Train your first model in the Model Lab"
+	},
+	"strategy_5_blocks": {
+		"name": "Constructor",
+		"description": "Create a strategy using 5+ blocks"
+	},
+	"the_architect": {
+		"name": "The Architect",
+		"description": "Create a strategy using 15+ blocks"
+	},
+	"logician": {
+		"name": "Logician",
+		"description": "Use both AND and OR logic in entry conditions simultaneously"
+	},
+	"inventor": {
+		"name": "Inventor",
+		"description": "Create a strategy using 5+ different types of 'foundations'"
+	},
+	"order_flow_purist": {
+		"name": "Order Flow Purist",
+		"description": "Create a strategy where entry foundations consist only of tape and order book analysis"
+	},
+	"prudent_manager": {
+		"name": "Prudent Manager",
+		"description": "Use the Partial Exits block"
+	},
+	"10_strategies_discovery": {
+		"name": "Gold Digger",
+		"description": "Find 10 unique strategies in the Discovery Lab"
+	},
+	"the_spark": {
+		"name": "The Spark",
+		"description": "Unlock your first strategy gene"
+	},
+	"gem_hunter": {
+		"name": "Gem Hunter",
+		"description": "Unlock a RARE quality gene"
+	},
+	"treasure_hunter": {
+		"name": "Treasure Hunter",
+		"description": "Unlock an EPIC quality gene"
+	},
+	"myth_buster": {
+		"name": "Myth Buster",
+		"description": "Unlock a LEGENDARY quality gene"
+	},
+	"gene_collector": {
+		"name": "Gene Collector",
+		"description": "Collect 20 unique genes in your library"
+	},
+	"geneticist": {
+		"name": "Geneticist",
+		"description": "Crossbreed two strategies in the Breeding Lab"
+	},
+	"natural_selection": {
+		"name": "Natural Selection",
+		"description": "Create a 5th generation strategy in the Evolution Tree"
+	},
+	"recruiter": {
+		"name": "Recruiter",
+		"description": "Invite the first user via your referral link"
+	},
+	"first_commission": {
+		"name": "First Commission",
+		"description": "Receive your first reward from the affiliate program"
+	},
+	"partner": {
+		"name": "Partner",
+		"description": "Earn $100 in the affiliate program"
+	},
+	"underminer": {
+		"name": "Underminer",
+		"description": "Create a backtest with a Sharpe Ratio < -2.0"
+	},
+	"the_pacifist": {
+		"name": "The Pacifist",
+		"description": "Run a backtest that made no trades"
+	},
+	"perfectly_balanced": {
+		"name": "Perfectly Balanced",
+		"description": "Complete a backtest (min. 50 trades) with a Win Rate of exactly 50% (+/- 1%)"
+	},
+	"diamond_hands": {
+		"name": "Diamond Hands",
+		"description": "Name a strategy 'HODL' and run a backtest with it"
+	},
+	"paperAccountResetSuccessTitle": "Success",
+	"paperAccountResetSuccessDescription": "Paper account has been reset.",
+	"paperAccountResetFailedTitle": "Reset Failed",
+	"dangerZone.title": "Danger Zone",
+	"dangerZone.description": "These actions are irreversible. Please be certain.",
+	"dangerZone.deleteAccount.title": "Delete Account",
+	"dangerZone.deleteAccount.description": "Permanently delete your account and all associated data.",
+	"dangerZone.deleteAccount.button": "Delete Account",
+	"dangerZone.deleteAccount.confirm.title": "Are you absolutely sure?",
+	"dangerZone.deleteAccount.confirm.description": "This action cannot be undone. This will permanently delete your account and remove your data from our servers.",
+	"deleteAccountSuccessTitle": "Account Deleted",
+	"deleteAccountSuccessDescription": "Your account has been successfully deleted.",
+	"deleteAccountFailedTitle": "Deletion Failed"
+}

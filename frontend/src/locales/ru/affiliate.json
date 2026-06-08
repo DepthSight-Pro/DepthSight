@@ -1,0 +1,85 @@
+{
+	"pageTitle": "Панель партнера",
+	"referralLinkCard": {
+		"title": "Ваша реферальная ссылка"
+	},
+	"financialsSection": {
+		"title": "Финансы",
+		"pending": "В ожидании",
+		"available": "Доступно к выводу",
+		"paidOut": "Всего выплачено"
+	},
+	"funnelSection": {
+		"title": "Воронка",
+		"clicks": "Клики",
+		"registrations": "Регистрации",
+		"payingCustomers": "Платящие клиенты"
+	},
+	"tabs": {
+		"commissions": "Мои комиссии",
+		"referrals": "Мои рефералы",
+		"payouts": "Выплаты"
+	},
+	"commissionsTable": {
+		"title": "История комиссий",
+		"headers": {
+			"date": "Дата",
+			"amount": "Сумма",
+			"description": "Описание",
+			"status": "Статус"
+		}
+	},
+	"referralsTable": {
+		"title": "Мои рефералы",
+		"headers": {
+			"username": "Имя пользователя",
+			"registrationDate": "Дата регистрации",
+			"isPaying": "Платящий"
+		},
+		"payingYes": "Да",
+		"payingNo": "Нет"
+	},
+	"payoutsSection": {
+		"request": {
+			"title": "Запросить выплату",
+			"description": "Запросите выплату доступного баланса.",
+			"available": "Доступно",
+			"requestButton": "Запросить выплату",
+			"requestingButton": "Запрашиваю..."
+		},
+		"details": {
+			"title": "Платежные данные",
+			"description": "Укажите ваш адрес кошелька USDT (TRC-20).",
+			"addressLabel": "Адрес USDT (TRC-20)",
+			"addressRequired": "Адрес обязателен для заполнения",
+			"saveButton": "Сохранить",
+			"savingButton": "Сохраняю..."
+		}
+	},
+	"payoutsTable": {
+		"title": "История выплат",
+		"headers": {
+			"date": "Дата",
+			"amount": "Сумма",
+			"status": "Статус",
+			"transactionId": "ID транзакции"
+		}
+	},
+	"statuses": {
+		"pending": "В ожидании",
+		"available": "Доступно",
+		"paid": "Выплачено",
+		"completed": "Завершено",
+		"failed": "Ошибка"
+	},
+	"toast": {
+		"copiedTitle": "Скопировано!",
+		"copiedDescription": "Реферальная ссылка скопирована в буфер обмена."
+	},
+	"payoutDetailsUpdateSuccessTitle": "Успех",
+	"payoutDetailsUpdateSuccessDescription": "Платежные данные обновлены.",
+	"payoutDetailsUpdateFailedTitle": "Ошибка обновления",
+	"payoutRequestSuccessTitle": "Успех",
+	"payoutRequestSuccessDescription": "Запрос на выплату успешно отправлен.",
+	"payoutRequestFailedTitle": "Запрос не удался"
+}

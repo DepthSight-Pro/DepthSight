@@ -1,0 +1,8 @@
+{
+	"userUpdateSuccessTitle": "Успех",
+	"userUpdateSuccessDescription": "Данные пользователя успешно обновлены.",
+	"userUpdateFailedTitle": "Ошибка обновления",
+	"bonusIssueSuccessTitle": "Бонус выдан",
+	"bonusIssueFailedTitle": "Ошибка выдачи бонуса",
+	"impersonationFailedTitle": "Ошибка имперсонации"
+}

@@ -1,0 +1,13 @@
+{
+	"cardTitle": "Email Confirmation",
+	"loadingText": "Confirming your email...",
+	"successTitle": "Success!",
+	"errorTitle": "Error",
+	"goToLogin": "Go to Login",
+	"backToRegister": "Back to Register",
+	"tokenNotFound": "Confirmation token not found in URL.",
+	"successMessageDefault": "Email confirmed successfully. You can now log in.",
+	"errorMessageDefault": "An error occurred during email confirmation.",
+	"connectionError": "Failed to connect to the server. Please try again later.",
+	"redirecting": "Redirecting you now..."
+}

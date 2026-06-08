@@ -1,0 +1,172 @@
+{
+	"title": "Discovery Hub",
+	"description": "Import verified strategy presets, inspect TradingView-style community trading ideas, and join community discussions.",
+	"tabs": {
+		"verified": "Verified Templates",
+		"community": "Trading Ideas",
+		"discussion": "Discussions",
+		"network": "Network Status"
+	},
+	"admin": {
+		"moderatorSettings": "Moderator Settings",
+		"adminKeyPrompt": "Enter Hub Admin Key to enable moderator mode (leave empty to disable):",
+		"moderatorActivated": "Moderator mode activated!",
+		"moderatorDisabled": "Moderator mode disabled.",
+		"addPreset": "Add Preset",
+		"createTopic": "Create Topic",
+		"addNews": "Add News"
+	},
+	"verified": {
+		"officialBadge": "Official",
+		"importConfig": "Import Configuration",
+		"import": "Import",
+		"deletePreset": "Delete preset",
+		"noTemplates": "No strategy templates found.",
+		"loadFailed": "Failed to load verified templates"
+	},
+	"community": {
+		"pnl": "PnL",
+		"trades": "Trades",
+		"inspect": "Inspect",
+		"deletePublication": "Delete publication",
+		"noIdeas": "No trading ideas found.",
+		"loadFailed": "Failed to load community ideas",
+		"upvoted": "Upvoted!"
+	},
+	"discussion": {
+		"deleteTopic": "Delete topic",
+		"noDiscussions": "No active discussion topics.",
+		"loadFailed": "Failed to load discussions"
+	},
+	"network": {
+		"activeNodes": "Active Nodes",
+		"thisHour": "this hour",
+		"avgLatency": "Average Latency",
+		"uptimeSla": "Uptime SLA",
+		"relayStatus": "Relay Status",
+		"connected": "CONNECTED",
+		"topologyTitle": "Decentralized Federation Node Topology",
+		"masterHub": "Master Hub",
+		"federatedNode": "Federated Node",
+		"nodes": {
+			"frankfurt": "Master Server (Frankfurt)",
+			"newYork": "Node-US-East (New York)",
+			"singapore": "Node-APAC-South (Singapore)",
+			"tokyo": "Node-APAC-East (Tokyo)",
+			"siliconValley": "Node-US-West (Silicon Valley)",
+			"sydney": "Node-AUS-East (Sydney)"
+		},
+		"consoleTitle": "Seed Node Console Feed",
+		"syncHeartbeat": "Sync Heartbeat",
+		"master": "Master",
+		"consensus": "Consensus",
+		"channelLatency": "Channel Latency",
+		"optimizedRouting": "Optimized routing",
+		"consensusVerified": "Consensus verified"
+	},
+	"news": {
+		"title": "News & Releases",
+		"noUpdates": "No news updates available.",
+		"deleteNews": "Delete news item",
+		"loadFailed": "Failed to load hub news"
+	},
+	"feedback": {
+		"title": "Send Feedback",
+		"description": "Report bugs, suggest ideas, or share your overall feedback directly with DepthSight developers.",
+		"category": "Category",
+		"categories": {
+			"bug": "Bug Report",
+			"idea": "Feature Request",
+			"say_hello": "Say Hello"
+		},
+		"message": "Message",
+		"placeholder": "Explain details...",
+		"email": "Email (Optional)",
+		"send": "Send to Developers",
+		"sending": "Sending...",
+		"successToast": "Feedback sent to DepthSight developers!",
+		"successDesc": "Thank you for helping us improve DepthSight.",
+		"failedToast": "Feedback submission failed.",
+		"myTickets": "My Support Tickets",
+		"badges": {
+			"bug": "Bug",
+			"idea": "Idea",
+			"question": "Question"
+		}
+	},
+	"createTopic": {
+		"title": "Create Discussion Topic",
+		"description": "Start a general community discussion or share strategy ideas.",
+		"topicTitle": "Title",
+		"topicTitlePlaceholder": "Topic title...",
+		"topicDesc": "Description",
+		"topicDescPlaceholder": "Provide details for the discussion...",
+		"publish": "Publish",
+		"publishing": "Publishing...",
+		"success": "Discussion topic published!",
+		"failed": "Failed to publish topic"
+	},
+	"detailedView": {
+		"netProfit": "Net Profit",
+		"winRate": "Win Rate",
+		"maxDrawdown": "Max Drawdown",
+		"totalTrades": "Total Trades",
+		"equityCurve": "Equity Curve",
+		"configTitle": "Strategy Configuration",
+		"import": "Import",
+		"comments": "Comments",
+		"noComments": "No comments yet. Start the conversation!",
+		"replyPlaceholder": "Add a reply...",
+		"postComment": "Post Comment",
+		"posting": "Posting...",
+		"commentSuccess": "Comment posted!",
+		"commentFailed": "Failed to post comment",
+		"delete": "Delete",
+		"topicDeleted": "Topic deleted successfully!"
+	},
+	"addVerified": {
+		"title": "Add Verified Strategy",
+		"description": "Publish an official verified strategy template for all users.",
+		"stratName": "Strategy Name",
+		"author": "Author",
+		"tags": "Tags (comma separated)",
+		"desc": "Description",
+		"descPlaceholder": "Strategy description...",
+		"jsonConfig": "Configuration JSON",
+		"jsonInvalid": "Invalid JSON format for strategy configuration",
+		"addSuccess": "Verified preset successfully added!",
+		"deleteSuccess": "Template deleted successfully!"
+	},
+	"addNews": {
+		"title": "Add News Update",
+		"description": "Publish a platform news update or release announcement.",
+		"newsTitle": "Title",
+		"content": "Content",
+		"contentPlaceholder": "News item text...",
+		"addSuccess": "News item successfully published!",
+		"deleteSuccess": "News item deleted successfully!"
+	},
+	"hubTicket": {
+		"closeTicket": "Close Ticket",
+		"details": "Feedback Ticket Details",
+		"yourFeedback": "Your Feedback",
+		"messageHistory": "Message History",
+		"supportName": "DepthSight Support",
+		"you": "You",
+		"noReplies": "No developer replies yet. You will see them here.",
+		"typeMessage": "Type message...",
+		"ticketClosed": "This feedback ticket has been closed."
+	},
+	"terminal": {
+		"log1": "INITIALIZING DEPTHSIGHT FEDERATION PROTOCOL [PORT: 42100]...",
+		"log2": "CONNECTING TO SEED NODES...",
+		"log3": "HANDSHAKE ACCEPTED: MASTER_HUB = fra-hub-01.depthsight.net",
+		"log4": "NODE CONFLICT CHECK: PASSED",
+		"log5": "SECURE CRYPTO SHIELDS ENGAGED [AES-256-GCM]",
+		"log6": "STATUS: RUNNING ACTIVE FEDERATED DAEMON",
+		"status1": "TICK: Block verified at node-Frankfurt - Latency {{ping}}ms",
+		"status2": "FEDSIGHT: Sync cycle check completed. All parameters within safe deviation threshold.",
+		"status3": "BROADCAST: Heartbeat transmitted to DepthSight Federation core. Status: ACTIVE.",
+		"status4": "MEMPOOL: Scanning local mempools on SOL nodes. Grid metrics nominal."
+	}
+}

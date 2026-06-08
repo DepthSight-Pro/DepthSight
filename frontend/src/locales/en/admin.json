@@ -1,0 +1,8 @@
+{
+	"userUpdateSuccessTitle": "Success",
+	"userUpdateSuccessDescription": "User details have been successfully updated.",
+	"userUpdateFailedTitle": "Update Failed",
+	"bonusIssueSuccessTitle": "Bonus Issued",
+	"bonusIssueFailedTitle": "Failed to Issue Bonus",
+	"impersonationFailedTitle": "Impersonation Failed"
+}

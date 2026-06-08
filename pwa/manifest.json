@@ -1,0 +1,23 @@
+{
+	"name": "DepthSight AI Trading Platform",
+	"short_name": "DepthSight",
+	"description": "A mobile-first companion app for a trading platform, allowing users to monitor portfolios, manage trading strategies, and leverage an AI assistant to create and edit strategies on the go.",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#121518",
+	"theme_color": "#121518",
+	"orientation": "portrait-primary",
+	"icons": [
+		{
+			"src": "/assets/icon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml",
+			"purpose": "any maskable"
+		},
+		{
+			"src": "favicon.ico",
+			"sizes": "64x64 32x32 24x24 16x16",
+			"type": "image/x-icon"
+		}
+	]
+}

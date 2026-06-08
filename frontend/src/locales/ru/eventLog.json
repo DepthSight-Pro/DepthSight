@@ -1,0 +1,16 @@
+{
+	"pageTitle": "Журнал событий",
+	"resumeButton": "Продолжить",
+	"pauseButton": "Пауза",
+	"exportButton": "Экспорт",
+	"clearButton": "Очистить",
+	"searchPlaceholder": "Поиск по логам...",
+	"allLevels": "Все уровни",
+	"allSources": "Все источники",
+	"levelError": "Ошибка",
+	"levelWarning": "Предупреждение",
+	"levelSuccess": "Успех",
+	"levelInfo": "Инфо",
+	"levelDebug": "Отладка",
+	"noLogs": "Нет логов для отображения."
+}

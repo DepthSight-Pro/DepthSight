@@ -1,0 +1,377 @@
+{
+	"pageTitle": "Research Center",
+	"taskHistory": {
+		"title": "Task History",
+		"description": "Your past and currently running research tasks.",
+		"errors": {
+			"loadFailedTitle": "Error Loading Tasks",
+			"unknownError": "An unknown error occurred."
+		}
+	},
+	"launchTask": {
+		"title": "Launch New Task",
+		"description": "Configure and run a new backtest, optimization, or portfolio backtest."
+	},
+	"table": {
+		"colName": "Name / Strategy",
+		"colType": "Task Type",
+		"colSymbol": "Symbol",
+		"colStatus": "Status",
+		"colResult": "Result / PnL",
+		"colSubmitted": "Submitted",
+		"colActions": "Actions",
+		"noTasks": "No research tasks found."
+	},
+	"taskTypes": {
+		"backtest": "Backtest",
+		"optimization": "Optimization",
+		"portfolio": "Portfolio",
+		"genetic": "Genetic Search",
+		"unknown": "Unknown"
+	},
+	"tabs": {
+		"tasks": "Tasks",
+		"simulator": "Simulator"
+	},
+	"statuses": {
+		"completed": "Completed",
+		"failed": "Failed",
+		"pending": "Pending",
+		"running": "Running",
+		"stopped": "Stopped"
+	},
+	"tooltips": {
+		"viewDetails": "View Details",
+		"deleteRun": "Delete Run"
+	},
+	"confirmation": {
+		"deleteTitle": "Delete {{type}} Run",
+		"deleteDescription": "Are you sure you want to permanently delete the run \"{{name}}\"? This action cannot be undone."
+	},
+	"launchForm": {
+		"tabBacktest": "Backtest",
+		"tabOptimization": "Optimization",
+		"tabPortfolio": "Portfolio",
+		"strategyNameLabel": "Strategy Name",
+		"strategyNamePlaceholder": "e.g., VolumeBreakout",
+		"symbolLabel": "Symbol",
+		"symbolPlaceholder": "e.g., BTCUSDT",
+		"startDateLabel": "Start Date",
+		"endDateLabel": "End Date",
+		"paramsLabel": "Parameters (JSON)",
+		"optunaConfigLabel": "Optuna Config (JSON)",
+		"launchBacktestButton": "Launch Backtest",
+		"launchOptimizationButton": "Launch Optimization",
+		"portfolioNameLabel": "Portfolio Test Name",
+		"portfolioNamePlaceholder": "e.g., My Q1 Portfolio Test",
+		"initialBalanceLabel": "Initial Balance",
+		"contractsLabel": "Contracts",
+		"addContractButton": "Add Contract",
+		"riskLimitsLabel": "Global Portfolio Risk Limits (JSON, optional)",
+		"riskLimitsPlaceholder": "E.g., {\"max_portfolio_drawdown_percent\": 20}",
+		"marketImpactLabel": "Simulate Market Impact",
+		"marketImpactDesc": "Enable to simulate potential price slippage based on trade size.",
+		"launchPortfolioButton": "Launch Portfolio Backtest",
+		"contractTitle": "Contract #{{index}}",
+		"strategyConfigurationLabel": "Strategy Configuration",
+		"strategyConfigurationPlaceholder": "Select a configuration",
+		"parameterOverridesLabel": "Parameter Overrides (JSON)",
+		"parameterOverridesPlaceholder": "e.g. {\"rsi_period\": 21}",
+		"parameterOverridesDesc": "Provide JSON here to override parameters.",
+		"marketTypeLabel": "Market Type"
+	},
+	"backtestViewer": {
+		"pageTitle": "Backtest: {{name}}",
+		"backButton": "Back to Research",
+		"loading": "Loading Backtest Run...",
+		"error": "Error Loading Backtest",
+		"nextSteps": "Next Steps",
+		"nextStepsDesc": "The backtest is complete. What do you want to do next?",
+		"optimizeButton": "Optimize Parameters",
+		"deployButton": "Load to Editor for Deployment",
+		"toastOptimizationStarted": "Optimization Started",
+		"toastStrategyLoaded": "Strategy Loaded",
+		"toastConfigNotFound": "Strategy configuration not found in this backtest run.",
+		"tabTradesAndLogs": "Trade History & Logs",
+		"tabTradesAndCombinations": "Trades & Combinations",
+		"tabSummary": "Task Summary",
+		"tabAnalytics": "Performance Analytics",
+		"tabTradeAnalytics": "Trade Analytics",
+		"tabEventLog": "Event Log",
+		"equityCurveTitle": "Equity Curve",
+		"kpiPanelTitle": "Final KPIs",
+		"kpiPanelTitleLive": "Live Progress & KPIs",
+		"analyzeWithAI": "Analyze and Improve with AI",
+		"analyzeWithAITooltip": "Get insights and suggestions for improvement from the AI assistant.",
+		"shareButton": "Share",
+		"tabCombinations": "Combinations",
+		"tabFoundations": "Foundations"
+	},
+	"combinationsPerformanceTable": {
+		"title": "Combinations Effectiveness",
+		"description": "Analysis of the effectiveness of various foundation combinations."
+	},
+	"foundationEffectiveness": {
+		"header": {
+			"foundation": "Foundation",
+			"pnl": "PnL",
+			"winRate": "Win Rate",
+			"totalTrades": "Total Trades"
+		}
+	},
+	"structuredReport": {
+		"eventCountersTitle": "Event Counters",
+		"anomaliesTitle": "Anomalies",
+		"noDataTitle": "No Analytics Data",
+		"noDataDescription": "Structured analytics data is not available for this backtest run.",
+		"noAnomalies": "No anomalies detected.",
+		"foundationTriggersTitle": "Foundation Triggers",
+		"foundationTriggersDescription": "How many times each weighted foundation's conditions were met.",
+		"noFoundationTriggers": "No foundation trigger data available.",
+		"tableHeaders": {
+			"event": "Event",
+			"count": "Count",
+			"timestamp": "Timestamp",
+			"type": "Type",
+			"message": "Message",
+			"foundation": "Foundation",
+			"triggerCount": "Trigger Count"
+		},
+		"events": {
+			"signalsGenerated": "Signals Generated",
+			"tradesOpened": "Trades Opened",
+			"totalRejections": "Total Rejections",
+			"rejectionGlobalRisk": "Rejection: By Global Risk Limit",
+			"rejectionCooldown": "Rejection: By Cooldown",
+			"rejectionWeight": "Rejection: By Weight Threshold",
+			"rejectionCalculation": "Rejection: By Position Calculation",
+			"rejectionSlippage": "Rejection: By Slippage Beyond SL",
+			"rejectionByRiskManager": "By Risk Manager",
+			"rejectionByFilter": "Rejection: By Filter - {{filterName}}"
+		}
+	},
+	"shareDialog": {
+		"title": "Share Backtest Result",
+		"description": "Generate a public link to share your backtest results.",
+		"showStrategyName": "Show strategy name",
+		"showParameters": "Show strategy parameters",
+		"publishToLeaderboard": "Publish to Leaderboard",
+		"publishToHub": "Publish to Discovery Hub",
+		"authorName": "Author Name",
+		"hubDescription": "Description / Notes",
+		"authorNamePlaceholder": "Enter your name or alias",
+		"descriptionPlaceholder": "Describe the strategy and performance ideas...",
+		"generateLinkButton": "Generate Link",
+		"successMessage": "Your public link has been generated. Anyone with this link can view the report.",
+		"toast": {
+			"successTitle": "Link Generated",
+			"successDescription": "You can now copy the public link."
+		}
+	},
+	"optimizationViewer": {
+		"pageTitle": "Optimization: {{name}}",
+		"loading": "Loading Optimization Run...",
+		"error": "Error Loading Run",
+		"tabOverview": "Overview",
+		"tabTrials": "Trials",
+		"tabBestResult": "Best Result",
+		"bestResultTitle": "Best Parameters Found (Trial #{{trial}})",
+		"bestResultDesc": "The optimizer found this set of parameters to be the most effective, with a fitness score of {{score}}.",
+		"backtestBestButton": "Backtest Best Parameters",
+		"loadInEditorButton": "Load in Strategy Editor",
+		"noBestTrial": "No best trial has been identified yet.",
+		"toastBacktestStarted": "Backtest Started",
+		"toastParamsLoaded": "Parameters Loaded",
+		"errors": {
+			"resultsNotAvailable": "Optimization results are not available.",
+			"bestParamsNotAvailable": "Best parameters not available to run a backtest.",
+			"noBestParamsToLoad": "No best trial parameters found to load."
+		},
+		"optimizedSuffix": " (Optimized)"
+	},
+	"portfolioViewer": {
+		"pageTitle": "Portfolio: {{name}}",
+		"runId": "Run ID: {{id}}",
+		"loading": "Loading Portfolio Backtest...",
+		"error": "Failed to load portfolio backtest data",
+		"kpiTotalPnl": "Total Portfolio PnL",
+		"kpiSharpe": "Sharpe Ratio",
+		"kpiMaxDd": "Max Drawdown",
+		"kpiTotalTrades": "Total Trades",
+		"tabOverview": "Portfolio Overview",
+		"tabTradeHistory": "Trade History",
+		"tabStrategyPerf": "Strategy Performance",
+		"tabSymbolPerf": "Symbol Performance",
+		"pnlByStrategy": "PnL by Strategy",
+		"pnlBySymbol": "PnL by Symbol",
+		"kpiTotalPnlDescPositive": "Positive overall return",
+		"kpiTotalPnlDescNegative": "Negative overall return",
+		"kpiSharpeDesc": "Measures risk-adjusted return",
+		"kpiMaxDdDesc": "Largest peak to trough decline",
+		"kpiTotalTradesDesc": "Total number of trades executed",
+		"overview": {
+			"noTradeDataForCharts": "No trade data available to generate PnL distribution charts."
+		},
+		"trades": {
+			"noTradesExecuted": "No trades executed during this portfolio backtest."
+		},
+		"strategyPerf": {
+			"noData": "No strategy performance data available."
+		},
+		"symbolPerf": {
+			"noData": "No symbol performance data available."
+		}
+	},
+	"analytics": {
+		"notAvailableShort": "N/A",
+		"analyticsNotAvailable": "Analytics not available for this backtest (e.g., no trades executed or task still running).",
+		"statNetProfit": "Net Profit",
+		"statTotalTrades": "Total Trades",
+		"statWinRate": "Win Rate",
+		"statAvgPnlPerTrade": "Avg. PnL/Trade",
+		"statProfitFactor": "Profit Factor",
+		"tabCumulativePnl": "Cumulative P&L",
+		"tabDistribution": "P&L Distribution",
+		"tradeChartTitle": "Trade Execution Chart"
+	},
+	"liveEventFeed": {
+		"title": "Live Event Feed",
+		"description": "Real-time stream of backtest events.",
+		"tooltipResume": "Resume feed",
+		"tooltipPause": "Pause feed",
+		"backtestCompleted": "Backtest completed. No further events.",
+		"backtestFailed": "Backtest failed. Check logs for details.",
+		"waitingForEvents": "Waiting for events..."
+	},
+	"progressKpiPanel": {
+		"liveTitle": "Live Progress & KPIs",
+		"finalTitle": "Final KPIs",
+		"asOfDate": "As of: {{date}}",
+		"statusLabel": "Status",
+		"progressComplete": "{{value}}% complete",
+		"maxDrawdownLabel": "Max Drawdown",
+		"descPnlCurrent": "Current profit/loss",
+		"descPnlTotal": "Total net profit/loss",
+		"descTradesCurrent": "Trades executed so far",
+		"descTradesTotal": "Total trades executed",
+		"descWinRateCurrent": "Current proportion of winning trades",
+		"descWinRateOverall": "Overall proportion of winning trades",
+		"descMaxDrawdownCurrent": "Current max drawdown during run",
+		"descMaxDrawdownOverall": "Largest peak to trough decline observed",
+		"totalCommissionLabel": "Total Commission",
+		"descCommissionTotal": "Sum of fees paid for all trades"
+	},
+	"tradeHistoryTable": {
+		"title": "Trade History",
+		"description": "Detailed log of all trades executed during the backtest.",
+		"headerExitTime": "Exit Time",
+		"headerDirection": "Direction",
+		"headerEntry": "Entry Price",
+		"headerExit": "Exit Price",
+		"headerPnl": "PnL ($)",
+		"headerTrace": "Trace",
+		"waitingForFirstTrade": "Waiting for the first trade to be executed...",
+		"noTradesGenerated": "No trades were generated during this backtest.",
+		"noDecisionTrace": "Decision trace not available for this trade.",
+		"headerVisualize": "Visualize",
+		"visualizeTooltip": "Visualize trade on chart"
+	},
+	"decisionTraceDialog": {
+		"title": "Trade Analysis #{{tradeId}}",
+		"description": "Visualization of triggered foundations and decision tree for {{direction}} trade entered at ${{entryPrice}}, PnL: ${{pnl}}.",
+		"noTraceData": "No decision trace data available for this specific trade.",
+		"treeTitle": "Decision Tree",
+		"noKlineData": "Could not load kline data for this period."
+	},
+	"decisionTraceTree": {
+		"conditionMet": "Condition Met",
+		"conditionNotMet": "Condition Not Met"
+	},
+	"equityCurve": {
+		"taskFailedTitle": "Task Execution Failed",
+		"noResults": "Results cannot be displayed.",
+		"tooltipLabel": "Equity",
+		"waitingForData": "Waiting for data to build the chart...",
+		"strategyDescription": "The progression of account equity as the backtest runs.",
+		"portfolioDescription": "The progression of total portfolio equity as the backtest runs."
+	},
+	"taskSummary": {
+		"unknownDate": "?",
+		"toastCopiedTitle": "Copied!",
+		"toastCopiedDescription": "Task ID copied to clipboard.",
+		"taskIdLabel": "Task ID",
+		"dateRangeLabel": "Date Range"
+	},
+	"combinationsPerformance": {
+		"title": "Combinations Performance",
+		"description": "Analysis of results by groups of triggered foundations",
+		"noTrades": "No trades to analyze combinations.",
+		"header": {
+			"combination": "Combination of Foundations",
+			"pnl": "Total PnL",
+			"winRate": "Win Rate %",
+			"totalTrades": "Total Trades"
+		}
+	},
+	"parameterImportanceTitle": "Parameter Importance",
+	"parameterImportanceNoData": "Parameter importance data is not available.",
+	"runOverviewTitle": "Run Overview",
+	"kpiProgressLabel": "Progress: {{current}} / {{total}} trials",
+	"kpiStatus": "Status",
+	"kpiFitnessMetric": "Fitness Metric",
+	"kpiBestValue": "Best Value",
+	"kpiPeriod": "Period",
+	"trialsTable": {
+		"colTrial": "Trial #",
+		"colValue": "Value",
+		"colParameters": "Parameters",
+		"waitingForTrials": "Waiting for trials to complete..."
+	},
+	"loadingStrategyConfigs": "Loading strategy configurations...",
+	"errorLoadingStrategyConfigs": "Error loading configurations: {{message}}",
+	"noStrategyConfigsFound": "No strategy configurations found.",
+	"validationStrategyNameRequired": "Strategy name is required",
+	"validationSymbolRequired": "Symbol is required",
+	"validationDateFormat": "Date must be in YYYY-MM-DD format",
+	"validationValidJsonOrEmpty": "Must be valid JSON or empty",
+	"validationOptunaConfigNotEmpty": "Optuna config cannot be empty",
+	"validationStrategyConfigRequired": "Strategy configuration is required",
+	"validationPortfolioNameRequired": "Portfolio test name is required",
+	"validationInitialBalancePositive": "Initial balance must be positive",
+	"validationMinOneContract": "At least one contract must be added",
+	"geneticRunStopSuccessTitle": "Success",
+	"geneticRunStopSuccessDescription": "Stop command sent to the genetic run.",
+	"geneticRunStopFailedTitle": "Stop Failed",
+	"geneticSearchFailedTitle": "Genetic Search Failed",
+	"portfolioBacktestQueuedTitle": "Portfolio Backtest Queued",
+	"portfolioBacktestQueuedDescription": "Run submitted.",
+	"portfolioBacktestFailedTitle": "Portfolio Backtest Failed",
+	"backtestQueuedTitle": "Backtest Queued",
+	"backtestQueuedDescription": "Task {{taskId}} has been submitted.",
+	"backtestFailedTitle": "Backtest Failed",
+	"backtestDeleteSuccessTitle": "Success",
+	"backtestDeleteSuccessDescription": "Backtest run deleted successfully.",
+	"backtestDeleteFailedTitle": "Error deleting run",
+	"optimizationQueuedTitle": "Optimization Queued",
+	"optimizationQueuedDescription": "Task {{taskId}} submitted.",
+	"optimizationFailedTitle": "Optimization Failed",
+	"modelLoadedTitle": "Model Loaded",
+	"modelLoadedDescription": "Model ID {{modelId}} is ready for backtesting.",
+	"optunaVisualStrategyBadge": "Visual strategy loaded",
+	"optunaPrecisionEngine": "Precision Engine (DepthSightBacktester)",
+	"optunaPrecisionDesc": "Heavy L2/DCA blocks detected. Run will take slightly longer (~2 min).",
+	"optunaTurboEngine": "Turbo Engine (FastVectorBacktester)",
+	"optunaTurboDesc": "Lightweight blocks. Vectorized optimization completes in ~15 seconds.",
+	"optunaTrialsLabel": "Optimization Trials",
+	"optunaTrialsTooltip": "More trials allow the Optuna TPE sampler to find a more globally optimal parameter set.",
+	"optunaSearchWidthLabel": "Search Range Width",
+	"optunaSearchWidthTooltip": "The percentage width to search around original parameter values. ±50% searches from 0.5x to 1.5x of the default values.",
+	"optunaAdvancedSettings": "Advanced Settings",
+	"optunaMetricLabel": "Optimization Fitness Metric",
+	"optunaMetricSharpe": "Sharpe Ratio",
+	"optunaMetricSortino": "Sortino Ratio",
+	"optunaMetricProfitFactor": "Profit Factor",
+	"optunaMetricTotalPnl": "Total Return (PnL %)",
+	"optunaStrategyLoadedTitle": "Strategy Loaded",
+	"optunaStrategyLoadedDescription": "Strategy \"{{name}}\" successfully imported for Bayesian optimization."
+}

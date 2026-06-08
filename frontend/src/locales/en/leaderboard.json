@@ -1,0 +1,27 @@
+{
+	"pageTitle": "Leaderboard",
+	"description": "Top strategies from our community. Explore, copy, and learn from the best.",
+	"filters": {
+		"period": {
+			"all_time": "All Time",
+			"monthly": "Monthly",
+			"weekly": "Weekly"
+		},
+		"category": {
+			"sharpe_ratio": "Sharpe Ratio",
+			"net_pnl_percent": "Net PnL (%)"
+		}
+	},
+	"table": {
+		"rank": "Rank",
+		"user": "Trader",
+		"score": "Score",
+		"category": "Category",
+		"period": "Period",
+		"actions": "Actions",
+		"viewReport": "View Report",
+		"copyStrategy": "Copy Strategy"
+	},
+	"noData": "No leaderboard entries yet. Be the first!",
+	"loading": "Loading Leaderboard..."
+}

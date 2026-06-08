@@ -1,0 +1,153 @@
+{
+	"pageTitle": "Strategy Manager",
+	"header": "Active Configurations",
+	"description": "Monitor, launch, and manage all your strategy configurations.",
+	"createButton": "Create",
+	"colStatus": "Status",
+	"colInstance": "Instance Name",
+	"colStrategy": "Strategy Type",
+	"colSymbols": "Symbols",
+	"colRuntime": "Runtime",
+	"colTotalPnl": "Total PnL",
+	"noStrategies": "No saved strategy configurations found.",
+	"searchPlaceholder": "Search strategies...",
+	"openPositions": "Open Positions",
+	"noResults": "No strategies found matching your filters.",
+	"viewButton": "Details",
+	"editButton": "Edit",
+	"moreButton": "More",
+	"actionsButton": "Actions",
+	"editTooltip": "Edit",
+	"startTooltip": "Start",
+	"stopTooltip": "Stop",
+	"deleteTooltip": "Delete",
+
+	"filters": {
+		"all": "All",
+		"running": "Running",
+		"stopped": "Stopped",
+		"paper": "Paper",
+		"live": "Live"
+	},
+
+	"emptyState": {
+		"title": "No Strategies Yet",
+		"description": "Create your first trading strategy to start automating your trading."
+	},
+
+	"tabs": {
+		"active": "Active Configurations",
+		"library": "Strategy Library"
+	},
+
+	"library": {
+		"header": "Strategy Library",
+		"description": "Choose a pre-built template to launch a new strategy configuration.",
+		"noTemplates": "No strategy templates found.",
+		"noDescription": "No description available for this strategy.",
+		"editorButton": "Open in Editor",
+		"launchButton": "Configure & Launch",
+		"backtestButton": "Backtest"
+	},
+
+	"launchModal": {
+		"title": "Launch: {{name}}",
+		"description": "Configure launch parameters for this strategy",
+		"tradingModeLabel": "Trading Mode",
+		"paperMode": "Paper Trading",
+		"paperModeDesc": "Test with virtual funds",
+		"liveMode": "Live Trading",
+		"liveModeDesc": "Trade with real funds",
+		"launchButton": "Launch Strategy",
+		"instanceNameLabel": "Instance Name",
+		"instanceNamePlaceholder": "e.g., My BTC Breakout",
+		"symbolModeLabel": "Symbol Selection",
+		"symbolModeDynamic": "Dynamic (from Screener)",
+		"symbolModeDynamicDesc": "Automatically select symbols based on market conditions",
+		"symbolModeStatic": "Static (Manual List)",
+		"symbolModeStaticDesc": "Trade specific symbols only",
+		"symbolsLabel": "Symbols List",
+		"symbolsPlaceholder": "BTCUSDT, ETHUSDT, SOLUSDT...",
+		"symbolsHelp": "Separate multiple symbols with commas",
+		"mlLabel": "ML Signal Confirmation",
+		"mlDescription": "Use a trained model to verify signals before placing orders.",
+		"paramsLabel": "Default Parameters (Read-Only)",
+		"saveButton": "Save Configuration",
+		"partialsLabel": "Use Partial Exits",
+		"moveToBeLabel": "Move SL to Breakeven",
+		"foundationWeightLabel": "Foundation Weight Threshold",
+		"oracleRegimeParanoiaFull": "0: Paranoia (Trend-following/Sideways)",
+		"oracleRegimeAmnesiaFull": "1: Amnesia (News/Trend)",
+		"oracleRegimeSchizophreniaFull": "2: Schizophrenia (Volatile)",
+		"errors": {
+			"nameRequired": "Instance name is required.",
+			"modeRequired": "Please select a symbol mode.",
+			"symbolsRequired": "Symbols are required for Static mode",
+			"invalidJson": "Parameters must be a valid JSON object."
+		}
+	},
+
+	"backtestModal": {
+		"title": "Run Backtest: {{name}}",
+		"description": "Configure the parameters for a quick backtest of this strategy.",
+		"symbolLabel": "Symbol",
+		"marketTypeLabel": "Market",
+		"marketTypeFutures": "Futures",
+		"marketTypeSpot": "Spot",
+		"dateRangeLabel": "Date Range",
+		"datePlaceholder": "Select a date range",
+		"runButton": "Run Backtest",
+		"errors": {
+			"symbolRequired": "Symbol is required.",
+			"marketTypeRequired": "Market type is required.",
+			"startDateRequired": "Start date is required.",
+			"endDateRequired": "End date is required.",
+			"dateOrder": "Start date must be before end date."
+		}
+	},
+
+	"confirmation": {
+		"stopTitle": "Stop Strategy: {{name}}",
+		"stopDescription": "Are you sure you want to stop this running instance? Open positions will NOT be closed automatically.",
+		"deleteTitle": "Delete Configuration: {{name}}",
+		"deleteDescription": "Are you sure you want to permanently delete this configuration? This action cannot be undone.",
+		"toastStopSuccess": "Strategy stop command sent.",
+		"toastDeleteSuccess": "Strategy configuration deleted successfully."
+	},
+
+	"detailsPanel": {
+		"title": "Details: {{name}}",
+		"description": "Symbol(s): {{symbol}} | ID: {{id}}",
+		"tabOverview": "Overview",
+		"tabTradeHistory": "Trade History",
+		"tabLogs": "Live Logs",
+		"noStrategySelectedTitle": "No Instance Selected",
+		"noStrategySelectedDesc": "Click on a running instance from the list to view its live details."
+	},
+	"overviewTab": {
+		"totalPnl": "Total PnL",
+		"status": "Status",
+		"symbol": "Symbol(s)",
+		"marketType": "Market Type",
+		"openPositions": "Open Positions",
+		"runningSince": "Running Since",
+		"parametersTitle": "Parameters"
+	},
+	"tradeHistoryTab": {
+		"errorTitle": "Error Loading Trade History",
+		"noTrades": "No trades found for this strategy.",
+		"colTimestamp": "Timestamp (Closed)",
+		"colSymbol": "Symbol",
+		"colDirection": "Direction",
+		"colQuantity": "Quantity",
+		"colEntry": "Entry Price",
+		"colExit": "Exit Price",
+		"colPnl": "PnL",
+		"colExitReason": "Exit Reason"
+	},
+	"logsTab": {
+		"waiting": "Waiting for first log events...",
+		"noLogs": "No logs found for this strategy yet.",
+		"waitingForFirstLogEvents": "Waiting for first log events..."
+	}
+}

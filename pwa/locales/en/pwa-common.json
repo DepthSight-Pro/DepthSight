@@ -1,0 +1,1041 @@
+{
+	"common": {
+		"error": "Error: {{message}}",
+		"dark": "dark",
+		"light": "light",
+		"russian": "Russian",
+		"english": "English"
+	},
+	"loadingScreen": "Loading...",
+	"logo": {
+		"depth": "Depth",
+		"sight": "Sight"
+	},
+	"header": {
+		"depthsightAI": "DepthSight AI",
+		"dashboard": "Dashboard",
+		"strategies": "Strategies",
+		"research": "Research",
+		"analytics": "Analytics",
+		"notifications": "Notifications",
+		"aiChat": "AI Assistant",
+		"editor": "Strategy Editor",
+		"backtestResult": "Backtest Results",
+		"profile": "Profile",
+		"settings": "Settings",
+		"notificationsEnabledTitle": "Disable push notifications",
+		"notificationsDisabledTitle": "Enable push notifications"
+	},
+	"nav": {
+		"dashboard": "Home",
+		"strategies": "Strategies",
+		"research": "Research",
+		"notifications": "Alerts"
+	},
+	"buttons": {
+		"save": "Save",
+		"saving": "Saving...",
+		"cancel": "Cancel",
+		"add": "Add",
+		"adding": "Adding...",
+		"close": "Close",
+		"delete": "Delete"
+	},
+	"auth": {
+		"loginToAccount": "Login to your account",
+		"createAccount": "Create an account",
+		"email": "Email",
+		"username": "Username",
+		"password": "Password",
+		"confirmPassword": "Confirm Password",
+		"login": "Login",
+		"register": "Register",
+		"noAccount": "Don't have an account?",
+		"alreadyHaveAccount": "Already have an account?",
+		"create": "Create",
+		"invalidCredentials": "Invalid credentials.",
+		"registrationError": "Registration error.",
+		"passwordsDoNotMatch": "Passwords do not match.",
+		"usernameTaken": "This username is already taken.",
+		"emailTaken": "This email is already registered.",
+		"registrationSuccessTitle": "Registration Successful",
+		"confirmEmailPrompt": "One last step...",
+		"confirmEmailInstructions": "We have sent a confirmation link to your email address. Please click the link to activate your account.",
+		"backToLogin": "Back to Login",
+		"resendEmail": "Resend Email",
+		"resendingEmail": "Sending...",
+		"resendEmailTimer": "Resend in {{seconds}}s",
+		"resendFailedDescription": "Failed to send email. Please try again later.",
+		"emailConfirmation": "Email Confirmation",
+		"tokenNotFound": "Confirmation token not found.",
+		"successMessageDefault": "Your email has been confirmed successfully!",
+		"errorMessageDefault": "The confirmation link is invalid or has expired.",
+		"connectionError": "Connection error. Please try again.",
+		"errorTitle": "Confirmation Failed",
+		"loadingText": "Confirming your email...",
+		"redirecting": "Redirecting to dashboard...",
+		"referralCode": "Referral Code (Optional)",
+		"referralCodePlaceholder": "Enter referral code",
+		"forgotPassword": "Forgot password?",
+		"forgotPasswordTitle": "Reset Password",
+		"forgotPasswordDescription": "Enter your email address and we'll send you a reset link.",
+		"sendResetLink": "Send Reset Link",
+		"resetLinkSent": "If this email is registered, you will receive a password reset link.",
+		"resetPasswordTitle": "Set New Password",
+		"resetPasswordDescription": "Enter your new password below.",
+		"newPassword": "New Password",
+		"confirmResetPassword": "Confirm Password",
+		"resetPassword": "Reset Password",
+		"passwordResetSuccess": "Your password has been reset. You can now log in.",
+		"passwordMismatch": "Passwords do not match",
+		"invalidResetLink": "This reset link is invalid or has expired."
+	},
+	"dashboard": {
+		"live": "Live",
+		"paper": "Paper",
+		"totalBalance": "Total Balance",
+		"dailyPnl": "Daily PnL",
+		"unrealizedPnl": "Unrealized PnL",
+		"pnlChart": "PnL Chart",
+		"1d": "1D",
+		"7d": "7D",
+		"mtd": "MTD",
+		"loadingChart": "Loading chart...",
+		"pnl": "PnL",
+		"noDataToDisplay": "No data to display.",
+		"activePositions": "Active Positions",
+		"size": "Size",
+		"noActivePositions": "No active positions.",
+		"closePosition": "Close position for {{symbol}}",
+		"confirmClosePosition": "Are you sure you want to close the position for {{symbol}}?",
+		"closePositionCommandSent": "Close position command sent for {{symbol}}.",
+		"errorClosingPosition": "Error closing position for {{symbol}}.",
+		"failedToLoadData": "Failed to load data.",
+		"maxDrawdown": "Max Drawdown",
+		"sharpeRatio": "Sharpe Ratio",
+		"connectApiKeysMessage": "Connect API keys in the desktop version of the application"
+	},
+	"analytics": {
+		"pageTitle": "Analytics",
+		"overview": {
+			"netProfit": "Net PnL",
+			"winRate": "Win Rate",
+			"profitFactor": "Profit Factor",
+			"expectancy": "Expectancy",
+			"sharpeRatio": "Sharpe Ratio",
+			"totalCommission": "Commission",
+			"avgWinLossRatio": "W/L Ratio",
+			"volume": "Volume",
+			"perTrade": "Per trade average",
+			"annualized": "Annualized",
+			"needsMoreDays": "Needs 2+ days",
+			"totalFees": "Total fees paid",
+			"avgWinVsLoss": "Avg W vs L",
+			"tradedVolume": "Total traded"
+		},
+		"tabs": {
+			"cumulativePnl": "Equity Curve",
+			"hourlyPerformance": "Hourly",
+			"dailyPerformance": "Daily"
+		}
+	},
+	"strategies": {
+		"status": {
+			"running": "Active",
+			"stopped": "Saved"
+		},
+		"run": "Run",
+		"backtest": "Backtest",
+		"edit": "Edit",
+		"delete": "Delete",
+		"stop": "Stop",
+		"stopCommandSent": "Strategy stop command sent.",
+		"errorStopping": "Error stopping strategy.",
+		"deleteSuccess": "Strategy deleted successfully.",
+		"deleteError": "Error deleting strategy."
+	},
+	"research": {
+		"netPnl": "Net PnL",
+		"winRate": "Win Rate",
+		"inProgress": "In Progress...",
+		"failedToLoad": "Failed to load backtests.",
+		"noBacktests": "You haven't run any backtests yet.",
+		"status": {
+			"completed": "Completed",
+			"running": "Running",
+			"pending": "Pending",
+			"failed": "Failed"
+		}
+	},
+	"backtestResultScreen": {
+		"resultsNotFound": "Backtest results not found.",
+		"equityChart": "Equity Chart",
+		"noData": "No data to display chart.",
+		"runLive": "Run Live",
+		"analyzeWithAI": "Analyze with AI",
+		"openInEditor": "Open in Editor",
+		"share": "Share",
+		"trades": "Trades",
+		"buy": "Buy",
+		"sell": "Sell",
+		"exit": "Exit",
+		"tradesNotFound": "No trades found.",
+		"page": "Page",
+		"back": "Back",
+		"forward": "Forward",
+		"toast": {
+			"failedToLoadDetails": "Failed to load backtest details.",
+			"backtestStarted": "Backtest started. Results will appear in Research.",
+			"errorStartingBacktest": "Error starting backtest.",
+			"strategySavedAndLaunched": "Strategy '{{strategyName}}' saved and launched.",
+			"errorLaunchingStrategy": "Error launching strategy."
+		}
+	},
+	"editor": {
+		"aiAssistantGreeting": "Hi! I'm your AI assistant. How can I help with this strategy?",
+		"errorLoadingStrategy": "Error loading strategy.",
+		"strategyGenerated": "Strategy generated and loaded into the constructor.",
+		"backtestStarted": "Backtest started.",
+		"strategySaved": "Strategy '{{strategyName}}' saved successfully.",
+		"errorSavingStrategy": "Error saving strategy.",
+		"defaultStrategyName": "New Strategy",
+		"constructor": "Constructor",
+		"aiAssistant": "AI Assistant",
+		"strategyInfo": "Strategy Information",
+		"strategyName": "Strategy Name",
+		"namePlaceholder": "e.g., EMA 50 Crossover",
+		"description": "Description",
+		"descriptionPlaceholder": "A brief description of the strategy logic...",
+		"filtersSectionTitle": "Filters",
+		"entryConditionsSectionTitle": "Entry Conditions",
+		"positionManagementSectionTitle": "Position Management",
+		"foundationsAndWeights": "Foundations & Weights",
+		"useWeights": "Use Weights",
+		"minWeightThreshold": "Min. Weight Threshold:",
+		"foundationsWeightsButton": "Configure Foundation Weights",
+		"runBacktest": "Run Backtest",
+		"add": "Add",
+		"addConditionTo": "Add condition to",
+		"showAllBlocks": "Show All Blocks",
+		"initialization": "Trade Initialization",
+		"direction": "Direction",
+		"positionSize": "Position Size",
+		"percentBalance": "% of Balance",
+		"fixedUsd": "Fixed USD",
+		"orderType": "Order Type",
+		"market": "Market",
+		"limitRetest": "Limit Retest",
+		"entryPrice": "Entry Price",
+		"stopLoss": "Stop Loss",
+		"atrMultiplier": "ATR Multiplier",
+		"percentFromPrice": "% from Price",
+		"takeProfit": "Take Profit",
+		"rrMultiplier": "R:R Multiplier",
+		"partialExits": "Partial Exits",
+		"atTP": "At TP:",
+		"addPartialExit": "Add Partial Exit",
+		"configPanel": {
+			"paramsTitle": "Parameters"
+		}
+	},
+	"profile": {
+		"profileTitle": "Profile",
+		"accountTab": "Account",
+		"achievementsTab": "Achievements",
+		"error": "Error: ",
+		"failedToLoadProfileData": "Failed to load profile data.",
+		"myPlan": "My Plan",
+		"planActiveUntil": "Plan active until {{date}}",
+		"noActivePlan": "You have no active plan.",
+		"changePlan": "Change Plan",
+		"paperAccount": "Paper Account",
+		"resetting": "Resetting...",
+		"reset": "Reset",
+		"quotas": "Quotas",
+		"unlimited": "∞",
+		"referrals": "Referrals",
+		"referralCode": "Your referral code",
+		"copy": "Copy",
+		"copied": "Copied!",
+		"codeCopied": "Code copied.",
+		"referralLink": "Your referral link",
+		"linkCopied": "Link copied.",
+		"geneticsLaboratory": "Genetics Laboratory",
+		"genesDiscovered": "Genes Discovered",
+		"dangerZone": "Danger Zone",
+		"deleteAccountTitle": "Delete Account",
+		"deleteAccountDescription": "This action is irreversible. All your data will be deleted.",
+		"deleteAccount": "Delete Account",
+		"deleting": "Deleting...",
+		"paperAccountResetSuccess": "Paper account reset successfully.",
+		"failedToResetPaperAccount": "Failed to reset paper account.",
+		"accountDeleted": "Account deleted successfully.",
+		"failedToDeleteAccount": "Failed to delete account.",
+		"copiedToClipboard": "Copied to clipboard.",
+		"failedToCopyValue": "Failed to copy value.",
+		"pleaseWait": "Please wait...",
+		"choosePlan": "Choose Your Plan",
+		"upgradePlanDescription": "Upgrade to unlock more features.",
+		"failedToLoadPlans": "Failed to load pricing plans.",
+		"failedToOpenPaymentPage": "Failed to open payment page.",
+		"failedToInitiatePayment": "Failed to initiate payment.",
+		"perMonth": "/ mo",
+		"currentPlanLabel": "Current Plan",
+		"transitioning": "Redirecting...",
+		"select": "Select",
+		"continueAgreeing": "By continuing, you agree to our",
+		"termsAndConditions": "Terms of Service",
+		"and": "and",
+		"privacyPolicy": "Privacy Policy",
+		"confirmResetTitle": "Confirm Reset",
+		"confirmResetMessage": "Are you sure you want to reset your paper account? Your balance will be set to the default value.",
+		"resetAccount": "Reset Account",
+		"confirmDeleteTitle": "Confirm Deletion",
+		"confirmDeleteMessage": "Are you sure you want to delete your account? This action cannot be undone.",
+		"deleteMyAccount": "Delete My Account",
+		"noActivePositions": "No active positions",
+		"noAchievements": "You have no achievements yet."
+	},
+	"achievements": {
+		"grandmaster": "Grandmaster",
+		"legend": "Legend",
+		"master": "Master",
+		"analyst": "Analyst",
+		"apprentice": "Apprentice",
+		"novice": "Novice",
+		"level": "Level {{level}}",
+		"experience": "Experience",
+		"xpToNextLevel": "{{xpToNext}} XP to Level {{level}}",
+		"totalXp": "Total XP",
+		"genesFound": "Genes Found",
+		"currentLevel": "Current Level",
+		"achievementsUnlocked": "Unlocked",
+		"totalAvailable": "Total",
+		"collectionProgress": "Progress",
+		"xpReward": "+{{xp}} XP",
+		"rarityDisplay": "Rarity: {{rarity}}",
+		"noAchievements": "You have no unlocked achievements yet.",
+		"list": {
+			"first_backtest": {
+				"name": "Pioneer",
+				"description": "Run your first backtest"
+			},
+			"first_save": {
+				"name": "First Blueprint",
+				"description": "Save your first strategy configuration"
+			},
+			"used_ai_assistant": {
+				"name": "Dialogue with the Machine",
+				"description": "Use the AI assistant to create or analyze a strategy"
+			},
+			"first_optimization": {
+				"name": "In Search of the Ideal",
+				"description": "Run your first parameter optimization"
+			},
+			"first_api_key": {
+				"name": "Keymaster",
+				"description": "Add your first API key for trading"
+			},
+			"first_paper_trade": {
+				"name": "Paper Tiger",
+				"description": "Run your first strategy in Paper Trading mode"
+			},
+			"reset_paper": {
+				"name": "Clean Slate",
+				"description": "Reset your Paper Trading account balance"
+			},
+			"10_backtests": {
+				"name": "Junior Researcher",
+				"description": "Conduct 10 backtests"
+			},
+			"100_backtests": {
+				"name": "Senior Researcher",
+				"description": "Conduct 100 backtests"
+			},
+			"500_backtests": {
+				"name": "Head of the Lab",
+				"description": "Conduct 500 backtests"
+			},
+			"1000_trades_backtests": {
+				"name": "Market Veteran",
+				"description": "Simulate 1,000 trades in backtests"
+			},
+			"10000_trades_backtests": {
+				"name": "Wall Street Legend",
+				"description": "Simulate 10,000 trades in backtests"
+			},
+			"50_optimizations": {
+				"name": "Mad Scientist",
+				"description": "Conduct 50 optimizations"
+			},
+			"save_10_strategies": {
+				"name": "Strategist",
+				"description": "Save 10 different strategy configurations"
+			},
+			"sniper": {
+				"name": "Sniper",
+				"description": "Complete a backtest (min. 20 trades) with a Win Rate > 80%"
+			},
+			"marathon_runner": {
+				"name": "Marathon Runner",
+				"description": "Conduct a successful backtest over a period of more than 1 year"
+			},
+			"hard_nut": {
+				"name": "Hard Nut",
+				"description": "Complete a backtest (min. 50 trades) with a max drawdown < 5%"
+			},
+			"alpha_hunter": {
+				"name": "Alpha Hunter",
+				"description": "Complete a backtest with a Sharpe Ratio > 2.0"
+			},
+			"money_printer": {
+				"name": "Money Printer",
+				"description": "Complete a backtest with a Profit Factor > 3.0"
+			},
+			"winning_streak": {
+				"name": "On a Roll",
+				"description": "Get 10 profitable trades in a row in a single backtest"
+			},
+			"phoenix": {
+				"name": "Phoenix",
+				"description": "A strategy recovered from a drawdown >10% and reached a new equity high"
+			},
+			"flawless_victory": {
+				"name": "Flawless Victory",
+				"description": "Complete a backtest (min. 10 trades) with a 100% Win Rate"
+			},
+			"clairvoyant": {
+				"name": "Clairvoyant",
+				"description": "Use the Foundation Visualizer"
+			},
+			"diversifier": {
+				"name": "Diversifier",
+				"description": "Run your first portfolio backtest"
+			},
+			"show_off": {
+				"name": "Show Off",
+				"description": "Share your backtest result"
+			},
+			"contender": {
+				"name": "Contender",
+				"description": "Publish your result to the Leaderboard"
+			},
+			"the_intervention": {
+				"name": "The Intervention",
+				"description": "Manually close a position through the interface"
+			},
+			"pulling_the_plug": {
+				"name": "Pulling the Plug",
+				"description": "Use the Emergency Stop function"
+			},
+			"the_professor": {
+				"name": "The Professor",
+				"description": "Train your first model in the Model Lab"
+			},
+			"strategy_5_blocks": {
+				"name": "Constructor",
+				"description": "Create a strategy using 5+ blocks"
+			},
+			"the_architect": {
+				"name": "The Architect",
+				"description": "Create a strategy using 15+ blocks"
+			},
+			"logician": {
+				"name": "Logician",
+				"description": "Use both AND and OR logic in entry conditions simultaneously"
+			},
+			"inventor": {
+				"name": "Inventor",
+				"description": "Create a strategy using 5+ different types of 'foundations'"
+			},
+			"order_flow_purist": {
+				"name": "Order Flow Purist",
+				"description": "Create a strategy where entry foundations consist only of tape and order book analysis"
+			},
+			"prudent_manager": {
+				"name": "Prudent Manager",
+				"description": "Use the Partial Exits block"
+			},
+			"10_strategies_discovery": {
+				"name": "Gold Digger",
+				"description": "Find 10 unique strategies in the Discovery Lab"
+			},
+			"the_spark": {
+				"name": "The Spark",
+				"description": "Unlock your first strategy gene"
+			},
+			"gem_hunter": {
+				"name": "Gem Hunter",
+				"description": "Unlock a RARE quality gene"
+			},
+			"treasure_hunter": {
+				"name": "Treasure Hunter",
+				"description": "Unlock an EPIC quality gene"
+			},
+			"myth_buster": {
+				"name": "Myth Buster",
+				"description": "Unlock a LEGENDARY quality gene"
+			},
+			"gene_collector": {
+				"name": "Gene Collector",
+				"description": "Collect 20 unique genes in your library"
+			},
+			"geneticist": {
+				"name": "Geneticist",
+				"description": "Crossbreed two strategies in the Breeding Lab"
+			},
+			"natural_selection": {
+				"name": "Natural Selection",
+				"description": "Create a 5th generation strategy in the Evolution Tree"
+			},
+			"recruiter": {
+				"name": "Recruiter",
+				"description": "Invite the first user via your referral link"
+			},
+			"first_commission": {
+				"name": "First Commission",
+				"description": "Receive your first reward from the affiliate program"
+			},
+			"partner": {
+				"name": "Partner",
+				"description": "Earn $100 in the affiliate program"
+			},
+			"underminer": {
+				"name": "Underminer",
+				"description": "Create a backtest with a Sharpe Ratio < -2.0"
+			},
+			"the_pacifist": {
+				"name": "The Pacifist",
+				"description": "Run a backtest that made no trades"
+			},
+			"perfectly_balanced": {
+				"name": "Perfectly Balanced",
+				"description": "Complete a backtest (min. 50 trades) with a Win Rate of exactly 50% (+/- 1%)"
+			},
+			"diamond_hands": {
+				"name": "Diamond Hands",
+				"description": "Name a strategy 'HODL' and run a backtest with it"
+			}
+		}
+	},
+	"settings": {
+		"riskManagement": "Risk Management",
+		"liveTrading": "Live Trading",
+		"backtesting": "Backtesting",
+		"liveTradingRiskManagement": "Risk Management (Live)",
+		"riskManagementDescription": "Configure risk management parameters for live trading.",
+		"backtestingRiskManagement": "Risk Management (Backtest)",
+		"backtestingRiskManagementDescription": "Configure risk management parameters for backtesting.",
+		"maxDrawdown": "Max Drawdown (%)",
+		"dailyMaxLossPercent": "Daily Max Loss (%)",
+		"maxConsecutiveLosses": "Max Consecutive Losses",
+		"maxConcurrentTrades": "Max Concurrent Trades",
+		"enableStopLoss": "Enable Default Stop Loss",
+		"defaultStopLossPercent": "Default Stop Loss (%)",
+		"maxStopDistancePercent": "Max Stop Distance (%)",
+		"adaptiveRiskManagement": "Adaptive Risk Management",
+		"enableAdaptiveRM": "Enable Adaptive Management",
+		"windowSize": "Window Size (trades)",
+		"minTrades": "Min Trades for Assessment",
+		"pnlThreshold": "PnL Threshold (%)",
+		"winRateThreshold": "Win Rate Threshold (%)",
+		"recoveryWins": "Wins for Recovery",
+		"recoveryPnl": "PnL for Recovery (%)",
+		"cooldownSeconds": "Cooldown Time (sec)"
+	},
+	"aiChat": {
+		"initialGreeting": "Hello! I'm your AI assistant. Describe the strategy you want to create, or select a backtest to analyze.",
+		"errorMessage": "An error occurred. Please try again.",
+		"loadToEditor": "Load into Editor",
+		"askPlaceholder": "Ask me anything...",
+		"generateStrategy": "Yes, generate this strategy",
+		"strategyGenerated": "Strategy configuration generated successfully!",
+		"analyzeBacktestPrompt": "Please analyze this backtest: {{strategyName}}"
+	},
+	"shareDialog": {
+		"title": "Share Backtest",
+		"description": "Generate a public link to share your backtest results.",
+		"successMessage": "Your public link has been generated.",
+		"showStrategyName": "Show strategy name",
+		"showParameters": "Show parameters",
+		"publishToLeaderboard": "Publish to leaderboard",
+		"generateLinkButton": "Generate Link",
+		"toast": {
+			"successTitle": "Link Generated",
+			"successDescription": "You can now share your backtest results.",
+			"copied": "Link copied to clipboard."
+		}
+	},
+	"notifications": {
+		"pushNotSupported": "Push notifications are not supported in this browser.",
+		"notificationsDisabled": "Notifications disabled.",
+		"unsubscribeFailedLocal": "Failed to unsubscribe. Notifications disabled locally.",
+		"notificationsEnabled": "Notifications enabled.",
+		"subscribeFailed": "Failed to subscribe to notifications.",
+		"permissionBlocked": "Notification permission is blocked. Please change your browser settings.",
+		"achievementUnlocked": "Achievement Unlocked!",
+		"backtestCompleted": "Backtest Completed",
+		"markAllAsRead": "Mark all as read",
+		"clearAll": "Clear All",
+		"empty": {
+			"title": "No Notifications",
+			"description": "Notifications about backtests, positions, and achievements will be displayed here."
+		},
+		"time": {
+			"justNow": "Just now",
+			"minutesAgo_one": "{{count}} min ago",
+			"minutesAgo_other": "{{count}} mins ago",
+			"hoursAgo_one": "{{count}} hour ago",
+			"hoursAgo_other": "{{count}} hours ago",
+			"daysAgo_one": "{{count}} day ago",
+			"daysAgo_other": "{{count}} days ago"
+		}
+	},
+	"sideMenu": {
+		"account": "Account",
+		"allAccounts": "All Accounts",
+		"unknown": "Unknown",
+		"profile": "Profile",
+		"settings": "Settings",
+		"theme": "Theme",
+		"toggleThemeLabel": "Switch to {{theme}} theme",
+		"language": "Language",
+		"toggleLanguageLabel": "Switch to {{language}}",
+		"english": "EN",
+		"russian": "RU",
+		"fullWebsiteVersion": "Full Website Version",
+		"termsOfService": "Terms of Service",
+		"privacyPolicy": "Privacy Policy",
+		"logout": "Logout"
+	},
+	"modal": {
+		"addBlock": "Add Block",
+		"configureFoundationWeights": "Configure Foundation Weights",
+		"noFoundationsForWeights": "There are no 'Foundation' blocks in the entry conditions to configure weights for."
+	},
+	"addApiKeyModal": {
+		"title": "Add API Key",
+		"apiKeyLabel": "API Key",
+		"apiKeyPlaceholder": "Enter your API key",
+		"apiSecretLabel": "API Secret",
+		"apiSecretPlaceholder": "Enter your API secret"
+	},
+	"backtestModal": {
+		"fillAllFields": "Please fill in all fields.",
+		"strategyBacktest": "Strategy Backtest",
+		"symbol": "Symbol",
+		"startDate": "Start Date",
+		"endDate": "End Date",
+		"runBacktest": "Run Backtest"
+	},
+	"launchStrategyModal": {
+		"fillSymbolsForStatic": "Please specify symbols for static mode.",
+		"launchStrategy": "Launch Strategy",
+		"tradingMode": "Trading Mode",
+		"paperTrading": "Paper Trading",
+		"paperTradingDescription": "Simulated trading with no real risk.",
+		"liveTrading": "Live Trading",
+		"liveTradingDescription": "Trading with real funds. Use with caution.",
+		"symbolSelection": "Symbol Selection",
+		"dynamicFromScreener": "Dynamic (from screener)",
+		"dynamicFromScreenerDescription": "Automatically select symbols based on filters.",
+		"staticManualList": "Static (manual list)",
+		"staticManualListDescription": "Trade only the specified symbols.",
+		"symbolList": "Symbol List",
+		"symbolPlaceholder": "BTCUSDT, ETHUSDT, ...",
+		"separateByCommas": "Separate symbols with a comma.",
+		"dynamicSettings": "Dynamic Selection Settings",
+		"oracleFilter": "Oracle Filter",
+		"lowVolatilityNatr": "Low Volatility (NATR)",
+		"requiredRegime": "Required Regime",
+		"minConfidence": "Min Confidence (%)",
+		"minNatr": "Min NATR",
+		"maxConcurrentSymbols": "Max Concurrent Symbols",
+		"advancedSettings": "Advanced Settings",
+		"enableMlConfirmation": "Enable ML Confirmation",
+		"breakevenOnRegimeChange": "Breakeven on Regime Change",
+		"oracleRegimeParanoiaFull": "0: Paranoia (Trend-following/Sideways)",
+		"oracleRegimeAmnesiaFull": "1: Amnesia (News/Trend)",
+		"oracleRegimeSchizophreniaFull": "2: Schizophrenia (Volatile)"
+	},
+	"bottomSheet": {
+		"editBlock": "Editing: {{blockName}}"
+	},
+	"errors": {
+		"popoverTrigger": "PopoverTrigger must be used within a Popover.",
+		"popoverContent": "PopoverContent must be used within a Popover."
+	},
+	"palette": {
+		"groups": {
+			"filters": "Filters",
+			"foundations": "Foundations",
+			"indicators": "Indicators",
+			"logic": "Logic",
+			"management": "Position Management"
+		}
+	},
+	"blocks": {
+		"standardParams": "Standard Parameters",
+		"dynamicParam": "[dyn.]",
+		"AND": {
+			"title": "'AND' Group"
+		},
+		"OR": {
+			"title": "'OR' Group"
+		},
+		"trading_session": {
+			"title": "Trading Session",
+			"desc": "Filter by trading session time (London, New York, etc.).",
+			"text": "Trade during"
+		},
+		"volatility_filter": {
+			"title": "Volatility Filter",
+			"desc": "Allows trading only at a certain level of volatility (ATR, BBW).",
+			"text": "When"
+		},
+		"trend_filter": {
+			"title": "Trend Filter",
+			"desc": "Identifies the presence of a trend using indicators like ADX.",
+			"text": "Trend by"
+		},
+		"senior_tf_confluence": {
+			"title": "Higher TF",
+			"desc": "Checks for nested conditions on a higher timeframe.",
+			"text": "On timeframe"
+		},
+		"btc_state_filter": {
+			"title": "BTC State",
+			"desc": "Filter by the current state of the BTC market (trend, flat).",
+			"required_state": "Required BTC state",
+			"states": {
+				"consolidation": "Consolidation",
+				"trending_up": "Trending Up",
+				"trending_down": "Trending Down",
+				"any": "Any"
+			}
+		},
+		"correlation": {
+			"title": "Correlation",
+			"desc": "Checks the correlation of the instrument with BTC or another asset.",
+			"correlation_with": "Correlation with",
+			"for": "for the last",
+			"bars": "bars"
+		},
+		"natr_filter": {
+			"title": "NATR Filter",
+			"desc": "Filters trades based on the normalized ATR.",
+			"text": "NATR (14) must be >"
+		},
+		"rel_vol_filter": {
+			"title": "Relative Volume",
+			"desc": "Filters trades based on relative volume.",
+			"text": "Relative Volume >"
+		},
+		"tape_analysis": {
+			"title": "Tape Analysis",
+			"desc": "Detects acceleration in the trade tape (by volume or count). Provides data for comparison.",
+			"text": "Tape analysis for",
+			"provides_data": "provides data"
+		},
+		"tape_condition": {
+			"title": "Tape Condition",
+			"desc": "Analyzes real-time trade tape activity.",
+			"for": "Time Window",
+			"check": "Metric to Check",
+			"absolute_value": "Absolute Value",
+			"multiplier_value": "Multiplier of Average",
+			"of_average": "of average",
+			"metrics": {
+				"delta_volume_usd": "Delta Volume ($)",
+				"buy_volume_usd": "Buy Volume ($)",
+				"sell_volume_usd": "Sell Volume ($)",
+				"total_volume_usd": "Total Volume ($)",
+				"buy_sell_ratio_volume": "Buy/Sell Ratio",
+				"acceleration_multiplier_volume": "Volume Acceleration"
+			}
+		},
+		"order_book_zone_condition": {
+			"title": "Order Book Zone Condition",
+			"desc": "Analyzes order density in a specified order book zone.",
+			"metric": "Metric to Check",
+			"in": "in",
+			"in_range": "in range of",
+			"metrics": {
+				"total_volume_usd": "Total Volume ($)",
+				"largest_level_usd": "Largest Level ($)",
+				"level_count": "Level Count"
+			},
+			"sides": {
+				"bids": "bids",
+				"asks": "asks"
+			},
+			"range_types": {
+				"atr_multiplier": "x ATR",
+				"ticks": "ticks"
+			}
+		},
+		"level_proximity_condition": {
+			"title": "Level Proximity",
+			"desc": "Checks if the price is close to a local level.",
+			"price": "Price Source",
+			"near_level_on": "Level Timeframe",
+			"tf_for": "Lookback Period",
+			"bars_within": "bars",
+			"within_proximity": "Within proximity of",
+			"price_sources": {
+				"close": "Close",
+				"high": "High",
+				"low": "Low"
+			}
+		},
+		"order_book_zone": {
+			"title": "Order Book Zone",
+			"desc": "Analyzes order density in a specified order book zone. Provides data for comparison.",
+			"text_1": "Analyze",
+			"text_2": "zone within",
+			"options": {
+				"bids": "bids",
+				"asks": "asks"
+			},
+			"range_type_percentage": "% of price",
+			"range_type_atr": "x ATR",
+			"range_type_ticks": "ticks",
+			"provides_data": "provides data"
+		},
+		"l2_microstructure_check": {
+			"title": "L2 Microstructure",
+			"desc": "Analyzes events in the order book, such as large orders or spoofing.",
+			"text_1": "Check for",
+			"options": {
+				"large_order": "a large order"
+			}
+		},
+		"local_level": {
+			"title": "Local Level",
+			"desc": "Identifies local highs/lows on a given timeframe.",
+			"text_1": "Price near local level on",
+			"text_2": "for the last",
+			"text_3": "bars, within",
+			"is_data_provider_label": "Use as data provider (disable proximity check)"
+		},
+		"significant_level": {
+			"title": "Significant Level",
+			"desc": "Identifies daily/weekly highs/lows.",
+			"text": "Price near level",
+			"levels": {
+				"daily_high": "Daily High",
+				"daily_low": "Daily Low",
+				"weekly_high": "Weekly High",
+				"weekly_low": "Weekly Low"
+			}
+		},
+		"round_level": {
+			"title": "Round Level",
+			"desc": "Checks the proximity of the price to a round price level.",
+			"text": "Price near round level within",
+			"pips": "pips"
+		},
+		"trend_direction": {
+			"title": "Trend Direction",
+			"desc": "Determines the trend by a combination of SMA and RSI.",
+			"text_on_tf": "Trend on",
+			"is": "is",
+			"trends": {
+				"long": "Long",
+				"short": "Short",
+				"any_trend": "Any Trend",
+				"flat": "Flat"
+			}
+		},
+		"classic_pattern": {
+			"title": "Classic Pattern",
+			"desc": "Recognizes candlestick patterns like engulfing, pin bar, etc.",
+			"text": "Pattern detected",
+			"bullish_engulfing": "Bullish Engulfing",
+			"bearish_engulfing": "Bearish Engulfing",
+			"pin_bar": "Pin Bar",
+			"doji": "Doji",
+			"inside_bar": "Inside Bar",
+			"sides": {
+				"any": "Any",
+				"bullish": "Bullish",
+				"bearish": "Bearish"
+			}
+		},
+		"volume_confirmation": {
+			"title": "Volume Confirmation",
+			"desc": "Checks if the candle volume exceeds the average value.",
+			"text": "Candle volume exceeds average by",
+			"x_average": "times"
+		},
+		"price_consolidation": {
+			"title": "Consolidation",
+			"desc": "Determines if the price is in a narrow range (flat).",
+			"text1": "Price is consolidating for the last",
+			"text2": "bars in a range <",
+			"text3": "x ATR"
+		},
+		"open_interest": {
+			"title": "Open Interest",
+			"desc": "Analyzes the change or absolute value of open interest.",
+			"analyze": "Analyze",
+			"for": "for the last",
+			"bars": "bars",
+			"analysis_types": {
+				"change_pct": "% Change",
+				"absolute_value": "Absolute Value"
+			}
+		},
+		"ma_cross_condition": {
+			"title": "MA Cross",
+			"desc": "Condition for the crossing of two moving averages.",
+			"ma": "MA(",
+			"crosses": ") crosses",
+			"shift": "(shift",
+			"brackets": ")"
+		},
+		"rsi_condition": {
+			"title": "RSI Condition",
+			"desc": "Checks the RSI value (above/below a certain level).",
+			"text": "RSI(",
+			"shift": "(shift",
+			"brackets": ")"
+		},
+		"value_comparison": {
+			"title": "Value Comparison",
+			"desc": "Compares two dynamic values (indicators, prices, block results)."
+		},
+		"macd_condition": {
+			"title": "MACD Condition",
+			"desc": "Checks for MACD line crosses or histogram value.",
+			"macd": "MACD(",
+			"shift": "(shift",
+			"brackets": ")"
+		},
+		"bollinger_bands_condition": {
+			"title": "Bollinger Bands",
+			"desc": "Checks the price position relative to Bollinger Bands.",
+			"price": "Price",
+			"shift": "(shift",
+			"brackets": ")"
+		},
+		"stochastic_condition": {
+			"title": "Stochastic",
+			"desc": "Checks for stochastic line crosses or their position.",
+			"stochastic": "Stochastic(",
+			"shift": "(shift",
+			"brackets": ")"
+		},
+		"price_vs_level": {
+			"title": "Price vs. Level",
+			"desc": "Compares the price with a dynamic level from another block."
+		},
+		"and": {
+			"title": "AND",
+			"desc": "Groups conditions. ALL nested conditions must be met."
+		},
+		"or": {
+			"title": "OR",
+			"desc": "Groups conditions. AT LEAST ONE nested condition must be met."
+		},
+		"trailing_stop": {
+			"title": "Trailing Stop",
+			"desc": "Moves the stop-loss to follow the price and protect profit.",
+			"text_1": "Activate when price reaches",
+			"text_2": "and trail with an offset of"
+		},
+		"move_to_breakeven": {
+			"title": "Move to Breakeven",
+			"desc": "Moves the stop-loss to breakeven when a target is reached.",
+			"text_1": "Move to breakeven when price reaches"
+		},
+		"conditional_exit": {
+			"title": "Conditional Exit",
+			"desc": "Closes the position when specific conditions are met."
+		},
+		"scale_in": {
+			"title": "Scale In",
+			"desc": "Adds to an open position when conditions are met.",
+			"text_1": "Add",
+			"text_2": "% of risk, max",
+			"text_3": "entries"
+		},
+		"conditional_management": {
+			"title": "Conditional Mngmt",
+			"desc": "Applies actions (trailing stop, BE) if conditions are met."
+		},
+		"modify_stop_loss": {
+			"title": "Modify Stop Loss",
+			"desc": "Modifies the stop-loss to a new dynamic value.",
+			"text_1": "Move stop-loss to"
+		},
+		"return_to_level": {
+			"title": "Return to Level",
+			"desc": "Waits for the price to return to a previously identified level.",
+			"text1": "Price returns to level from",
+			"within": "within",
+			"seconds": "sec",
+			"types": {
+				"touch": "Touch",
+				"breakout_retest": "Breakout & Retest"
+			},
+			"directions": {
+				"any": "Any direction",
+				"from_above": "From above",
+				"from_below": "From below"
+			}
+		},
+		"unknown_block": "Unknown Block",
+		"confirm_delete_block": "Are you sure you want to delete this block?",
+		"select_block_to_configure": "Select a block to configure.",
+		"delete": "Delete"
+	},
+	"dynamicInput": {
+		"linked": "🔗 Linked",
+		"block": "Block",
+		"candle": "Candle",
+		"market": "Market",
+		"staticValue": "Static value..."
+	},
+	"dynamicPicker": {
+		"categories": {
+			"position": "Position",
+			"candle": "Candle",
+			"blocks": "Blocks",
+			"market": "Market"
+		},
+		"noBlocks": "No blocks with available results."
+	},
+	"dynamic_sources": {
+		"position_state": {
+			"entry_price": "Entry Price",
+			"current_size_qty": "Current Size",
+			"unrealized_pnl_pct": "Unrealized PnL (%)",
+			"time_in_trade_sec": "Time in Trade (sec)",
+			"number_of_entries": "Number of Entries"
+		},
+		"candle": {
+			"open": "Open Price",
+			"high": "High Price",
+			"low": "Low Price",
+			"close": "Close Price",
+			"volume": "Volume"
+		},
+		"market": {
+			"btc_dominance": "BTC Dominance",
+			"funding_rate": "Funding Rate"
+		},
+		"block_results": {
+			"title": "Block Results"
+		}
+	},
+	"quotas": {
+		"run_backtest_per_day": "Backtests per day",
+		"use_ai_assistant_per_day": "AI requests per day",
+		"run_portfolio_backtest_per_day": "Portfolio backtests per day",
+		"run_optimization_per_month": "Optimizations per month",
+		"run_genetic_search_per_month": "Genetic searches per month",
+		"generate_dataset_per_month": "Dataset generations per month",
+		"train_model_per_month": "Model trainings per month"
+	}
+}

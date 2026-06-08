@@ -1,0 +1,70 @@
+
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DepthSight AI Trading Platform</title>
+    <script>
+      (() => {
+        const storageKey = "vite-ui-theme";
+        const defaultTheme = "dark";
+        const theme = localStorage.getItem(storageKey) || defaultTheme;
+        const root = window.document.documentElement;
+        root.classList.remove("light", "dark");
+        if (theme === "system") {
+          const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          root.classList.add(systemTheme);
+        } else {
+          root.classList.add(theme);
+        }
+      })();
+    </script>
+    <style>
+      :root {
+        --background: 220 13% 9%;
+      }
+      .light {
+        --background: 210 16% 95%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        margin: 0;
+      }
+
+      #preloader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: hsl(var(--background));
+        opacity: 1;
+        transition: opacity 0.5s ease-in-out;
+      }
+
+      body.loaded #preloader {
+        opacity: 0;
+        pointer-events: none;
+      }
+    </style>
+    <meta name="description" content="Professional AI Trading Platform" />
+    <meta name="author" content="DepthSight" />
+
+    <!-- Google Fonts for professional typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <meta property="og:title" content="DepthSight Trading Platform" />
+    <meta property="og:description" content="Professional Trading Platform" />
+    <meta property="og:type" content="website" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

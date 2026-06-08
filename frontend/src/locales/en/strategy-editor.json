@@ -1,0 +1,1351 @@
+{
+	"pageTitle": "Strategy Editor",
+	"pageTitleNew": "New Strategy",
+	"pageTitleEdit": "Edit Strategy",
+	"loading": "Loading strategy...",
+	"jsonView": "JSON View",
+	"visualView": "Visual View",
+	"dnd": {
+		"invalidDropTitle": "Invalid Action",
+		"invalidDropDesc": "A block from category '{{category}}' cannot be placed in this zone."
+	},
+	"palette": {
+		"title": "Components Palette",
+		"groups": {
+			"filters": "🌐 Market Filters",
+			"foundations": "🧱 Foundations",
+			"tape_condition": "[📈] Tape Condition",
+			"order_book_zone_condition": "[📚] Order Book Condition",
+			"level_proximity_condition": "[📐] Level Proximity Condition",
+			"indicators": "🚦 Indicators & Conditions",
+			"logic": "🔀 Logic Operators",
+			"management": "🛡️ Position Management"
+		}
+	},
+	"canvas": {
+		"stage1": {
+			"title": "Stage 1: Global Filters",
+			"desc": "When should the strategy be active at all?"
+		},
+		"stage2": {
+			"title": "Stage 2: Position Entry",
+			"desc": "What specific signal (setup) are we looking for?"
+		},
+		"stage3": {
+			"title": "Stage 3: Trade Initialization",
+			"desc": "How exactly do we open the position?"
+		},
+		"stage4": {
+			"title": "Stage 4: Position Management",
+			"desc": "What to do while the trade is open?"
+		},
+		"dropZone": {
+			"filters": "Drag filter blocks here...",
+			"conditions": "Drag condition blocks here...",
+			"management": "Drag management blocks here...",
+			"actions": "Drag action blocks here or add one below..."
+		},
+		"triggerTypeLabel": "Trigger Type",
+		"triggerTypeOnClose": "On Candle Close",
+		"triggerTypeOnTick": "On Every Tick",
+		"triggerTypeOnConditionMet": "On Condition Met (Intra-candle)",
+		"timeframeLabel": "Timeframe",
+		"actionDirectionLabel": "Direction",
+		"actionDirectionBoth": "Both",
+		"actionPositionSizeLabel": "Position Size",
+		"actionRiskTypePercent": "% of balance",
+		"actionRiskTypeFixedUsd": "Fixed USD",
+		"actionRiskTypeFixedAmount": "Fixed Amount",
+		"slLabel": "Stop Loss",
+		"slTypeAtr": "ATR Multiplier",
+		"slTypePercent": "% from price",
+		"slTypeFixed": "Fixed Price",
+		"slHintNoStop": "(0 = no stop loss)",
+		"tpLabel": "Take Profit",
+		"tpTypeRr": "R:R Multiplier",
+		"tpTypePercent": "% from price",
+		"tpTypeFixed": "Fixed Price",
+		"partialExitsLabel": "Partial Exits",
+		"partialExitSizePlaceholder": "Size %",
+		"partialExitValuePlaceholder": "Value",
+		"partialExitAtTp": "at TP",
+		"addPartialExitButton": "Add Partial TP",
+		"actionOrderTypeLabel": "Order Type",
+		"actionOrderTypeMarket": "Market",
+		"actionOrderTypeLimitBreak": "Limit Break",
+		"actionOrderTypeLimitRetest": "Limit Retest",
+		"actionEntryPriceLabel": "Entry Price",
+		"addWithAI": "✨ Add with AI",
+		"tradingViewWebhookHelpText": "Entry conditions are provided by TradingView webhook events. Internal trigger and foundation blocks are bypassed in this mode.",
+		"tradingViewWebhookAlert": "Webhook mode does not use manual entry condition blocks.",
+		"complexRiskWarning": "In DCA/GRID mode, this risk applies to the FIRST order. The total grid will utilize more funds from your balance.",
+		"slDcaWarning": "Warning! Your Stop Loss will trigger before the full DCA grid is executed (Max Drop: {{drop}}%). Increase SL or set to 0 (No SL)."
+	},
+	"configPanel": {
+		"paramsTitle": "Parameters",
+		"nameLabel": "Strategy Name",
+		"descriptionLabel": "Description",
+		"descriptionPlaceholder": "A brief description of the strategy's logic...",
+		"symbolLabel": "Symbol for Test/Trade",
+		"marketTypeLabel": "Market Type",
+		"foundationWeightsSectionTitle": "Foundations Logic",
+		"activateWeightsLabel": "Activate Foundation Weights",
+		"foundationWeightsTooltip": "When activated, the root logic for Entry Conditions switches to 'OR'. The signal will trigger if the sum of weights of the met conditions exceeds the threshold. When deactivated, the logic is 'AND', and ALL conditions must be met.",
+		"foundationWeightLabel": "Foundation Weight Threshold",
+		"foundationWeightsTitle": "Foundation Weights",
+		"foundationWeightsButton": "Configure Weights",
+		"noFoundationsAdded": "No foundations added to the strategy.",
+		"backtestTitle": "Backtest",
+		"periodLabel": "Period",
+		"selectPeriodPlaceholder": "Select a date range",
+		"runBacktestButton": "Run Backtest",
+		"runBacktestButtonLoading": "Running...",
+		"engineLabel": "Backtest Engine",
+		"engineTurboTitle": "Turbo",
+		"engineTurboDesc": "Vector-based (Fast)",
+		"engineTurboTooltipDisabled": "Unavailable: strategy contains heavy blocks (tape/orderbook) requiring Precision engine.",
+		"enginePrecisionTitle": "Precision",
+		"enginePrecisionDesc": "Candle-based (Accurate)",
+		"enginePrecisionTooltipPro": "Available only on PRO plan.",
+		"proBlocksWarning": "PRO blocks require Precision engine",
+		"deployTitle": "Deployment",
+		"deployDesc": "Will launch a new instance of this strategy to trade on the symbol specified above.",
+		"selectAccountLabel": "Trading Account",
+		"selectAccountPlaceholder": "Select account",
+		"noActiveKeysWarning": "No active API keys. Add and verify a key in Settings.",
+		"deployButton": "Deploy to Live",
+		"deployButtonLoading": "Deploying...",
+		"updateButton": "Update Configuration",
+		"saveButton": "Save as New Configuration",
+		"resetButton": "Reset",
+		"importButton": "Import JSON",
+		"exportButton": "Export JSON",
+		"toasts": {
+			"nameAndSymbolRequiredBacktest": "Strategy name and symbol are required to run a backtest.",
+			"nameRequired": "Strategy name is required.",
+			"mustSaveBeforeDeploy": "You must save the strategy before deploying it.",
+			"resetTitle": "Editor Reset",
+			"toastReset": "All blocks and settings have been reset to their default values.",
+			"saveSuccess": "Strategy configuration saved successfully.",
+			"updateSuccess": "Strategy configuration updated.",
+			"importSuccess": "Strategy configuration imported successfully.",
+			"importError": "Error importing JSON file."
+		},
+		"enableMlConfirmationLabel": "Enable ML Confirmation",
+		"enableMlConfirmationTooltip": "If enabled, the strategy will require a confirmation from the ML model before entering a trade.",
+		"symbolSelectionModeTitle": "Symbol Selection Mode",
+		"symbolSelectionModeTooltip": "This setting only applies to live trading.",
+		"dynamicSelectionProOnly": "Dynamic symbol selection is available for Pro users only.",
+		"symbolSelectionModeLabel": "Mode",
+		"symbolSelectionModeStatic": "Static List",
+		"symbolSelectionModeDynamicNatr": "Dynamic Filter by NATR",
+		"symbolSelectionModeDynamicOracle": "Dynamic Filter by Oracle",
+		"minNatrLabel": "Minimum NATR 1/30 (1m)",
+		"requiredOracleRegimeLabel": "Required Oracle Regime",
+		"minOracleConfidenceLabel": "Minimum Oracle Confidence (%)",
+		"maxConcurrentSymbolsLabel": "Max Concurrent Symbols",
+		"selectModePlaceholder": "Select a mode",
+		"selectRegimePlaceholder": "Select a regime",
+		"oracleFilterTitle": "Oracle Filter",
+		"enableOracleFilterLabel": "Enable Oracle Filter",
+		"enableOracleFilterTooltip": "Filter signals based on the current market regime predicted by the Oracle.",
+		"requiredRegimeLabel": "Required Regime",
+		"minConfidenceLabel": "Min Confidence (%)",
+		"oracleRegimeAmnesia": "Amnesia",
+		"oracleRegimeParanoia": "Paranoia",
+		"oracleRegimeSchizophrenia": "Schizophrenia",
+		"oracleRegimeAmnesiaFull": "1: Amnesia",
+		"oracleRegimeParanoiaFull": "0: Paranoia",
+		"oracleRegimeSchizophreniaFull": "2: Schizophrenia",
+		"signalSourceLabel": "Signal Source",
+		"signalSourceInternal": "Internal Rules Engine",
+		"signalSourceTradingView": "TradingView Webhook",
+		"breakevenOnRegimeChangeLabel": "Breakeven on Regime Change",
+		"webhookUrlLabel": "Webhook URL",
+		"copyButton": "Copy",
+		"testBuyButton": "Test Buy",
+		"testSellButton": "Test Sell",
+		"lastStatusLabel": "Last Status",
+		"optimizeInLabButton": "Optimize in Laboratory",
+		"optimizeGeneticButton": "Genetic Optimization (Gene Pool)",
+		"optimizeBayesianButton": "Bayesian Optimization (Optuna)"
+	},
+	"jsonEditor": {
+		"title": "JSON Configuration",
+		"description": "You can directly edit the JSON structure of the strategy here. Changes will be reflected in the visual editor after applying.",
+		"placeholder": "Paste your strategy JSON here...",
+		"applyButton": "Apply & View Visually",
+		"toastApplySuccessTitle": "JSON Applied",
+		"toastApplySuccess": "The strategy has been updated from the JSON configuration.",
+		"toastParseError": "JSON Parse Error"
+	},
+	"blocks": {
+		"trading_session": {
+			"title": "Trading Session",
+			"desc": "Trade only during specified hours.",
+			"text": "Trade only during",
+			"modes": {
+				"session": "By Session",
+				"hours": "By Hours"
+			},
+			"sessions": {
+				"london": "London",
+				"new_york": "New York",
+				"asia": "Asia",
+				"sydney": "Sydney"
+			},
+			"include": "Include",
+			"exclude": "Exclude",
+			"tooltip": {
+				"explanation": "Allows the strategy to operate only during specific UTC hours. Useful for trading during specific market sessions (London, New York, etc.).",
+				"params": [
+					{
+						"name": "Session",
+						"desc": "Select the trading session during which the strategy will be active."
+					}
+				],
+				"defaults": "Session: London"
+			}
+		},
+		"volatility_filter": {
+			"title": "Volatility Filter",
+			"desc": "Trade when ATR or BBW is above/below a value.",
+			"text": "Volatility using",
+			"tooltip": {
+				"explanation": "Filters entry signals based on the current market volatility. Uses the ATR (Average True Range) or BBW (Bollinger Bands Width) indicator.",
+				"params": [
+					{
+						"name": "Indicator",
+						"desc": "ATR for absolute volatility, BBW for relative volatility."
+					},
+					{
+						"name": "Operator",
+						"desc": "Greater than (>) to trade in a volatile market, less than (<) to trade in a calm market."
+					},
+					{
+						"name": "Value",
+						"desc": "The threshold value of the indicator for comparison."
+					}
+				],
+				"defaults": "ATR > 1.5"
+			}
+		},
+		"trend_filter": {
+			"title": "Trend Filter",
+			"desc": "Trade when ADX is above a value.",
+			"text": "Trend is active if",
+			"tooltip": {
+				"explanation": "Allows trading only when a strong trend is present, as determined by the ADX (Average Directional Index) indicator.",
+				"params": [
+					{
+						"name": "ADX (14)",
+						"desc": "The trend strength indicator. A value above the threshold indicates a trend (either bullish or bearish)."
+					},
+					{
+						"name": "Threshold",
+						"desc": "A commonly accepted value for defining a trend is 25."
+					}
+				],
+				"defaults": "ADX > 25.0"
+			}
+		},
+		"senior_tf_confluence": {
+			"title": "Senior TF Confluence",
+			"desc": "Container for checks on a higher timeframe.",
+			"text": "On timeframe",
+			"tooltip": {
+				"explanation": "This is a logical container. All conditions placed inside it will be checked against data from the higher timeframe specified in the parameters.",
+				"params": [
+					{
+						"name": "Timeframe",
+						"desc": "Select the timeframe on which the nested conditions will be checked."
+					}
+				],
+				"defaults": "Timeframe: 1h"
+			}
+		},
+		"market_activity": {
+			"title": "Market Activity",
+			"desc": "Check NATR / Relative Volume.",
+			"text": "Market Activity",
+			"tooltip": {
+				"explanation": "Assesses if the market is 'alive' enough for trading. It checks two key metrics: normalized volatility (NATR) and volume spikes (Relative Volume).",
+				"params": [
+					{
+						"name": "NATR",
+						"desc": "Normalized ATR (in %). Shows volatility relative to price. A value > 1.0% usually indicates good activity."
+					},
+					{
+						"name": "Rel.Vol",
+						"desc": "Relative Volume. Shows how many times the current candle's volume is higher than the average. A value > 1.5-2.0 indicates a spike in interest."
+					}
+				],
+				"defaults": "NATR > 1.0 and Rel.Vol > 1.5"
+			}
+		},
+		"natr_filter": {
+			"title": "NATR Filter",
+			"desc": "Checks if NATR is above a certain threshold.",
+			"tooltip": {
+				"explanation": "Filters signals based on normalized volatility (NATR). Allows trading only when the market is active enough.",
+				"params": [
+					{
+						"name": "NATR Threshold",
+						"desc": "The minimum NATR value (in %) required to pass the filter. A value > 1.0 usually indicates good activity."
+					}
+				],
+				"defaults": "NATR > 1.0"
+			}
+		},
+		"rel_vol_filter": {
+			"title": "Relative Volume Filter",
+			"desc": "Checks if relative volume is above a threshold.",
+			"text_1": "Relative Volume >",
+			"lookback": "period",
+			"tooltip": {
+				"explanation": "Filters signals based on a spike in trading volume. Compares the current candle's volume to the average volume.",
+				"params": [
+					{
+						"name": "Rel.Vol Threshold",
+						"desc": "The multiplier for the average volume. A value > 1.5 indicates a significant volume spike."
+					}
+				],
+				"defaults": "Rel.Vol > 1.5"
+			}
+		},
+		"order_book_zone": {
+			"title": "Order Book Zone Analysis",
+			"desc": "Analyzes volume in a specified price range from the current price",
+			"text_1": "Analyze zone in",
+			"text_2": "within a range of",
+			"range_type_percentage": "Percentage",
+			"range_type_atr": "ATR Multiplier",
+			"range_type_ticks": "Ticks",
+			"options": {
+				"bids": "buys",
+				"asks": "sells"
+			}
+		},
+		"l2_microstructure_check": {
+			"title": "L2 Microstructure",
+			"desc": "Detailed analysis of the full L2 book for spoofing, icebergs etc. Best for final triggers.",
+			"text_1": "L2 Analysis:",
+			"options": {
+				"large_order": "Large Order"
+			},
+			"tooltip": {
+				"explanation": "Detailed analysis of the full L2 book for spoofing, icebergs etc. Best for final triggers.",
+				"params": [
+					{
+						"name": "Check Type",
+						"desc": "The type of L2 microstructure check to perform."
+					},
+					{
+						"name": "Single Order Size USD",
+						"desc": "The size of a single large order to look for."
+					}
+				],
+				"defaults": "L2 Analysis: Large Order > 250000 USD"
+			}
+		},
+		"significant_level": {
+			"title": "Significant Level",
+			"desc": "Proximity to key High/Low levels.",
+			"text_1": "Proximity to",
+			"text_2": "within",
+			"levels": {
+				"daily_high": "Daily High",
+				"daily_low": "Daily Low",
+				"weekly_high": "Weekly High",
+				"weekly_low": "Weekly Low"
+			},
+			"options": { "percentage": "%", "atr_multiplier": "x ATR" },
+			"tooltip": {
+				"explanation": "Checks if the current price is near key levels like the previous day's or week's High/Low. Proximity is determined as a fraction of ATR.",
+				"params": [
+					{
+						"name": "Level Type",
+						"desc": "Select the specific level (Daily High, Daily Low, etc.) to check against."
+					}
+				],
+				"defaults": "Proximity to Daily High"
+			}
+		},
+		"round_level": {
+			"title": "Round Level",
+			"desc": "Proximity to a round number price.",
+			"text": "Proximity to round level <",
+			"options": { "percentage": "%", "pips": "pips" },
+			"tooltip": {
+				"explanation": "Checks if the price is near a 'round' number (e.g., 100.00, 1.5000, 0.75000). Such levels often act as psychological barriers.",
+				"params": [
+					{
+						"name": "Proximity (pips)",
+						"desc": "The allowable distance to the round level in pips (minimum price increments)."
+					}
+				],
+				"defaults": "Proximity < 10 pips"
+			}
+		},
+		"trend_direction": {
+			"title": "Trend Direction",
+			"desc": "Based on a long-period MA/EMA.",
+			"text": "Trend by",
+			"text_on_tf": "Trend on",
+			"is": "is",
+			"trends": {
+				"long": "Long",
+				"short": "Short",
+				"any_trend": "Any Trend",
+				"flat": "Flat"
+			},
+			"tooltip": {
+				"explanation": "Determines the global trend direction based on the price's position relative to a long-period moving average (typically EMA 200).",
+				"params": [
+					{ "name": "Source", "desc": "The type of moving average (EMA/SMA)." },
+					{
+						"name": "Period",
+						"desc": "The averaging period. 200 is a standard for defining the long-term trend."
+					}
+				],
+				"defaults": "Trend by EMA(200)"
+			}
+		},
+		"volume_confirmation": {
+			"title": "Volume Confirmation",
+			"desc": "Check for a volume spike.",
+			"text": "Volume spike",
+			"lookback": "avg period",
+			"tooltip": {
+				"explanation": "Checks if an entry signal was confirmed by a spike in trading volume. The condition is true if the signal candle's volume exceeds the average volume over the last N candles by a specified multiplier.",
+				"params": [
+					{
+						"name": "Multiplier",
+						"desc": "How many times the volume must exceed the average."
+					}
+				],
+				"defaults": "Volume > 1.5 x average"
+			}
+		},
+		"local_level": {
+			"title": "Local Level",
+			"desc": "Proximity to a local High/Low.",
+			"text_1": "On",
+			"text_2": "TF, lookback",
+			"text_3": "bars, proximity",
+			"level_type_label": "level",
+			"level_types": { "high": "High", "low": "Low", "all": "High/Low" },
+			"is_data_provider_label": "Use as data provider (disable proximity check)",
+			"tooltip": {
+				"explanation": "Finds local highs and lows over a specified period on the selected timeframe and checks if the current price is near one of these levels.",
+				"params": [
+					{
+						"name": "Timeframe",
+						"desc": "The timeframe to search for levels."
+					},
+					{
+						"name": "Lookback bars",
+						"desc": "The number of recent candles to analyze."
+					},
+					{
+						"name": "Level type",
+						"desc": "Use local highs, local lows, or both."
+					},
+					{
+						"name": "Proximity type",
+						"desc": "How to measure proximity: in ATR multipliers or as a percentage of the price."
+					},
+					{
+						"name": "Proximity value",
+						"desc": "The value for the ATR multiplier or percentage."
+					}
+				],
+				"defaults": "On 15m TF, for 20 bars, High level, proximity ATR x 0.25"
+			}
+		},
+		"tape_analysis": {
+			"title": "Tape Analysis",
+			"desc": "Calculates tape activity metrics over a specified period",
+			"text": "Tape analysis for"
+		},
+		"classic_pattern": {
+			"title": "Classic Pattern",
+			"desc": "Presence of a bullish/bearish pattern.",
+			"text": "Classic pattern",
+			"bullish_engulfing": "Bullish Engulfing",
+			"bearish_engulfing": "Bearish Engulfing",
+			"pin_bar": "Pin Bar",
+			"doji": "Doji",
+			"inside_bar": "Inside Bar",
+			"sides": {
+				"any": "Any",
+				"bullish": "Bullish",
+				"bearish": "Bearish"
+			},
+			"tooltip": {
+				"explanation": "Checks for the presence of one of the classic candlestick patterns on the last closed candle of the working timeframe.",
+				"params": [
+					{
+						"name": "Pattern Name",
+						"desc": "Select a pattern from the list to check for."
+					}
+				],
+				"defaults": "Pattern: Bullish Engulfing"
+			}
+		},
+		"price_consolidation": {
+			"title": "Price Consolidation",
+			"desc": "Check for a sideways market (range).",
+			"text_1": "Price consolidation for",
+			"text_2": "bars, max range",
+			"text_3": "x ATR",
+			"tooltip": {
+				"explanation": "Checks if the price is in a consolidation phase (range-bound market) by comparing the range of the last N candles to the current ATR.",
+				"params": [
+					{
+						"name": "Lookback Period",
+						"desc": "The number of recent candles to check for consolidation."
+					},
+					{
+						"name": "Max Range (ATR)",
+						"desc": "The maximum allowed range (High - Low) for the lookback period, expressed as a multiplier of the current ATR. A smaller value means a tighter consolidation."
+					}
+				],
+				"defaults": "Lookback: 10, Max Range: 0.8 x ATR"
+			}
+		},
+		"btc_state_filter": {
+			"title": "BTC State",
+			"desc": "Filter by BTC's trend or range.",
+			"required_state": "Required BTC State:",
+			"states": {
+				"consolidation": "Consolidation",
+				"trending_up": "Trending Up",
+				"trending_down": "Trending Down",
+				"any": "Any"
+			},
+			"tooltip": {
+				"explanation": "Allows filtering altcoin signals based on the current state of the BTC market. Helps avoid entering trades against the 'market leader'.",
+				"params": [
+					{
+						"name": "Required State",
+						"desc": "Select the BTC state during which trading is allowed."
+					}
+				],
+				"defaults": "State: Consolidation"
+			}
+		},
+		"open_interest": {
+			"title": "Open Interest",
+			"desc": "Analyze changes in open interest (OI).",
+			"analyze": "Analyze:",
+			"analysis_types": {
+				"change_pct": "Change (%)",
+				"absolute_value": "Absolute Value"
+			},
+			"lookback": "Period (candles):",
+			"operator": "Operator:",
+			"value": "Value:",
+			"tooltip": {
+				"explanation": "Uses the dynamics of Open Interest as an additional foundation for entry. For example, a rise in OI along with a price increase confirms trend strength.",
+				"params": [
+					{
+						"name": "Analyze",
+						"desc": "What to check: the percentage change in OI or its absolute value."
+					},
+					{
+						"name": "Lookback Period",
+						"desc": "The number of recent candles for analysis."
+					},
+					{ "name": "Operator", "desc": "Greater than (>) or less than (<)." },
+					{ "name": "Value", "desc": "The threshold value for comparison." }
+				],
+				"defaults": "OI Change (%) over 5 bars > 1.0"
+			}
+		},
+		"correlation": {
+			"title": "Correlation",
+			"desc": "Check correlation with another asset.",
+			"correlation_with": "Correlation with",
+			"lookback": "Period (candles):",
+			"operator": "Operator:",
+			"value": "Value:",
+			"tooltip": {
+				"explanation": "Filters signals if the current instrument is too strongly or weakly correlated with BTC. Helps find instruments that move independently of the main market.",
+				"params": [
+					{
+						"name": "Lookback Period",
+						"desc": "The number of recent candles to calculate the correlation."
+					},
+					{ "name": "Operator", "desc": "Greater than (>) or less than (<)." },
+					{
+						"name": "Value",
+						"desc": "The threshold value for the correlation coefficient (from -1 to 1)."
+					}
+				],
+				"defaults": "Correlation with BTC over 50 bars < 0.7"
+			}
+		},
+		"ma_cross_condition": {
+			"title": "MA Cross",
+			"desc": "When a fast MA crosses a slow MA.",
+			"ma_label": "MA",
+			"crosses_label": "crosses",
+			"options": { "above": "Above", "below": "Below" },
+			"shift_label_start": "Shift [-",
+			"shift_label_end": "]",
+			"tooltip": {
+				"explanation": "The condition becomes true when a 'fast' moving average crosses a 'slow' moving average from above or below.",
+				"params": [
+					{ "name": "Fast Period", "desc": "The period for the fast MA." },
+					{ "name": "Slow Period", "desc": "The period for the slow MA." },
+					{
+						"name": "Direction",
+						"desc": "Crossover from above (buy signal) or from below (sell signal)."
+					},
+					{
+						"name": "Shift",
+						"desc": "The offset in candles to check (0 = current candle)."
+					}
+				],
+				"defaults": "EMA(9) crosses above EMA(21)"
+			}
+		},
+		"rsi_condition": {
+			"title": "RSI Condition",
+			"desc": "When RSI is above/below a value.",
+			"tooltip": {
+				"explanation": "Checks if the RSI (Relative Strength Index) indicator is in the overbought (usually > 70) or oversold (usually < 30) zone.",
+				"params": [
+					{
+						"name": "Period",
+						"desc": "The RSI calculation period (standard is 14)."
+					},
+					{ "name": "Operator", "desc": "Greater than (>) or less than (<)." },
+					{ "name": "Value", "desc": "The threshold value (e.g., 70 or 30)." },
+					{
+						"name": "Shift",
+						"desc": "The offset in candles to check (0 = current candle)."
+					}
+				],
+				"defaults": "RSI(14) > 70"
+			}
+		},
+		"value_comparison": {
+			"title": "Value Comparison",
+			"desc": "Compares two dynamic or static values",
+			"tooltip": {
+				"explanation": "A universal block for comparing two values. These values can be static numbers, results from other blocks, candle prices, or position parameters. Allows creating flexible conditions, for example, 'Close Price > EMA(20)' or 'RSI < 30'.",
+				"params": [
+					{
+						"name": "Left Operand",
+						"desc": "The first value for comparison. Can be a static number, the result of another block, a candle price, or a position parameter."
+					},
+					{
+						"name": "Operator",
+						"desc": "Comparison type: greater than (>), less than (<), greater than or equal to (>=), less than or equal to (<=)."
+					},
+					{
+						"name": "Right Operand",
+						"desc": "The second value for comparison. Similar to the left operand."
+					}
+				],
+				"defaults": "Left Operand > Right Operand"
+			}
+		},
+		"macd_condition": {
+			"title": "MACD Condition",
+			"desc": "MACD Line vs Signal Line or Histogram.",
+			"text_1": "MACD(",
+			"text_2": ")",
+			"text_comma": ",",
+			"options": {
+				"macd_cross_above_signal": "MACD line crosses above Signal",
+				"macd_cross_below_signal": "MACD line crosses below Signal",
+				"hist_gt_zero": "Histogram > 0",
+				"hist_lt_zero": "Histogram < 0"
+			},
+			"shift_label_start": "Shift [-",
+			"shift_label_end": "]",
+			"tooltip": {
+				"explanation": "Checks the state of the MACD indicator. It can track the crossover of the main and signal lines or the value of the histogram.",
+				"params": [
+					{
+						"name": "Periods",
+						"desc": "Standard periods: 12 (fast), 26 (slow), 9 (signal)."
+					},
+					{
+						"name": "Condition",
+						"desc": "Select the type of MACD signal to track."
+					},
+					{
+						"name": "Shift",
+						"desc": "The offset in candles to check (0 = current candle)."
+					}
+				],
+				"defaults": "MACD line crosses above Signal line"
+			}
+		},
+		"bollinger_bands_condition": {
+			"title": "Bollinger Bands",
+			"desc": "Price interaction with bands.",
+			"price_label": "Price",
+			"source_options": { "close": "Close", "high": "High", "low": "Low" },
+			"location_options": {
+				"above_upper": "closes above Upper Band",
+				"below_lower": "closes below Lower Band"
+			},
+			"shift_label_start": "Shift [-",
+			"shift_label_end": "]",
+			"tooltip": {
+				"explanation": "Checks where the price closed relative to the upper or lower Bollinger Bands.",
+				"params": [
+					{
+						"name": "Price Source",
+						"desc": "Which candle price to use (Close, High, Low)."
+					},
+					{
+						"name": "Location",
+						"desc": "Close above the upper band or below the lower band."
+					},
+					{
+						"name": "Shift",
+						"desc": "The offset in candles to check (0 = current candle)."
+					}
+				],
+				"defaults": "Price Close closes above the Upper Band"
+			}
+		},
+		"stochastic_condition": {
+			"title": "Stochastic Condition",
+			"desc": "Check for crossovers or zones.",
+			"text_1": "Stochastic (",
+			"text_2": ")",
+			"options": {
+				"k_cross_above_d": "%K crosses above %D",
+				"k_cross_below_d": "%K crosses below %D",
+				"k_above_level": "%K > level",
+				"k_below_level": "%K < level"
+			},
+			"shift_label_start": "Shift [-",
+			"shift_label_end": "]",
+			"tooltip": {
+				"explanation": "Checks the state of the Stochastic oscillator, including crossovers of the %K and %D lines or being in overbought/oversold zones.",
+				"params": [
+					{
+						"name": "Condition",
+						"desc": "Select the type of Stochastic signal to track."
+					},
+					{
+						"name": "Level",
+						"desc": "Used for 'greater than/less than level' conditions."
+					},
+					{
+						"name": "Shift",
+						"desc": "The offset in candles to check (0 = current candle)."
+					}
+				],
+				"defaults": "%K crosses above %D"
+			}
+		},
+		"price_vs_level": {
+			"title": "Price vs Level",
+			"desc": "Compare price with a dynamic level.",
+			"tooltip": {
+				"explanation": "A universal block for comparing two values, where one can be dynamic (e.g., candle close price, another block's result, position entry price).",
+				"params": [
+					{
+						"name": "Source 1",
+						"desc": "The first value to compare. Can be a candle price or another dynamic parameter."
+					},
+					{
+						"name": "Source 2",
+						"desc": "The second value. You can link another block's result here (e.g., 'local_level') or a position parameter."
+					}
+				],
+				"defaults": "Close[0] > (not linked)"
+			}
+		},
+		"and": {
+			"title": "'AND' Group",
+			"desc": "All nested conditions must be true.",
+			"tooltip": {
+				"explanation": "A logical operator. The entire group condition will be true only if EVERY nested condition is true."
+			}
+		},
+		"AND": {
+			"title": "'AND' Group",
+			"desc": "All nested conditions must be true.",
+			"tooltip": {
+				"explanation": "A logical operator. The entire group condition will be true only if EVERY nested condition is true."
+			}
+		},
+		"or": {
+			"title": "'OR' Group",
+			"desc": "At least one nested condition must be true.",
+			"tooltip": {
+				"explanation": "A logical operator. The entire group condition will be true if AT LEAST ONE of the nested conditions is true."
+			}
+		},
+		"OR": {
+			"title": "'OR' Group",
+			"desc": "At least one nested condition must be true.",
+			"tooltip": {
+				"explanation": "A logical operator. The entire group condition will be true if AT LEAST ONE of the nested conditions is true."
+			}
+		},
+		"trailing_stop": {
+			"title": "Trailing Stop",
+			"desc": "Trail the stop loss behind the price.",
+			"display_text": "Enable Trailing Stop",
+			"text_1": "Enable Trailing Stop by",
+			"text_2": "with value",
+			"options": { "atr": "ATR", "percent": "Percent" },
+			"exchange_mode": "Exchange-side",
+			"tooltip": {
+				"explanation": "Automatically moves the stop loss to follow the price as it moves in a profitable direction. This helps to protect accumulated profits.",
+				"params": [
+					{
+						"name": "Type",
+						"desc": "How to measure the distance from the price to the stop: in ATR multipliers or as a percentage."
+					},
+					{
+						"name": "Value",
+						"desc": "The value of the ATR multiplier or percentage."
+					}
+				],
+				"defaults": "Type: ATR, Value: 2.5"
+			}
+		},
+		"move_to_breakeven": {
+			"title": "Move to Breakeven",
+			"desc": "Remove risk after reaching a target.",
+			"display_text": "Move SL to Breakeven when profit reaches",
+			"text_1": "Move SL to Breakeven when profit reaches",
+			"options": {
+				"atr_multiplier": "* ATR",
+				"percent_from_price": "% of Price",
+				"rr_multiplier": "R:R"
+			},
+			"tooltip": {
+				"explanation": "When a position reaches a certain profit level, this block automatically moves the stop loss to the entry price, making the trade risk-free.",
+				"params": [
+					{
+						"name": "Profit Target (in ATR)",
+						"desc": "How many ATRs the price must move in profit for the stop loss to be moved to breakeven."
+					}
+				],
+				"defaults": "Target: 1.0 * ATR"
+			}
+		},
+		"conditional_exit": {
+			"title": "Conditional Exit",
+			"desc": "Close position if conditions are met.",
+			"display_text": "Exit position if conditions are met",
+			"text_1": "Exit position if conditions are met:",
+			"tooltip": {
+				"explanation": "Allows defining a set of conditions (similar to entry conditions) that, when met, will immediately close the open position at the market price."
+			}
+		},
+		"scale_in": {
+			"title": "Scale In / Add to Position",
+			"desc": "Increase position size if conditions are met.",
+			"add_size_pct_of_initial_risk": "Add Size (% of Initial Risk)",
+			"max_entries": "Max Entries",
+			"tooltip": {
+				"explanation": "Allows adding to an already open, profitable position. Conditions for adding are placed inside this block.",
+				"params": [
+					{
+						"name": "Add Size",
+						"desc": "The size of each new position chunk, expressed as a % of the initial risk. 100% means each new entry will have the same risk as the initial one."
+					},
+					{
+						"name": "Max Entries",
+						"desc": "The total maximum number of entries for the position, including the very first one."
+					}
+				],
+				"defaults": "Size: 100%, Max Entries: 3"
+			}
+		},
+		"conditional_management": {
+			"title": "Conditional Management (IF/THEN)",
+			"desc": "Execute an action if a condition is true.",
+			"if": "IF",
+			"then": "THEN",
+			"quick_actions": "Quick actions",
+			"tooltip": {
+				"explanation": "A powerful logic block for position management. IF the conditions in the left part become true, THEN the actions from the right part are executed. For example: IF PnL > 2%, THEN move stop loss to breakeven.",
+				"params": [
+					{
+						"name": "IF Zone",
+						"desc": "A container for condition blocks that will be checked on every tick."
+					},
+					{
+						"name": "THEN Zone",
+						"desc": "A container for action blocks (Modify SL, Trailing Stop) that will trigger once when the IF condition is met."
+					}
+				],
+				"defaults": "Empty IF/THEN structure"
+			}
+		},
+		"modify_stop_loss": {
+			"title": "Modify Stop Loss",
+			"desc": "Move SL to a new price.",
+			"new_sl_price": "New SL Price",
+			"tooltip": {
+				"explanation": "A direct action to modify a position's stop loss. Moves the SL to a specific new price. This price can be set statically or linked to a dynamic value (e.g., a level found by another block).",
+				"params": [
+					{
+						"name": "New SL Price",
+						"desc": "The target price for the new stop loss."
+					}
+				],
+				"defaults": "New Price: (not linked)"
+			}
+		},
+		"modify_take_profit": {
+			"title": "Modify Take Profit",
+			"desc": "Move TP to a new price.",
+			"new_tp_price": "New TP Price",
+			"tooltip": {
+				"explanation": "A direct action to modify a position's take profit. Moves the TP to a specific new price. This price can be set statically or linked to a dynamic value.",
+				"params": [
+					{
+						"name": "New TP Price",
+						"desc": "The target price for the new take profit."
+					}
+				],
+				"defaults": "New Price: (not linked)"
+			}
+		},
+		"close_position": {
+			"title": "Close Position",
+			"desc": "Close the position at market.",
+			"text_1": "Close position at market",
+			"tooltip": {
+				"explanation": "Immediately closes the open position at the current market price when triggered.",
+				"defaults": "Closes the position immediately"
+			}
+		},
+		"dca_management": {
+			"title": "DCA Management",
+			"desc": "Automatic position averaging via martingale or custom conditions.",
+			"so": "SO Orders:",
+			"mult": "Vol. Mult:",
+			"step": "Step Type:",
+			"step_mult": "Step Mult:",
+			"tooltip": {
+				"explanation": "Allows automatic position averaging when price moves against you, improving the average entry price. Supports limit grids (by % or ATR) with step multiplier option, and averaging based on custom visual conditions.",
+				"params": [
+					{ "name": "SO Orders", "desc": "Maximum number of safety orders." },
+					{
+						"name": "Vol. Mult",
+						"desc": "Volume multiplier for each subsequent order (martingale)."
+					},
+					{
+						"name": "Step",
+						"desc": "Step type between orders (% from price, ATR, or custom conditions)."
+					},
+					{
+						"name": "Step Mult",
+						"desc": "Step multiplier. Increases the distance between each subsequent safety order."
+					}
+				],
+				"defaults": "SO: 5, Mult: 2.0, Step: 1.0%"
+			}
+		},
+		"grid_management": {
+			"title": "GRID Management",
+			"desc": "Place a grid of limit orders within a specified range.",
+			"levels": "Levels Count:",
+			"range": "Range Type:",
+			"upper": "Upper Bound:",
+			"lower": "Lower Bound:",
+			"tooltip": {
+				"explanation": "Places a grid of limit orders within a specified price range. Allows for gradual entry or exit from a position.",
+				"params": [
+					{ "name": "Levels", "desc": "Number of levels in the grid." },
+					{
+						"name": "Range",
+						"desc": "How to define the range (%, ATR, or fixed prices)."
+					},
+					{ "name": "Bounds", "desc": "Upper and lower bounds of the grid." }
+				],
+				"defaults": "Levels: 10, Range: 5%"
+			}
+		},
+		"tape_condition": {
+			"title": "Tape Condition",
+			"desc": "Analyzes trade tape activity.",
+			"check": "Check",
+			"for": "for",
+			"of_average": "of average",
+			"absolute_value": "Absolute value",
+			"multiplier_value": "Multiplier of average",
+			"metrics": {
+				"delta_volume_usd": "Volume Delta ($)",
+				"buy_volume_usd": "Buy Volume ($)",
+				"sell_volume_usd": "Sell Volume ($)",
+				"total_volume_usd": "Total Volume ($)",
+				"buy_sell_ratio_volume": "Buy/Sell Ratio",
+				"acceleration_multiplier_volume": "Volume Acceleration"
+			},
+			"tooltip": {
+				"explanation": "Composite block for analyzing real-time trade tape. Allows checking various tape activity metrics (e.g., volume delta, buy/sell ratio) over a specified time interval.",
+				"params": [
+					{ "name": "Metric", "desc": "Select the metric for tape analysis." },
+					{ "name": "Operator", "desc": "Comparison operator (>, <, >=, <=)." },
+					{ "name": "Value", "desc": "Threshold value for the metric." },
+					{
+						"name": "Period (sec)",
+						"desc": "Time window in seconds for aggregating tape data."
+					}
+				],
+				"defaults": "Check Total Volume ($) > multiplier of average x2 for 5s"
+			}
+		},
+		"order_book_zone_condition": {
+			"title": "Order Book Condition",
+			"desc": "Checks liquidity density in the order book.",
+			"check": "Check",
+			"within": "within",
+			"is": "is",
+			"in": "in",
+			"in_range": "within range",
+			"metrics": {
+				"total_volume_usd": "Total Volume ($)",
+				"largest_level_usd": "Largest Level ($)",
+				"level_count": "Number of Levels"
+			},
+			"sides": {
+				"bids": "bids",
+				"asks": "asks"
+			},
+			"range_types": {
+				"atr_multiplier": "ATR Multiplier",
+				"ticks": "Ticks"
+			},
+			"tooltip": {
+				"explanation": "Composite block for analyzing liquidity density in the exchange order book. Allows checking total volume, largest level, or number of levels within a specified range (in percentage, ATR multipliers, or ticks) from the current price.",
+				"params": [
+					{
+						"name": "Metric",
+						"desc": "Select the metric for order book analysis."
+					},
+					{
+						"name": "Side",
+						"desc": "Which side of the order book to analyze (bids or asks)."
+					},
+					{
+						"name": "Range Value",
+						"desc": "The value of the range for analysis."
+					},
+					{
+						"name": "Range Type",
+						"desc": "How to define the range: in %, ATR multipliers, or ticks."
+					},
+					{ "name": "Operator", "desc": "Comparison operator (>, <, >=, <=)." },
+					{ "name": "Value", "desc": "Threshold value for the metric." }
+				],
+				"defaults": "Total Volume ($) in bids within range 2% > 1000000"
+			}
+		},
+		"level_proximity_condition": {
+			"title": "Level Proximity Condition",
+			"desc": "Checks price proximity to a local level.",
+			"check": "Check",
+			"lookback": "for",
+			"within": "within",
+			"price": "Price",
+			"near_level_on": "near level on",
+			"tf_for": "TF for",
+			"bars_within": "bars within",
+			"price_sources": {
+				"close": "Close",
+				"high": "High",
+				"low": "Low"
+			},
+			"is_data_provider_label": "Use as data provider",
+			"tooltip": {
+				"explanation": "Composite block for checking price proximity to a local level (High/Low) on a given timeframe over a specified number of bars. Proximity is measured in ATR multipliers or percentages.",
+				"params": [
+					{
+						"name": "Price Source",
+						"desc": "Which price to use for checking (Close, High, Low)."
+					},
+					{
+						"name": "Level Timeframe",
+						"desc": "The timeframe on which the level is searched."
+					},
+					{
+						"name": "Lookback Bars",
+						"desc": "The number of recent candles to search for the level."
+					},
+					{
+						"name": "Proximity Value",
+						"desc": "The value of proximity (ATR multiplier or percentage)."
+					},
+					{
+						"name": "Proximity Type",
+						"desc": "How to measure proximity: in ATR multipliers or percentages."
+					}
+				],
+				"defaults": "Close price near level on 5m TF for 20 bars within 0.25 x ATR"
+			}
+		},
+		"tradingview_signal": {
+			"title": "TradingView Signal",
+			"desc": "Awaits a TradingView webhook with a specific ID.",
+			"signal_id_label": "Signal ID",
+			"ttl_label": "TTL (seconds)",
+			"weight_label": "Weight (Foundation)",
+			"tooltip": {
+				"explanation": "This block allows you to use external signals from TradingView as part of your logic. When a webhook arrives with a matching ID, this block becomes 'True' for the specified number of seconds.",
+				"params": [
+					{
+						"name": "Signal ID",
+						"desc": "A unique identifier that you will specify in your TradingView webhook message."
+					},
+					{
+						"name": "TTL",
+						"desc": "How long the signal remains active after receiving the webhook (in seconds)."
+					},
+					{
+						"name": "Weight",
+						"desc": "The weight of this signal if you are using weighted foundation logic."
+					}
+				],
+				"defaults": "Signal ID: my_signal, TTL: 60s, Weight: 25.0"
+			}
+		},
+		"volatility_squeeze": {
+			"title": "Volatility Squeeze",
+			"desc": "Detects narrowing trading ranges.",
+			"text": "Volatility Squeeze",
+			"tooltip": {
+				"explanation": "Detects a squeeze by comparing the range of the first half of the lookback window with the current half.",
+				"params": [
+					{ "name": "Lookback", "desc": "Number of candles to analyze." },
+					{
+						"name": "Ratio",
+						"desc": "Current range must be below this share of the past range."
+					}
+				],
+				"defaults": "Lookback: 20, Ratio: 0.6"
+			}
+		},
+		"price_action_analyzer": {
+			"title": "Price Action Analyzer",
+			"desc": "Recognizes structural patterns (HH/HL, LH/LL).",
+			"text": "Market Structure",
+			"tooltip": {
+				"explanation": "Analyzes market structure by finding sequences of Higher Highs / Higher Lows (bullish) or Lower Highs / Lower Lows (bearish).",
+				"params": [
+					{
+						"name": "Structure Type",
+						"desc": "The trendline structure to look for."
+					},
+					{
+						"name": "Lookback",
+						"desc": "Number of candles to search for extremes."
+					},
+					{ "name": "Points", "desc": "Minimum extrema points required." },
+					{
+						"name": "Order",
+						"desc": "Number of candles on each side to confirm a fractal (extreme)."
+					}
+				],
+				"defaults": "Structure: Higher Lows, Lookback: 30, Points: 2, Order: 3"
+			}
+		},
+		"level_touch_analyzer": {
+			"title": "Level Touch Analyzer",
+			"desc": "Precise touch, breakout, or retest of a level.",
+			"text_1": "Level interaction",
+			"invalidate": "No pierce",
+			"tooltip": {
+				"explanation": "Counts how many times price touched a detected level and can invalidate the pattern after a deep wick pierce.",
+				"params": [
+					{
+						"name": "Level Source",
+						"desc": "Dynamic link to a level provider such as local_level."
+					},
+					{ "name": "Lookback", "desc": "Number of candles to scan." },
+					{
+						"name": "Tolerance",
+						"desc": "Touch zone as percent of level price."
+					},
+					{ "name": "Touches", "desc": "Minimum touches required." }
+				],
+				"defaults": "Lookback: 50, Tolerance: 0.1%, Touches: 3"
+			}
+		},
+		"return_to_level": {
+			"title": "Return to Level",
+			"desc": "Awaits price return to a previously defined level.",
+			"text1": "Return to level from",
+			"within": "within",
+			"seconds": "sec",
+			"prox": "Prox:",
+			"dept": "Dept:",
+			"types": {
+				"touch": "Touch",
+				"breakout_retest": "Breakout & Retest"
+			},
+			"directions": {
+				"any": "Any direction",
+				"from_above": "From above",
+				"from_below": "From below"
+			},
+			"tooltip": {
+				"explanation": "Monitors price return to a level defined by another block (e.g., local or significant level). Supports simple touch or full 'breakout-retest' scenarios.",
+				"params": [
+					{
+						"name": "Level Source",
+						"desc": "Dynamic reference to the block that found the level."
+					},
+					{
+						"name": "Retest Type",
+						"desc": "Touch (immediate) or Breakout-Retest (requires price to move away from level first)."
+					},
+					{
+						"name": "Direction",
+						"desc": "Where the price should come from to activate."
+					},
+					{
+						"name": "Confirmation Time",
+						"desc": "How many seconds the price must stay in the level zone."
+					},
+					{
+						"name": "Proximity Type & Value",
+						"desc": "Touch zone threshold (in ATR or % of price). Higher values make it easier to trigger a touch."
+					},
+					{
+						"name": "Departure Type & Value",
+						"desc": "For breakout mode: how far price must move away before returning (in ATR or % of price)."
+					}
+				],
+				"defaults": "Type: Touch, Direction: Any, Confirmation: 5s, Prox: 0.1, Dept: 1.5"
+			}
+		}
+	},
+	"dynamicInput": {
+		"linked": "Linked Value",
+		"staticValue": "Static Value",
+		"block": "Block",
+		"candle": "Candle",
+		"market": "Market"
+	},
+	"dynamic_sources": {
+		"position_state": {
+			"title": "Position State",
+			"entry_price": "Entry Price",
+			"current_size_qty": "Current Size (Qty)",
+			"unrealized_pnl_pct": "Unrealized PnL (%)",
+			"unrealized_pnl_rr": "Unrealized PnL (R)",
+			"time_in_trade_sec": "Time in Trade (sec)",
+			"number_of_entries": "Number of Entries",
+			"partial_exits_count": "Partial Exits Count"
+		},
+		"block_results": { "title": "Block Results" }
+	},
+	"ai": {
+		"title": "AI Co-pilot",
+		"description": "Describe your trading idea in plain language. The AI will build the foundation of your strategy.",
+		"placeholders": [
+			"Create a simple RSI strategy on the 5-minute chart.",
+			"Build a breakout strategy for ETHUSDT that uses an ATR-based trailing stop.",
+			"I need a trend-following strategy with a 200 EMA filter on the hourly chart."
+		],
+		"generateButton": "Generate",
+		"shortcutHint": "Press ⌘ + Enter to submit",
+		"compactPlaceholder": "e.g., 'add a trailing stop by ATR'",
+		"successToast": "Strategy generated successfully!",
+		"unsupportedTitle": "Unsupported Features",
+		"disclaimer": "AI Assistant can make mistakes. Verify the generated output. This is not financial advice."
+	},
+	"onboarding": {
+		"step1": {
+			"title": "Welcome to the Editor!",
+			"content": "This is your canvas for creating trading strategies. Let's start by naming your strategy in the panel on the right."
+		},
+		"step2": {
+			"title": "Component Palette",
+			"content": "On the left is the palette with all the building blocks. Open the 'Indicators' section to find the block we need."
+		},
+		"step3": {
+			"title": "Adding Logic",
+			"content": "Great! Now drag the 'RSI' block onto the entry canvas. This will be the condition for our purchase."
+		},
+		"step4": {
+			"title": "Configuring the Condition",
+			"content": "Let's set up the buy rule. We want to buy when the market is 'oversold'. Set the condition: RSI less than 30."
+		},
+		"step5": {
+			"title": "Entry Foundation",
+			"content": "Now let's add a 'Foundation'. Drag the 'Local Level' block to the dedicated area for foundations."
+		},
+		"step6": {
+			"title": "Running a Backtest",
+			"content": "Your first strategy is ready! Let's test it on historical data. Click 'Run Backtest'."
+		},
+		"step7": {
+			"title": "Congratulations!",
+			"content": "You have created and tested your first strategy! You can now continue to refine it or proceed to analyze the results."
+		},
+		"finalDialog": {
+			"title": "Congratulations! Your first backtest is running!",
+			"description": "You will be redirected to the 'Research' page to view the results. If you have any questions about creating more complex strategies, feel free to ask our AI assistant!",
+			"button": "Great, got it!"
+		}
+	},
+	"welcomeDialog": {
+		"title": "Welcome to the Strategy Editor!",
+		"description": "Let's create your first trading strategy together. It will only take a couple of minutes.",
+		"confirmButton": "Start Tutorial",
+		"cancelButton": "Skip"
+	},
+	"calculator": {
+		"title": "DCA Projection & Calculator",
+		"baseOrder": "Simulated Base Order ($)",
+		"takeProfit": "Simulated Take Profit (%)",
+		"atrPercent": "Simulated ATR (%)",
+		"totalBudget": "TOTAL BUDGET",
+		"leverage": "Leverage (x)",
+		"reqBounceEnd": "REQ. BOUNCE (END)",
+		"warningMaxDrop": "Warning: Max drop exceeds 100%. Price cannot fall below zero.",
+		"warningExchangeMin": "Warning: Some orders are below $5 (typical exchange minimum).",
+		"atrStatus": {
+			"fetching": "Fetching real ATR...",
+			"success": "Auto-fetched from symbol data",
+			"error": "API Unreachable. Using fallback."
+		},
+		"table": {
+			"so": "SO #",
+			"base": "Base",
+			"drop": "Price Drop",
+			"size": "Size ($)",
+			"cumInv": "Cum Inv ($)",
+			"bounce": "Req. Bounce",
+			"liqPrice": "Liq. Price"
+		},
+		"chart": {
+			"orderSize": "Order Size ($)",
+			"totalInv": "Total Inv ($)",
+			"reqBounce": "Req Bounce (%)",
+			"dropTooltip": "Drop"
+		}
+	},
+	"gridCalculator": {
+		"title": "GRID Projection & Calculator",
+		"totalInvestment": "Total Investment ($)",
+		"exchangeFee": "Exchange Fee (%)",
+		"currentPrice": "Ref Price",
+		"stepLabel": "Step",
+		"netProfit": "Net Profit / Grid step",
+		"buyLimitRequired": "Quote Req (Buy limits)",
+		"sellLimitRequired": "Base Req (Sell limits)",
+		"warningNegativeProfitTitle": "Warning!",
+		"warningNegativeProfitDesc": "Grid step is too small. Exchange fees will consume all profits."
+	}
+}

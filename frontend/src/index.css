@@ -1,0 +1,166 @@
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+/* --- Dark Theme (Root) --- */
+@layer base {
+	:root {
+		--background: 220 13% 9%; /* #121518 */
+		--foreground: 220 9% 82%; /* #D1D5DB */
+
+		--logo-text-color: hsl(var(--foreground));
+
+		--card: 220 13% 11%; /* #1C2025 */
+		--card-foreground: var(--foreground);
+
+		--popover: var(--card);
+		--popover-foreground: var(--card-foreground);
+
+		--primary: 217 91% 60%; /* #3B82F6 */
+		--primary-foreground: 0 0% 100%;
+
+		--secondary: 220 13% 15%; /* #252A31 */
+		--secondary-foreground: var(--foreground);
+
+		--muted: var(--secondary);
+		--muted-foreground: 220 9% 45%; /* #6B7280 */
+
+		--accent: var(--secondary);
+		--accent-foreground: var(--foreground);
+
+		--loss: 0 63% 51%; /* #E5484D */
+		--destructive: 0 72% 51%; /* #EF4444 */
+		--destructive-foreground: var(--primary-foreground);
+
+		--profit: 145 63% 42%; /* #10B981 */
+		--warning: 38 92% 50%; /* #F97316 */
+
+		--border: 220 13% 20%; /* #2A3038 */
+		--input: var(--border);
+		--ring: var(--primary);
+		--radius: 0.5rem;
+
+		--sidebar-background: var(--background);
+		--sidebar-foreground: var(--foreground);
+		--sidebar-primary: var(--primary);
+		--sidebar-primary-foreground: var(--primary-foreground);
+		--sidebar-accent: var(--secondary);
+		--sidebar-accent-foreground: var(--foreground);
+		--sidebar-border: var(--border);
+		--sidebar-ring: var(--ring);
+	}
+
+	/* --- Light Theme ("Stone Gray") --- */
+	.light {
+		--background: 210 16% 95%; /* #F1F3F5 */
+		--foreground: 210 10% 23%; /* #343A40 */
+
+		--logo-text-color: hsl(var(--foreground));
+
+		--card: 210 16% 98%; /* #F8F9FA */
+		--card-foreground: var(--foreground);
+
+		--popover: var(--card);
+		--popover-foreground: var(--card-foreground);
+
+		--primary: 211 96% 52%; /* #0D6EFD */
+		--primary-foreground: 210 20% 98%;
+
+		--secondary: 210 16% 93%; /* #E9ECEF */
+		--secondary-foreground: var(--foreground);
+
+		--muted: 210 16% 95%; /* #F1F3F5 */
+		--muted-foreground: 210 8% 58%; /* #868E96 */
+
+		--accent: var(--secondary);
+		--accent-foreground: var(--foreground);
+
+		--loss: 355 71% 52%; /* #DC3545 */
+		--destructive: var(--loss);
+		--destructive-foreground: var(--primary-foreground);
+
+		--profit: 134 61% 41%; /* #28A745 */
+		--warning: 38 92% 50%; /* #F97316 */
+
+		--border: 210 16% 87%; /* #DEE2E6 */
+		--input: var(--border);
+		--ring: var(--primary);
+		--radius: 0.5rem;
+
+		--sidebar-background: var(--background);
+		--sidebar-foreground: var(--foreground);
+		--sidebar-primary: var(--primary);
+		--sidebar-primary-foreground: var(--primary-foreground);
+		--sidebar-accent: var(--secondary);
+		--sidebar-accent-foreground: var(--foreground);
+		--sidebar-border: var(--border);
+		--sidebar-ring: var(--ring);
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+	body {
+		background-color: hsl(var(--background));
+		color: hsl(var(--foreground));
+		font-feature-settings:
+			"rlig" 1,
+			"calt" 1;
+	}
+
+	.animate-pulse-slow {
+		animation: pulse 16s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	}
+
+	@keyframes shimmer {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(100%);
+		}
+	}
+
+	/* --- Global scrollbar styling --- */
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-track {
+		background: hsl(var(--background));
+	}
+	::-webkit-scrollbar-thumb {
+		background: hsl(var(--border));
+		border-radius: 10px;
+		border: 2px solid hsl(var(--background));
+	}
+	::-webkit-scrollbar-thumb:hover {
+		background: hsl(var(--muted-foreground));
+	}
+}
+
+/*
+ * Reducing the dimming for the Sheet component overlay (Co-Pilot)
+ */
+@layer components {
+	/*
+    This construct targets the div that is an overlay
+    inside the component with the class .sh eet-root when it is in the 'open' state.
+    We set the background color to black with very low opacity (5%).
+    !important is used to override inline styles from Radix UI.
+  */
+	[data-radix-dialog-overlay][data-state="open"] {
+		background-color: hsla(0, 0%, 0%, 0.1);
+		-webkit-backdrop-filter: blur(2px);
+		backdrop-filter: blur(2px);
+	}
+
+	@supports selector(:has(*)) {
+		div[class*="w-"]:has(> .strategy-dynamic-value-input[data-linked="true"]) {
+			width: min(24rem, 100%);
+			min-width: min(24rem, calc(100vw - 4rem));
+			flex: 1 1 min(24rem, 100%);
+		}
+	}
+}

@@ -1,0 +1,85 @@
+{
+	"pageTitle": "Affiliate Dashboard",
+	"referralLinkCard": {
+		"title": "Your Referral Link"
+	},
+	"financialsSection": {
+		"title": "Financials",
+		"pending": "Pending",
+		"available": "Available for Payout",
+		"paidOut": "Total Paid Out"
+	},
+	"funnelSection": {
+		"title": "Funnel",
+		"clicks": "Clicks",
+		"registrations": "Registrations",
+		"payingCustomers": "Paying Customers"
+	},
+	"tabs": {
+		"commissions": "My Commissions",
+		"referrals": "My Referrals",
+		"payouts": "Payouts"
+	},
+	"commissionsTable": {
+		"title": "Commission History",
+		"headers": {
+			"date": "Date",
+			"amount": "Amount",
+			"description": "Description",
+			"status": "Status"
+		}
+	},
+	"referralsTable": {
+		"title": "My Referrals",
+		"headers": {
+			"username": "Username",
+			"registrationDate": "Registration Date",
+			"isPaying": "Is Paying"
+		},
+		"payingYes": "Yes",
+		"payingNo": "No"
+	},
+	"payoutsSection": {
+		"request": {
+			"title": "Request Payout",
+			"description": "Request a payout of your available balance.",
+			"available": "Available",
+			"requestButton": "Request Payout",
+			"requestingButton": "Requesting..."
+		},
+		"details": {
+			"title": "Payout Details",
+			"description": "Set your USDT (TRC-20) wallet address.",
+			"addressLabel": "USDT (TRC-20) Address",
+			"addressRequired": "Address is required",
+			"saveButton": "Save",
+			"savingButton": "Saving..."
+		}
+	},
+	"payoutsTable": {
+		"title": "Payout History",
+		"headers": {
+			"date": "Date",
+			"amount": "Amount",
+			"status": "Status",
+			"transactionId": "Transaction ID"
+		}
+	},
+	"statuses": {
+		"pending": "Pending",
+		"available": "Available",
+		"paid": "Paid",
+		"completed": "Completed",
+		"failed": "Failed"
+	},
+	"toast": {
+		"copiedTitle": "Copied!",
+		"copiedDescription": "Referral link copied to clipboard."
+	},
+	"payoutDetailsUpdateSuccessTitle": "Success",
+	"payoutDetailsUpdateSuccessDescription": "Payout details updated.",
+	"payoutDetailsUpdateFailedTitle": "Update Failed",
+	"payoutRequestSuccessTitle": "Success",
+	"payoutRequestSuccessDescription": "Payout requested successfully.",
+	"payoutRequestFailedTitle": "Request Failed"
+}

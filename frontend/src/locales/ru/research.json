@@ -1,0 +1,376 @@
+{
+	"pageTitle": "Исследовательский центр",
+	"taskHistory": {
+		"title": "История задач",
+		"description": "Ваши прошлые и текущие исследовательские задачи.",
+		"errors": {
+			"loadFailedTitle": "Ошибка загрузки задач",
+			"unknownError": "Произошла неизвестная ошибка."
+		}
+	},
+	"launchTask": {
+		"title": "Запустить новую задачу",
+		"description": "Настройте и запустите новый бэктест, оптимизацию или портфельный бэктест."
+	},
+	"table": {
+		"colName": "Имя / Стратегия",
+		"colType": "Тип задачи",
+		"colSymbol": "Символ",
+		"colStatus": "Статус",
+		"colResult": "Результат / PnL",
+		"colSubmitted": "Запущено",
+		"colActions": "Действия",
+		"noTasks": "Исследовательские задачи не найдены."
+	},
+	"taskTypes": {
+		"backtest": "Бэктест",
+		"optimization": "Оптимизация",
+		"portfolio": "Портфель",
+		"genetic": "Ген. поиск",
+		"unknown": "Неизвестно"
+	},
+	"tabs": {
+		"tasks": "Задачи",
+		"simulator": "Симулятор"
+	},
+	"statuses": {
+		"completed": "Завершено",
+		"failed": "Ошибка",
+		"pending": "В ожидании",
+		"running": "Выполняется",
+		"stopped": "Остановлено"
+	},
+	"tooltips": {
+		"viewDetails": "Посмотреть детали",
+		"deleteRun": "Удалить запуск"
+	},
+	"confirmation": {
+		"deleteTitle": "Удалить запуск {{type}}",
+		"deleteDescription": "Вы уверены, что хотите навсегда удалить запуск \"{{name}}\"? Это действие нельзя отменить."
+	},
+	"launchForm": {
+		"tabBacktest": "Бэктест",
+		"tabOptimization": "Оптимизация",
+		"tabPortfolio": "Портфель",
+		"strategyNameLabel": "Имя стратегии",
+		"strategyNamePlaceholder": "напр., VolumeBreakout",
+		"symbolLabel": "Символ",
+		"symbolPlaceholder": "напр., BTCUSDT",
+		"startDateLabel": "Дата начала",
+		"endDateLabel": "Дата окончания",
+		"paramsLabel": "Параметры (JSON)",
+		"optunaConfigLabel": "Конфиг Optuna (JSON)",
+		"launchBacktestButton": "Запустить бэктест",
+		"launchOptimizationButton": "Запустить оптимизацию",
+		"portfolioNameLabel": "Название портф. теста",
+		"portfolioNamePlaceholder": "напр., Мой тест портфеля за Q1",
+		"initialBalanceLabel": "Начальный баланс",
+		"contractsLabel": "Контракты",
+		"addContractButton": "Добавить контракт",
+		"riskLimitsLabel": "Глобальные лимиты риска (JSON, опционально)",
+		"riskLimitsPlaceholder": "напр., {\"max_portfolio_drawdown_percent\": 20}",
+		"marketImpactLabel": "Симулировать влияние на рынок",
+		"marketImpactDesc": "Включите для симуляции проскальзывания цены в зависимости от размера сделки.",
+		"launchPortfolioButton": "Запустить портфельный бэктест",
+		"contractTitle": "Контракт #{{index}}",
+		"strategyConfigurationLabel": "Конфигурация стратегии",
+		"strategyConfigurationPlaceholder": "Выберите конфигурацию",
+		"parameterOverridesLabel": "Переопределение параметров (JSON)",
+		"parameterOverridesPlaceholder": "{\"rsi_period\": 21}",
+		"parameterOverridesDesc": "Укажите здесь JSON для переопределения параметров.",
+		"marketTypeLabel": "Тип рынка"
+	},
+	"backtestViewer": {
+		"pageTitle": "Бэктест: {{name}}",
+		"backButton": "Назад к исследованиям",
+		"loading": "Загрузка бэктеста...",
+		"error": "Ошибка загрузки бэктеста",
+		"nextSteps": "Следующие шаги",
+		"nextStepsDesc": "Бэктест завершен. Что вы хотите сделать дальше?",
+		"analyzeWithAI": "Проанализировать и улучшить с AI",
+		"analyzeWithAITooltip": "Получите идеи и предложения по улучшению от AI-ассистента.",
+		"deployButton": "Загрузить в редактор для запуска",
+		"toastOptimizationStarted": "Оптимизация запущена",
+		"toastStrategyLoaded": "Стратегия загружена",
+		"toastConfigNotFound": "Конфигурация стратегии не найдена в этом бэктесте.",
+		"tabTradesAndLogs": "Сделки и Логи",
+		"tabTradesAndCombinations": "Сделки и Комбинации",
+		"tabSummary": "Сводка по задаче",
+		"tabAnalytics": "Аналитика",
+		"tabTradeAnalytics": "Аналитика сделок",
+		"tabEventLog": "Журнал событий",
+		"equityCurveTitle": "Кривая капитала",
+		"kpiPanelTitle": "Итоговые KPI",
+		"kpiPanelTitleLive": "Прогресс и KPI",
+		"shareButton": "Поделиться",
+		"tabCombinations": "Комбинации",
+		"tabFoundations": "Основания"
+	},
+	"combinationsPerformanceTable": {
+		"title": "Эффективность комбинаций",
+		"description": "Анализ эффективности различных комбинаций оснований."
+	},
+	"foundationEffectiveness": {
+		"header": {
+			"foundation": "Основание",
+			"pnl": "Прибыль/Убыток",
+			"winRate": "Процент выигрышей",
+			"totalTrades": "Всего сделок"
+		}
+	},
+	"structuredReport": {
+		"eventCountersTitle": "Счетчики событий",
+		"anomaliesTitle": "Аномалии",
+		"noDataTitle": "Нет данных аналитики",
+		"noDataDescription": "Структурированные данные аналитики для этого бэктеста недоступны.",
+		"noAnomalies": "Аномалий не обнаружено.",
+		"foundationTriggersTitle": "Сработавшие основания",
+		"foundationTriggersDescription": "Сколько раз были выполнены условия каждого взвешенного основания.",
+		"noFoundationTriggers": "Данные о сработавших основаниях отсутствуют.",
+		"tableHeaders": {
+			"event": "Событие",
+			"count": "Количество",
+			"timestamp": "Время",
+			"type": "Тип",
+			"message": "Сообщение",
+			"foundation": "Основание",
+			"triggerCount": "Кол-во сработок"
+		},
+		"events": {
+			"signalsGenerated": "Сгенерировано сигналов",
+			"tradesOpened": "Открыто сделок",
+			"totalRejections": "Всего отклонений",
+			"rejectionGlobalRisk": "Отклонено: По глобальному лимиту риска",
+			"rejectionCooldown": "Отклонено: Из-за перезарядки",
+			"rejectionWeight": "Отклонено: По порогу веса оснований",
+			"rejectionCalculation": "Отклонено: При расчете позиции",
+			"rejectionSlippage": "По проскальзыванию за SL",
+			"rejectionByRiskManager": "По риск-менеджеру",
+			"rejectionByFilter": "Отклонено: Фильтром - {{filterName}}"
+		}
+	},
+	"shareDialog": {
+		"title": "Поделиться результатом бэктеста",
+		"description": "Сгенерируйте публичную ссылку, чтобы поделиться результатами вашего бэктеста.",
+		"showStrategyName": "Показать название стратегии",
+		"showParameters": "Показать параметры стратегии",
+		"publishToLeaderboard": "Опубликовать в таблицу лидеров",
+		"publishToHub": "Опубликовать в Discovery Hub",
+		"authorName": "Имя автора",
+		"hubDescription": "Описание / Заметки",
+		"authorNamePlaceholder": "Введите ваше имя или псевдоним",
+		"descriptionPlaceholder": "Опишите стратегию, логику и идеи...",
+		"generateLinkButton": "Сгенерировать ссылку",
+		"successMessage": "Ваша публичная ссылка сгенерирована. Любой, у кого она есть, сможет просмотреть отчет.",
+		"toast": {
+			"successTitle": "Ссылка сгенерирована",
+			"successDescription": "Теперь вы можете скопировать публичную ссылку."
+		}
+	},
+	"optimizationViewer": {
+		"pageTitle": "Оптимизация: {{name}}",
+		"loading": "Загрузка оптимизации...",
+		"error": "Ошибка загрузки запуска",
+		"tabOverview": "Обзор",
+		"tabTrials": "Попытки",
+		"tabBestResult": "Лучший результат",
+		"bestResultTitle": "Найдены лучшие параметры (Попытка №{{trial}})",
+		"bestResultDesc": "Оптимизатор нашел этот набор параметров наиболее эффективным, с оценкой {{score}}.",
+		"backtestBestButton": "Бэктест лучших параметров",
+		"loadInEditorButton": "Загрузить в редактор",
+		"noBestTrial": "Лучшая попытка еще не определена.",
+		"toastBacktestStarted": "Бэктест запущен",
+		"toastParamsLoaded": "Параметры загружены",
+		"errors": {
+			"resultsNotAvailable": "Результаты оптимизации недоступны.",
+			"bestParamsNotAvailable": "Лучшие параметры для запуска бэктеста недоступны.",
+			"noBestParamsToLoad": "Не найдены параметры лучшей попытки для загрузки."
+		},
+		"optimizedSuffix": " (Оптимизированная)"
+	},
+	"portfolioViewer": {
+		"pageTitle": "Портфель: {{name}}",
+		"runId": "ID Запуска: {{id}}",
+		"loading": "Загрузка портфельного бэктеста...",
+		"error": "Не удалось загрузить данные портфельного бэктеста",
+		"kpiTotalPnl": "Общий PnL портфеля",
+		"kpiSharpe": "Коэфф. Шарпа",
+		"kpiMaxDd": "Макс. просадка",
+		"kpiTotalTrades": "Всего сделок",
+		"tabOverview": "Обзор портфеля",
+		"tabTradeHistory": "История сделок",
+		"tabStrategyPerf": "Эффективность стратегий",
+		"tabSymbolPerf": "Эффективность символов",
+		"pnlByStrategy": "PnL по стратегиям",
+		"pnlBySymbol": "PnL по символам",
+		"kpiTotalPnlDescPositive": "Положительная общая доходность",
+		"kpiTotalPnlDescNegative": "Отрицательная общая доходность",
+		"kpiSharpeDesc": "Измеряет доходность с поправкой на риск",
+		"kpiMaxDdDesc": "Наибольшее падение от пика до минимума",
+		"kpiTotalTradesDesc": "Общее количество совершенных сделок",
+		"overview": {
+			"noTradeDataForCharts": "Нет данных о сделках для создания диаграмм распределения PnL."
+		},
+		"trades": {
+			"noTradesExecuted": "В ходе этого портфельного бэктеста не было совершено ни одной сделки."
+		},
+		"strategyPerf": {
+			"noData": "Нет данных об эффективности стратегий."
+		},
+		"symbolPerf": {
+			"noData": "Нет данных об эффективности символов."
+		}
+	},
+	"analytics": {
+		"notAvailableShort": "Н/Д",
+		"analyticsNotAvailable": "Аналитика для этого бэктеста недоступна (например, нет сделок или задача еще выполняется).",
+		"statNetProfit": "Чистая прибыль",
+		"statTotalTrades": "Всего сделок",
+		"statWinRate": "Проц. прибыльных",
+		"statAvgPnlPerTrade": "Сред. PnL/сделку",
+		"statProfitFactor": "Профит-фактор",
+		"tabCumulativePnl": "Накопленный P&L",
+		"tabDistribution": "Распределение P&L",
+		"tradeChartTitle": "График исполнения сделок"
+	},
+	"liveEventFeed": {
+		"title": "Лента событий (Live)",
+		"description": "Поток событий бэктеста в реальном времени.",
+		"tooltipResume": "Возобновить ленту",
+		"tooltipPause": "Приостановить ленту",
+		"backtestCompleted": "Бэктест завершен. Новых событий нет.",
+		"backtestFailed": "Ошибка бэктеста. Проверьте логи.",
+		"waitingForEvents": "Ожидание событий..."
+	},
+	"progressKpiPanel": {
+		"liveTitle": "Прогресс и KPI (Live)",
+		"finalTitle": "Итоговые KPI",
+		"asOfDate": "По состоянию на: {{date}}",
+		"statusLabel": "Статус",
+		"progressComplete": "{{value}}% завершено",
+		"maxDrawdownLabel": "Макс. просадка",
+		"descPnlCurrent": "Текущая прибыль/убыток",
+		"descPnlTotal": "Общая чистая прибыль/убыток",
+		"descTradesCurrent": "Совершено сделок на данный момент",
+		"descTradesTotal": "Всего совершено сделок",
+		"descWinRateCurrent": "Текущая доля прибыльных сделок",
+		"descWinRateOverall": "Общая доля прибыльных сделок",
+		"descMaxDrawdownCurrent": "Текущая макс. просадка в ходе выполнения",
+		"descMaxDrawdownOverall": "Наибольшее падение от пика до дна",
+		"totalCommissionLabel": "Всего комиссия",
+		"descCommissionTotal": "Сумма уплаченных комиссий за все сделки"
+	},
+	"tradeHistoryTable": {
+		"title": "История сделок",
+		"description": "Детальный лог всех сделок, совершенных в ходе бэктеста.",
+		"headerExitTime": "Время выхода",
+		"headerDirection": "Направление",
+		"headerEntry": "Цена входа",
+		"headerExit": "Цена выхода",
+		"headerPnl": "PnL ($)",
+		"headerTrace": "Трассировка",
+		"waitingForFirstTrade": "Ожидание совершения первой сделки...",
+		"noTradesGenerated": "В ходе этого бэктеста не было совершено ни одной сделки.",
+		"noDecisionTrace": "Трассировка принятия решения для этой сделки недоступна.",
+		"headerVisualize": "Визуализация",
+		"visualizeTooltip": "Визуализировать сделку на графике"
+	},
+	"decisionTraceDialog": {
+		"title": "Анализ сделки #{{tradeId}}",
+		"description": "Визуализация сработавших оснований и дерева решений для {{direction}} сделки с входом по ${{entryPrice}}, PnL: ${{pnl}}.",
+		"noTraceData": "Данные трассировки решения для этой сделки отсутствуют.",
+		"treeTitle": "Дерево решений",
+		"noKlineData": "Не удалось загрузить данные свечей для этого периода."
+	},
+	"decisionTraceTree": {
+		"conditionMet": "Условие выполнено",
+		"conditionNotMet": "Условие не выполнено"
+	},
+	"equityCurve": {
+		"taskFailedTitle": "Ошибка выполнения задачи",
+		"noResults": "Результаты не могут быть отображены",
+		"tooltipLabel": "Капитал",
+		"waitingForData": "Ожидание данных для построения графика...",
+		"strategyDescription": "Динамика изменения капитала по мере выполнения бэктеста.",
+		"portfolioDescription": "Динамика изменения общего капитала портфеля."
+	},
+	"taskSummary": {
+		"unknownDate": "?",
+		"toastCopiedTitle": "Скопировано!",
+		"toastCopiedDescription": "ID задачи скопирован в буфер обмена.",
+		"taskIdLabel": "ID Задачи",
+		"dateRangeLabel": "Период"
+	},
+	"combinationsPerformance": {
+		"title": "Эффективность Комбинаций",
+		"description": "Анализ результатов по группам сработавших оснований",
+		"noTrades": "Нет сделок для анализа комбинаций.",
+		"header": {
+			"combination": "Комбинация Оснований",
+			"pnl": "Суммарный PnL",
+			"winRate": "% Прибыльных",
+			"totalTrades": "Всего сделок"
+		}
+	},
+	"parameterImportanceTitle": "Важность параметров",
+	"parameterImportanceNoData": "Данные о важности параметров недоступны.",
+	"runOverviewTitle": "Сводка по запуску",
+	"kpiProgressLabel": "Прогресс: {{current}} / {{total}} попыток",
+	"kpiStatus": "Статус",
+	"kpiFitnessMetric": "Метрика",
+	"kpiBestValue": "Лучшее значение",
+	"kpiPeriod": "Период",
+	"trialsTable": {
+		"colTrial": "Попытка №",
+		"colValue": "Значение",
+		"colParameters": "Параметры",
+		"waitingForTrials": "Ожидание завершения попыток..."
+	},
+	"loadingStrategyConfigs": "Загрузка конфигураций стратегий...",
+	"errorLoadingStrategyConfigs": "Ошибка загрузки конфигураций: {{message}}",
+	"noStrategyConfigsFound": "Конфигурации стратегий не найдены.",
+	"validationStrategyNameRequired": "Требуется имя стратегии",
+	"validationSymbolRequired": "Требуется символ",
+	"validationDateFormat": "Дата должна быть в формате ГГГГ-ММ-ДД",
+	"validationValidJsonOrEmpty": "Должен быть валидный JSON или пустое поле",
+	"validationOptunaConfigNotEmpty": "Конфигурация Optuna не может быть пустой",
+	"validationStrategyConfigRequired": "Требуется конфигурация стратегии",
+	"validationPortfolioNameRequired": "Требуется имя портфельного теста",
+	"validationInitialBalancePositive": "Начальный баланс должен быть положительным",
+	"validationMinOneContract": "Должен быть добавлен хотя бы один контракт",
+	"geneticRunStopSuccessTitle": "Успех",
+	"geneticRunStopSuccessDescription": "Команда остановки отправлена генетическому запуску.",
+	"geneticRunStopFailedTitle": "Ошибка остановки",
+	"geneticSearchFailedTitle": "Ошибка генетического поиска",
+	"portfolioBacktestQueuedTitle": "Портфельный бэктест поставлен в очередь",
+	"portfolioBacktestQueuedDescription": "Запуск отправлен.",
+	"portfolioBacktestFailedTitle": "Портфельный бэктест не удался",
+	"backtestQueuedTitle": "Бэктест поставлен в очередь",
+	"backtestQueuedDescription": "Задача {{taskId}} была отправлена.",
+	"backtestFailedTitle": "Бэктест не удался",
+	"backtestDeleteSuccessTitle": "Успех",
+	"backtestDeleteSuccessDescription": "Запуск бэктеста успешно удален.",
+	"backtestDeleteFailedTitle": "Ошибка удаления запуска",
+	"optimizationQueuedTitle": "Оптимизация поставлена в очередь",
+	"optimizationQueuedDescription": "Задача {{taskId}} отправлена.",
+	"optimizationFailedTitle": "Ошибка оптимизации",
+	"modelLoadedTitle": "Модель загружена",
+	"modelLoadedDescription": "Модель ID {{modelId}} готова к бэктестингу.",
+	"optunaVisualStrategyBadge": "Визуальная стратегия загружена",
+	"optunaPrecisionEngine": "Режим Precision (DepthSightBacktester)",
+	"optunaPrecisionDesc": "Обнаружены тяжелые L2/DCA блоки. Расчет займет чуть больше времени (~2 мин).",
+	"optunaTurboEngine": "Режим Turbo (FastVectorBacktester)",
+	"optunaTurboDesc": "Облегченные блоки. Векторная оптимизация займет всего ~15 секунд.",
+	"optunaTrialsLabel": "Количество попыток (Trials)",
+	"optunaTrialsTooltip": "Чем больше попыток, тем лучше алгоритм Optuna сойдется к оптимальному результату.",
+	"optunaSearchWidthLabel": "Диапазон поиска (Search Width)",
+	"optunaSearchWidthTooltip": "Диапазон изменения исходных параметров. ±50% означает, что оптимизатор будет искать решения в интервале от 0.5x до 1.5x от текущих значений параметров.",
+	"optunaAdvancedSettings": "Продвинутые настройки",
+	"optunaMetricLabel": "Целевая метрика оптимизации",
+	"optunaMetricSharpe": "Коэффициент Шарпа (Sharpe Ratio)",
+	"optunaMetricSortino": "Коэффициент Сортино (Sortino Ratio)",
+	"optunaMetricProfitFactor": "Профит-фактор (Profit Factor)",
+	"optunaMetricTotalPnl": "Общая доходность (Total PnL %)",
+	"optunaStrategyLoadedTitle": "Стратегия загружена",
+	"optunaStrategyLoadedDescription": "Стратегия \"{{name}}\" успешно импортирована для байесовской оптимизации."
+}

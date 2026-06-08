@@ -1,0 +1,40 @@
+{
+	"pageTitle": "Position Management",
+	"emergencyButton": "Emergency Close All",
+	"emergencyButtonLoading": "Processing...",
+	"openPositions": "Open Positions",
+	"totalExposure": "Total Exposure",
+	"unrealizedPnl": "Unrealized PnL",
+	"marginUsed": "Margin Used",
+	"activePositionsTitle": "Active Positions",
+	"activePositionsDescription": "A list of all your currently open positions.",
+	"errorLoading": "Failed to load positions",
+	"colSymbol": "Symbol",
+	"colStrategy": "Strategy",
+	"colSide": "Side",
+	"colSize": "Size",
+	"colEntryPrice": "Entry Price",
+	"colMarkPrice": "Mark Price",
+	"colSlPrice": "SL Price",
+	"colTpPrice": "TP Price",
+	"colPnlUsd": "PnL ($)",
+	"colPnlPercent": "PnL (%)",
+	"noActivePositions": "No active positions.",
+	"emergencyStopConfirmTitle": "Confirm Emergency Stop",
+	"emergencyStopConfirmDesc": "This will immediately close ALL open positions and cancel ALL orders. This action cannot be undone.",
+	"editSlTpModal": {
+		"title": "Edit SL/TP for {{symbol}}",
+		"description": "Current Entry Price: ${{price}}. Leave input empty to remove an existing SL/TP.",
+		"slLabel": "Stop Loss",
+		"slPlaceholder": "e.g., 150.50",
+		"tpLabel": "Take Profit",
+		"tpPlaceholder": "e.g., 180.75",
+		"saveButton": "Save Changes"
+	},
+	"toasts": {
+		"emergencyStopSuccess": "Emergency stop command sent. All positions are being closed.",
+		"emergencyStopError": "Emergency Stop Failed",
+		"updateSlTpSuccess": "Stop Loss / Take Profit updated.",
+		"updateSlTpError": "Error updating SL/TP"
+	}
+}

@@ -1,0 +1,329 @@
+/* pwa/index.css */
+
+html,
+body,
+#root {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	/* Set background on body to avoid white flash during loading */
+	background-color: #121518;
+}
+
+@import "tailwindcss";
+@config "./tailwind.config.js";
+
+@layer base {
+	html,
+	body,
+	#root {
+		@apply h-full bg-background;
+	}
+	#root {
+		@apply flex flex-col;
+	}
+	:root {
+		--background: 220 13% 9%; /* #121518 */
+		--foreground: 220 9% 82%; /* #D1D5DB */
+
+		--logo-text-color: hsl(var(--foreground));
+
+		--card: 220 13% 11%; /* #1C2025 */
+		--card-foreground: var(--foreground);
+
+		--popover: var(--card);
+		--popover-foreground: var(--card-foreground);
+
+		--primary: 217 91% 55%; /* A slightly darker, more vibrant blue */
+		--primary-foreground: 0 0% 100%;
+
+		--secondary: 220 13% 15%; /* #252A31 */
+		--secondary-foreground: var(--foreground);
+
+		--muted: var(--secondary);
+		--muted-foreground: 220 9% 45%; /* #6B7280 */
+
+		--accent: var(--secondary);
+		--accent-foreground: var(--foreground);
+
+		--loss: 0 63% 51%; /* #E5484D */
+		--destructive: 0 72% 51%; /* #EF4444 */
+		--destructive-foreground: var(--primary-foreground);
+
+		--profit: 145 63% 42%; /* #10B981 */
+		--warning: 38 92% 50%; /* #F97316 */
+
+		--border: 220 13% 20%; /* #2A3038 */
+		--input: var(--border);
+		--ring: var(--primary);
+		--radius: 0.5rem;
+	}
+
+	.light {
+		--background: 210 16% 95%; /* #F1F3F5 */
+		--foreground: 210 10% 23%; /* #343A40 */
+
+		--logo-text-color: hsl(var(--foreground));
+
+		--card: 210 16% 98%; /* #F8F9FA */
+		--card-foreground: var(--foreground);
+
+		--popover: var(--card);
+		--popover-foreground: var(--card-foreground);
+
+		--primary: 211 96% 52%; /* #0D6EFD */
+		--primary-foreground: 210 20% 98%;
+
+		--secondary: 210 16% 93%; /* #E9ECEF */
+		--secondary-foreground: var(--foreground);
+
+		--muted: 210 16% 95%; /* #F1F3F5 */
+		--muted-foreground: 210 8% 58%; /* #868E96 */
+
+		--accent: var(--secondary);
+		--accent-foreground: var(--foreground);
+
+		--loss: 355 71% 52%; /* #DC3545 */
+		--destructive: var(--loss);
+		--destructive-foreground: var(--primary-foreground);
+
+		--profit: 134 61% 41%; /* #28A745 */
+		--warning: 38 92% 50%; /* #F97316 */
+
+		--border: 210 16% 87%; /* #DEE2E6 */
+		--input: var(--border);
+		--ring: var(--primary);
+		--radius: 0.5rem;
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+	body {
+		@apply bg-background text-foreground;
+		font-feature-settings:
+			"rlig" 1,
+			"calt" 1;
+	}
+}
+
+@layer base {
+	* {
+		border-color: hsl(var(--border));
+	}
+	body {
+		@apply bg-background text-foreground;
+		font-feature-settings:
+			"rlig" 1,
+			"calt" 1;
+	}
+
+	.animate-pulse-slow {
+		animation: pulse 16s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+	}
+
+	@keyframes shimmer {
+		0% {
+			transform: translateX(-100%);
+		}
+		100% {
+			transform: translateX(100%);
+		}
+	}
+
+	/* --- Global scrollbar styling --- */
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-track {
+		background: hsl(var(--background));
+	}
+	::-webkit-scrollbar-thumb {
+		background: hsl(var(--border));
+		border-radius: 10px;
+		border: 2px solid hsl(var(--background));
+	}
+	::-webkit-scrollbar-thumb:hover {
+		background: hsl(var(--muted-foreground));
+	}
+}
+
+@layer components {
+	[data-radix-dialog-overlay][data-state="open"] {
+		background-color: hsla(0, 0%, 0%, 0.1) !important;
+		-webkit-backdrop-filter: blur(2px);
+		backdrop-filter: blur(2px);
+	}
+}
+
+/* === STRATEGY EDITOR STYLES (Adapted to theme) === */
+@layer components {
+	/* --- General editor structure --- */
+	.constructor {
+		@apply p-4;
+	}
+
+	.strategy-section {
+		@apply bg-[hsl(var(--card))] rounded-xl mb-4 overflow-hidden shadow-sm;
+	}
+
+	.section-header {
+		@apply p-4 border-b border-[hsl(var(--border))] flex items-center justify-between;
+	}
+
+	.section-title {
+		@apply text-base font-semibold text-[hsl(var(--card-foreground))] flex items-center gap-3;
+	}
+
+	.section-icon {
+		@apply w-8 h-8 rounded-lg flex items-center justify-center text-lg;
+	}
+
+	.section-blocks {
+		@apply p-2 space-y-2;
+	}
+
+	/* --- Block elements --- */
+	.block-item {
+		@apply bg-[hsl(var(--secondary))] border border-[hsl(var(--border))] rounded-lg p-3 flex items-center justify-between cursor-pointer transition-all duration-200;
+	}
+	.block-item:hover {
+		@apply border-[hsl(var(--primary))] shadow-md;
+	}
+
+	.block-info {
+		@apply flex items-center gap-3 flex-1 min-w-0;
+	}
+
+	.block-icon {
+		@apply w-9 h-9 rounded-lg flex items-center justify-center text-xl flex-shrink-0;
+	}
+
+	.block-details {
+		@apply flex-1 min-w-0;
+	}
+
+	.block-name {
+		@apply text-sm font-medium text-[hsl(var(--card-foreground))] truncate;
+	}
+
+	.block-params {
+		@apply text-xs text-[hsl(var(--muted-foreground))] truncate;
+	}
+
+	.add-block-btn {
+		@apply w-full p-3 border-2 border-dashed border-[hsl(var(--border))] rounded-lg bg-transparent text-[hsl(var(--muted-foreground))] text-sm cursor-pointer transition-all duration-200 flex items-center justify-center gap-2;
+	}
+	.add-block-btn:hover {
+		@apply border-[hsl(var(--primary))] text-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.05)];
+	}
+
+	/* --- Modals (Bottom Sheet) --- */
+	.modal {
+		@apply fixed inset-0 z-40;
+		/* JS will manage visibility */
+	}
+	.modal.active {
+		/* JS will manage visibility */
+	}
+
+	.modal-content {
+		@apply bg-[hsl(var(--card))] rounded-t-2xl w-full max-h-[85vh] overflow-y-auto shadow-[-4px_0_20px_rgba(0,0,0,0.1)];
+		animation: slideUp 0.3s ease-out;
+	}
+
+	.modal-header {
+		@apply p-4 border-b border-[hsl(var(--border))] flex items-center justify-between sticky top-0 bg-[hsl(var(--card))];
+	}
+
+	.modal-title {
+		@apply text-lg font-semibold text-[hsl(var(--card-foreground))];
+	}
+
+	.modal-body {
+		@apply p-4;
+	}
+
+	.icon-btn {
+		@apply w-9 h-9 rounded-full border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors duration-200 text-[hsl(var(--muted-foreground))];
+	}
+	.icon-btn:hover {
+		@apply bg-[hsl(var(--secondary))];
+	}
+
+	/* --- Component palette --- */
+	.component-group {
+		@apply mb-4;
+	}
+
+	.group-title {
+		@apply text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase mb-2 px-1;
+	}
+
+	.component-grid {
+		@apply grid grid-cols-3 gap-2;
+	}
+
+	.component-card {
+		@apply bg-[hsl(var(--secondary))] border border-[hsl(var(--border))] rounded-lg p-3 cursor-pointer transition-all duration-200 text-center;
+	}
+	.component-card:hover {
+		@apply border-[hsl(var(--primary))] transform -translate-y-0.5 shadow-lg;
+	}
+
+	.component-card-icon {
+		@apply text-2xl mb-1;
+	}
+
+	.component-card-name {
+		@apply text-xs text-[hsl(var(--muted-foreground))];
+	}
+
+	/* --- Block inspector --- */
+	.inspector-form {
+		@apply flex flex-col gap-4;
+	}
+
+	.form-group {
+		@apply flex flex-col gap-2;
+	}
+
+	.form-label {
+		@apply text-xs font-medium text-[hsl(var(--muted-foreground))];
+	}
+
+	.form-input,
+	.form-select {
+		@apply w-full p-3 bg-[hsl(var(--secondary))] border border-[hsl(var(--border))] rounded-lg text-sm text-[hsl(var(--foreground))] outline-none transition-all focus:border-[hsl(var(--primary))] focus:ring-1 focus:ring-[hsl(var(--primary))];
+	}
+
+	.action-buttons {
+		@apply flex gap-3 pt-4 border-t border-[hsl(var(--border))];
+	}
+
+	.btn {
+		@apply flex-1 py-3 px-4 rounded-lg text-sm font-medium cursor-pointer transition-opacity duration-200 border-none disabled:opacity-50;
+	}
+	.btn-primary {
+		@apply bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90;
+	}
+	.btn-danger {
+		@apply bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] hover:opacity-90;
+	}
+
+	/* --- Animations --- */
+	@keyframes slideUp {
+		from {
+			transform: translateY(100%);
+		}
+		to {
+			transform: translateY(0);
+		}
+	}
+}

@@ -1,0 +1,87 @@
+{
+	"pageTitle": "Центр управления",
+	"connectionStatus": {
+		"connecting": "Соединение...",
+		"live": "В сети",
+		"closing": "Закрытие...",
+		"disconnected": "Отключено",
+		"initializing": "Инициализация...",
+		"tooltipConnecting": "Попытка подключения к серверу.",
+		"tooltipLive": "Соединение стабильно, данные поступают в реальном времени.",
+		"tooltipClosing": "Соединение закрывается.",
+		"tooltipDisconnected": "Соединение потеряно. Приложение попытается переподключиться автоматически.",
+		"tooltipInitializing": "WebSocket соединение еще не было инициировано."
+	},
+	"dailyPnl": {
+		"title": "PnL за день",
+		"title1D": "PnL за день",
+		"title7D": "PnL за неделю",
+		"titleMTD": "PnL за месяц",
+		"errors": {
+			"loadFailed": "Не удалось загрузить данные PnL"
+		},
+		"dataNotAvailable": "Данные PnL недоступны.",
+		"period1D": "1Д",
+		"period7D": "7Д",
+		"periodMTD": "МТД",
+		"notEnoughDataForChart": "Недостаточно данных для графика."
+	},
+	"activePositions": {
+		"title": "Активные позиции",
+		"description": "Обзор ваших открытых в данный момент позиций.",
+		"colSymbol": "Символ",
+		"colSide": "Сторона",
+		"colSize": "Размер",
+		"colEntry": "Цена входа",
+		"colMark": "Цена маркировки",
+		"colPnlUsd": "PnL ($)",
+		"colPnlPercent": "PnL (%)",
+		"noPositions": "Нет активных позиций.",
+		"noOpenPositions": "Нет открытых позиций.",
+		"colStrategy": "Стратегия",
+		"colUnrealizedPnlUsd": "Нереализ. PnL ($)",
+		"detailsButton": "Детали"
+	},
+	"portfolioOverview": {
+		"title": "Обзор портфеля",
+		"balance": "Баланс",
+		"unrealizedPnl": "Нереализованный PnL",
+		"equity": "Капитал",
+		"marginUsage": "Исп. маржа",
+		"noPortfolioDataAvailable": "Нет данных по портфелю.",
+		"totalBalance": "Общий баланс",
+		"available": "Доступно",
+		"accountBreakdown": "Детализация по аккаунтам"
+	},
+	"topStrategies": {
+		"title": "Лучшие стратегии",
+		"description": "Стратегии с наибольшей прибылью и убытком.",
+		"colName": "Название",
+		"colSymbol": "Символ",
+		"colStatus": "Статус",
+		"colPnl": "PnL",
+		"colRuntime": "Время работы",
+		"noData": "Нет данных о производительности стратегий.",
+		"errors": {
+			"loadFailed": "Ошибка загрузки лучших стратегий"
+		},
+		"title24h": "Лучшие стратегии (24ч)",
+		"colPnl24h": "PnL (24ч)",
+		"colTrades": "Сделки",
+		"colWinRate": "Проц. побед"
+	},
+	"errors": {
+		"errorLoadingActivePositions": "Ошибка загрузки активных позиций",
+		"failedToLoadPortfolioOverview": "Не удалось загрузить обзор портфеля"
+	},
+	"liveEventFeed": {
+		"title": "Ключевые события",
+		"heartbeatSystemOperational": "Системный пульс: Все системы в рабочем состоянии.",
+		"waitingForEvents": "Ожидание важных событий..."
+	},
+	"systemHealth": {
+		"title": "Состояние системы",
+		"failedToLoadSystemStatus": "Не удалось загрузить состояние системы",
+		"noSystemComponentsStatusAvailable": "Нет доступных статусов компонентов системы."
+	}
+}

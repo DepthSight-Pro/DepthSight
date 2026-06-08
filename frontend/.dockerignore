@@ -1,0 +1,11 @@
+.git
+.storybook
+node_modules
+build
+coverage
+dist
+*.log
+build.sh
+docker
+Makefile
+.vite

@@ -1,0 +1,58 @@
+{
+	"first_backtest": {
+		"name": "First Backtest",
+		"description": "Run your first backtest."
+	},
+	"alpha_hunter": {
+		"name": "Alpha Hunter",
+		"description": "Achieve a Sharpe ratio greater than 2."
+	},
+	"underminer": {
+		"name": "Underminer",
+		"description": "Achieve a Sharpe ratio less than -2."
+	},
+	"sniper": {
+		"name": "Sniper",
+		"description": "Achieve a win rate greater than 80%."
+	},
+	"hard_nut": {
+		"name": "Hard Nut",
+		"description": "Have a maximum drawdown less than 5%."
+	},
+	"marathon_runner": {
+		"name": "Marathon Runner",
+		"description": "Run a backtest longer than one year."
+	},
+	"strategy_5_blocks": {
+		"name": "Architect",
+		"description": "Create a strategy with 5 or more blocks."
+	},
+	"first_optimization": {
+		"name": "Optimizer",
+		"description": "Run your first optimization."
+	},
+	"used_ai_assistant": {
+		"name": "AI User",
+		"description": "Use the AI assistant."
+	},
+	"100_backtests": {
+		"name": "Researcher",
+		"description": "Run 100 backtests."
+	},
+	"10_strategies_discovery": {
+		"name": "Gold Digger",
+		"description": "Find 10 strategies in the Discovery Lab."
+	},
+	"1000_trades_backtests": {
+		"name": "Veteran Trader",
+		"description": "Create 1000 trades in backtests."
+	},
+	"phoenix": {
+		"name": "Phoenix",
+		"description": "A strategy that recovered from a 10% drawdown and showed a new equity high."
+	},
+	"inventor": {
+		"name": "Inventor",
+		"description": "Create a strategy using 5+ different types of \"foundations\"."
+	}
+}

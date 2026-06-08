@@ -1,0 +1,26 @@
+<svg viewBox="0 0 75 75" xmlns="http://www.w3.org/2000/svg" shapeRendering="geometricPrecision">
+    <defs>
+        <linearGradient id="techGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#00D4FF" />
+            <stop offset="100%" stopColor="#0066FF" />
+        </linearGradient>
+        <filter id="glow">
+            <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+            <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+    <!-- Background for better compatibility with different home screens -->
+    <rect width="75" height="75" rx="16" fill="#121518" />
+    <g transform="translate(12.5, 12.5)">
+        <circle cx="25" cy="25" r="24" fill="none" stroke="url(#techGradient)" stroke-width="2" opacity="0.8" />
+        <circle cx="25" cy="25" r="18" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5" />
+        <circle cx="25" cy="25" r="12" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.4" />
+        <path d="M 25 25 L 40 15 M 25 25 L 40 35 M 25 25 L 10 15 M 25 25 L 10 35" stroke="#0066FF" stroke-width="1" opacity="0.4" />
+        <circle cx="25" cy="25" r="8" fill="url(#techGradient)" filter="url(#glow)" />
+        <circle cx="25" cy="25" r="4" fill="#FFFFFF" opacity="0.9" />
+        <path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#techGradient)" stroke-width="2" stroke-linecap="round" />
+    </g>
+</svg>

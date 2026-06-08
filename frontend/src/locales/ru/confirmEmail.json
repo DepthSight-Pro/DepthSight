@@ -1,0 +1,13 @@
+{
+	"cardTitle": "Подтверждение Email",
+	"loadingText": "Подтверждаем ваш email...",
+	"successTitle": "Успех!",
+	"errorTitle": "Ошибка",
+	"goToLogin": "Перейти ко входу",
+	"backToRegister": "Вернуться к регистрации",
+	"tokenNotFound": "Токен подтверждения не найден в URL.",
+	"successMessageDefault": "Email успешно подтвержден. Теперь вы можете войти.",
+	"errorMessageDefault": "Произошла ошибка во время подтверждения email.",
+	"connectionError": "Не удалось подключиться к серверу. Пожалуйста, попробуйте позже.",
+	"redirecting": "Перенаправляем вас..."
+}

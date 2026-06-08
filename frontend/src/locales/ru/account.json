@@ -1,0 +1,296 @@
+{
+	"pageTitle": "Мой аккаунт",
+	"accountTab": "Аккаунт",
+	"achievementsTab": "Достижения",
+	"myPlanCard.title": "Мой тариф",
+	"myPlanCard.description": "Текущий тарифный план.",
+	"myPlanCard.changePlanButton": "Сменить тариф",
+	"myPlanCard.planActiveUntil": "Тариф активен до",
+	"paperAccountCard.title": "Демо-счет",
+	"paperAccountCard.description": "Тренируйтесь в торговле с симулированным балансом.",
+	"paperAccountCard.resetButton": "Сбросить",
+	"paperAccountCard.confirmReset.title": "Сбросить демо-счет?",
+	"paperAccountCard.confirmReset.description": "Это действие сбросит баланс вашего демо-счета до значения по умолчанию. Все демо-позиции и история будут удалены.",
+	"quotaUsageCard.title": "Использование квот",
+	"quotaUsageCard.description": "Ваши лимиты сбрасываются периодически.",
+	"quotaUsageCard.unlimited": "Безлимитно",
+	"referralCard.title": "Пригласи друга",
+	"referralCard.description": "Поделитесь кодом и получите {{referrerBonus}} бэктестов, а ваш друг получит {{referredBonus}}!",
+	"referralCard.codeLabel": "Ваш реферальный код",
+	"referralCard.linkLabel": "Ваша реферальная ссылка",
+	"bonusesCard.title": "Мои бонусы",
+	"bonusesCard.description": "Разовые бонусы, которые используются после исчерпания обычной квоты.",
+	"bonusesCard.features.run_backtest": "Бонусные бэктесты",
+	"bonusesCard.pending": "ожидание",
+	"bonusesCard.pendingNote": "Бонусы в ожидании будут активированы, когда приглашенный пользователь добавит свой первый уникальный API ключ.",
+	"paymentStatus.success.title": "Оплата прошла успешно",
+	"paymentStatus.success.description": "Ваш тарифный план обновлен. Спасибо!",
+	"paymentStatus.failed.title": "Ошибка оплаты",
+	"paymentStatus.failed.description": "Возникла проблема с оплатой. Пожалуйста, попробуйте еще раз.",
+	"paymentStatus.cancelled.title": "Оплата отменена",
+	"paymentStatus.cancelled.description": "Процесс оплаты был отменен.",
+	"plans": {
+		"free": "Бесплатный",
+		"standard": "Стандарт",
+		"pro": "Профессиональный"
+	},
+	"quotas": {
+		"run_backtest_per_day": "Бэктесты в день",
+		"run_portfolio_backtest_per_day": "Портфельные бэктесты в день",
+		"run_optimization_per_month": "Оптимизации в месяц",
+		"run_genetic_search_per_month": "Генетический поиск в месяц",
+		"generate_dataset_per_month": "Генерация датасетов в месяц",
+		"train_model_per_month": "Обучение моделей в месяц",
+		"run_kline_backtest_per_day": "Kline-бэктесты в день",
+		"run_vector_backtest_per_day": "Векторные бэктесты в день",
+		"use_ai_assistant_per_day": "Использований AI ассистента в день"
+	},
+	"geneticsLabCard": {
+		"title": "Лаборатория генетики",
+		"description": "Обнаруженные гены стратегий",
+		"genesDiscovered": "Обнаружено генов",
+		"legend": "Легенда",
+		"epic": "Эпик",
+		"rare": "Редкий",
+		"common": "Обычный",
+		"viewCollectionButton": "Посмотреть коллекцию"
+	},
+	"achievements": {
+		"loading": "Загрузка достижений...",
+		"unlocked": "Разблокировано",
+		"locked": "Заблокировано",
+		"progress": "Прогресс",
+		"totalXP": "Всего опыта"
+	},
+	"rank": {
+		"grandmaster": "Грандмастер",
+		"legend": "Легенда",
+		"master": "Мастер",
+		"veteran": "Ветеран",
+		"expert": "Эксперт",
+		"specialist": "Специалист",
+		"analyst": "Аналитик",
+		"researcher": "Исследователь",
+		"apprentice": "Ученик",
+		"novice": "Новичок"
+	},
+	"level": "Уровень",
+	"experience": "Опыт",
+	"xp": "XP",
+	"xpToLevel": "XP до уровня",
+	"totalXP": "Всего XP",
+	"genesFound": "Найдено генов",
+	"first_backtest": {
+		"name": "Первопроходец",
+		"description": "Запустить свой первый бэктест"
+	},
+	"first_save": {
+		"name": "Первый чертеж",
+		"description": "Сохранить свою первую конфигурацию стратегии"
+	},
+	"used_ai_assistant": {
+		"name": "Диалог с машиной",
+		"description": "Использовать AI-ассистента для создания или анализа стратегии"
+	},
+	"first_optimization": {
+		"name": "В поисках идеала",
+		"description": "Запустить первую оптимизацию параметров"
+	},
+	"first_api_key": {
+		"name": "Ключник",
+		"description": "Добавить свой первый API ключ для торговли"
+	},
+	"first_paper_trade": {
+		"name": "Бумажный тигр",
+		"description": "Запустить первую стратегию в режиме Paper Trading"
+	},
+	"reset_paper": {
+		"name": "С чистого листа",
+		"description": "Сбросить баланс своего Paper Trading счета"
+	},
+	"10_backtests": {
+		"name": "Младший научный сотрудник",
+		"description": "Провести 10 бэктестов"
+	},
+	"100_backtests": {
+		"name": "Старший научный сотрудник",
+		"description": "Провести 100 бэктестов"
+	},
+	"500_backtests": {
+		"name": "Заведующий лабораторией",
+		"description": "Провести 500 бэктестов"
+	},
+	"1000_trades_backtests": {
+		"name": "Ветеран рынка",
+		"description": "Симулировать 1000 сделок в бэктестах"
+	},
+	"10000_trades_backtests": {
+		"name": "Легенда Уолл-стрит",
+		"description": "Симулировать 10,000 сделок в бэктестах"
+	},
+	"50_optimizations": {
+		"name": "Безумный ученый",
+		"description": "Провести 50 оптимизаций"
+	},
+	"save_10_strategies": {
+		"name": "Стратег",
+		"description": "Сохранить 10 различных конфигураций стратегий"
+	},
+	"sniper": {
+		"name": "Снайпер",
+		"description": "Завершить бэктест (мин. 20 сделок) с Win Rate > 80%"
+	},
+	"marathon_runner": {
+		"name": "Марафонец",
+		"description": "Провести успешный бэктест на периоде более 1 года"
+	},
+	"hard_nut": {
+		"name": "Крепкий орешек",
+		"description": "Завершить бэктест (мин. 50 сделок) с макс. просадкой < 5%"
+	},
+	"alpha_hunter": {
+		"name": "Охотник за Альфой",
+		"description": "Завершить бэктест с Sharpe Ratio > 2.0"
+	},
+	"money_printer": {
+		"name": "Печатный станок",
+		"description": "Завершить бэктест с Profit Factor > 3.0"
+	},
+	"winning_streak": {
+		"name": "На волне успеха",
+		"description": "Получить 10 прибыльных сделок подряд в одном бэктесте"
+	},
+	"phoenix": {
+		"name": "Феникс",
+		"description": "Стратегия вышла из просадки >10% и достигла нового максимума эквити"
+	},
+	"flawless_victory": {
+		"name": "Безупречная победа",
+		"description": "Завершить бэктест (мин. 10 сделок) с Win Rate 100%"
+	},
+	"clairvoyant": {
+		"name": "Ясновидящий",
+		"description": "Использовать Визуализатор Оснований"
+	},
+	"diversifier": {
+		"name": "Диверсификатор",
+		"description": "Запустить первый портфельный бэктест"
+	},
+	"show_off": {
+		"name": "Выставочный образец",
+		"description": "Поделиться результатом своего бэктеста"
+	},
+	"contender": {
+		"name": "Претендент",
+		"description": "Опубликовать свой результат в Лидерборде"
+	},
+	"the_intervention": {
+		"name": "Вмешательство",
+		"description": "Закрыть позицию вручную через интерфейс"
+	},
+	"pulling_the_plug": {
+		"name": "Дернуть за шнур",
+		"description": "Использовать функцию экстренной остановки (Emergency Stop)"
+	},
+	"the_professor": {
+		"name": "Профессор",
+		"description": "Обучить свою первую модель в Лаборатории Моделей"
+	},
+	"strategy_5_blocks": {
+		"name": "Конструктор",
+		"description": "Создать стратегию, используя 5+ блоков"
+	},
+	"the_architect": {
+		"name": "Архитектор",
+		"description": "Создать стратегию, используя 15+ блоков"
+	},
+	"logician": {
+		"name": "Логик",
+		"description": "Использовать одновременно и AND, и OR логику в условиях входа"
+	},
+	"inventor": {
+		"name": "Изобретатель",
+		"description": "Создать стратегию, используя 5+ разных типов \"оснований\""
+	},
+	"order_flow_purist": {
+		"name": "Адепт потока",
+		"description": "Создать стратегию, где основания входа состоят только из анализа ленты и стакана"
+	},
+	"prudent_manager": {
+		"name": "Расчетливый менеджер",
+		"description": "Использовать блок частичного закрытия позиции (Partial Exits)"
+	},
+	"10_strategies_discovery": {
+		"name": "Золотоискатель",
+		"description": "Найти 10 уникальных стратегий в Лаборатории Открытий"
+	},
+	"the_spark": {
+		"name": "Искра жизни",
+		"description": "Открыть свой первый ген стратегии"
+	},
+	"gem_hunter": {
+		"name": "Охотник за самоцветами",
+		"description": "Открыть ген Редкого (RARE) качества"
+	},
+	"treasure_hunter": {
+		"name": "Охотник за сокровищами",
+		"description": "Открыть ген Эпического (EPIC) качества"
+	},
+	"myth_buster": {
+		"name": "Разрушитель мифов",
+		"description": "Открыть ген Легендарного (LEGENDARY) качества"
+	},
+	"gene_collector": {
+		"name": "Коллекционер генов",
+		"description": "Собрать 20 уникальных генов в своей библиотеке"
+	},
+	"geneticist": {
+		"name": "Генетик",
+		"description": "Скрестить две стратегии в Лаборатории Скрещивания"
+	},
+	"natural_selection": {
+		"name": "Естественный отбор",
+		"description": "Создать стратегию 5-го поколения в Древе Эволюции"
+	},
+	"recruiter": {
+		"name": "Рекрутер",
+		"description": "Пригласить первого пользователя по своей реферальной ссылке"
+	},
+	"first_commission": {
+		"name": "Первая комиссия",
+		"description": "Получить первое вознаграждение по партнерской программе"
+	},
+	"partner": {
+		"name": "Партнер",
+		"description": "Заработать $100 в рамках партнерской программы"
+	},
+	"underminer": {
+		"name": "Подрыв устоев",
+		"description": "Создать бэктест с Sharpe Ratio < -2.0"
+	},
+	"the_pacifist": {
+		"name": "Пацифист",
+		"description": "Провести бэктест, который не совершил ни одной сделки"
+	},
+	"perfectly_balanced": {
+		"name": "Идеальный баланс",
+		"description": "Завершить бэктест (мин. 50 сделок) с Win Rate ровно 50% (+/- 1%)"
+	},
+	"diamond_hands": {
+		"name": "Алмазные руки",
+		"description": "Назвать стратегию 'HODL' и запустить с ней бэктест"
+	},
+	"paperAccountResetSuccessTitle": "Успех",
+	"paperAccountResetSuccessDescription": "Демо-счет был сброшен.",
+	"paperAccountResetFailedTitle": "Сброс не удался",
+	"dangerZone.title": "Опасная зона",
+	"dangerZone.description": "Эти действия необратимы. Пожалуйста, будьте уверены.",
+	"dangerZone.deleteAccount.title": "Удалить аккаунт",
+	"dangerZone.deleteAccount.description": "Безвозвратно удалить ваш аккаунт и все связанные с ним данные.",
+	"dangerZone.deleteAccount.button": "Удалить аккаунт",
+	"dangerZone.deleteAccount.confirm.title": "Вы абсолютно уверены?",
+	"dangerZone.deleteAccount.confirm.description": "Это действие нельзя отменить. Ваш аккаунт и все данные будут безвозвратно удалены с наших серверов.",
+	"deleteAccountSuccessTitle": "Аккаунт удален",
+	"deleteAccountSuccessDescription": "Ваш аккаунт был успешно удален.",
+	"deleteAccountFailedTitle": "Ошибка удаления"
+}

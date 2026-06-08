@@ -1,0 +1,5 @@
+{
+	"name": "DepthSight AI Trading Platform",
+	"description": "A mobile-first companion app for a trading platform, allowing users to monitor portfolios, manage trading strategies, and leverage an AI assistant to create and edit strategies on the go.",
+	"requestFramePermissions": []
+}

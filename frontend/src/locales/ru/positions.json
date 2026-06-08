@@ -1,0 +1,40 @@
+{
+	"pageTitle": "Управление позициями",
+	"emergencyButton": "Экстренно закрыть все",
+	"emergencyButtonLoading": "Обработка...",
+	"openPositions": "Открытые позиции",
+	"totalExposure": "Общая экспозиция",
+	"unrealizedPnl": "Нереализ. PnL",
+	"marginUsed": "Исп. маржа",
+	"activePositionsTitle": "Активные позиции",
+	"activePositionsDescription": "Список всех ваших открытых в данный момент позиций.",
+	"errorLoading": "Не удалось загрузить позиции",
+	"colSymbol": "Символ",
+	"colStrategy": "Стратегия",
+	"colSide": "Сторона",
+	"colSize": "Размер",
+	"colEntryPrice": "Цена входа",
+	"colMarkPrice": "Цена маркировки",
+	"colSlPrice": "SL Цена",
+	"colTpPrice": "TP Цена",
+	"colPnlUsd": "PnL ($)",
+	"colPnlPercent": "PnL (%)",
+	"noActivePositions": "Нет активных позиций.",
+	"emergencyStopConfirmTitle": "Подтвердите экстренную остановку",
+	"emergencyStopConfirmDesc": "Это немедленно закроет ВСЕ открытые позиции и отменит ВСЕ ордера. Это действие необратимо.",
+	"editSlTpModal": {
+		"title": "Редактировать SL/TP для {{symbol}}",
+		"description": "Текущая цена входа: ${{price}}. Оставьте поле пустым, чтобы удалить существующий SL/TP.",
+		"slLabel": "Stop Loss",
+		"slPlaceholder": "напр., 150.50",
+		"tpLabel": "Take Profit",
+		"tpPlaceholder": "напр., 180.75",
+		"saveButton": "Сохранить изменения"
+	},
+	"toasts": {
+		"emergencyStopSuccess": "Команда экстренной остановки отправлена. Все позиции закрываются.",
+		"emergencyStopError": "Ошибка экстренной остановки",
+		"updateSlTpSuccess": "Stop Loss / Take Profit обновлены.",
+		"updateSlTpError": "Ошибка обновления SL/TP"
+	}
+}

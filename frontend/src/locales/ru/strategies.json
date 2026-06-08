@@ -1,0 +1,153 @@
+{
+	"pageTitle": "Менеджер Стратегий",
+	"header": "Активные конфигурации",
+	"description": "Отслеживайте, запускайте и управляйте всеми вашими конфигурациями стратегий.",
+	"createButton": "Создать",
+	"colStatus": "Статус",
+	"colInstance": "Имя экземпляра",
+	"colStrategy": "Тип стратегии",
+	"colSymbols": "Символы",
+	"colRuntime": "Время работы",
+	"colTotalPnl": "Общий PnL",
+	"noStrategies": "Сохраненные конфигурации стратегий не найдены.",
+	"searchPlaceholder": "Поиск стратегий...",
+	"openPositions": "Открытые позиции",
+	"noResults": "Не найдено стратегий, соответствующих вашим фильтрам.",
+	"viewButton": "Детали",
+	"editButton": "Редактировать",
+	"moreButton": "Ещё",
+	"actionsButton": "Действия",
+	"editTooltip": "Редактировать",
+	"startTooltip": "Запустить",
+	"stopTooltip": "Остановить",
+	"deleteTooltip": "Удалить",
+
+	"filters": {
+		"all": "Все",
+		"running": "Работают",
+		"stopped": "Остановлены",
+		"paper": "Бумажные",
+		"live": "Реальные"
+	},
+
+	"emptyState": {
+		"title": "Нет стратегий",
+		"description": "Создайте свою первую торговую стратегию для автоматизации трейдинга."
+	},
+
+	"tabs": {
+		"active": "Активные конфигурации",
+		"library": "Библиотека стратегий"
+	},
+
+	"library": {
+		"header": "Библиотека стратегий",
+		"description": "Выберите готовый шаблон для создания новой конфигурации стратегии.",
+		"noTemplates": "Шаблоны стратегий не найдены.",
+		"noDescription": "Для этой стратегии нет описания.",
+		"editorButton": "В редактор",
+		"launchButton": "Настроить и запустить",
+		"backtestButton": "Бектест"
+	},
+
+	"launchModal": {
+		"title": "Запуск: {{name}}",
+		"description": "Настройте параметры запуска стратегии",
+		"tradingModeLabel": "Режим торговли",
+		"paperMode": "Бумажная торговля",
+		"paperModeDesc": "Тестирование с виртуальными средствами",
+		"liveMode": "Реальная торговля",
+		"liveModeDesc": "Торговля реальными средствами",
+		"launchButton": "Запустить стратегию",
+		"instanceNameLabel": "Имя экземпляра",
+		"instanceNamePlaceholder": "напр., Мой BTC Breakout",
+		"symbolModeLabel": "Выбор символов",
+		"symbolModeDynamic": "Динамический (из Скринера)",
+		"symbolModeDynamicDesc": "Автоматический выбор символов на основе рыночных условий",
+		"symbolModeStatic": "Статический (ручной список)",
+		"symbolModeStaticDesc": "Торговля только определенными символами",
+		"symbolsLabel": "Список символов",
+		"symbolsPlaceholder": "BTCUSDT, ETHUSDT, SOLUSDT...",
+		"symbolsHelp": "Разделяйте символы запятыми",
+		"mlLabel": "ML-подтверждение сигналов",
+		"mlDescription": "Использовать обученную модель для проверки сигналов перед выставлением ордеров.",
+		"paramsLabel": "Параметры по умолчанию (только чтение)",
+		"saveButton": "Сохранить конфигурацию",
+		"partialsLabel": "Использовать частичные выходы",
+		"moveToBeLabel": "Переводить СЛ в б/у",
+		"foundationWeightLabel": "Порог веса оснований",
+		"oracleRegimeParanoiaFull": "0: Паранойя (Trend-following/Sideways)",
+		"oracleRegimeAmnesiaFull": "1: Амнезия (News/Trend)",
+		"oracleRegimeSchizophreniaFull": "2: Шизофрения (Volatile)",
+		"errors": {
+			"nameRequired": "Имя экземпляра обязательно.",
+			"modeRequired": "Пожалуйста, выберите режим выбора символов.",
+			"symbolsRequired": "Символы обязательны для статического режима",
+			"invalidJson": "Параметры должны быть валидным JSON объектом."
+		}
+	},
+
+	"backtestModal": {
+		"title": "Запуск бектеста: {{name}}",
+		"description": "Настройте параметры для быстрого бектеста этой стратегии.",
+		"symbolLabel": "Символ",
+		"marketTypeLabel": "Рынок",
+		"marketTypeFutures": "Фьючерсы",
+		"marketTypeSpot": "Спот",
+		"dateRangeLabel": "Диапазон дат",
+		"datePlaceholder": "Выберите диапазон дат",
+		"runButton": "Запустить бектест",
+		"errors": {
+			"symbolRequired": "Символ обязателен.",
+			"marketTypeRequired": "Тип рынка обязателен.",
+			"startDateRequired": "Дата начала обязательна.",
+			"endDateRequired": "Дата окончания обязательна.",
+			"dateOrder": "Дата начала должна быть раньше даты окончания."
+		}
+	},
+
+	"confirmation": {
+		"stopTitle": "Остановить стратегию: {{name}}",
+		"stopDescription": "Вы уверены, что хотите остановить этот запущенный экземпляр? Открытые позиции НЕ будут закрыты автоматически.",
+		"deleteTitle": "Удалить конфигурацию: {{name}}",
+		"deleteDescription": "Вы уверены, что хотите навсегда удалить эту конфигурацию? Это действие нельзя отменить.",
+		"toastStopSuccess": "Команда на остановку стратегии отправлена.",
+		"toastDeleteSuccess": "Конфигурация стратегии успешно удалена."
+	},
+
+	"detailsPanel": {
+		"title": "Детали: {{name}}",
+		"description": "Символ(ы): {{symbol}} | ID: {{id}}",
+		"tabOverview": "Обзор",
+		"tabTradeHistory": "История сделок",
+		"tabLogs": "Логи",
+		"noStrategySelectedTitle": "Экземпляр не выбран",
+		"noStrategySelectedDesc": "Нажмите на запущенный экземпляр в списке, чтобы просмотреть его живые данные."
+	},
+	"overviewTab": {
+		"totalPnl": "Общий PnL",
+		"status": "Статус",
+		"symbol": "Символ(ы)",
+		"marketType": "Тип рынка",
+		"openPositions": "Открытые позиции",
+		"runningSince": "Работает с",
+		"parametersTitle": "Параметры"
+	},
+	"tradeHistoryTab": {
+		"errorTitle": "Ошибка загрузки истории сделок",
+		"noTrades": "Сделки для этой стратегии не найдены.",
+		"colTimestamp": "Время (Закрытие)",
+		"colSymbol": "Символ",
+		"colDirection": "Направление",
+		"colQuantity": "Кол-во",
+		"colEntry": "Цена входа",
+		"colExit": "Цена выхода",
+		"colPnl": "PnL",
+		"colExitReason": "Причина выхода"
+	},
+	"logsTab": {
+		"waiting": "Ожидание первых событий лога...",
+		"noLogs": "Логи для этой стратегии пока не найдены.",
+		"waitingForFirstLogEvents": "Ожидание первых событий лога..."
+	}
+}
