@@ -1,4 +1,5 @@
 // pwa/components/editor/BlockInspectorModal.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -82,10 +83,10 @@ const ParamSelect: React.FC<{
 
 const renderBlockContent = (
 	block: ConditionBlock | ManagementBlock,
-	updateParams: (p: Record<string, unknown>) => void,
+	updateParams: (p: Record<string, any>) => void,
 	t: TranslationFunction,
 ): React.ReactNode | null => {
-	const p = block.params || {};
+	const p = (block.params as Record<string, any>) || {};
 	const handleNumberChange = (key: string, value: string) =>
 		updateParams({ [key]: parseFloat(value) || 0 });
 
@@ -1027,18 +1028,20 @@ const renderBlockContent = (
 // --- Rendering for COMPOSITE blocks ---
 const renderCompositeBlockContent = (
 	block: ConditionBlock,
-	updateParams: (p: Record<string, unknown>) => void,
+	updateParams: (p: Record<string, any>) => void,
 	t: TranslationFunction,
 ): React.ReactNode | null => {
 	switch (block.compositeType) {
 		case "tape_condition": {
 			const [provider, consumer] = block.children || [];
 			if (!provider || !consumer) return null;
-			const timeWindow = provider.params?.time_window_sec || 5;
+			const pParams = (provider.params as Record<string, any>) || {};
+			const cParams = (consumer.params as Record<string, any>) || {};
+			const timeWindow = pParams.time_window_sec || 5;
 			const metricKey =
-				consumer.params?.leftOperand?.key || `delta_volume_usd_${timeWindow}s`;
-			const operator = consumer.params?.operator || "gt";
-			const rightOperand = consumer.params?.rightOperand;
+				cParams.leftOperand?.key || `delta_volume_usd_${timeWindow}s`;
+			const operator = cParams.operator || "gt";
+			const rightOperand = cParams.rightOperand;
 			const comparisonType =
 				typeof rightOperand === "object" &&
 				rightOperand !== null &&
@@ -1157,11 +1160,13 @@ const renderCompositeBlockContent = (
 		case "order_book_zone_condition": {
 			const [provider, consumer] = block.children || [];
 			if (!provider || !consumer) return null;
+			const pParams = (provider.params as Record<string, any>) || {};
+			const cParams = (consumer.params as Record<string, any>) || {};
 			return (
 				<>
 					<ParamRow title={t("blocks.order_book_zone_condition.in")}>
 						<ParamSelect
-							value={provider.params?.side}
+							value={pParams.side}
 							onChange={(v) => updateParams({ side: v })}
 							items={[
 								{
@@ -1177,11 +1182,11 @@ const renderCompositeBlockContent = (
 					</ParamRow>
 					<ParamRow title={t("blocks.order_book_zone_condition.in_range")}>
 						<DynamicValueInput
-							value={provider.params?.range_value}
+							value={pParams.range_value}
 							onChange={(v) => updateParams({ range_value: v })}
 						/>
 						<ParamSelect
-							value={provider.params?.range_type}
+							value={pParams.range_type}
 							onChange={(v) => updateParams({ range_type: v })}
 							items={[
 								{ value: "Percentage", label: "%" },
@@ -1203,7 +1208,7 @@ const renderCompositeBlockContent = (
 					</ParamRow>
 					<ParamRow title="Condition">
 						<ParamSelect
-							value={consumer.params?.leftOperand?.key}
+							value={cParams.leftOperand?.key}
 							onChange={(v) => updateParams({ metric: v })}
 							items={[
 								{
@@ -1227,7 +1232,7 @@ const renderCompositeBlockContent = (
 							]}
 						/>
 						<ParamSelect
-							value={consumer.params?.operator}
+							value={cParams.operator}
 							onChange={(v) => updateParams({ operator: v })}
 							items={[
 								{ value: "gt", label: ">" },
@@ -1236,7 +1241,7 @@ const renderCompositeBlockContent = (
 							className="w-24"
 						/>
 						<DynamicValueInput
-							value={consumer.params?.rightOperand}
+							value={cParams.rightOperand}
 							onChange={(v) => updateParams({ value: v })}
 						/>
 					</ParamRow>
@@ -1246,11 +1251,12 @@ const renderCompositeBlockContent = (
 		case "level_proximity_condition": {
 			const provider = block.children?.[0];
 			if (!provider) return null;
+			const pParams = (provider.params as Record<string, any>) || {};
 			return (
 				<>
 					<ParamRow title={t("blocks.level_proximity_condition.price")}>
 						<ParamSelect
-							value={provider.params?.price_source}
+							value={pParams.price_source}
 							onChange={(v) => updateParams({ price_source: v })}
 							items={[
 								{
@@ -1276,7 +1282,7 @@ const renderCompositeBlockContent = (
 					</ParamRow>
 					<ParamRow title={t("blocks.level_proximity_condition.near_level_on")}>
 						<ParamSelect
-							value={provider.params?.timeframe}
+							value={pParams.timeframe}
 							onChange={(v) => updateParams({ timeframe: v })}
 							items={[
 								{ value: "1m", label: "1m" },
@@ -1291,7 +1297,7 @@ const renderCompositeBlockContent = (
 						title={`${t("blocks.level_proximity_condition.tf_for")}...`}
 					>
 						<DynamicValueInput
-							value={provider.params?.lookback_period}
+							value={pParams.lookback_period}
 							onChange={(v) => updateParams({ lookback_period: v })}
 						/>
 						<span className="text-sm text-muted-foreground">
@@ -1302,11 +1308,11 @@ const renderCompositeBlockContent = (
 						title={t("blocks.level_proximity_condition.within_proximity")}
 					>
 						<DynamicValueInput
-							value={provider.params?.proximity_value}
+							value={pParams.proximity_value}
 							onChange={(v) => updateParams({ proximity_value: v })}
 						/>
 						<ParamSelect
-							value={provider.params?.proximity_type}
+							value={pParams.proximity_type}
 							onChange={(v) => updateParams({ proximity_type: v })}
 							items={[
 								{ value: "atr_multiplier", label: "x ATR" },
@@ -1320,7 +1326,7 @@ const renderCompositeBlockContent = (
 							<input
 								type="checkbox"
 								id="is_data_provider"
-								checked={provider.params?.is_data_provider || false}
+								checked={pParams.is_data_provider || false}
 								onChange={(e) =>
 									updateParams({ is_data_provider: e.target.checked })
 								}
@@ -1337,6 +1343,7 @@ const renderCompositeBlockContent = (
 				</>
 			);
 		}
+
 		default:
 			return (
 				<p className="text-sm text-muted-foreground p-4 text-center">
@@ -1387,7 +1394,7 @@ const BlockInspectorModal: React.FC<BlockInspectorModalProps> = ({
 	});
 
 	const handleUpdate = useCallback(
-		(newParams: Record<string, unknown>) => {
+		(newParams: Record<string, any>) => {
 			if (!currentBlock) return;
 			if ("isComposite" in currentBlock && currentBlock.isComposite) {
 				updateCompositeConditionParams(currentBlock.id, newParams);

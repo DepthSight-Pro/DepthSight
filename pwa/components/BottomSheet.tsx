@@ -54,7 +54,7 @@ const BottomSheet: React.FC<BottomSheetProps> = ({
 							id={`param-${key}`}
 							type={typeof value === "number" ? "number" : "text"}
 							className="w-full p-3 bg-[hsl(var(--secondary))] border border-[hsl(var(--border))] rounded-lg text-base text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] outline-none transition-all focus:border-[hsl(var(--primary))] focus:ring-1 focus:ring-[hsl(var(--primary))]"
-							defaultValue={value}
+							defaultValue={value as string | number}
 						/>
 					</div>
 				))}

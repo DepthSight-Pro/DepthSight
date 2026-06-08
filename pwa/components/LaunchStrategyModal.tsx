@@ -74,7 +74,8 @@ const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 				}
 
 				// Load dynamic settings from strategy config
-				const configData = strategy.config_data;
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const configData = strategy.config_data as Record<string, any>;
 				if (configData) {
 					// Determine dynamic mode
 					if (configData.natr_settings) {

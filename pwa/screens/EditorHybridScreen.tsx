@@ -11,8 +11,7 @@ import { api } from "../services/api";
 import { useStrategyEditorStore } from "../stores/strategyEditorStore";
 import type {
 	BacktestRequest,
-	StrategyConfig,
-	StrategyConfigCreatePayload,
+	StrategyConfigData,
 	StrategyConfigDB,
 } from "../types";
 import AIChatScreen from "./AIChatScreen";
@@ -52,8 +51,8 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 					const fullStrategy = await api.getStrategyConfig(strategyToEdit.id);
 					const configData = fullStrategy.config_data as Record<string, unknown>;
 					const weightsFromApi =
-						(fullStrategy as Record<string, unknown>).foundation_weights ||
-						fullStrategy.foundationWeights ||
+						(fullStrategy as unknown as Record<string, unknown>).foundation_weights ||
+						(fullStrategy as unknown as Record<string, unknown>).foundationWeights ||
 						configData?.foundation_weights ||
 						configData?.foundationWeights ||
 						{};
@@ -88,8 +87,8 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 		loadInitialStrategy();
 	}, [strategyToEdit, loadStrategy, reset, t, setMessages]);
 
-	const handleStrategyGenerated = (generatedJson: Partial<StrategyConfig>) => {
-		loadStrategy(generatedJson);
+	const handleStrategyGenerated = (generatedJson: Partial<StrategyConfigData>) => {
+		loadStrategy(generatedJson as Record<string, unknown>);
 		toast.success(t("editor.strategyGenerated"));
 	};
 
@@ -130,13 +129,10 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 			};
 			let savedStrategy: StrategyConfigDB;
 
-			const payload: Omit<
-				StrategyConfigCreatePayload,
-				"symbol_selection_mode" | "symbols"
-			> & { foundation_weights: Record<string, number> | null } = {
+			const payload = {
 				name: updatedConfigData.name,
 				description: storeState.description,
-				config_data: updatedConfigData,
+				config_data: updatedConfigData as unknown as StrategyConfigData,
 				use_ml_confirmation: storeState.use_ml_confirmation,
 				foundation_weights: storeState.useFoundationWeights
 					? storeState.foundationWeights
@@ -146,11 +142,19 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 			if (storeState.id) {
 				savedStrategy = await api.updateStrategyConfig(
 					storeState.id,
-					payload as unknown as StrategyConfigCreatePayload,
+					{
+						name: payload.name,
+						description: payload.description || undefined,
+						config_data: payload.config_data
+					}
 				);
 			} else {
 				savedStrategy = await api.saveStrategy(
-					payload as unknown as StrategyConfigCreatePayload,
+					{
+						name: payload.name,
+						description: payload.description || "",
+						config_data: payload.config_data
+					}
 				);
 			}
 			toast.success(
@@ -161,8 +165,8 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 			const savedConfigData =
 				savedStrategy.config_data as unknown as Record<string, unknown>;
 			const weightsAfterSave =
-				(savedStrategy as Record<string, unknown>).foundation_weights ||
-				savedStrategy.foundationWeights ||
+				(savedStrategy as unknown as Record<string, unknown>).foundation_weights ||
+				(savedStrategy as unknown as Record<string, unknown>).foundationWeights ||
 				savedConfigData?.foundation_weights ||
 				savedConfigData?.foundationWeights ||
 				{};

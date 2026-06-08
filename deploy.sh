@@ -59,9 +59,10 @@ find . -type f -name ".env*" -exec sed -i 's/\r$//' {} +
 find . -type f -name "Dockerfile*" -exec sed -i 's/\r$//' {} +
 
 # 3. Initial System Setup
+export DEBIAN_FRONTEND=noninteractive
 apt-get update > /dev/null 2>&1
-run_with_progress "Updating system packages" apt-get upgrade -y
-run_with_progress "Installing base utilities" apt-get install -y curl wget git openssl jq ufw
+run_with_progress "Updating system packages" apt-get upgrade -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"
+run_with_progress "Installing base utilities" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" curl wget git openssl jq ufw
 
 # Setup Swap
 if [ ! -f /swapfile ]; then
