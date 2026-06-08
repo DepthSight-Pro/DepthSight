@@ -49,7 +49,7 @@ try:
     if root_path not in sys.path:
         sys.path.append(root_path)
 
-    from sequential_portfolio_simulator import (
+    from scripts.sequential_portfolio_simulator import (
         SequentialPortfolioSimulator,
         SimulatorConfig,
     )
@@ -61,7 +61,7 @@ except ImportError as e:
     SIMULATOR_AVAILABLE = False
 
 try:
-    from download_pipeline import ensure_data_for_period
+    from scripts.download_pipeline import ensure_data_for_period
 
     DOWNLOADER_AVAILABLE = True
 except ImportError as e:
