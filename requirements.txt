@@ -16,7 +16,7 @@ kombu==5.5.4
 packaging==25.0
 pandas
 pandas-ta
-prompt_toolkit==3.0.51
+prompt_toolkit==3.0.52
 python-dateutil==2.9.0.post0
 pytz==2025.2
 requests>=2.33.0
