@@ -201,6 +201,12 @@ else
     $COMPOSE_CMD up -d --build
 fi
 
+# Ensure migrations are applied (prevents race conditions of multiple containers running it on start)
+echo -e "${BLUE}[*] Running database migrations...${NC}"
+# Wait a few seconds for Postgres to be ready just in case
+sleep 5
+$COMPOSE_CMD exec -T api alembic upgrade head || true
+
 # 7. Setup Auto-Updater Cron Job on Host
 echo -e "${BLUE}[*] Configuring host-side cron job for auto-updates...${NC}"
 CRON_JOB="* * * * * root if [ -f $PROJECT_DIR/data/.update_trigger ]; then rm $PROJECT_DIR/data/.update_trigger && bash $PROJECT_DIR/update.sh >> $PROJECT_DIR/logs/update.log 2>&1; fi"
