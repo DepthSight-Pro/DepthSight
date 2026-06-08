@@ -1,0 +1,22 @@
+<svg viewBox="0 0 320 100" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility" image-rendering="optimizeQuality">
+	<style>.logo-text-depth-loader{fill: #FFFFFF !important;}</style>
+	<defs>
+		<linearGradient id="loaderLogoTechGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00D4FF"></stop><stop offset="100%" stop-color="#0066FF"></stop></linearGradient>
+		<linearGradient id="loaderLogoPulseGradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#00D4FF" stop-opacity="0"></stop><stop offset="50%" stop-color="#00D4FF" stop-opacity="0.8"></stop><stop offset="100%" stop-color="#00D4FF" stop-opacity="0"></stop></linearGradient>
+		<filter id="loaderLogoGlow"><feGaussianBlur stdDeviation="2.5" result="coloredBlur"></feGaussianBlur><feMerge><feMergeNode in="coloredBlur"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter>
+	</defs>
+	<g transform="translate(25, 25)">
+		<circle cx="25" cy="25" r="24" fill="none" stroke="url(#loaderLogoTechGradient)" stroke-width="2" opacity="0.8"></circle>
+		<circle cx="25" cy="25" r="18" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"></circle>
+		<circle cx="25" cy="25" r="12" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.4"></circle>
+		<path d="M 25 25 L 40 15 M 25 25 L 40 35 M 25 25 L 10 15 M 25 25 L 10 35" stroke="#0066FF" stroke-width="1" opacity="0.4"></path>
+		<circle cx="25" cy="25" r="8" fill="url(#loaderLogoTechGradient)" filter="url(#loaderLogoGlow)"></circle>
+		<circle cx="25" cy="25" r="4" fill="#FFFFFF" opacity="0.9"></circle>
+		<path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#loaderLogoTechGradient)" stroke-width="2" stroke-linecap="round"></path>
+		<path d="M 25 25 L 45 5" stroke="url(#loaderLogoPulseGradient)" stroke-width="2" opacity="0.7"><animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="4s" repeatCount="indefinite"></animateTransform></path>
+	</g>
+	<text x="110" y="54" dominant-baseline="middle" font-family="Montserrat, Helvetica, Arial, sans-serif" font-size="38">
+		<tspan font-weight="700" class="logo-text-depth-loader">Depth</tspan>
+		<tspan fill="url(#loaderLogoTechGradient)" font-weight="300" class="logo-text-sight">Sight</tspan>
+	</text>
+</svg>
