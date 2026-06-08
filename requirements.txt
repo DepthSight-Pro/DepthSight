@@ -70,7 +70,7 @@ lightgbm
 xgboost
 pyarrow>=23.0.1
 google-generativeai
-google-genai>=1.0.0
+google-genai>=2.8.0
 pydantic[email]
 gunicorn
 playwright
