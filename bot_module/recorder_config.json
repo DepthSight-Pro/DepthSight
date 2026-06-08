@@ -1,0 +1,28 @@
+{
+  "storage_path": "L2_data",
+  "exchanges": {
+    "binance": {
+      "enabled": true,
+      "markets": {
+        "spot": [
+          "BTC/USDT",
+          "ETH/USDT"
+        ],
+        "futures": [
+          "BTC/USDT",
+          "ETH/USDT",
+          "SOL/USDT"
+        ]
+      }
+    },
+    "bybit": {
+      "enabled": true,
+      "markets": {
+        "spot": [
+          "BTC/USDT"
+        ],
+        "futures": []
+      }
+    }
+  }
+}
