@@ -13,7 +13,7 @@ colorama==0.4.6
 honcho==2.0.0
 idna>=3.15
 kombu==5.5.4
-packaging==25.0
+packaging==26.2
 pandas
 pandas-ta
 prompt_toolkit==3.0.51
