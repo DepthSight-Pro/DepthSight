@@ -132,11 +132,21 @@ PROTOCOL="http"
 if [ -t 0 ]; then
     echo -e "${BLUE}[?] Are you deploying to a Public Cloud Server (Vultr/Contabo)? (y/N):${NC}"
     read -r IS_PUBLIC
-    # Clean input: keep only English and Russian letters to strip backspace bytes, encoding junk, or control characters
-    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r' | sed 's/[^a-zA-Zа-яА-ЯёЁ]//g' | tr '[:upper:]' '[:lower:]')
-    echo -e "${BLUE}[*] Debug: Entered value is '$IS_PUBLIC'${NC}"
+    # Strip carriage return and convert to lowercase
+    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r' | tr '[:upper:]' '[:lower:]')
+    echo -e "${BLUE}[*] Debug: Cleaned input is '$IS_PUBLIC'${NC}"
     
-    if [ "$IS_PUBLIC" = "y" ] || [ "$IS_PUBLIC" = "yes" ] || [ "$IS_PUBLIC" = "у" ] || [ "$IS_PUBLIC" = "д" ] || [ "$IS_PUBLIC" = "да" ]; then
+    # Use pattern matching to check if the input contains any 'yes' indicators (handles terminal garbage like escape codes)
+    case "$IS_PUBLIC" in
+        *y*|*yes*|*у*|*д*|*да*)
+            IS_PUBLIC="y"
+            ;;
+        *)
+            IS_PUBLIC="n"
+            ;;
+    esac
+    
+    if [ "$IS_PUBLIC" = "y" ]; then
         echo -e "${BLUE}[?] Enter your domain (or leave blank for ${IP}.sslip.io):${NC}"
         read -r DOMAIN
         DOMAIN=$(echo "$DOMAIN" | tr -d '\r' | xargs)
@@ -150,8 +160,15 @@ if [ -t 0 ]; then
 
         echo -e "${BLUE}[?] Enable Bitcart (Crypto Payments)? (y/N):${NC}"
         read -r START_BITCART
-        # Keep only letters to filter terminal garbage
-        START_BITCART=$(echo "$START_BITCART" | tr -d '\r' | sed 's/[^a-zA-Zа-яА-ЯёЁ]//g' | tr '[:upper:]' '[:lower:]')
+        START_BITCART=$(echo "$START_BITCART" | tr -d '\r' | tr '[:upper:]' '[:lower:]')
+        case "$START_BITCART" in
+            *y*|*yes*|*у*|*д*|*да*)
+                START_BITCART="y"
+                ;;
+            *)
+                START_BITCART="n"
+                ;;
+        esac
     else
         # Local/Private mode - Fast track
         DOMAIN=$(hostname -I | awk '{print $1}')
