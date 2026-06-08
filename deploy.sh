@@ -132,8 +132,8 @@ PROTOCOL="http"
 if [ -t 0 ]; then
     echo -e "${BLUE}[?] Are you deploying to a Public Cloud Server (Vultr/Contabo)? (y/N):${NC}"
     read -r IS_PUBLIC
-    # Clean input: remove carriage returns, spaces, and convert to lowercase
-    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r' | xargs | tr '[:upper:]' '[:lower:]')
+    # Clean input: keep only English and Russian letters to strip backspace bytes, encoding junk, or control characters
+    IS_PUBLIC=$(echo "$IS_PUBLIC" | tr -d '\r' | sed 's/[^a-zA-Zа-яА-ЯёЁ]//g' | tr '[:upper:]' '[:lower:]')
     echo -e "${BLUE}[*] Debug: Entered value is '$IS_PUBLIC'${NC}"
     
     if [ "$IS_PUBLIC" = "y" ] || [ "$IS_PUBLIC" = "yes" ] || [ "$IS_PUBLIC" = "у" ] || [ "$IS_PUBLIC" = "д" ] || [ "$IS_PUBLIC" = "да" ]; then
@@ -150,7 +150,8 @@ if [ -t 0 ]; then
 
         echo -e "${BLUE}[?] Enable Bitcart (Crypto Payments)? (y/N):${NC}"
         read -r START_BITCART
-        START_BITCART=$(echo "$START_BITCART" | tr -d '\r' | xargs | tr '[:upper:]' '[:lower:]')
+        # Keep only letters to filter terminal garbage
+        START_BITCART=$(echo "$START_BITCART" | tr -d '\r' | sed 's/[^a-zA-Zа-яА-ЯёЁ]//g' | tr '[:upper:]' '[:lower:]')
     else
         # Local/Private mode - Fast track
         DOMAIN=$(hostname -I | awk '{print $1}')
