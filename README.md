@@ -63,15 +63,27 @@ DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 6
 - **Crypto Billing & Payments:** Native integration with Bitcart for processing cryptocurrency subscriptions and payments.
 - **Modern Clients:** Full-featured React web dashboard and a mobile-optimized PWA.
 
+## 💖 Support the Project
+
+DepthSight is completely free and open-source. Maintaining a professional-grade trading infrastructure requires significant resources. To keep the project alive and free for everyone, we use exchange broker programs as our primary support mechanism.
+
+**How it works:** By default, the software includes our Broker/Referral IDs for supported exchanges. When you trade using DepthSight, the exchange shares a small portion of their trading fee with us to fund further development. **This costs you absolutely nothing**—your trading fees remain exactly the same as they would be otherwise.
+
+If you find this project valuable, please consider keeping the default Broker IDs active. 
+
+Alternatively, if DepthSight has helped you automate your trading or build your business, you can support us directly via donations:
+- **USDT (TRC-20):** `TJXbcdPuay8o1VKX2PGHzQ6kVtWjd7aDUi`
+- **BTC:** `34GLMAKyzwuXZW9t6gUZhzF3x2gwBmh9uU`
+- **ETH (ERC-20):** `0x83af3385655a3991d01fb9bf831bea4d75d99409`
+
+*Thank you for your support!*
+
 ## License & Commercial Use
 
 DepthSight is released under the **GNU AGPLv3** open-source license. You are free to download, modify, and run this platform for your personal trading. Furthermore, anyone who modifies and runs this software as a service over a network is required to release their modifications under the same AGPLv3 license.
 
 **Dual Licensing for SaaS / Commercial Use:**
 If you want to build a closed-source fin-tech business or a commercial SaaS offering on top of our infrastructure without open-sourcing your modifications under AGPLv3, you must purchase a commercial license. Please contact `admin@depthsight.pro` for White-Label licensing.
-
-**Development Funding & Broker Integration:**
-DepthSight includes a default broker referral ID to help fund development. This costs you nothing—the exchange pays a portion of their fee to us, and your trading fees remain exactly the same. We rely on this to keep the project alive. You can override the broker ID in your `.env` file if you choose.
 
 ## 🚀 One-Click Deploy
 
@@ -85,7 +97,8 @@ DepthSight requires a minimum of 6 modern CPU cores and 16GB RAM. If you need a 
 Deploy a fully configured instance on any Ubuntu 22.04+ server with a single command. The script auto-installs Docker, generates all secrets, configures networking, sets up a firewall, and starts every service.
 
 ```bash
-curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | sudo bash
+curl -sL "https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh?$(date +%s)" > deploy.sh
+sudo bash deploy.sh
 ```
 
 The interactive installer will ask for your domain (or default to `<IP>.sslip.io` with auto-SSL via Caddy), and optionally enable Bitcart crypto billing.
@@ -271,16 +284,6 @@ npm run build
 
 - Public setup and contribution guide: [docs/open-source-guide.md](docs/open-source-guide.md)
 - Architectural and API documentation: [Docs pending]()
-
-## Support & Donations
-
-If DepthSight has helped you automate your trading or build your business, consider supporting its ongoing development. Your donations help cover infrastructure costs and keep the project active.
-
-- **USDT (TRC-20):** `TJXbcdPuay8o1VKX2PGHzQ6kVtWjd7aDUi`
-- **BTC:** `34GLMAKyzwuXZW9t6gUZhzF3x2gwBmh9uU`
-- **ETH (ERC-20):** `0x83af3385655a3991d01fb9bf831bea4d75d99409`
-
-*Thank you for your support!*
 
 ## Contributing
 

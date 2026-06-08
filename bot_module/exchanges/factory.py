@@ -48,7 +48,7 @@ def normalize_exchange_id(exchange: str | None) -> str:
         normalized_base = _EXCHANGE_ALIASES.get(base, base)
         return f"{normalized_base}_testnet"
 
-    return _EX_ALIASES.get(raw, raw)
+    return _EXCHANGE_ALIASES.get(raw, raw)
 
 
 def supported_exchange_ids() -> tuple[str, ...]:
