@@ -204,8 +204,8 @@ fi
 
 # Ensure migrations are applied (prevents race conditions of multiple containers running it on start)
 echo -e "${BLUE}[*] Running database migrations...${NC}"
-# Wait a few seconds for Postgres to be ready just in case
-sleep 5
+# Wait 15 seconds for Postgres to finish its first-run initialization (especially on slower VPS servers)
+sleep 15
 $COMPOSE_CMD exec -T api alembic upgrade head || true
 
 # 7. Setup Auto-Updater Cron Job on Host
