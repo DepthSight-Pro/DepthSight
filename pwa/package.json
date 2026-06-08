@@ -22,7 +22,7 @@
 		"i18next-browser-languagedetector": "8.2.1",
 		"immer": "^11.1.4",
 		"lucide-react": "^1.8.0",
-		"react": "^19.2.5",
+		"react": "^19.2.7",
 		"react-dom": "^19.2.5",
 		"react-is": "^19.0.0",
 		"react-hot-toast": "^2.6.0",
@@ -38,7 +38,7 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
-		"@types/react": "^19.2.14",
+		"@types/react": "^19.2.17",
 		"@types/react-dom": "^19.2.3",
 		"@types/uuid": "^11.0.0",
 		"@vitejs/plugin-react": "^6.0.1",
