@@ -16,7 +16,6 @@ scratch/
 __pycache__/
 /data_storage
 /data_storage_old
-/alembic/versions/
 /pwa/node_modules/
 /frontend/node_modules/
 /md/
