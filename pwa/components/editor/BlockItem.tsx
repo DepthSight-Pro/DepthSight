@@ -36,8 +36,8 @@ const formatCompositeParams = (
 			const providerParams = block.children[0]?.params || {};
 			const consumerParams = block.children[1]?.params || {};
 			const value =
-				typeof consumerParams.rightOperand === "object"
-					? `x${consumerParams.rightOperand.multiplier}`
+				typeof consumerParams.rightOperand === "object" && consumerParams.rightOperand !== null
+					? `x${(consumerParams.rightOperand as Record<string, unknown>).multiplier}`
 					: consumerParams.rightOperand;
 			return `${providerParams.time_window_sec}s, ${consumerParams.operator} ${value}`;
 		}

@@ -4,6 +4,7 @@ import { useAccountStore } from "../stores/accountStore";
 import type {
 	AccountStatusData,
 	Achievement,
+	AIChatMessage,
 	AddApiKeyPayload,
 	ApiKey,
 	AppConfig,
@@ -13,6 +14,7 @@ import type {
 	BinanceKline,
 	CreatePaymentResponse,
 	GeneStatsResponse,
+	Message,
 	PaperWalletData,
 	Plan,
 	PortfolioStatus,
@@ -20,8 +22,8 @@ import type {
 	RunningStrategy,
 	ShareBacktestPayload,
 	ShareBacktestResponse,
-	StrategyConfig,
 	StrategyConfigDB,
+	StrategyConfigData,
 	SymbolSelectionConfig,
 	Token,
 	TradeData,
@@ -173,14 +175,14 @@ interface AiChatRequest {
 	session_id: string;
 	mode?: "advisor" | "generator";
 	backtest_id?: string | null;
-	strategy_json?: StrategyConfig;
+	strategy_json?: StrategyConfigData;
 	history?: Message[];
 }
 
 interface AiChatResponse {
 	text_response: string;
 	session_id: string;
-	strategy_json?: StrategyConfig | null;
+	strategy_json?: StrategyConfigData | null;
 }
 
 export const api = {
@@ -231,8 +233,8 @@ export const api = {
 				initial_message: initialMessage,
 			}),
 		}),
-	getChatHistory: (sessionId: string): Promise<Message[]> =>
-		apiFetch<Message[]>(`/ai/chat/history/${sessionId}`),
+	getChatHistory: (sessionId: string): Promise<AIChatMessage[]> =>
+		apiFetch<AIChatMessage[]>(`/ai/chat/history/${sessionId}`),
 	deleteChatSession: (sessionId: string): Promise<void> =>
 		apiFetch<void>(`/ai/chat/history/${sessionId}`, {
 			method: "DELETE",
@@ -285,7 +287,7 @@ export const api = {
 	saveStrategy: (data: {
 		name: string;
 		description: string;
-		config_data: StrategyConfig;
+		config_data: StrategyConfigData;
 	}): Promise<StrategyConfigDB> =>
 		apiFetch<StrategyConfigDB>("/strategies/config", {
 			method: "POST",
@@ -293,7 +295,7 @@ export const api = {
 		}),
 	updateStrategyConfig: (
 		configId: string,
-		data: { name?: string; description?: string; config_data?: StrategyConfig },
+		data: { name?: string; description?: string; config_data?: StrategyConfigData },
 	): Promise<StrategyConfigDB> =>
 		apiFetch<StrategyConfigDB>(`/strategies/config/${configId}`, {
 			method: "PUT",

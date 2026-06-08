@@ -4,7 +4,7 @@ import type React from "react";
 import { useTranslation } from "react-i18next";
 import { ICONS } from "../../constants";
 import { useStrategyEditorStore } from "../../stores/strategyEditorStore";
-import type { PartialExit } from "../../types/strategyEditor";
+import type { PartialExit, DynamicParam } from "../../types/strategyEditor";
 import { DynamicValueInput } from "./DynamicValueInput";
 
 interface InitializationBlockProps {
@@ -92,7 +92,7 @@ const InitializationBlock: React.FC<InitializationBlockProps> = ({
 					{t("editor.orderType")}
 				</label>
 				<select
-					value={params.order_type || "MARKET"}
+					value={(params.order_type as string) || "MARKET"}
 					onChange={(e) => setInitializationParam("order_type", e.target.value)}
 					className="w-full p-3 bg-[hsl(var(--secondary))] border border-[hsl(var(--border))] rounded-lg text-sm text-[hsl(var(--foreground))] outline-none"
 				>
@@ -108,7 +108,7 @@ const InitializationBlock: React.FC<InitializationBlockProps> = ({
 						{t("editor.entryPrice")}
 					</label>
 					<DynamicValueInput
-						value={params.entry_price}
+						value={params.entry_price as DynamicParam}
 						onChange={(v) => setInitializationParam("entry_price", v)}
 					/>
 				</div>

@@ -14,7 +14,7 @@ import {
 	BacktestRequest,
 	BacktestKpiResults,
 	StrategyConfigDB,
-	StrategyConfigCreatePayload,
+	StrategyConfigData,
 } from "./types";
 import { getScreenTitles } from "./constants";
 import {
@@ -87,7 +87,7 @@ const KPICard: React.FC<{
 	</div>
 );
 
-const EquityChart: React.FC<{ data: { name: number; equity: number }[] }> = ({
+const EquityChart: React.FC<{ data: { name: string; equity: number }[] }> = ({
 	data,
 }) => {
 	const { t } = useTranslation("pwa-common");
@@ -632,7 +632,7 @@ const MainAppLayout = () => {
 					string,
 					unknown
 				>;
-				const config = configData?.config_data || strategyForBacktest.config_data;
+				const config = (configData?.config_data || strategyForBacktest.config_data) as StrategyConfigData;
 				const request: BacktestRequest = {
 					strategy_name: strategyForBacktest.name,
 					symbol: details.symbol,
@@ -674,7 +674,7 @@ const MainAppLayout = () => {
 	const handleOpenInEditorFromBacktest = useCallback(
 		(backtestRun: BacktestRun) => {
 			const config =
-				backtestRun.parameters_json.config || backtestRun.parameters_json;
+				(backtestRun.parameters_json.config || backtestRun.parameters_json) as StrategyConfigData;
 			setStrategyToEdit({
 				name: `${backtestRun.strategy_name} (from backtest)`,
 				config_data: config,
@@ -698,22 +698,13 @@ const MainAppLayout = () => {
 			try {
 				const strategyName = `${backtestForLaunch.strategy_name} (from backtest)`;
 				const configData =
-					backtestForLaunch.parameters_json.config ||
-					backtestForLaunch.parameters_json;
-				const payload: StrategyConfigCreatePayload = {
+					(backtestForLaunch.parameters_json.config ||
+					backtestForLaunch.parameters_json) as StrategyConfigData;
+				const savedStrategy = await api.saveStrategy({
 					name: strategyName,
 					description: `Strategy from backtest ${backtestForLaunch.id}`,
-					config_data: configData as unknown as StrategyConfig,
-					symbol_selection_mode: details.symbolSelectionMode,
-					symbols: details.symbols
-						? details.symbols.split(",").map((s) => s.trim())
-						: null,
-					use_ml_confirmation: false,
-					foundation_weights: null,
-				};
-				const savedStrategy = await api.saveStrategy(
-					payload as unknown as StrategyConfigCreatePayload,
-				);
+					config_data: configData
+				});
 				const symbolsArray =
 					details.symbolSelectionMode === "STATIC" && details.symbols
 						? details.symbols
@@ -844,7 +835,7 @@ const MainAppLayout = () => {
 								id: backtestForLaunch.id,
 								name: backtestForLaunch.strategy_name,
 								config_data: (backtestForLaunch.parameters_json.config ||
-									backtestForLaunch.parameters_json) as unknown as StrategyConfig,
+									backtestForLaunch.parameters_json) as StrategyConfigData,
 								symbol_selection_mode: "STATIC",
 								symbols: [backtestForLaunch.symbol],
 								created_at: backtestForLaunch.created_at,

@@ -20,6 +20,8 @@ import {
 	type PlanTier,
 	type StrategyState,
 	type TrailingStopBlock,
+	type ActionBlock,
+	type TriggerState,
 } from "../types/strategyEditor";
 
 export const PRO_BLOCKS: ComponentType[] = [
@@ -225,17 +227,17 @@ const findBlockRecursive = (
 		}
 	}
 	if ("if_conditions" in root && root.if_conditions) {
-		const found = findBlockRecursive(root.if_conditions, blockId);
+		const found = findBlockRecursive(root.if_conditions as ConditionBlock, blockId);
 		if (found) return found;
 	}
-	if ("then_actions" in root && root.then_actions) {
-		for (const action of root.then_actions) {
+	if ("then_actions" in root && root.then_actions && Array.isArray(root.then_actions)) {
+		for (const action of root.then_actions as ManagementBlock[]) {
 			const found = findBlockRecursive(action, blockId);
 			if (found) return found;
 		}
 	}
 	return null;
-};
+	};
 
 const addBlockToParent = (
 	root: ConditionBlock,
@@ -332,11 +334,11 @@ const buildSerializedPmConditionsRoot = (
 		return null;
 	}
 
-	const existingRoot = block.params?.conditions;
+	const existingRoot = block.params?.conditions as Record<string, unknown> | undefined;
 	const sourceChildren = Array.isArray(block.children)
 		? block.children
 		: Array.isArray(existingRoot?.children)
-			? existingRoot.children
+			? (existingRoot?.children as ConditionBlock[])
 			: [];
 
 	if (!existingRoot && sourceChildren.length === 0) {
@@ -347,7 +349,7 @@ const buildSerializedPmConditionsRoot = (
 		...(existingRoot && typeof existingRoot === "object"
 			? cloneJsonLike(existingRoot)
 			: {}),
-		id: existingRoot?.id || `${block.id}_conditions_root`,
+		id: (existingRoot?.id as string) || `${block.id}_conditions_root`,
 		type: existingRoot?.type === "OR" ? "OR" : "AND",
 		children: sourceChildren.map(cloneConditionTree),
 	};
@@ -893,23 +895,23 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 					);
 					delete (flattenedData as Record<string, unknown>).config_data;
 
-					draft.id = (strategyObj.id as string) ?? flattenedData.id ?? null;
+					draft.id = (strategyObj.id as string) ?? (flattenedData.id as string) ?? null;
 					draft.strategy_name = resolveRuntimeStrategyName(
 						(flattenedData.strategy_name as string) ?? (strategyObj.strategy_name as string),
 						configData,
 					);
 					draft.signal_source =
-						(flattenedData.signal_source as "internal" | "tradingview") ??
-						(strategyObj.signal_source as "internal" | "tradingview") ??
+						(flattenedData.signal_source as "internal" | "tradingview_webhook") ??
+						(strategyObj.signal_source as "internal" | "tradingview_webhook") ??
 						defaults.signal_source;
 					draft.name =
-						(strategyObj.name as string) ?? flattenedData.name ?? defaults.name;
+						(strategyObj.name as string) ?? (flattenedData.name as string) ?? defaults.name;
 					draft.description =
 						(strategyObj.description as string) ??
-						flattenedData.description ??
+						(flattenedData.description as string) ??
 						defaults.description;
 					draft.symbol =
-						flattenedData.symbol ||
+						(flattenedData.symbol as string) ||
 						(configData.symbol as string) ||
 						(Array.isArray(strategyObj.symbols)
 							? (strategyObj.symbols[0] as string)
@@ -978,32 +980,33 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 					}
 
 					if (flattenedData.filters)
-						draft.filters = { ...defaults.filters, ...flattenedData.filters };
+						draft.filters = { ...defaults.filters, ...(flattenedData.filters as ConditionBlock) };
 					if (flattenedData.entryTrigger)
 						draft.entryTrigger = {
 							...defaults.entryTrigger,
-							...flattenedData.entryTrigger,
+							...(flattenedData.entryTrigger as TriggerState),
 						};
 					if (flattenedData.entryConditions) {
 						draft.entryConditions = {
 							...defaults.entryConditions,
-							...flattenedData.entryConditions,
+							...(flattenedData.entryConditions as ConditionBlock),
 						};
 						draft.useFoundationWeights =
-							flattenedData.entryConditions.type === "OR";
+							(flattenedData.entryConditions as ConditionBlock).type === "OR";
 					}
 					if (flattenedData.initialization) {
+						const flatInit = flattenedData.initialization as ActionBlock;
 						draft.initialization = {
 							...defaults.initialization,
-							...flattenedData.initialization,
+							...flatInit,
 							params: {
 								...defaults.initialization.params,
-								...(flattenedData.initialization.params || {}),
+								...(flatInit.params || {}),
 							},
 						};
 					}
 					if (flattenedData.positionManagement)
-						draft.positionManagement = flattenedData.positionManagement;
+						draft.positionManagement = flattenedData.positionManagement as ManagementBlock[];
 
 					const weights =
 						(strategyObj.foundation_weights as Record<string, number>) ||
@@ -1511,7 +1514,8 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 					if (
 						block?.then_actions &&
 						(typeof typeOrBlock === "object" ||
-							CONDITIONAL_MANAGEMENT_ACTION_TYPES.includes(typeOrBlock as ComponentType))
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
+							CONDITIONAL_MANAGEMENT_ACTION_TYPES.includes(typeOrBlock as any))
 					) {
 						const newAction =
 							typeof typeOrBlock === "string"

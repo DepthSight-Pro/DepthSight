@@ -1,7 +1,7 @@
 // pwa/services/geminiService.ts
 
 import i18n from "../i18n";
-import type { BacktestRun, StrategyConfig } from "../types";
+import type { BacktestRun, StrategyConfigData } from "../types";
 import { api } from "./api";
 
 export const getInitialGreeting = (): string => {
@@ -26,7 +26,7 @@ export const getAIResponse = async (userMessage: string): Promise<string> => {
 
 export const generateStrategyConfig = async (
 	userPrompt: string,
-): Promise<StrategyConfig> => {
+): Promise<StrategyConfigData> => {
 	// Call the backend in 'generator' mode
 	// Important: your generator needs a userPrompt to understand what to do
 	const response = await api.aiChat({
@@ -39,7 +39,7 @@ export const generateStrategyConfig = async (
 		throw new Error("AI failed to generate a valid strategy configuration.");
 	}
 
-	return response.strategy_json;
+	return response.strategy_json as StrategyConfigData;
 };
 
 export const getAIAnalysisForBacktest = async (
