@@ -2,6 +2,9 @@ import asyncio
 import platform
 import logging
 import time
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import aiohttp
 from bot_module import config
 from bot_module.exchanges import create_exchange_executor
