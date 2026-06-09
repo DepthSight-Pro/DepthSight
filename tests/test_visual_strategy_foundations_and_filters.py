@@ -337,13 +337,13 @@ def test_filter_blocks(
     market_data = get_default_market_data()
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
     if should_pass:
-        assert isinstance(
-            signal, StrategySignal
-        ), f"FAIL [{test_id}]: Signal should have passed the filter."
+        assert isinstance(signal, StrategySignal), (
+            f"FAIL [{test_id}]: Signal should have passed the filter."
+        )
     else:
-        assert (
-            signal is None
-        ), f"FAIL [{test_id}]: Signal should not have passed the filter."
+        assert signal is None, (
+            f"FAIL [{test_id}]: Signal should not have passed the filter."
+        )
 
 
 @pytest.mark.parametrize(
@@ -417,13 +417,13 @@ def test_combined_sessions_or_filter(
     market_data = get_default_market_data()
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
     if should_pass:
-        assert isinstance(
-            signal, StrategySignal
-        ), f"FAIL [{test_id}]: Signal should have passed the OR filter (US or Asia)."
+        assert isinstance(signal, StrategySignal), (
+            f"FAIL [{test_id}]: Signal should have passed the OR filter (US or Asia)."
+        )
     else:
-        assert (
-            signal is None
-        ), f"FAIL [{test_id}]: Signal should not have passed - time is outside both sessions."
+        assert signal is None, (
+            f"FAIL [{test_id}]: Signal should not have passed - time is outside both sessions."
+        )
 
 
 @pytest.mark.parametrize(
@@ -570,13 +570,13 @@ def test_foundation_blocks(
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
     if should_pass:
-        assert isinstance(
-            signal, StrategySignal
-        ), f"FAIL [{test_id}]: Signal should have been generated."
+        assert isinstance(signal, StrategySignal), (
+            f"FAIL [{test_id}]: Signal should have been generated."
+        )
     else:
-        assert (
-            signal is None
-        ), f"FAIL [{test_id}]: Signal should not have been generated."
+        assert signal is None, (
+            f"FAIL [{test_id}]: Signal should not have been generated."
+        )
 
 
 @pytest.mark.parametrize(
@@ -634,13 +634,13 @@ def test_indicator_blocks(
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
     if should_pass:
-        assert isinstance(
-            signal, StrategySignal
-        ), f"FAIL [{test_id}]: Signal should have been generated."
+        assert isinstance(signal, StrategySignal), (
+            f"FAIL [{test_id}]: Signal should have been generated."
+        )
     else:
-        assert (
-            signal is None
-        ), f"FAIL [{test_id}]: Signal should not have been generated."
+        assert signal is None, (
+            f"FAIL [{test_id}]: Signal should not have been generated."
+        )
 
 
 def test_action_block_generates_correct_signal(visual_strategy_instance):
@@ -666,9 +666,9 @@ def test_action_block_generates_correct_signal(visual_strategy_instance):
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
-    assert isinstance(
-        signal, StrategySignal
-    ), "Signal was not generated, although all conditions should have passed."
+    assert isinstance(signal, StrategySignal), (
+        "Signal was not generated, although all conditions should have passed."
+    )
     expected_sl = 96.00
     expected_tp = 112.00
     assert signal.direction == strategy_module.SignalDirection.LONG
@@ -813,13 +813,13 @@ def test_logical_operators(
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
     if should_pass:
-        assert isinstance(
-            signal, StrategySignal
-        ), f"FAIL [{test_id}]: Signal should have been generated."
+        assert isinstance(signal, StrategySignal), (
+            f"FAIL [{test_id}]: Signal should have been generated."
+        )
     else:
-        assert (
-            signal is None
-        ), f"FAIL [{test_id}]: Signal should not have been generated."
+        assert signal is None, (
+            f"FAIL [{test_id}]: Signal should not have been generated."
+        )
 
 
 def test_missing_data_handling(visual_strategy_instance):
@@ -851,9 +851,9 @@ def test_missing_data_handling(visual_strategy_instance):
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
-    assert (
-        signal is None
-    ), "Strategy should return None when data is missing, instead of crashing with an error."
+    assert signal is None, (
+        "Strategy should return None when data is missing, instead of crashing with an error."
+    )
 
 
 class TestNewFoundationBlocks:
@@ -888,9 +888,9 @@ class TestNewFoundationBlocks:
         market_data["kline_15m"] = df_15m
 
         signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-        assert isinstance(
-            signal, StrategySignal
-        ), "Signal should have triggered due to proximity to local high (ATR)"
+        assert isinstance(signal, StrategySignal), (
+            "Signal should have triggered due to proximity to local high (ATR)"
+        )
 
     def test_local_level_pass_percentage(self, visual_strategy_instance):
         foundation_block = {
@@ -920,9 +920,9 @@ class TestNewFoundationBlocks:
         market_data["kline_1h"] = df_1h
 
         signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-        assert isinstance(
-            signal, StrategySignal
-        ), "Signal should have triggered due to proximity to local low (%)"
+        assert isinstance(signal, StrategySignal), (
+            "Signal should have triggered due to proximity to local low (%)"
+        )
 
     def test_local_level_fail_too_far(self, visual_strategy_instance):
         foundation_block = {
@@ -954,9 +954,9 @@ class TestNewFoundationBlocks:
         market_data["kline_15m"] = df_15m
 
         signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-        assert (
-            signal is None
-        ), "Signal should not have triggered, price is far from level"
+        assert signal is None, (
+            "Signal should not have triggered, price is far from level"
+        )
 
     def test_tape_acceleration_pass_count(self, visual_strategy_instance):
         # Simulate "acceleration" by comparing current value with averaged * multiplier
@@ -982,9 +982,9 @@ class TestNewFoundationBlocks:
         pair_info["tape_count_5s"] = 10.0
 
         signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-        assert isinstance(
-            signal, StrategySignal
-        ), "Signal should have triggered (value_comparison)"
+        assert isinstance(signal, StrategySignal), (
+            "Signal should have triggered (value_comparison)"
+        )
 
     def test_tape_acceleration_pass_volume(self, visual_strategy_instance):
         foundation_block = {
@@ -1070,10 +1070,10 @@ class TestNewFoundationBlocks:
         signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
         if should_pass:
-            assert isinstance(
-                signal, StrategySignal
-            ), f"FAIL [{test_id}]: Signal should have triggered for pattern '{pattern_to_test}'"
+            assert isinstance(signal, StrategySignal), (
+                f"FAIL [{test_id}]: Signal should have triggered for pattern '{pattern_to_test}'"
+            )
         else:
-            assert (
-                signal is None
-            ), f"FAIL [{test_id}]: Signal should NOT have triggered for pattern '{pattern_to_test}'"
+            assert signal is None, (
+                f"FAIL [{test_id}]: Signal should NOT have triggered for pattern '{pattern_to_test}'"
+            )

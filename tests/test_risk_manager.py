@@ -447,9 +447,9 @@ async def test_performance_risk_reduction_and_recovery(risk_manager, caplog):
             ):
                 reduction_log_found = True
                 break
-        assert (
-            reduction_log_found
-        ), "RISK REDUCED log for ConsecLoss not found or incorrect"
+        assert reduction_log_found, (
+            "RISK REDUCED log for ConsecLoss not found or incorrect"
+        )
 
         with patch(
             "time.time",
@@ -495,7 +495,9 @@ async def test_performance_risk_reduction_and_recovery(risk_manager, caplog):
                 ):
                     recovery_log_found = True
                     break
-            assert recovery_log_found, f"RISK RECOVERED/ENHANCED log for PNL% not found. Expected reason: {expected_reason}. Caplog: {caplog.text}"
+            assert recovery_log_found, (
+                f"RISK RECOVERED/ENHANCED log for PNL% not found. Expected reason: {expected_reason}. Caplog: {caplog.text}"
+            )
 
         stats.current_risk_multiplier_index = default_idx
         stats.current_consecutive_losses = 0
@@ -539,12 +541,14 @@ async def test_performance_risk_reduction_and_recovery(risk_manager, caplog):
 
         for record in caplog.records:
             if record.levelname == "WARNING" and "RISK REDUCED" in record.message:
-                assert (
-                    consec_loss_reason_str not in record.message
-                ), "ConsecLoss should not be the reason for reduction here"
+                assert consec_loss_reason_str not in record.message, (
+                    "ConsecLoss should not be the reason for reduction here"
+                )
                 if expected_reason_pnl in record.message:
                     pnl_reduction_log_found = True
-        assert pnl_reduction_log_found, f"RISK REDUCED log for PNL% not found. Expected reason: {expected_reason_pnl}. Caplog: {caplog.text}"
+        assert pnl_reduction_log_found, (
+            f"RISK REDUCED log for PNL% not found. Expected reason: {expected_reason_pnl}. Caplog: {caplog.text}"
+        )
     finally:
         bot_module_actual_logger.propagate = original_bot_module_propagate_status
 

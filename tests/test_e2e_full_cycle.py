@@ -289,9 +289,9 @@ async def test_full_cycle_market_open_and_be(e2e_controller: TradingController):
         }
         signal, _, _ = await strategy_instance.check_signal(mock_pair_info_open, {})
 
-        assert (
-            signal is not None
-        ), f"Attempt {attempt + 1}: Strategy failed to generate a signal."
+        assert signal is not None, (
+            f"Attempt {attempt + 1}: Strategy failed to generate a signal."
+        )
 
         test_config_id = "e2e-base-id"
         signal.config_id = test_config_id
@@ -328,9 +328,9 @@ async def test_full_cycle_market_open_and_be(e2e_controller: TradingController):
             await controller.close_position(test_symbol, "E2E_RETRY_CLEANUP")
             await asyncio.sleep(10)
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"Position did not open. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"Position did not open. Status: {position.status if position else 'None'}"
+    )
     print(
         f"[PHASE 1] SUCCESS: Position {test_symbol} opened. Entry Price: {position.entry_price}"
     )
@@ -397,9 +397,9 @@ async def test_full_cycle_market_open_and_be(e2e_controller: TradingController):
                 break
 
     async with controller._positions_dict_lock:
-        assert (
-            test_symbol not in controller._active_positions
-        ), f"Position {test_symbol} failed to close."
+        assert test_symbol not in controller._active_positions, (
+            f"Position {test_symbol} failed to close."
+        )
 
     open_orders = await controller.executors["live"].get_open_orders(test_symbol)
     assert not open_orders, f"Orders remaining on the exchange: {open_orders}"
@@ -489,9 +489,9 @@ async def test_e2e_partial_take_profit(e2e_controller: TradingController):
         ):
             break
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"Position did not open. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"Position did not open. Status: {position.status if position else 'None'}"
+    )
     assert len(position.partial_tp_orders) >= 1, "Incorrect number of partial TP orders"
 
     open_orders = await controller.executors["live"].get_open_orders(test_symbol)
@@ -514,13 +514,13 @@ async def test_e2e_partial_take_profit(e2e_controller: TradingController):
     ]
     sl_orders += [o for o in algo_orders if o.get("orderType") == "STOP_MARKET"]
 
-    assert (
-        len(limit_tp_orders) >= 1
-    ), f"There should be at least 1 limit TP order on the exchange, found: {len(limit_tp_orders)}"
+    assert len(limit_tp_orders) >= 1, (
+        f"There should be at least 1 limit TP order on the exchange, found: {len(limit_tp_orders)}"
+    )
     # Check either in the order list or by the presence of ID in the position object (if it cannot be queried on the exchange)
-    assert (
-        len(sl_orders) >= 1 or position.current_sl_order_id is not None
-    ), f"There should be at least 1 stop-loss order on the exchange or in the position, found in API: {len(sl_orders)}"
+    assert len(sl_orders) >= 1 or position.current_sl_order_id is not None, (
+        f"There should be at least 1 stop-loss order on the exchange or in the position, found in API: {len(sl_orders)}"
+    )
     print(
         f"[PHASE 1] SUCCESS: Position opened, {len(limit_tp_orders)} TP and {len(sl_orders)} SL orders placed."
     )
@@ -560,9 +560,9 @@ async def test_e2e_partial_take_profit(e2e_controller: TradingController):
         )
         < 1e-9
     ), "Invalid remaining quantity"
-    assert (
-        position_after_tp1.partial_tp_orders[0].status == "FILLED"
-    ), "First TP status did not update"
+    assert position_after_tp1.partial_tp_orders[0].status == "FILLED", (
+        "First TP status did not update"
+    )
     print("[PHASE 2] SUCCESS: First TP triggered, position size reduced.")
 
     print("\n[PHASE 3] Testing closing remaining position")
@@ -576,9 +576,9 @@ async def test_e2e_partial_take_profit(e2e_controller: TradingController):
     await asyncio.sleep(2)
 
     open_orders_final = await controller.executors["live"].get_open_orders(test_symbol)
-    assert (
-        not open_orders_final
-    ), f"Orders remaining on the exchange: {open_orders_final}"
+    assert not open_orders_final, (
+        f"Orders remaining on the exchange: {open_orders_final}"
+    )
     print("[PHASE 3] SUCCESS: Position fully closed.")
 
 
@@ -659,14 +659,14 @@ async def test_e2e_limit_entry_order(e2e_controller: TradingController):
         if position and position.status == "PENDING_ENTRY":
             break
 
-    assert (
-        position and position.status == "PENDING_ENTRY"
-    ), f"Position status must be PENDING_ENTRY, not {position.status if position else 'None'}"
+    assert position and position.status == "PENDING_ENTRY", (
+        f"Position status must be PENDING_ENTRY, not {position.status if position else 'None'}"
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(test_symbol)
-    assert (
-        len(open_orders) == 1 and open_orders[0]["type"] == "LIMIT"
-    ), "Limit order not found on the exchange"
+    assert len(open_orders) == 1 and open_orders[0]["type"] == "LIMIT", (
+        "Limit order not found on the exchange"
+    )
     print("[PHASE 1] SUCCESS: Position in PENDING_ENTRY status, limit order placed.")
 
     print("\n[PHASE 2] Testing cancellation of PENDING_ENTRY position")
@@ -683,9 +683,9 @@ async def test_e2e_limit_entry_order(e2e_controller: TradingController):
     open_orders_after_cancel = await controller.executors["live"].get_open_orders(
         test_symbol
     )
-    assert (
-        not open_orders_after_cancel
-    ), f"Limit order was not canceled: {open_orders_after_cancel}"
+    assert not open_orders_after_cancel, (
+        f"Limit order was not canceled: {open_orders_after_cancel}"
+    )
     print("[PHASE 2] SUCCESS: Limit order cancelled.")
 
 
@@ -781,9 +781,9 @@ async def test_e2e_scale_in(e2e_controller: TradingController):
         if position and position.status == "OPEN":
             break
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"Position did not open. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"Position did not open. Status: {position.status if position else 'None'}"
+    )
     initial_qty = position.remaining_quantity if position.remaining_quantity else 0
     initial_entries = position.number_of_entries if position.number_of_entries else 1
     print(
@@ -823,12 +823,12 @@ async def test_e2e_scale_in(e2e_controller: TradingController):
             position_after_scale = controller._active_position_get(test_symbol)
 
         assert position_after_scale, "Position disappeared after adding to position"
-        assert (
-            position_after_scale.remaining_quantity >= initial_qty
-        ), "Position size decreased"
-        assert (
-            position_after_scale.number_of_entries >= initial_entries
-        ), "Number of entries decreased"
+        assert position_after_scale.remaining_quantity >= initial_qty, (
+            "Position size decreased"
+        )
+        assert position_after_scale.number_of_entries >= initial_entries, (
+            "Number of entries decreased"
+        )
         print(
             f"[PHASE 2] SUCCESS: Position verified. Size: {position_after_scale.remaining_quantity}, Entries: {position_after_scale.number_of_entries}"
         )
@@ -928,15 +928,15 @@ async def test_e2e_multiple_concurrent_positions(e2e_controller: TradingControll
         ):
             break
 
-    assert (
-        position_btc and position_btc.status == "OPEN"
-    ), f"Position for BTCUSDT was not opened. Status: {position_btc.status if position_btc else 'None'}"
-    assert (
-        position_eth and position_eth.status == "OPEN"
-    ), f"Position for ETHUSDT was not opened. Status: {position_eth.status if position_eth else 'None'}"
-    assert (
-        len(controller._active_positions) >= 2
-    ), f"There should be 2 active positions in the controller, found: {len(controller._active_positions)}"
+    assert position_btc and position_btc.status == "OPEN", (
+        f"Position for BTCUSDT was not opened. Status: {position_btc.status if position_btc else 'None'}"
+    )
+    assert position_eth and position_eth.status == "OPEN", (
+        f"Position for ETHUSDT was not opened. Status: {position_eth.status if position_eth else 'None'}"
+    )
+    assert len(controller._active_positions) >= 2, (
+        f"There should be 2 active positions in the controller, found: {len(controller._active_positions)}"
+    )
 
     open_orders_btc = await controller.executors["live"].get_open_orders("BTCUSDT")
     open_orders_eth = await controller.executors["live"].get_open_orders("ETHUSDT")
@@ -954,14 +954,14 @@ async def test_e2e_multiple_concurrent_positions(e2e_controller: TradingControll
     await asyncio.sleep(10)
 
     async with controller._positions_dict_lock:
-        assert (
-            not controller._active_positions
-        ), "Active positions remain in the controller"
+        assert not controller._active_positions, (
+            "Active positions remain in the controller"
+        )
 
     open_orders_after_close = await controller.executors["live"].get_open_orders()
-    assert (
-        not open_orders_after_close
-    ), f"Open orders remain on the exchange: {open_orders_after_close}"
+    assert not open_orders_after_close, (
+        f"Open orders remain on the exchange: {open_orders_after_close}"
+    )
     print("[PHASE 2] SUCCESS: Both positions closed, no orders.")
 
 
@@ -1044,9 +1044,9 @@ async def test_e2e_exchange_trailing_stop(e2e_controller: TradingController):
         }
         signal, _, _ = await strategy_instance.check_signal(mock_pair_info, {})
 
-        assert (
-            signal is not None
-        ), f"Attempt {attempt + 1}: Strategy failed to generate a signal."
+        assert signal is not None, (
+            f"Attempt {attempt + 1}: Strategy failed to generate a signal."
+        )
 
         test_config_id = "e2e-trailing-id"
         signal.config_id = test_config_id
@@ -1080,9 +1080,9 @@ async def test_e2e_exchange_trailing_stop(e2e_controller: TradingController):
             await controller.close_position(test_symbol, "E2E_RETRY_CLEANUP")
             await asyncio.sleep(10)
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"Position did not open. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"Position did not open. Status: {position.status if position else 'None'}"
+    )
     print(
         f"[PHASE 1] SUCCESS: Position {test_symbol} opened. Entry Price: {position.entry_price}"
     )
@@ -1107,9 +1107,9 @@ async def test_e2e_exchange_trailing_stop(e2e_controller: TradingController):
 
     # Checking that SL was placed (is_sl_algo_order must be True)
     assert position is not None, "Position not found"
-    assert (
-        position.current_sl_order_id is not None or position.is_sl_algo_order
-    ), f"SL order not placed. sl_order_id={position.current_sl_order_id}, is_algo={position.is_sl_algo_order}"
+    assert position.current_sl_order_id is not None or position.is_sl_algo_order, (
+        f"SL order not placed. sl_order_id={position.current_sl_order_id}, is_algo={position.is_sl_algo_order}"
+    )
 
     print(
         f"[PHASE 2] SUCCESS: Position has SL order. is_sl_algo_order={position.is_sl_algo_order}"
@@ -1131,18 +1131,18 @@ async def test_e2e_exchange_trailing_stop(e2e_controller: TradingController):
                 break
 
     async with controller._positions_dict_lock:
-        assert (
-            test_symbol not in controller._active_positions
-        ), f"Position {test_symbol} failed to close."
+        assert test_symbol not in controller._active_positions, (
+            f"Position {test_symbol} failed to close."
+        )
 
     # Canceling all remaining orders
     await controller.executors["live"].cancel_all_open_orders(test_symbol)
     await asyncio.sleep(2)
 
     open_orders_final = await controller.executors["live"].get_open_orders(test_symbol)
-    assert (
-        not open_orders_final
-    ), f"Orders remaining on the exchange: {open_orders_final}"
+    assert not open_orders_final, (
+        f"Orders remaining on the exchange: {open_orders_final}"
+    )
     print(f"[PHASE 3] SUCCESS: Position {test_symbol} closed, all orders canceled.")
 
 
@@ -1218,12 +1218,12 @@ async def test_full_cycle_short_market_open_and_be(e2e_controller: TradingContro
         }
         signal, _, _ = await strategy_instance.check_signal(mock_pair_info_open, {})
 
-        assert (
-            signal is not None
-        ), f"Attempt {attempt + 1}: Strategy failed to generate a SHORT signal."
-        assert (
-            signal.direction == SignalDirection.SHORT
-        ), f"Signal direction should be SHORT, got {signal.direction}"
+        assert signal is not None, (
+            f"Attempt {attempt + 1}: Strategy failed to generate a SHORT signal."
+        )
+        assert signal.direction == SignalDirection.SHORT, (
+            f"Signal direction should be SHORT, got {signal.direction}"
+        )
 
         test_config_id = "e2e-short-id"
         signal.config_id = test_config_id
@@ -1271,21 +1271,21 @@ async def test_full_cycle_short_market_open_and_be(e2e_controller: TradingContro
             await controller.close_position(test_symbol, "E2E_RETRY_CLEANUP")
             await asyncio.sleep(10)
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"SHORT position was not opened. Status: {position.status if position else 'None'}"
-    assert (
-        position.direction == SignalDirection.SHORT
-    ), f"Direction must be SHORT, not {position.direction}"
+    assert position and position.status == "OPEN", (
+        f"SHORT position was not opened. Status: {position.status if position else 'None'}"
+    )
+    assert position.direction == SignalDirection.SHORT, (
+        f"Direction must be SHORT, not {position.direction}"
+    )
     assert position.entry_price is not None, "Entry price is not set after waiting"
     print(
         f"[PHASE 1] SUCCESS: SHORT position {test_symbol} opened. Entry Price: {position.entry_price}, Direction: {position.direction.name}"
     )
 
     # Check that SL is above entry price (for SHORT)
-    assert (
-        position.initial_stop_loss > position.entry_price
-    ), f"For SHORT SL ({position.initial_stop_loss}) must be ABOVE Entry ({position.entry_price})"
+    assert position.initial_stop_loss > position.entry_price, (
+        f"For SHORT SL ({position.initial_stop_loss}) must be ABOVE Entry ({position.entry_price})"
+    )
     print("[PHASE 1] SUCCESS: SL correctly set above Entry for SHORT.")
 
     print("\n[PHASE 2] Testing MOVE TO BREAKEVEN for SHORT")
@@ -1358,9 +1358,9 @@ async def test_full_cycle_short_market_open_and_be(e2e_controller: TradingContro
                 break
 
     async with controller._positions_dict_lock:
-        assert (
-            test_symbol not in controller._active_positions
-        ), f"SHORT Position {test_symbol} failed to close."
+        assert test_symbol not in controller._active_positions, (
+            f"SHORT Position {test_symbol} failed to close."
+        )
 
     open_orders = await controller.executors["live"].get_open_orders(test_symbol)
     assert not open_orders, f"Orders remaining on the exchange: {open_orders}"
@@ -1424,9 +1424,9 @@ async def test_e2e_short_partial_take_profit(e2e_controller: TradingController):
     }
     signal, _, _ = await strategy_instance.check_signal(mock_pair_info, {})
     assert signal is not None, "Strategy did not generate a SHORT signal"
-    assert (
-        signal.direction == SignalDirection.SHORT
-    ), f"Direction should be SHORT, got {signal.direction}"
+    assert signal.direction == SignalDirection.SHORT, (
+        f"Direction should be SHORT, got {signal.direction}"
+    )
 
     test_config_id = "e2e-short-partial-tp-id"
     signal.config_id = test_config_id
@@ -1452,9 +1452,9 @@ async def test_e2e_short_partial_take_profit(e2e_controller: TradingController):
         if position and position.status == "OPEN":
             break
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"SHORT position was not opened. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"SHORT position was not opened. Status: {position.status if position else 'None'}"
+    )
     assert position.direction == SignalDirection.SHORT, "Direction should be SHORT"
 
     # Waiting until partial_tp_orders are placed (asynchronous operation)
@@ -1501,10 +1501,12 @@ async def test_e2e_short_partial_take_profit(e2e_controller: TradingController):
     tp_orders_exist = len(limit_tp_orders) >= 1 or any(
         o.order_id for o in position.partial_tp_orders
     )
-    assert tp_orders_exist, f"There must be at least 1 TP order. On the exchange: {len(limit_tp_orders)}, In position: {[o.order_id for o in position.partial_tp_orders]}"
-    assert (
-        len(sl_orders) >= 1 or position.current_sl_order_id is not None
-    ), "There should be at least 1 stop-loss BUY order for SHORT on the exchange or in the position"
+    assert tp_orders_exist, (
+        f"There must be at least 1 TP order. On the exchange: {len(limit_tp_orders)}, In position: {[o.order_id for o in position.partial_tp_orders]}"
+    )
+    assert len(sl_orders) >= 1 or position.current_sl_order_id is not None, (
+        "There should be at least 1 stop-loss BUY order for SHORT on the exchange or in the position"
+    )
     print(
         f"[PHASE 1] SUCCESS: SHORT position opened, {len(limit_tp_orders)} TP and {len(sl_orders)} SL orders placed."
     )
@@ -1547,9 +1549,9 @@ async def test_e2e_short_partial_take_profit(e2e_controller: TradingController):
         )
         < 1e-9
     ), "Invalid remaining quantity"
-    assert (
-        position_after_tp1.partial_tp_orders[0].status == "FILLED"
-    ), "First TP status did not update"
+    assert position_after_tp1.partial_tp_orders[0].status == "FILLED", (
+        "First TP status did not update"
+    )
     print("[PHASE 2] SUCCESS: First TP triggered for SHORT, position size reduced.")
 
     print("\n[PHASE 3] Testing closing remaining SHORT position")
@@ -1563,7 +1565,7 @@ async def test_e2e_short_partial_take_profit(e2e_controller: TradingController):
     await asyncio.sleep(2)
 
     open_orders_final = await controller.executors["live"].get_open_orders(test_symbol)
-    assert (
-        not open_orders_final
-    ), f"Orders remaining on the exchange: {open_orders_final}"
+    assert not open_orders_final, (
+        f"Orders remaining on the exchange: {open_orders_final}"
+    )
     print("[PHASE 3] SUCCESS: SHORT position fully closed.")

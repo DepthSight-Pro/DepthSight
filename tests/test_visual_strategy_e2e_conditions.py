@@ -275,9 +275,9 @@ class TestFilterBlocks:
         await backtester.run_async()
 
         # With a very high threshold, there should be no trades
-        assert (
-            len(backtester.trade_log) == 0
-        ), "With ATR threshold > 999999 there should be no trades"
+        assert len(backtester.trade_log) == 0, (
+            "With ATR threshold > 999999 there should be no trades"
+        )
 
     @pytest.mark.asyncio
     async def test_e2e_filter_trend_adx(

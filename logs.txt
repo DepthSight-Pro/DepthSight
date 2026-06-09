@@ -1,0 +1,41 @@
+   --> scripts\verify_exchanges_public.py:111:13
+    |
+109 |             try:
+110 |                 await consumer.ensure_unsubscription("depth", "BTCUSDT")
+111 |             except:
+    |             ^^^^^^
+112 |                 pass
+    |
+
+E402 Module level import not at top of file
+  --> verify_exchanges_public.py:15:1
+   |
+13 | config.ACTIVE_TRADING_ENVIRONMENT = "mainnet"
+14 |
+15 | from bot_module.exchanges import create_exchange_executor
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+16 | from bot_module.data_consumer import DataConsumer
+17 | from bot_module.strategy import StrategySignal, SignalDirection, OrderMode, PartialTarget
+   |
+
+E402 Module level import not at top of file
+  --> verify_exchanges_public.py:16:1
+   |
+15 | from bot_module.exchanges import create_exchange_executor
+16 | from bot_module.data_consumer import DataConsumer
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+17 | from bot_module.strategy import StrategySignal, SignalDirection, OrderMode, PartialTarget
+   |
+
+E402 Module level import not at top of file
+  --> verify_exchanges_public.py:17:1
+   |
+15 | from bot_module.exchanges import create_exchange_executor
+16 | from bot_module.data_consumer import DataConsumer
+17 | from bot_module.strategy import StrategySignal, SignalDirection, OrderMode, PartialTarget
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |
+19 | # Configure logging to show info messages
+   |
+
+Found 4 errors.

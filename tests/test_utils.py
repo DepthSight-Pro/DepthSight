@@ -44,9 +44,9 @@ except ImportError:
 )
 def test_round_dynamic(value, tick_size, expected):
     result = round_dynamic(value, tick_size)
-    assert math.isclose(
-        result, expected
-    ), f"Failed for {value}, tick={tick_size}. Got {result}, expected {expected}"
+    assert math.isclose(result, expected), (
+        f"Failed for {value}, tick={tick_size}. Got {result}, expected {expected}"
+    )
 
 
 # --- NEW TESTS for round_price_by_tick ---
@@ -71,9 +71,9 @@ def test_round_price_by_tick(price, tick_size, rounding_mode, expected):
     if expected is None:
         assert result is None
     else:
-        assert math.isclose(
-            result, expected
-        ), f"Failed for {price}, tick={tick_size}, mode={rounding_mode}. Got {result}, expected {expected}"
+        assert math.isclose(result, expected), (
+            f"Failed for {price}, tick={tick_size}, mode={rounding_mode}. Got {result}, expected {expected}"
+        )
 
 
 # --- NEW TESTS for add_relative_volume ---

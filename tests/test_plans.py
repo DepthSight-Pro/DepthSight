@@ -157,9 +157,9 @@ class TestUserPlans:
         # mocker.patch('sqlalchemy.ext.asyncio.AsyncSession.refresh', new_callable=AsyncMock) # This patch might not be needed
 
         response = await client.post(endpoint, json=payload)
-        assert (
-            response.status_code == expected_status
-        ), f"For {user_fixture} on {endpoint}, expected {expected_status}, but got {response.status_code}. Response: {response.text}"
+        assert response.status_code == expected_status, (
+            f"For {user_fixture} on {endpoint}, expected {expected_status}, but got {response.status_code}. Response: {response.text}"
+        )
 
     async def test_quota_enforcement_for_free_user(
         self, free_user_client, mock_redis_client, free_user, mock_celery_tasks
@@ -259,9 +259,9 @@ class TestUserPlans:
             response = await client.post(
                 "/api/v1/backtests", json=self.backtest_payload
             )
-            assert (
-                response.status_code == 202
-            ), f"Concurrent task #{i + 1} for plan '{user.plan}' should have been accepted"
+            assert response.status_code == 202, (
+                f"Concurrent task #{i + 1} for plan '{user.plan}' should have been accepted"
+            )
 
         response = await client.post("/api/v1/backtests", json=self.backtest_payload)
         assert response.status_code == 429

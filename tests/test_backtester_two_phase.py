@@ -219,11 +219,11 @@ async def test_two_phase_minute_scan_passes_and_loads_1s_data(
     all_log_messages = [str(call) for call in mock_logger.info.call_args_list]
     minute_scan_log_found = any("Minute scan passed" in msg for msg in all_log_messages)
 
-    assert (
-        minute_scan_log_found
-    ), "There should be a message about a successful minute scan"
+    assert minute_scan_log_found, (
+        "There should be a message about a successful minute scan"
+    )
 
     # Checking that there was an attempt to load second data
-    assert (
-        mock_load_1s.called
-    ), "Method _load_1s_klines_for_window should have been called"
+    assert mock_load_1s.called, (
+        "Method _load_1s_klines_for_window should have been called"
+    )

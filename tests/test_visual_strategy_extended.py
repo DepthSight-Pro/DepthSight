@@ -134,9 +134,9 @@ def visual_strategy_instance(monkeypatch):
         instance = strategy_module.create_strategy_instance(
             strategy_name="VisualBuilderStrategy", params=params_for_creation
         )
-        assert (
-            instance is not None
-        ), "Failed to create an instance of VisualBuilderStrategy"
+        assert instance is not None, (
+            "Failed to create an instance of VisualBuilderStrategy"
+        )
         return instance
 
     return _create_instance
@@ -246,9 +246,9 @@ async def test_move_to_breakeven_percentage(visual_strategy_instance):
     backtester.strategy_instance.check_signal = single_signal_on_60
     await backtester.run_async()
 
-    assert (
-        len(backtester.trade_log) == 1
-    ), f"There should have been one trade, but trade_log: {backtester.trade_log}"
+    assert len(backtester.trade_log) == 1, (
+        f"There should have been one trade, but trade_log: {backtester.trade_log}"
+    )
     trade = backtester.trade_log[0]
     assert trade["exit_reason"] == "SL_AT_BE"
 

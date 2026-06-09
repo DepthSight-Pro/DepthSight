@@ -97,9 +97,9 @@ async def test_full_genetic_search_workflow(
             response = await client.post("/api/v1/discovery/runs", json=genetic_payload)
 
             # 3. THEN: Checking that the task was successfully accepted
-            assert (
-                response.status_code == 202
-            ), f"Expected 202, got {response.status_code}. Body: {response.text}"
+            assert response.status_code == 202, (
+                f"Expected 202, got {response.status_code}. Body: {response.text}"
+            )
             run_response = schemas.GeneticRunResponse.model_validate(response.json())
             run_id = str(run_response.id)
             assert run_id
@@ -117,9 +117,9 @@ async def test_full_genetic_search_workflow(
             )
 
             # 5. THEN: Checking status and results
-            assert (
-                run_details.status == "COMPLETED"
-            ), f"Run status is {run_details.status}, expected COMPLETED. Error: {run_details.error_message}"
+            assert run_details.status == "COMPLETED", (
+                f"Run status is {run_details.status}, expected COMPLETED. Error: {run_details.error_message}"
+            )
 
             # 6. WHEN: Requesting the "Hall of Fame" (found strategies)
             print(f"[E2E Genetic Test] Fetching found strategies for run {run_id}...")
@@ -135,9 +135,9 @@ async def test_full_genetic_search_workflow(
 
             # 7. THEN: Checking that the strategies were saved
             # ATTENTION: If the mock returned 3, then there should be 3 in the DB.
-            assert (
-                len(found_strategies) == 3
-            ), f"Expected 3 strategies, got {len(found_strategies)}"
+            assert len(found_strategies) == 3, (
+                f"Expected 3 strategies, got {len(found_strategies)}"
+            )
             best_strategy = found_strategies[0]
             assert best_strategy.rank == 1
             assert best_strategy.fitness_score == pytest.approx(2.5)

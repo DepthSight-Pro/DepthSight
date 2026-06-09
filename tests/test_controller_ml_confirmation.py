@@ -304,9 +304,9 @@ async def test_ml_confirmation_processing_signal(
             or (call_arg.args and call_arg.args[0] == "SIGNAL_REJECTED_ML_LIVE")
             for call_arg in controller.trade_logger.log_event.call_args_list
         )
-        assert (
-            found_ml_reject_log
-        ), "Signal was NOT rejected by ML as expected (no reject log found)."
+        assert found_ml_reject_log, (
+            "Signal was NOT rejected by ML as expected (no reject log found)."
+        )
 
     # Clearing state for the next parameterized run
     async with controller._positions_dict_lock:

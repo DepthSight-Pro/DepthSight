@@ -146,16 +146,16 @@ async def test_e2e_breakout_retest_and_breakeven(visual_strategy_instance):
     backtester.strategy_instance.check_signal = single_signal_on_60
     await backtester.run_async()
 
-    assert (
-        len(backtester.trade_log) == 1
-    ), f"Expected 1 trade, but got: {backtester.trade_log}"
+    assert len(backtester.trade_log) == 1, (
+        f"Expected 1 trade, but got: {backtester.trade_log}"
+    )
     trade = backtester.trade_log[0]
 
-    assert trade["entry_price"] == pytest.approx(
-        105.0
-    ), "Entry price must be at the retest level"
+    assert trade["entry_price"] == pytest.approx(105.0), (
+        "Entry price must be at the retest level"
+    )
     assert trade["exit_reason"] == "SL_AT_BE", "Exit reason must be 'SL_AT_BE'"
-    assert trade["exit_price"] == pytest.approx(
-        105.02
-    ), "Exit price must be at the break-even stop level with an offset"
+    assert trade["exit_price"] == pytest.approx(105.02), (
+        "Exit price must be at the break-even stop level with an offset"
+    )
     assert trade["pnl"] > 0, "PnL should be slightly positive due to the stop offset"

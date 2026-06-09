@@ -178,13 +178,13 @@ def test_price_condition_block(
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
     if should_pass:
-        assert (
-            signal is not None
-        ), f"FAIL [{test_id}]: Signal should have been generated"
+        assert signal is not None, (
+            f"FAIL [{test_id}]: Signal should have been generated"
+        )
     else:
-        assert (
-            signal is None
-        ), f"FAIL [{test_id}]: Signal should not have been generated"
+        assert signal is None, (
+            f"FAIL [{test_id}]: Signal should not have been generated"
+        )
 
 
 def test_return_to_level_block(visual_strategy_instance):
@@ -227,9 +227,9 @@ def test_return_to_level_block(visual_strategy_instance):
     pair_info["current_candle_index"] = len(market_data["kline_1m"]) - 1
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-    assert (
-        signal is not None
-    ), "Signal should be present when the price returns to the found level"
+    assert signal is not None, (
+        "Signal should be present when the price returns to the found level"
+    )
 
 
 def test_return_to_level_breakout_retest_block(visual_strategy_instance):
@@ -276,9 +276,9 @@ def test_return_to_level_breakout_retest_block(visual_strategy_instance):
     pair_info["current_candle_index"] = len(market_data["kline_1m"]) - 1
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, prev_pair_info)
-    assert (
-        signal is not None
-    ), "Signal should be present when the price has returned to the level after moving away"
+    assert signal is not None, (
+        "Signal should be present when the price has returned to the level after moving away"
+    )
 
 
 def test_local_level_ignores_middle_wicks_inside_lookback(visual_strategy_instance):
@@ -402,9 +402,9 @@ def test_edge_cases_empty_children_and_bad_ref(visual_strategy_instance):
     }
     strat_bad_ref = visual_strategy_instance(bad_ref_config)
     signal_bad, _, _ = strat_bad_ref.check_signal_sync(pair_info, market_data, None)
-    assert (
-        signal_bad is None
-    ), "Signal should not be generated when referencing a non-existent block"
+    assert signal_bad is None, (
+        "Signal should not be generated when referencing a non-existent block"
+    )
 
 
 @pytest.mark.parametrize(
@@ -489,7 +489,7 @@ def test_order_book_zone_data_provider(
     )
 
     assert is_true is True, "Data provider block should always return True"
-    assert (
-        "error" not in details
-    ), f"There should be no errors in 'details': {details.get('error')}"
+    assert "error" not in details, (
+        f"There should be no errors in 'details': {details.get('error')}"
+    )
     assert "total_volume_usd" in details

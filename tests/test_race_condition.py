@@ -271,12 +271,12 @@ async def test_max_concurrent_positions_limit_race_condition(
 
         print(f"[RACE TEST] Resulting open positions: {open_symbols}")
 
-        assert (
-            len(open_positions) == 1
-        ), f"Expected exactly 1 position to open, but found {len(open_positions)}: {open_symbols}"
-        assert (
-            open_symbols[0] in symbols
-        ), f"Opened position {open_symbols[0]} is not one of the test symbols"
+        assert len(open_positions) == 1, (
+            f"Expected exactly 1 position to open, but found {len(open_positions)}: {open_symbols}"
+        )
+        assert open_symbols[0] in symbols, (
+            f"Opened position {open_symbols[0]} is not one of the test symbols"
+        )
 
     # Cleanup is handled by fixture teardown, but explicit cleanup is safer for race test
     for sym in open_symbols:

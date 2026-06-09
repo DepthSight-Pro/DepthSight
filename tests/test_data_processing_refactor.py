@@ -207,7 +207,9 @@ async def test_full_integration_visual_strategy(mocker):
             if metrics and "RSI_14" in metrics:
                 found_call = True
                 break
-        assert found_call, "ensure_subscription was not called with required_metrics containing 'RSI_14'"
+        assert found_call, (
+            "ensure_subscription was not called with required_metrics containing 'RSI_14'"
+        )
 
         # --- Step 3: Mocking data collection and firing an event ---
         mock_kline_df = pd.DataFrame(
@@ -256,9 +258,9 @@ async def test_full_integration_visual_strategy(mocker):
         # 5. Check if position was created
         await asyncio.sleep(1.0)  # Increasing wait time for full processing
         # --- Step 4: Checking the result ---
-        assert (
-            len(controller._active_positions) == 1
-        ), "Position was not created after signal trigger"
+        assert len(controller._active_positions) == 1, (
+            "Position was not created after signal trigger"
+        )
         position = list(controller._active_positions.values())[0]
         assert position.symbol == "TESTUSDT"
         assert position.direction == SignalDirection.LONG

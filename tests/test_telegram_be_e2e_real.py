@@ -146,9 +146,9 @@ async def test_full_chain_strategy_to_telegram():
     print(f"be_trigger_reason={getattr(updated_position, 'be_trigger_reason', 'N/A')}")
 
     # 5. Checking that the flag is set
-    assert (
-        updated_position.is_stop_at_be
-    ), f"is_stop_at_be should be True, but got {updated_position.is_stop_at_be}"
+    assert updated_position.is_stop_at_be, (
+        f"is_stop_at_be should be True, but got {updated_position.is_stop_at_be}"
+    )
 
     # 6. If the flag is set - send a real notification
     if updated_position.is_stop_at_be:

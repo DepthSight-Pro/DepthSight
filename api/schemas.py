@@ -784,6 +784,7 @@ class BacktestResults(BaseModel):
     equity_curve: Optional[List[List[Any]]] = None
     trades: List[Trade] = []
 
+
 class TradeExecution(BaseModel):
     timestamp: datetime
     price: float

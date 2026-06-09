@@ -146,9 +146,9 @@ async def test_backtester_full_mode(backtester_shared_data):
 
     results = await bt.run_async()
     assert results is not None
-    assert (
-        results["trades"] == 1
-    ), f"Should be one trade, but received {results['trades']}"
+    assert results["trades"] == 1, (
+        f"Should be one trade, but received {results['trades']}"
+    )
 
     trade = bt.trade_log[0]
     # Check that the trade opened at a price close to the signal price (accounting for slippage)
@@ -194,9 +194,9 @@ async def test_backtester_none_mode(backtester_shared_data):
 
     results = await bt.run_async()
     assert results is not None
-    assert (
-        results["trades"] == 1
-    ), f"Should be one trade, but received {results['trades']}"
+    assert results["trades"] == 1, (
+        f"Should be one trade, but received {results['trades']}"
+    )
 
     signal_price = backtester_shared_data["signal_price"]
     trade = bt.trade_log[0]

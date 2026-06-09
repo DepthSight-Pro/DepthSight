@@ -1117,9 +1117,9 @@ class DataConsumer:
         async with self._redis_market_lock:
             if self._redis_market_client is None:
                 self._redis_market_client = redis_asyncio.Redis(
-                    host=config.REDIS_HOST,
-                    port=config.REDIS_PORT,
-                    db=config.REDIS_DB,
+                    host=config.MARKET_REDIS_HOST,
+                    port=config.MARKET_REDIS_PORT,
+                    db=config.MARKET_REDIS_DB,
                     username=config.REDIS_USERNAME,
                     password=config.REDIS_PASSWORD,
                     decode_responses=True,
@@ -1156,9 +1156,16 @@ class DataConsumer:
                 if not self._redis_market_pubsub:
                     await asyncio.sleep(0.1)
                     continue
-                message = await self._redis_market_pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=1.0
-                )
+                try:
+                    async with self._redis_market_lock:
+                        message = await self._redis_market_pubsub.get_message(
+                            ignore_subscribe_messages=True, timeout=1.0
+                        )
+                except RuntimeError as e:
+                    if "pubsub connection not set" in str(e):
+                        await asyncio.sleep(0.1)
+                        continue
+                    raise
                 if not message or message.get("type") != "message":
                     continue
                 try:

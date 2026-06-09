@@ -162,9 +162,9 @@ async def test_backtest_task_publishes_realtime_progress(mocker, test_user):
 
     await asyncio.sleep(0.1)
 
-    assert (
-        mock_redis_pub_client.publish.call_count > 0
-    ), "Expected at least 1 call for publishing to Redis"
+    assert mock_redis_pub_client.publish.call_count > 0, (
+        "Expected at least 1 call for publishing to Redis"
+    )
 
     # Checks - message structure: {'kpis': {...}, 'equity_point': ..., 'events': [...]}
     expected_channel = f"backtest-progress:{task_id}"

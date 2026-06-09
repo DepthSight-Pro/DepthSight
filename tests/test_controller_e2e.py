@@ -564,18 +564,18 @@ async def test_full_trade_cycle_long_market(
     logger.info(f"[E2E Test START] Market Type: {market_type}, Symbol: {test_symbol}")
 
     balance_info = await executor.get_account_balance()
-    assert (
-        balance_info is not None
-    ), f"executor.get_account_balance() returned None for market {market_type}."
-    assert (
-        balance_info
-    ), f"executor.get_account_balance() returned empty for market {market_type}."
+    assert balance_info is not None, (
+        f"executor.get_account_balance() returned None for market {market_type}."
+    )
+    assert balance_info, (
+        f"executor.get_account_balance() returned empty for market {market_type}."
+    )
     asset_balance_data = balance_info.get(initial_balance_asset, {})
     asset_free_balance_str = asset_balance_data.get("free", "0")
     asset_free_balance = float(asset_free_balance_str)
-    assert (
-        asset_free_balance > min_balance_check
-    ), f"Insufficient {initial_balance_asset} balance for E2E test."
+    assert asset_free_balance > min_balance_check, (
+        f"Insufficient {initial_balance_asset} balance for E2E test."
+    )
 
     global_bot_config.SYMBOL_SOURCE_STATIC_LIST = [test_symbol]
     await controller._check_and_update_symbols()
@@ -593,9 +593,9 @@ async def test_full_trade_cycle_long_market(
             config_dict.get("config_data", {}).get("symbol") == test_symbol
             for _, config_dict in controller.running_strategy_instances.values()
         )
-        assert (
-            found_instance
-        ), f"No strategy instance found for {test_symbol} in running_strategy_instances"
+        assert found_instance, (
+            f"No strategy instance found for {test_symbol} in running_strategy_instances"
+        )
 
     # Add an additional check to see if the data has loaded
     kline_tf_for_test = global_bot_config.STRATEGY_DEFAULTS[test_strategy_name].get(
@@ -642,7 +642,9 @@ async def test_full_trade_cycle_long_market(
         ticker_info = await executor.get_ticker_price(test_symbol)
         assert (
             ticker_info and "price" in ticker_info and not ticker_info.get("error")
-        ), f"Failed to get current price for {test_symbol} ({market_type}): {ticker_info}"
+        ), (
+            f"Failed to get current price for {test_symbol} ({market_type}): {ticker_info}"
+        )
         current_price = float(ticker_info["price"])
         test_atr = current_price * 0.01
 
@@ -679,9 +681,9 @@ async def test_full_trade_cycle_long_market(
         position = await wait_for_position_status(
             controller, test_symbol, "OPEN", timeout=60
         )
-        assert (
-            position is not None
-        ), f"Position for {test_symbol} ({market_type}) not created or timed out."
+        assert position is not None, (
+            f"Position for {test_symbol} ({market_type}) not created or timed out."
+        )
         logger.info(
             f"[E2E_Test Entry Order FILLED ({market_type})] Pos Status: {position.status}"
         )
@@ -694,9 +696,9 @@ async def test_full_trade_cycle_long_market(
             sl_placed = await wait_for_sl_order_placement(
                 controller, test_symbol, timeout=30.0
             )
-            assert (
-                sl_placed
-            ), f"SL order was not placed for {test_symbol} within timeout."
+            assert sl_placed, (
+                f"SL order was not placed for {test_symbol} within timeout."
+            )
         else:
             logger.warning(
                 f"[E2E_Test] Skipping SL order placement check for {market_type} due to Spot Testnet balance reservation limitations."
@@ -712,15 +714,17 @@ async def test_full_trade_cycle_long_market(
         position_after_close = await wait_for_position_status(
             controller, test_symbol, "CLOSED", timeout=60, expect_removal_if_closed=True
         )  # Increased timeout
-        assert (
-            position_after_close is None
-        ), f"Position {test_symbol} ({market_type}) not removed after closing."
+        assert position_after_close is None, (
+            f"Position {test_symbol} ({market_type}) not removed after closing."
+        )
 
         logger.info("[E2E_Test] Waiting for exchange order cancellation propagation...")
         await asyncio.sleep(5)
         open_orders_after_close = await executor.get_open_orders(symbol=test_symbol)
 
-        assert not open_orders_after_close, f"Not all exit orders were cancelled for {test_symbol} ({market_type}). Lingering: {open_orders_after_close}"
+        assert not open_orders_after_close, (
+            f"Not all exit orders were cancelled for {test_symbol} ({market_type}). Lingering: {open_orders_after_close}"
+        )
 
         logger.info(
             f"[E2E Test COMPLETE] Market Type: {market_type}, Symbol: {test_symbol}"

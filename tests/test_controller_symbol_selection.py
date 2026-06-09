@@ -145,15 +145,15 @@ async def test_dynamic_natr_filtering_by_user_threshold(controller_instance):
     }
 
     # Checking results
-    assert (
-        len(desired_symbols_set) == 3
-    ), "3 symbols should be selected (max_concurrent_symbols)"
+    assert len(desired_symbols_set) == 3, (
+        "3 symbols should be selected (max_concurrent_symbols)"
+    )
 
     # Checking that the correct symbols are selected (with the highest NATR and >= 2.0)
     expected_symbols = {"BTCUSDT", "ETHUSDT", "BNBUSDT"}
-    assert (
-        desired_symbols_set == expected_symbols
-    ), f"Expected {expected_symbols}, received {desired_symbols_set}"
+    assert desired_symbols_set == expected_symbols, (
+        f"Expected {expected_symbols}, received {desired_symbols_set}"
+    )
 
     # Checking that symbols with NATR < 2.0 did NOT get into the selection
     assert "SOLUSDT" not in desired_symbols_set
@@ -239,9 +239,9 @@ async def test_dynamic_oracle_filtering_by_regime_and_confidence(controller_inst
 
     # Checking the correctness of selection (pump mode with confidence >= 75%)
     expected_symbols = {"BTCUSDT", "ETHUSDT"}
-    assert (
-        desired_symbols_set == expected_symbols
-    ), f"Expected {expected_symbols}, received {desired_symbols_set}"
+    assert desired_symbols_set == expected_symbols, (
+        f"Expected {expected_symbols}, received {desired_symbols_set}"
+    )
 
     # Checking that unsuitable symbols did NOT get in
     assert "BNBUSDT" not in desired_symbols_set, "BNBUSDT: confidence < 75%"
@@ -342,9 +342,9 @@ async def test_zero_symbols_pass_strict_filter(controller_instance):
     desired_symbols_set = {s["symbol"] for s in filtered}
 
     # Checking that the list is empty
-    assert (
-        len(desired_symbols_set) == 0
-    ), "No symbol should pass the NATR >= 10.0 filter"
+    assert len(desired_symbols_set) == 0, (
+        "No symbol should pass the NATR >= 10.0 filter"
+    )
 
 
 if __name__ == "__main__":

@@ -65,9 +65,9 @@ async def test_strategy_requests_atr_automatically(sample_strategy_config):
 
     print(f"\n[TEST 1] Required indicators found: {req_indicators}")
 
-    assert (
-        "ATR_14" in req_indicators
-    ), "ERROR: Strategy did NOT add ATR_14 to the list of required indicators!"
+    assert "ATR_14" in req_indicators, (
+        "ERROR: Strategy did NOT add ATR_14 to the list of required indicators!"
+    )
 
 
 @pytest.mark.asyncio
@@ -93,14 +93,14 @@ async def test_data_consumer_saves_atr_key(sample_strategy_config):
 
     # 1. Checking raw calculation (could be atr_ or atrr_)
     has_atr_raw = any(k.startswith(("atr_", "atrr_")) for k in pair_data.keys())
-    assert (
-        has_atr_raw
-    ), "ERROR: DataConsumer did not calculate ATR (no atr_ or atrr_ keys)!"
+    assert has_atr_raw, (
+        "ERROR: DataConsumer did not calculate ATR (no atr_ or atrr_ keys)!"
+    )
 
     # 2. Checking for the presence of the universal 'atr' key (Our fix)
-    assert (
-        "atr" in pair_data
-    ), "ERROR: Key 'atr' is missing! DataConsumer did not copy the value."
+    assert "atr" in pair_data, (
+        "ERROR: Key 'atr' is missing! DataConsumer did not copy the value."
+    )
 
     assert pair_data["atr"] is not None and pair_data["atr"] > 0
 
@@ -144,9 +144,9 @@ async def test_integration_signal_generation(sample_strategy_config):
             expected_sl_dist = 1.5 * 2.0  # atr * sl_value
             actual_sl_dist = abs(100.0 - signal.stop_loss)
             # Taking tick rounding into account
-            assert (
-                abs(actual_sl_dist - expected_sl_dist) < 0.02
-            ), "Stop-loss calculated incorrectly!"
+            assert abs(actual_sl_dist - expected_sl_dist) < 0.02, (
+                "Stop-loss calculated incorrectly!"
+            )
 
     except Exception as e:
         pytest.fail(f"ERROR during signal generation: {e}")

@@ -66,9 +66,9 @@ def test_signal_triggers_order_placement(
     data = response.json()
 
     assert "orders" in data
-    assert (
-        len(data["orders"]) == 1
-    ), f"Expected 1 order, received: {len(data['orders'])}. Response: {data}"
+    assert len(data["orders"]) == 1, (
+        f"Expected 1 order, received: {len(data['orders'])}. Response: {data}"
+    )
 
     received_order = data["orders"][0]
     logger.info(f"Received order: {received_order}")

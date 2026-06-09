@@ -76,9 +76,9 @@ async def test_model_lab_full_workflow(
     db_run = await crud.get_dataset_run(
         db_session, user_id=pro_user.id, run_id=dataset_run_id
     )
-    assert (
-        db_run is not None
-    ), "DatasetRun should have been found in the DB after creation."
+    assert db_run is not None, (
+        "DatasetRun should have been found in the DB after creation."
+    )
     db_run.status = "COMPLETED"
     db_run.file_path = "/data/datasets/fake_dataset.parquet"
     await db_session.commit()

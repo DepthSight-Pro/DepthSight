@@ -220,12 +220,12 @@ def test_feature_extractor_initialization():
             and name in fe.kline_feature_configs
             and name in fe._kline_stats
         ):  # Additional check for activity and config
-            assert (
-                name in fe._kline_stats
-            ), f"Kline stat '{name}' not found in _kline_stats"
-            assert (
-                fe._kline_stats[name]["type"] == type_val
-            ), f"Kline stat '{name}' has wrong type"
+            assert name in fe._kline_stats, (
+                f"Kline stat '{name}' not found in _kline_stats"
+            )
+            assert fe._kline_stats[name]["type"] == type_val, (
+                f"Kline stat '{name}' has wrong type"
+            )
         elif (
             name == "volume_spike_ratio_20"
             and "rel_volume_spike_20" in fe.active_feature_names
@@ -247,12 +247,12 @@ def test_feature_extractor_initialization():
             and name in fe.aggtrade_feature_configs
             and name in fe._aggtrade_stats
         ):  # Additional check
-            assert (
-                name in fe._aggtrade_stats
-            ), f"Aggtrade stat '{name}' not found in _aggtrade_stats"
-            assert (
-                fe._aggtrade_stats[name]["type"] == type_val
-            ), f"Aggtrade stat '{name}' has wrong type"
+            assert name in fe._aggtrade_stats, (
+                f"Aggtrade stat '{name}' not found in _aggtrade_stats"
+            )
+            assert fe._aggtrade_stats[name]["type"] == type_val, (
+                f"Aggtrade stat '{name}' has wrong type"
+            )
         # else:
         # print(f"Warning: Aggtrade stat '{name}' for test_feature_extractor_initialization is not active, configured or initialized.")
 
@@ -285,24 +285,24 @@ def test_extract_kline_features_only(sample_kline_data):
 
     assert isinstance(features, dict)
     print(f"\nKline Features Only ({len(features)}): {features}")
-    assert (
-        set(features.keys()) == defined_kline_feature_names
-    ), f"Returned keys {set(features.keys())} do not match active kline features {defined_kline_feature_names}"
+    assert set(features.keys()) == defined_kline_feature_names, (
+        f"Returned keys {set(features.keys())} do not match active kline features {defined_kline_feature_names}"
+    )
 
     for key in defined_kline_feature_names:
         assert key in features, f"Expected kline key '{key}' not found"
         value = features[key]
-        assert isinstance(
-            value, (int, float)
-        ), f"Feature '{key}' not numeric: {value} ({type(value)})"
+        assert isinstance(value, (int, float)), (
+            f"Feature '{key}' not numeric: {value} ({type(value)})"
+        )
         assert not np.isnan(value), f"Feature '{key}' is NaN"
         assert np.isfinite(value), f"Feature '{key}' is not finite: {value}"
 
         # Specific checks (can be extended)
         if key == "rsi_14":
-            assert (
-                -0.001 <= value <= 1.001
-            ), f"RSI {value} out of [0, 1]"  # Tolerance for float
+            assert -0.001 <= value <= 1.001, (
+                f"RSI {value} out of [0, 1]"
+            )  # Tolerance for float
         if key == "body_pct":
             assert -0.001 <= value <= 100.001, f"Body % {value} out of [0, 100]"
         if key == "wick_pct":
@@ -345,14 +345,14 @@ def test_extract_with_aggtrades(sample_kline_data, sample_agg_trades):
 
     assert isinstance(features, dict)
     print(f"\nKline & AggTrade Features ({len(features)}): {features}")
-    assert (
-        set(features.keys()) == fe.active_feature_names
-    ), f"Returned keys {set(features.keys())} do not match active features {fe.active_feature_names}"
+    assert set(features.keys()) == fe.active_feature_names, (
+        f"Returned keys {set(features.keys())} do not match active features {fe.active_feature_names}"
+    )
 
     for key, value in features.items():
-        assert isinstance(
-            value, (int, float)
-        ), f"Feature '{key}' not numeric: {value} ({type(value)})"
+        assert isinstance(value, (int, float)), (
+            f"Feature '{key}' not numeric: {value} ({type(value)})"
+        )
         assert not np.isnan(value), f"Feature '{key}' is NaN"
         assert np.isfinite(value), f"Feature '{key}' is not finite: {value}"
 
@@ -368,9 +368,9 @@ def test_extract_with_aggtrades(sample_kline_data, sample_agg_trades):
             for k, v in features.items()
             if k in defined_aggtrade_feature_names and abs(v) > 1e-9
         }
-        assert (
-            len(non_zero_agg_features) > 0
-        ), f"Expected some non-zero aggtrade features. Got: {non_zero_agg_features}. All agg features: {{k:features[k] for k in defined_aggtrade_feature_names}}"
+        assert len(non_zero_agg_features) > 0, (
+            f"Expected some non-zero aggtrade features. Got: {non_zero_agg_features}. All agg features: {{k:features[k] for k in defined_aggtrade_feature_names}}"
+        )
 
 
 def test_normalize_features(sample_kline_data):
@@ -415,14 +415,14 @@ def test_normalize_features(sample_kline_data):
     print(f"Last Normalized Features ({len(last_normalized)}): {last_normalized}")
 
     assert isinstance(last_normalized, dict)
-    assert (
-        set(last_normalized.keys()) == fe.active_feature_names
-    ), f"Normalized keys {set(last_normalized.keys())} do not match active features {fe.active_feature_names}"
+    assert set(last_normalized.keys()) == fe.active_feature_names, (
+        f"Normalized keys {set(last_normalized.keys())} do not match active features {fe.active_feature_names}"
+    )
 
     for key, value in last_normalized.items():
-        assert isinstance(
-            value, float
-        ), f"Normalized feature '{key}' not float: {value}"
+        assert isinstance(value, float), (
+            f"Normalized feature '{key}' not float: {value}"
+        )
         assert not np.isnan(value), f"Normalized feature '{key}' is NaN"
         assert np.isfinite(value), f"Normalized feature '{key}' not finite: {value}"
 
@@ -433,9 +433,9 @@ def test_normalize_features(sample_kline_data):
             for k in fe.active_feature_names
             if k in last_raw and k in last_normalized
         )
-        assert (
-            changed_count > 0
-        ), "Normalization didn't change values for non-zero raw features."
+        assert changed_count > 0, (
+            "Normalization didn't change values for non-zero raw features."
+        )
     else:
         print(
             "Warning: Last raw features were all zero, normalization effect might be limited."
@@ -480,9 +480,9 @@ def test_empty_input_data(sample_kline_data):  # sample_kline_data for kline_ok
         current_index=0,  # or -1
         current_timestamp_ms=current_ts_ms,
     )
-    assert (
-        features_empty_kline == expected_features_for_bad_kline
-    ), f"Features for empty kline data mismatch. Got: {features_empty_kline}, Expected: {expected_features_for_bad_kline}"
+    assert features_empty_kline == expected_features_for_bad_kline, (
+        f"Features for empty kline data mismatch. Got: {features_empty_kline}, Expected: {expected_features_for_bad_kline}"
+    )
 
     # 2. Kline with NaN in the current candle
     nan_kline_df = pd.DataFrame(
@@ -518,9 +518,9 @@ def test_empty_input_data(sample_kline_data):  # sample_kline_data for kline_ok
         current_index=len(nan_kline_df) - 1,
         current_timestamp_ms=current_ts_ms,
     )
-    assert (
-        features_nan_kline == expected_features_for_bad_kline
-    ), f"Features for NaN kline data mismatch. Got: {features_nan_kline}, Expected: {expected_features_for_bad_kline}"
+    assert features_nan_kline == expected_features_for_bad_kline, (
+        f"Features for NaN kline data mismatch. Got: {features_nan_kline}, Expected: {expected_features_for_bad_kline}"
+    )
 
     # 3. Correct Kline, no AggTrades
     kline_ok_df = sample_kline_data  # Using full fixture
@@ -554,15 +554,15 @@ def test_empty_input_data(sample_kline_data):  # sample_kline_data for kline_ok
             if k in kline_feature_names_in_fe and k != "signal_quality_score"
         ]
         if non_sqs_kline_values:  # if there are kline features besides SQS
-            assert any(
-                abs(v) > 1e-9 for v in non_sqs_kline_values
-            ), f"Expected some non-SQS kline features to be non-zero. Got: {non_sqs_kline_values}"
+            assert any(abs(v) > 1e-9 for v in non_sqs_kline_values), (
+                f"Expected some non-SQS kline features to be non-zero. Got: {non_sqs_kline_values}"
+            )
 
     for key in aggtrade_feature_names_in_fe:
         assert key in features_no_trades, f"Aggtrade feature {key} missing"
-        assert (
-            features_no_trades[key] == 0.0
-        ), f"AggTrade feature '{key}' ({features_no_trades[key]}) != 0.0 for no trades"
+        assert features_no_trades[key] == 0.0, (
+            f"AggTrade feature '{key}' ({features_no_trades[key]}) != 0.0 for no trades"
+        )
 
     # 4. Correct Kline, empty AggTrades list
     features_empty_trades_list = fe.extract_features_optimized(
@@ -582,15 +582,15 @@ def test_empty_input_data(sample_kline_data):  # sample_kline_data for kline_ok
             if k in kline_feature_names_in_fe and k != "signal_quality_score"
         ]
         if non_sqs_kline_values_empty_agg:
-            assert any(
-                abs(v) > 1e-9 for v in non_sqs_kline_values_empty_agg
-            ), f"Expected some non-SQS kline features to be non-zero with empty agg_list. Got: {non_sqs_kline_values_empty_agg}"
+            assert any(abs(v) > 1e-9 for v in non_sqs_kline_values_empty_agg), (
+                f"Expected some non-SQS kline features to be non-zero with empty agg_list. Got: {non_sqs_kline_values_empty_agg}"
+            )
 
     for key in aggtrade_feature_names_in_fe:
         assert key in features_empty_trades_list, f"Aggtrade feature {key} missing"
-        assert (
-            features_empty_trades_list[key] == 0.0
-        ), f"AggTrade feature '{key}' ({features_empty_trades_list[key]}) != 0.0 for empty agg_list"
+        assert features_empty_trades_list[key] == 0.0, (
+            f"AggTrade feature '{key}' ({features_empty_trades_list[key]}) != 0.0 for empty agg_list"
+        )
 
 
 @patch("time.time")
@@ -660,13 +660,13 @@ def test_agg_trade_time_window_features(
     for key in defined_aggtrade_feature_names:
         if key in fe.active_feature_names:  # Check only active features
             assert key in features, f"AggTrade key '{key}' missing"
-            assert isinstance(
-                features[key], float
-            ), f"AggTrade feature '{key}' is not float: {features[key]} ({type(features[key])})"
+            assert isinstance(features[key], float), (
+                f"AggTrade feature '{key}' is not float: {features[key]} ({type(features[key])})"
+            )
             assert not np.isnan(features[key]), f"AggTrade feature '{key}' is NaN"
-            assert np.isfinite(
-                features[key]
-            ), f"AggTrade feature '{key}' is not finite: {features[key]}"
+            assert np.isfinite(features[key]), (
+                f"AggTrade feature '{key}' is not finite: {features[key]}"
+            )
 
     assert features["agg_trade_spike_10s"] >= 0.0  # Basic check
 

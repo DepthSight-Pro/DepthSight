@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
 async def get_aiohttp_session() -> aiohttp.ClientSession:
     return session_manager.get_session()
 
+
 # Remove redundant brackets () after get_aiohttp_session.
 # Depends must receive the function itself, not the result of its call.
 HttpSessDep = Depends(get_aiohttp_session)

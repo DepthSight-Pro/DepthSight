@@ -224,9 +224,9 @@ def test_feature_adaptation_removes_and_adds(pipeline_for_adaptation):
     assert "feat_ok3" in final_features
 
     # Initial features had 6. One removed, one added. Count should remain 6.
-    assert len(final_features) == len(
-        initial_features
-    ), f"Number of features should be {len(initial_features)} after remove/add"
+    assert len(final_features) == len(initial_features), (
+        f"Number of features should be {len(initial_features)} after remove/add"
+    )
 
     # Check that 'feat_new_available' was added, and it's the only one added
     expected_removed_feature = "feat_ok2"

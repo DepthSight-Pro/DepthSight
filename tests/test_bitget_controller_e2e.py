@@ -571,9 +571,9 @@ async def _assert_bitget_exit_and_dca_orders(
             return pos if has_sl and has_tp and has_dca else None
 
     position = await _wait_until(position_with_orders, timeout=60.0)
-    assert (
-        position is not None
-    ), "Bitget controller did not place SL, partial TP and DCA orders."
+    assert position is not None, (
+        "Bitget controller did not place SL, partial TP and DCA orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(BITGET_SYMBOL)
     algo_orders = await controller.executors["live"].get_open_algo_orders(BITGET_SYMBOL)
@@ -604,9 +604,9 @@ async def _assert_bitget_spot_sl_and_dca_orders(controller: TradingController) -
             return pos if has_sl and has_dca else None
 
     position = await _wait_until(position_with_sl_and_dca, timeout=60.0)
-    assert (
-        position is not None
-    ), "Bitget spot controller did not place SL and DCA orders."
+    assert position is not None, (
+        "Bitget spot controller did not place SL and DCA orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(BITGET_SYMBOL)
     algo_orders = await controller.executors["live"].get_open_algo_orders(BITGET_SYMBOL)
@@ -644,9 +644,9 @@ async def _place_and_assert_spot_partial_tps_sequentially(
         lambda: _position_without_sl(controller),
         timeout=20.0,
     )
-    assert (
-        sl_cancelled
-    ), "Bitget spot SL was not cleared before sequential TP placement."
+    assert sl_cancelled, (
+        "Bitget spot SL was not cleared before sequential TP placement."
+    )
 
     base_asset = _base_asset_from_symbol(BITGET_SYMBOL)
 
@@ -656,19 +656,19 @@ async def _place_and_assert_spot_partial_tps_sequentially(
         return free_qty if free_qty > 0 else None
 
     free_base_qty = await _wait_until(free_base_available, timeout=20.0)
-    assert (
-        free_base_qty
-    ), f"No free {base_asset} balance released after cancelling spot SL."
+    assert free_base_qty, (
+        f"No free {base_asset} balance released after cancelling spot SL."
+    )
 
     async with controller._positions_dict_lock:
         pos = controller._active_position_get(BITGET_SYMBOL)
-        assert (
-            pos is not None and pos.status == "OPEN"
-        ), "Bitget spot position disappeared before TP placement."
+        assert pos is not None and pos.status == "OPEN", (
+            "Bitget spot position disappeared before TP placement."
+        )
         available_qty = min(float(pos.remaining_quantity), free_base_qty)
-        assert (
-            available_qty > 0
-        ), f"No free {base_asset} balance available for spot TP placement."
+        assert available_qty > 0, (
+            f"No free {base_asset} balance available for spot TP placement."
+        )
         first_qty = available_qty * 0.25
         second_qty = available_qty * 0.25
         entry_price = float(pos.entry_price or pos.trigger_price)
@@ -828,9 +828,9 @@ async def test_bitget_controller_signal_to_position_sl_tp_dca_and_close(
 
     try:
         ticker = await executor.get_ticker_price(BITGET_SYMBOL)
-        assert ticker and ticker.get(
-            "price"
-        ), f"Could not fetch Bitget ticker for {BITGET_SYMBOL}"
+        assert ticker and ticker.get("price"), (
+            f"Could not fetch Bitget ticker for {BITGET_SYMBOL}"
+        )
         current_price = float(ticker["price"])
     except Exception as e:
         print("CRITICAL ERROR IN E2E SETUP:")
@@ -893,7 +893,9 @@ async def test_bitget_controller_signal_to_position_sl_tp_dca_and_close(
             _position_removed(controller),
             timeout=60.0,
         )
-        assert closed, f"Bitget {market_type}/{direction.name} position was not removed after close."
+        assert closed, (
+            f"Bitget {market_type}/{direction.name} position was not removed after close."
+        )
 
         # Wait up to 15 seconds for orders to be fully cancelled by exchange
         for _ in range(15):

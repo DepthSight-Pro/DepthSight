@@ -409,7 +409,7 @@ class PaperTradingExecutor:
                 "symbol": symbol,
                 "orderId": int(uuid.uuid4().int & (1 << 32) - 1),
                 "clientOrderId": client_order_id,
-                "price": str(price_val) if price_val is not None else None, 
+                "price": str(price_val) if price_val is not None else None,
                 "stopPrice": str(stop_price_val)
                 if stop_price_val is not None
                 else None,

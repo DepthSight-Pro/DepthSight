@@ -119,9 +119,9 @@ async def test_record_loop_writes_data(recorder, temp_storage):
     await recorder.stop()
 
     # 7. Check the result
-    assert (
-        file_path_to_check is not None
-    ), "File path was not set in recorder before stop()"
+    assert file_path_to_check is not None, (
+        "File path was not set in recorder before stop()"
+    )
     # After stop() _current_file_path will be empty, so file_path_to_check must be used for existence check
     assert file_path_to_check.exists(), f"File {file_path_to_check} was not created"
 

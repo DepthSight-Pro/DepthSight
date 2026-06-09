@@ -150,21 +150,21 @@ class TestFeatureExtractionLive:
 
         # ATR feature should be > 0 for a volatile market
         if "atr_14_rel" in features:
-            assert (
-                features["atr_14_rel"] > 0
-            ), f"atr_14_rel should be > 0, got {features['atr_14_rel']}"
+            assert features["atr_14_rel"] > 0, (
+                f"atr_14_rel should be > 0, got {features['atr_14_rel']}"
+            )
 
         # Distance features must be >= 0
         if "distance_to_local_max_20" in features:
             # Can be 0 if the price is at the maximum, but should not be NaN
-            assert not pd.isna(
-                features["distance_to_local_max_20"]
-            ), "distance_to_local_max_20 should not be NaN"
+            assert not pd.isna(features["distance_to_local_max_20"]), (
+                "distance_to_local_max_20 should not be NaN"
+            )
 
         if "distance_to_local_min_20" in features:
-            assert not pd.isna(
-                features["distance_to_local_min_20"]
-            ), "distance_to_local_min_20 should not be NaN"
+            assert not pd.isna(features["distance_to_local_min_20"]), (
+                "distance_to_local_min_20 should not be NaN"
+            )
 
     def test_aggtrade_features_with_trade_data(
         self,
@@ -194,9 +194,9 @@ class TestFeatureExtractionLive:
 
         # trade_rate_30s should be > 0 if there are trades
         if "trade_rate_30s" in features:
-            assert (
-                features["trade_rate_30s"] > 0
-            ), f"trade_rate_30s should be > 0 with {len(realistic_aggtrades)} trades, got {features['trade_rate_30s']}"
+            assert features["trade_rate_30s"] > 0, (
+                f"trade_rate_30s should be > 0 with {len(realistic_aggtrades)} trades, got {features['trade_rate_30s']}"
+            )
 
     def test_multiple_calls_improve_volatility_spike(
         self, realistic_kline_history: pd.DataFrame
@@ -232,9 +232,9 @@ class TestFeatureExtractionLive:
 
         # After warm-up, non-zero values should appear
         non_zero_count = sum(1 for v in values if v > 0)
-        assert (
-            non_zero_count > 0
-        ), f"volatility_spike_20 should have some non-zero values after warmup, got all zeros in {len(values)} calls"
+        assert non_zero_count > 0, (
+            f"volatility_spike_20 should have some non-zero values after warmup, got all zeros in {len(values)} calls"
+        )
 
     def test_sample_values_log_format(
         self,
@@ -264,9 +264,9 @@ class TestFeatureExtractionLive:
 
         # Check that at least one value is non-zero
         non_zero_samples = [k for k, v in sample_values.items() if v != "0.0000"]
-        assert (
-            len(non_zero_samples) > 0
-        ), f"At least one sample value should be non-zero, got: {sample_values}"
+        assert len(non_zero_samples) > 0, (
+            f"At least one sample value should be non-zero, got: {sample_values}"
+        )
 
 
 class TestModelPipelineIntegration:
@@ -321,18 +321,18 @@ class TestModelPipelineIntegration:
         proba_map = pipeline.predict_proba_one(norm_features)
 
         assert proba_map is not None, "Model should return predictions"
-        assert (
-            0 in proba_map or 1 in proba_map
-        ), "Proba map should have class probabilities"
+        assert 0 in proba_map or 1 in proba_map, (
+            "Proba map should have class probabilities"
+        )
 
         # Check that probabilities are in the valid range
         for cls, prob in proba_map.items():
-            assert (
-                0.0 <= prob <= 1.0
-            ), f"Probability {prob} for class {cls} should be in [0, 1]"
+            assert 0.0 <= prob <= 1.0, (
+                f"Probability {prob} for class {cls} should be in [0, 1]"
+            )
 
         # Sum of probabilities should be ~1
         total_prob = sum(proba_map.values())
-        assert (
-            0.99 <= total_prob <= 1.01
-        ), f"Total probability should be ~1, got {total_prob}"
+        assert 0.99 <= total_prob <= 1.01, (
+            f"Total probability should be ~1, got {total_prob}"
+        )

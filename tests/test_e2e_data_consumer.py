@@ -179,9 +179,9 @@ async def test_kline_subscription_and_history_load(
                 )
 
                 expected_path = "/btcusdt@kline_1m"
-                assert (
-                    expected_path in server_state["connected_paths"]
-                ), f"Expected path '{expected_path}' not found in connected paths: {server_state['connected_paths']}"
+                assert expected_path in server_state["connected_paths"], (
+                    f"Expected path '{expected_path}' not found in connected paths: {server_state['connected_paths']}"
+                )
 
         finally:
             if consumer._running:
@@ -439,9 +439,9 @@ async def test_reconnection_on_drop(mock_executor, monkeypatch):
                 await consumer.ensure_subscription("kline_1m", "BTCUSDT")
                 await asyncio.sleep(0.3)
 
-            assert (
-                len(connected_paths_log) > 2
-            ), f"Expected > 2 reconnection attempts, received: {len(connected_paths_log)}"
+            assert len(connected_paths_log) > 2, (
+                f"Expected > 2 reconnection attempts, received: {len(connected_paths_log)}"
+            )
         finally:
             if consumer._running:
                 await consumer.stop()

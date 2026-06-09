@@ -619,9 +619,9 @@ class TestBacktestEndpoints:
         backtests_list = list_response.json()["data"]
         our_run = next((b for b in backtests_list if b["task_id"] == task_id), None)
 
-        assert (
-            our_run is not None
-        ), "Backtest run not found in the list after execution."
+        assert our_run is not None, (
+            "Backtest run not found in the list after execution."
+        )
         assert our_run["status"] == "COMPLETED"
         assert our_run["pnl"] == 100
 

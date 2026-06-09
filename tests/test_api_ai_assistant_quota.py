@@ -78,9 +78,9 @@ class TestAIAssistantQuota:
         mock_redis_client.get.return_value = "5"
 
         response_history = await client.get(f"/api/v1/ai/chat/history/{session_id}")
-        assert (
-            response_history.status_code == 200
-        ), f"GET /chat/history/{session_id} should be accessible even when the quota is exhausted. Received {response_history.status_code}: {response_history.text}"
+        assert response_history.status_code == 200, (
+            f"GET /chat/history/{session_id} should be accessible even when the quota is exhausted. Received {response_history.status_code}: {response_history.text}"
+        )
 
         chat_payload = {
             "session_id": session_id,
@@ -88,9 +88,9 @@ class TestAIAssistantQuota:
             "mode": "advisor",
         }
         response_chat = await client.post("/api/v1/ai/chat", json=chat_payload)
-        assert (
-            response_chat.status_code == 429
-        ), "POST /chat should return 429 when the quota is exhausted"
+        assert response_chat.status_code == 429, (
+            "POST /chat should return 429 when the quota is exhausted"
+        )
         assert "exceeded the usage limit" in response_chat.json()["error"]
 
     async def test_quota_available_scenario(
@@ -136,9 +136,9 @@ class TestAIAssistantQuota:
         mock_redis_client.incr.return_value = 2
 
         response_history = await client.get(f"/api/v1/ai/chat/history/{session_id}")
-        assert (
-            response_history.status_code == 200
-        ), f"GET /chat/history/{session_id} should be accessible. Received {response_history.status_code}: {response_history.text}"
+        assert response_history.status_code == 200, (
+            f"GET /chat/history/{session_id} should be accessible. Received {response_history.status_code}: {response_history.text}"
+        )
 
         mock_redis_client.incr.assert_not_called()
 
@@ -148,9 +148,9 @@ class TestAIAssistantQuota:
             "mode": "advisor",
         }
         response_chat = await client.post("/api/v1/ai/chat", json=chat_payload)
-        assert (
-            response_chat.status_code == 200
-        ), f"POST /chat should work when the quota is available. Response: {response_chat.text}"
+        assert response_chat.status_code == 200, (
+            f"POST /chat should work when the quota is available. Response: {response_chat.text}"
+        )
 
         mock_get_chat_response_patch.assert_called_once()
         mock_redis_client.incr.assert_called_once_with(quota_key)

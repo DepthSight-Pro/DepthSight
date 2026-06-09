@@ -195,9 +195,9 @@ def test_run_method_and_fitness_evaluation(
     # Checking that fitness is positive (the strategy passed all filters)
     # Formula: (avg_pnl / risk_free_dd) * 10.0
     # With mock KPI: (15.0 / max(1.0, 10.0)) * 10.0 = 15.0
-    assert (
-        top_result["fitness_score"] > 0
-    ), f"Expected positive fitness, got {top_result['fitness_score']}"
+    assert top_result["fitness_score"] > 0, (
+        f"Expected positive fitness, got {top_result['fitness_score']}"
+    )
     assert top_result["kpis_json"]["profit_factor"] == 1.8
 
 
@@ -233,9 +233,9 @@ def test_new_blocks_are_generated(gsf_instance):
     found_new_blocks = new_blocks.intersection(generated_types)
     print(f"Found new blocks: {found_new_blocks}")
 
-    assert (
-        len(found_new_blocks) >= len(new_blocks) / 2
-    ), f"Expected at least half of the new blocks to be generated, but only found {len(found_new_blocks)}/{len(new_blocks)}"
+    assert len(found_new_blocks) >= len(new_blocks) / 2, (
+        f"Expected at least half of the new blocks to be generated, but only found {len(found_new_blocks)}/{len(new_blocks)}"
+    )
 
 
 @patch("bot_module.genetic_strategy_finder.FastVectorBacktester")

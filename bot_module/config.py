@@ -253,6 +253,11 @@ REDIS_STATE_KEY_POSITIONS = os.environ.get(
     "REDIS_STATE_KEY_POSITIONS", "depthsight:state:positions"
 )
 
+# Market-data specific Redis (separate instance for fan-out).
+MARKET_REDIS_HOST = os.environ.get("MARKET_REDIS_HOST", REDIS_HOST)
+MARKET_REDIS_PORT = int(os.environ.get("MARKET_REDIS_PORT", REDIS_PORT))
+MARKET_REDIS_DB = int(os.environ.get("MARKET_REDIS_DB", REDIS_DB))
+
 # Market data fan-out.
 # "direct" keeps the legacy in-process WebSocket behavior.
 # "redis" makes bot workers request subscriptions through Redis and receive raw exchange payloads from market_data_service.py.

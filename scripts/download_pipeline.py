@@ -314,6 +314,7 @@ def download_and_process(
         )
     time.sleep(0.5)
 
+
 def get_existing_dates(
     symbol: str, data_type: str, base_path: Optional[Path] = None
 ) -> set[date]:

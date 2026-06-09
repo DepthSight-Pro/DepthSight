@@ -66,9 +66,9 @@ async def test_controller_enriches_pair_info_with_timestamp_dt():
                 pair_info["timestamp_dt"] = candle_timestamp
 
     # CHECKS
-    assert (
-        "timestamp_dt" in pair_info
-    ), "timestamp_dt should be added from DataFrame index"
+    assert "timestamp_dt" in pair_info, (
+        "timestamp_dt should be added from DataFrame index"
+    )
     assert pair_info["timestamp_dt"] is not None, "timestamp_dt should not be None"
     assert "high" in pair_info, "high should be from the last candle"
     assert "low" in pair_info, "low should be from the last candle"
@@ -180,9 +180,9 @@ async def test_full_position_management_flow_with_be_trigger():
     )
 
     expected_be = 100.0 + (2 * 0.01)  # entry + offset_pips * tick_size = 100.02
-    assert updated_position.current_sl_price == pytest.approx(
-        expected_be, abs=0.01
-    ), f"Expected SL = {expected_be}, got {updated_position.current_sl_price}"
+    assert updated_position.current_sl_price == pytest.approx(expected_be, abs=0.01), (
+        f"Expected SL = {expected_be}, got {updated_position.current_sl_price}"
+    )
 
     print("\n✓ Breakeven triggered correctly!")
     print(f"  SL moved from 98.0 to {updated_position.current_sl_price}")
