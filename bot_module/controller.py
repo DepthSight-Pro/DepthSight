@@ -220,7 +220,7 @@ class PartialTpOrderInfo:
     target_price: float
     orig_fraction: float  # Initial share of the starting position
     quantity: float  # Actual quantity in the order (after rounding)
-    order_id: Optional[int] = None
+    order_id: Optional[Union[str, int]] = None
     client_order_id: Optional[str] = None
     status: str = "PENDING"  # PENDING, VIRTUAL_PENDING, VIRTUAL_TRIGGERING, FILLED, CANCELLED, FAILED
     fill_price: Optional[float] = None
@@ -248,8 +248,8 @@ class LivePosition(BasePosition):
     """Extends BasePosition with fields specific to live trading."""
 
     status: str = "PENDING_ENTRY"  # PENDING_ENTRY, OPEN, CLOSING, CLOSED
-    entry_order_id: Optional[int] = None
-    current_sl_order_id: Optional[int] = None
+    entry_order_id: Optional[Union[str, int]] = None
+    current_sl_order_id: Optional[Union[str, int]] = None
     current_sl_client_order_id: Optional[str] = None
     entry_client_order_id: Optional[str] = None
     entry_order_status: str = "PENDING"
@@ -7037,6 +7037,8 @@ class TradingController:
                 return
 
             entry_order_id_resp = entry_order_response.get("orderId")
+            if entry_order_id_resp is not None:
+                entry_order_id_resp = str(entry_order_id_resp)
             entry_order_status_resp = entry_order_response.get(
                 "status", "UNKNOWN"
             ).upper()
@@ -7363,7 +7365,7 @@ class TradingController:
     async def _handle_entry_fill(
         self,
         symbol: str,
-        order_id: int,
+        order_id,
         client_order_id: str,
         avg_fill_price: float,  # Average price of ALL executions of this order at the moment
         cumulative_filled_qty: float,  # Total executed quantity for this order
@@ -8215,8 +8217,8 @@ class TradingController:
             # that _cancel_all_exit_orders will not be able to find them.
             # Exclude the order that has already been filled and triggered this exit (order_id).
             if (
-                position.current_sl_order_id
-                and position.current_sl_order_id != order_id
+                position.current_sl_order_id is not None
+                and str(position.current_sl_order_id) != str(order_id)
             ):
                 orders_to_cancel_after_lock.append(
                     (
@@ -8230,8 +8232,8 @@ class TradingController:
             for ptp in position.partial_tp_orders:
                 if (
                     ptp.status == "PENDING"
-                    and ptp.order_id
-                    and ptp.order_id != order_id
+                    and ptp.order_id is not None
+                    and str(ptp.order_id) != str(order_id)
                 ):
                     orders_to_cancel_after_lock.append(
                         (symbol, ptp.order_id, ptp.client_order_id, False)
@@ -11385,7 +11387,14 @@ class TradingController:
         # Extraction and type casting for key order fields
         try:
             symbol = order_data_payload.get("s")
-            order_id = int(order_data_payload.get("i", -1))  # Order ID
+            order_id_raw = order_data_payload.get("i")
+            if order_id_raw is None or order_id_raw == "":
+                order_id = -1
+            else:
+                try:
+                    order_id = str(int(order_id_raw))
+                except (ValueError, TypeError):
+                    order_id = str(order_id_raw)
 
             # Client Order ID: 'c' for futures, 'C' (origClientOrderId) or 'c' (newClientOrderId) for spot
             client_order_id = order_data_payload.get("c")
@@ -11533,7 +11542,10 @@ class TradingController:
             )
 
             # 1. Processing the ENTRY order
-            is_entry_order_event = (position.entry_order_id == order_id) or (
+            is_entry_order_event = (
+                position.entry_order_id is not None
+                and str(position.entry_order_id) == str(order_id)
+            ) or (
                 position.entry_client_order_id == client_order_id
                 and position.entry_client_order_id is not None
             )
@@ -11661,8 +11673,8 @@ class TradingController:
 
             # 2. Stop-Loss order processing
             is_sl_order_event = (
-                position.current_sl_order_id == order_id
-                and position.current_sl_order_id is not None
+                position.current_sl_order_id is not None
+                and str(position.current_sl_order_id) == str(order_id)
             ) or (
                 position.current_sl_client_order_id == client_order_id
                 and position.current_sl_client_order_id is not None
@@ -11775,7 +11787,7 @@ class TradingController:
                     logger.debug(
                         f"{log_prefix} SL order is NEW. Ensuring IDs are set in position object."
                     )
-                    if position.current_sl_order_id != order_id:
+                    if str(position.current_sl_order_id) != str(order_id):
                         position.current_sl_order_id = order_id
                     if position.current_sl_client_order_id != client_order_id:
                         position.current_sl_client_order_id = client_order_id
@@ -11798,7 +11810,8 @@ class TradingController:
             ptp_info_object: Optional[PartialTpOrderInfo] = None
             for idx, ptp_item in enumerate(position.partial_tp_orders):
                 if (
-                    ptp_item.order_id == order_id and ptp_item.order_id is not None
+                    ptp_item.order_id is not None
+                    and str(ptp_item.order_id) == str(order_id)
                 ) or (
                     ptp_item.client_order_id == client_order_id
                     and ptp_item.client_order_id is not None
@@ -11871,7 +11884,7 @@ class TradingController:
                     logger.debug(
                         f"{log_prefix} Partial TP #{ptp_match_idx + 1} (ID: {order_id}) is NEW. Ensuring IDs and status are set in position object."
                     )
-                    if ptp_info_object.order_id != order_id:
+                    if str(ptp_info_object.order_id) != str(order_id):
                         ptp_info_object.order_id = order_id
                     if ptp_info_object.client_order_id != client_order_id:
                         ptp_info_object.client_order_id = client_order_id

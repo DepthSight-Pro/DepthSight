@@ -25,6 +25,8 @@ from bot_module import config
 from .data_loader import download_klines, download_open_interest  # Ensure imported
 from .utils import (
     calculate_scalper_natr,
+    add_relative_volume,
+    add_volume_percentile_rank,
 )
 
 try:
@@ -3181,6 +3183,30 @@ class DataConsumer:
             except Exception as e:
                 logger.error(
                     f"[IndicatorCalc:{uc_symbol}] Error calculating NATR_30: {e}",
+                    exc_info=True,
+                )
+
+        if "RELATIVE_VOLUME" in custom_indicators:
+            try:
+                kline_df = add_relative_volume(kline_df, period=20)
+                logger.debug(
+                    f"[IndicatorCalc:{uc_symbol}] relative_volume calculated (period=20)."
+                )
+            except Exception as e:
+                logger.error(
+                    f"[IndicatorCalc:{uc_symbol}] Error calculating relative_volume: {e}",
+                    exc_info=True,
+                )
+
+        if "IS_VOLUME_SPIKE" in custom_indicators:
+            try:
+                kline_df = add_volume_percentile_rank(kline_df, period=1000, percentile=90)
+                logger.debug(
+                    f"[IndicatorCalc:{uc_symbol}] is_volume_spike calculated (period=1000, pct=90)."
+                )
+            except Exception as e:
+                logger.error(
+                    f"[IndicatorCalc:{uc_symbol}] Error calculating is_volume_spike: {e}",
                     exc_info=True,
                 )
 

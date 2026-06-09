@@ -1958,7 +1958,7 @@ class CcxtExecutor:
         return status_map.get(ccxt_status.lower(), "NEW")
 
     def _to_execution_report(self, ccxt_order: Dict[str, Any]) -> Dict[str, Any]:
-        """Converts CCXT unified order to Binance executionReport format for TradingController."""
+        """Converts CCXT unified order to Binance executionReport/ORDER_TRADE_UPDATE format for TradingController."""
         now_ms = int(time.time() * 1000)
         raw_symbol = ccxt_order.get("symbol", "")
         amount = ccxt_order.get("amount", "0") or "0"
@@ -1985,20 +1985,19 @@ class CcxtExecutor:
             or "0"
         )
         fee = ccxt_order.get("fee") or {}
-        return {
-            "e": "executionReport",
-            "E": now_ms,
+        order_data = {
             "s": self._to_legacy_symbol(raw_symbol),
             "c": ccxt_order.get("clientOrderId") or "",
             "S": ccxt_order.get("side", "").upper(),
             "o": ccxt_order.get("type", "").upper(),
+            "ot": ccxt_order.get("type", "").upper(),
             "f": "GTC",
             "q": str(amount),
             "p": str(ccxt_order.get("price", "0")),
             "P": str(trigger_price),
             "x": "TRADE" if status in {"FILLED", "PARTIALLY_FILLED"} else status,
             "X": status,
-            "i": ccxt_order.get("id"),
+            "i": str(ccxt_order.get("id", "")),
             "z": filled,
             "l": last,
             "L": str(ccxt_order.get("average", "0") or "0"),
@@ -2010,3 +2009,15 @@ class CcxtExecutor:
             "m": False,
             "O": ccxt_order.get("timestamp", now_ms),
         }
+        if self.supports_positions:
+            return {
+                "e": "ORDER_TRADE_UPDATE",
+                "E": now_ms,
+                "o": order_data,
+            }
+        else:
+            return {
+                "e": "executionReport",
+                "E": now_ms,
+                **order_data,
+            }
