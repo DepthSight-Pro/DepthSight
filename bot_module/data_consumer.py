@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple, TYPE_CHECKING
 from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
 import pandas as pd
+import pandas_ta as ta  # noqa: F401  # Imported for DataFrame .ta accessor side-effect
 import time  # For unique stream IDs
 import math
 import uuid
@@ -360,9 +361,17 @@ class DataConsumer:
             logger.warning("DataConsumer is already running.")
             return
         self._running = True
-        logger.info("Starting DataConsumer...")
+        logger.info("Starting DataConsumer... market_data_mode=%s", self._market_data_mode)
         if self._use_redis_market_data:
-            if not await self._ensure_redis_market_data_started():
+            started = await self._ensure_redis_market_data_started()
+            logger.info(
+                "_ensure_redis_market_data_started returned %s (client=%s pubsub=%s listener_task=%s)",
+                started,
+                self._redis_market_client is not None,
+                self._redis_market_pubsub is not None,
+                self._redis_market_listener_task is not None and not self._redis_market_listener_task.done(),
+            )
+            if not started:
                 self._running = False
                 return
 
@@ -1104,6 +1113,7 @@ class DataConsumer:
                     "needs_companion_orderbook": needs_companion_orderbook,
                 }
             )
+        logger.debug("_stream_specs_for_subscription(%s, %s) -> %s", data_type_key, symbol, specs)
         return specs
 
     async def _ensure_redis_market_data_started(self) -> bool:
@@ -1125,6 +1135,17 @@ class DataConsumer:
                     decode_responses=True,
                 )
                 self._redis_market_pubsub = self._redis_market_client.pubsub()
+                # Verify Redis connectivity immediately
+                try:
+                    await self._redis_market_client.ping()
+                    logger.info("Redis market client PING OK (host=%s port=%s db=%s user=%s)",
+                                config.MARKET_REDIS_HOST, config.MARKET_REDIS_PORT,
+                                config.MARKET_REDIS_DB, config.REDIS_USERNAME)
+                except Exception as e:
+                    logger.error("Redis market client PING FAILED (host=%s port=%s db=%s user=%s): %s",
+                                 config.MARKET_REDIS_HOST, config.MARKET_REDIS_PORT,
+                                 config.MARKET_REDIS_DB, config.REDIS_USERNAME, e,
+                                 exc_info=True)
             if (
                 self._redis_market_listener_task is None
                 or self._redis_market_listener_task.done()
@@ -1150,26 +1171,86 @@ class DataConsumer:
 
     async def _redis_market_data_listener(self) -> None:
         log_prefix = f"[RedisMarketData:{self._market_data_subscriber_id}]"
-        logger.info("%s listener started.", log_prefix)
+        logger.info("%s listener started. mode=%s host=%s:%s db=%s user=%s", log_prefix,
+                    self._market_data_mode,
+                    config.MARKET_REDIS_HOST, config.MARKET_REDIS_PORT,
+                    config.MARKET_REDIS_DB, config.REDIS_USERNAME)
+        last_heartbeat_log = time.monotonic()
+        pubsub_broken_since: float = 0.0
+        had_subscriptions: bool = False
         try:
             while True:
                 if not self._redis_market_pubsub:
                     await asyncio.sleep(0.1)
                     continue
+                # Heartbeat log every 30s to confirm listener is alive
+                if time.monotonic() - last_heartbeat_log > 30:
+                    logger.info("%s listener alive. stream_keys=%d",
+                                log_prefix,
+                                len(self._redis_market_stream_keys),
+                                )
+                    last_heartbeat_log = time.monotonic()
                 try:
+                    # MUST hold lock: get_message and subscribe share the same pubsub connection.
+                    # A real redis-py PubSub read with timeout=0.0 is a pure poll and can
+                    # repeatedly return None under load; wait briefly for socket data instead.
                     async with self._redis_market_lock:
                         message = await self._redis_market_pubsub.get_message(
                             ignore_subscribe_messages=True, timeout=1.0
                         )
+                    if not message:
+                        continue
                 except RuntimeError as e:
                     if "pubsub connection not set" in str(e):
-                        await asyncio.sleep(0.1)
+                        has_subs = len(self._redis_market_stream_keys) > 0
+                        now = time.monotonic()
+                        if not has_subs and not had_subscriptions:
+                            # Expected: pubsub not subscribed yet — wait silently
+                            await asyncio.sleep(0.1)
+                            continue
+                        # We HAVE subscriptions but connection dropped — track/report
+                        had_subscriptions = True
+                        if pubsub_broken_since == 0:
+                            pubsub_broken_since = now
+                            logger.warning("%s pubsub connection dropped after subscribe, will retry... (stream_keys=%d)",
+                                           log_prefix, len(self._redis_market_stream_keys))
+                        elif now - pubsub_broken_since > 10:
+                            logger.error("%s pubsub broken for 10s after subscribe. Attempting reconnect... (stream_keys=%d)",
+                                         log_prefix, len(self._redis_market_stream_keys))
+                            async with self._redis_market_lock:
+                                self._redis_market_pubsub = self._redis_market_client.pubsub()
+                                for sk in list(self._redis_market_stream_keys):
+                                    ch = _market_data_redis_event_channel(sk)
+                                    try:
+                                        await self._redis_market_pubsub.subscribe(ch)
+                                    except Exception as sub_e:
+                                        logger.error("%s reconnect subscribe failed for %s: %s", log_prefix, sk, sub_e)
+                            logger.info("%s reconnect attempt finished.", log_prefix)
+                            pubsub_broken_since = 0
+                            had_subscriptions = False
+                        await asyncio.sleep(0.5)
                         continue
                     raise
-                if not message or message.get("type") != "message":
+                else:
+                    pubsub_broken_since = 0
+
+                if not message:
+                    continue
+                msg_type = message.get("type")
+                if isinstance(msg_type, bytes):
+                    msg_type = msg_type.decode("utf-8")
+                if msg_type != "message":
+                    logger.debug(
+                        "%s ignored Redis pubsub envelope: type=%r channel=%r",
+                        log_prefix,
+                        msg_type,
+                        message.get("channel"),
+                    )
                     continue
                 try:
                     raw = message.get("data")
+                    if isinstance(raw, bytes):
+                        raw = raw.decode("utf-8")
                     payload = json.loads(raw) if isinstance(raw, str) else raw
                     await self._handle_redis_market_payload(payload)
                 except Exception as e:
@@ -1194,7 +1275,17 @@ class DataConsumer:
             return
         stream_key = message.get("stream_key")
         if stream_key not in self._redis_market_stream_keys:
+            logger.warning(
+                "[RedisMarketData] Received market_payload for UNSUBSCRIBED stream_key=%s",
+                stream_key,
+            )
             return
+        logger.debug(
+            "[RedisMarketData] Received market_payload: stream_key=%s symbol=%s data_type=%s",
+            stream_key,
+            message.get("symbol"),
+            message.get("data_type_key"),
+        )
         await self._update_local_cache(
             str(message.get("data_type_key") or ""),
             str(message.get("symbol") or ""),
@@ -1425,11 +1516,30 @@ class DataConsumer:
             channel = _market_data_redis_event_channel(stream_key)
             async with self._redis_market_lock:
                 if self._redis_market_pubsub:
-                    await self._redis_market_pubsub.subscribe(channel)
+                    try:
+                        await self._redis_market_pubsub.subscribe(channel)
+                        logger.info("[RedisMarketData] subscribed to channel=%s (stream_key=%s)", channel, stream_key)
+                    except Exception as sub_e:
+                        logger.error("[RedisMarketData] subscribe FAILED for channel=%s (stream_key=%s): %s",
+                                     channel, stream_key, sub_e,
+                                     exc_info=True)
+                        continue
+                else:
+                    logger.error("[RedisMarketData] CANNOT SUBSCRIBE: _redis_market_pubsub is None! stream_key=%s", stream_key)
+                    continue
                 self._redis_market_stream_keys.add(stream_key)
                 self._redis_market_stream_specs[stream_key] = spec
             new_specs.append(spec)
-            logger.info("[RedisMarketData] subscribed locally to %s", stream_key)
+            logger.info("[RedisMarketData] added stream_key to local set: %s", stream_key)
+
+            # Load historical kline data from exchange REST API for cache priming
+            dk = spec.get("data_type_key", data_type_key)
+            if dk.startswith("kline_"):
+                tf = dk.split("_", 1)[1]
+                exch = spec.get("exchange_id", "")
+                mt = spec.get("market_type", "")
+                sym = spec.get("symbol", uc_symbol)
+                await self._ensure_history_loaded(dk, sym, tf, mt, exch)
 
         if new_specs:
             await self._publish_market_data_command(
@@ -3076,6 +3186,7 @@ class DataConsumer:
 
         # 3. Saving calculated indicators to the GLOBAL cache
         # This is critically important for multi-user mode
+        publish_update: Optional[Dict[str, Any]] = None
         try:
             if not kline_df.empty:
                 last_candle = kline_df.iloc[-1]
@@ -3121,22 +3232,24 @@ class DataConsumer:
                         self._active_pairs[uc_symbol] = local_pair_state
 
                     if self._market_data_publish_callback and calculated_indicators:
-                        await self._market_data_publish_callback(
-                            {
-                                "type": "indicator_update",
-                                "stream_key": f"{exchange_id}:{normalized_market_type}:{uc_symbol.lower()}@kline_{timeframe}",
-                                "data_type_key": f"kline_{timeframe}",
-                                "symbol": uc_symbol,
-                                "market_type": normalized_market_type,
-                                "exchange_id": exchange_id,
-                                "indicators": calculated_indicators,
-                                "pair_state": calculated_indicators,
-                                "published_at_ms": int(time.time() * 1000),
-                            }
-                        )
+                        publish_update = {
+                            "type": "indicator_update",
+                            "stream_key": f"{exchange_id}:{normalized_market_type}:{uc_symbol.lower()}@kline_{timeframe}",
+                            "data_type_key": f"kline_{timeframe}",
+                            "symbol": uc_symbol,
+                            "market_type": normalized_market_type,
+                            "exchange_id": exchange_id,
+                            "indicators": calculated_indicators,
+                            "pair_state": calculated_indicators,
+                            "published_at_ms": int(time.time() * 1000),
+                        }
 
         except Exception as e:
             logger.error(f"Error saving indicators to global cache: {e}")
+            return
+
+        if publish_update:
+            await self._market_data_publish_callback(publish_update)
 
     def _aggregate_depth(
         self, full_depth: Dict[str, Any], market_price: float
@@ -3453,6 +3566,14 @@ class DataConsumer:
             }
 
         if event_to_push and stream_key:
+            logger.info(
+                "[DataConsumer] Enqueue market event: type=%s stream_key=%s symbol=%s timeframe=%s market_type=%s",
+                event_to_push.get("type"),
+                stream_key,
+                event_to_push.get("symbol"),
+                event_to_push.get("timeframe"),
+                event_to_push.get("market_type"),
+            )
             # Broadcast to ALL registered queues
             async with _global_event_queues_lock:
                 queues_to_notify = _global_event_queues.get(stream_key, set()).copy()
@@ -3746,10 +3867,15 @@ class DataConsumer:
                 if data_type_key.startswith("kline_"):
                     timeframe = data_type_key.split("_", 1)[1]
                     # watch_ohlcv returns an array of arrays: [[timestamp, open, high, low, close, volume], ...]
-                    ohlcv_list = await ccxt_pro_client.watch_ohlcv(
-                        ccxt_symbol, timeframe
+                    ohlcv_list = await asyncio.wait_for(
+                        ccxt_pro_client.watch_ohlcv(ccxt_symbol, timeframe),
+                        timeout=30.0,
                     )
                     if ohlcv_list:
+                        logger.info(
+                            f"{log_prefix} Received {len(ohlcv_list)} candles from {ccxt_symbol}, "
+                            f"last_ts={ohlcv_list[-1][0]}"
+                        )
                         current_last_ts = ohlcv_list[-1][0]
 
                         # 1. Checking if the previous 'last' candle has closed
@@ -3812,6 +3938,9 @@ class DataConsumer:
                                     "x": is_closed,
                                 },
                             }
+                            logger.info(
+                                f"{log_prefix} Updating local cache for candle ts={candle_ts} is_closed={is_closed}"
+                            )
                             await self._update_local_cache(
                                 data_type_key, symbol, payload, market_type, exchange_id
                             )
@@ -3869,8 +3998,8 @@ class DataConsumer:
                         )
 
                 # Check stream is still relevant
-                async with self._binance_market_data_ws_lock:
-                    if stream_id not in self._binance_market_data_ws_tasks:
+                async with _global_ws_registry_lock:
+                    if stream_id not in _global_ws_registry:
                         break
 
             except asyncio.CancelledError:

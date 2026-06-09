@@ -3970,6 +3970,14 @@ class TradingController:
 
         # DEBUG level — events that are too frequent (every aggTrade tick)
         logger.debug(f"[HEARTBEAT] Received event '{event_type}' for symbol {symbol}")
+        if event_type == "CANDLE_CLOSE":
+            logger.info(
+                "[ControllerEvent:%s] Received CANDLE_CLOSE timeframe=%s market_type=%s timestamp_ms=%s",
+                symbol,
+                event.get("timeframe"),
+                event_market_type,
+                event.get("timestamp_ms"),
+            )
 
         if event_type == "TICK":
             tick_price = event.get("price")
@@ -5116,8 +5124,7 @@ class TradingController:
                 if k.startswith("kline_"):
                     df = market_data.get(k)
                     if df is not None and len(df) < MIN_HISTORY_REQUIRED:
-                        # Logging at DEBUG level to avoid spamming, but making it clear why we are skipping
-                        logger.debug(
+                        logger.warning(
                             f"{log_prefix} Insufficient history for {k}. Got {len(df)}, need {MIN_HISTORY_REQUIRED}. Waiting for cache priming."
                         )
                         return None
@@ -5166,12 +5173,24 @@ class TradingController:
             running_instances = list(self.running_strategy_instances.values())
 
         if not running_instances:
+            logger.info(
+                "[SignalCheck:%s] Skipping %s: no running strategy instances.",
+                symbol,
+                event.get("type"),
+            )
             return
 
         applicable_instances: List[Tuple[BaseStrategy, dict]] = []
         for instance, config_dict in running_instances:
             strategy_market_type = self._market_type_for_strategy_config(config_dict)
             if strategy_market_type != event_market_type:
+                logger.debug(
+                    "[SignalCheck:%s] Strategy %s skipped: market_type mismatch strategy=%s event=%s.",
+                    symbol,
+                    getattr(instance, "NAME", type(instance).__name__),
+                    strategy_market_type,
+                    event_market_type,
+                )
                 continue
             mode = config_dict.get("symbol_selection_mode", "DYNAMIC")
             symbols_for_instance = []
@@ -5185,6 +5204,13 @@ class TradingController:
                 symbols_for_instance = config_dict.get("symbols", [])
 
             if symbol not in symbols_for_instance:
+                logger.debug(
+                    "[SignalCheck:%s] Strategy %s skipped: symbol not monitored for mode=%s symbols=%s.",
+                    symbol,
+                    getattr(instance, "NAME", type(instance).__name__),
+                    mode,
+                    symbols_for_instance,
+                )
                 continue
 
             config_data = config_dict.get("config_data", {})
@@ -5212,6 +5238,13 @@ class TradingController:
                     )
 
         if not applicable_instances:
+            logger.info(
+                "[SignalCheck:%s] No applicable strategy instances for event=%s timeframe=%s market_type=%s.",
+                symbol,
+                event.get("type"),
+                event.get("timeframe"),
+                event_market_type,
+            )
             return
 
         logger.info(
@@ -5220,6 +5253,10 @@ class TradingController:
 
         pair_info_base = await self.consumer.get_active_pair_by_symbol(symbol)
         if not pair_info_base:
+            logger.warning(
+                "[SignalCheck:%s] Skipping checks: pair_info is missing in DataConsumer cache.",
+                symbol,
+            )
             return
 
         pair_info_base["timestamp_dt"] = datetime.fromtimestamp(
@@ -5237,6 +5274,10 @@ class TradingController:
         required_union: Set[str] = set()
         for instance, _cfg in applicable_instances:
             required_union.update(instance.required_data_types)
+
+        logger.info(
+            f"[SignalCheck:{symbol}] required_data_keys={required_union}"
+        )
 
         shared_market_data = await self._gather_market_data_for_required_keys(
             symbol=symbol,
@@ -5399,7 +5440,33 @@ class TradingController:
                                 f"{log_prefix} Failed to publish to hft:oracle: {e_pub}"
                             )
 
-            # logger.info(f"{log_prefix} check_signal() result: {signal_result}, weight: {weight}")
+            if signal_result is None and trace and isinstance(trace, dict):
+                rejection = trace.get("rejection_reason", "")
+                if rejection == "filter":
+                    reasons = instance._get_failure_reasons(trace)
+                    logger.info(
+                        f"{log_prefix} Signal REJECTED by filters: {', '.join(reasons)}"
+                    )
+                elif rejection == "entry_conditions":
+                    reasons = instance._get_failure_reasons(trace)
+                    logger.info(
+                        f"{log_prefix} Signal REJECTED by entry conditions: {', '.join(reasons)}"
+                    )
+                elif rejection == "weight_threshold":
+                    logger.info(
+                        f"{log_prefix} Signal REJECTED by weight threshold (weight={weight:.2f})."
+                    )
+                elif rejection in ("external_signal_required",):
+                    pass
+                elif trace.get("result") is False:
+                    reasons = instance._get_failure_reasons(trace)
+                    logger.info(
+                        f"{log_prefix} Signal REJECTED: {', '.join(reasons) if reasons else 'no details'}"
+                    )
+                else:
+                    logger.info(
+                        f"{log_prefix} Signal REJECTED (weight={weight:.2f})."
+                    )
             if isinstance(signal_result, StrategySignal):
                 if signal_result.details is None:
                     signal_result.details = {}

@@ -279,7 +279,22 @@ class MarketDataService:
         stream_key = payload.get("stream_key")
         if not stream_key:
             return
-        await redis_client.publish(_event_channel(str(stream_key)), json.dumps(payload))
+        data_type = str(payload.get("data_type_key", ""))
+        symbol = str(payload.get("symbol", ""))
+        market_type = str(payload.get("market_type", ""))
+        payload_type = str(payload.get("type", ""))
+        is_closed = None
+        inner_payload = payload.get("payload")
+        if isinstance(inner_payload, dict):
+            k_data = inner_payload.get("k")
+            if isinstance(k_data, dict):
+                is_closed = k_data.get("x")
+        channel = _event_channel(str(stream_key))
+        logger.info(
+            "Publishing market payload: type=%s stream_key=%s channel=%s data_type=%s symbol=%s market_type=%s is_closed=%s",
+            payload_type, stream_key, channel, data_type, symbol, market_type, is_closed,
+        )
+        await redis_client.publish(channel, json.dumps(payload))
 
         spec = self._stream_specs.get(str(stream_key))
         if spec:
