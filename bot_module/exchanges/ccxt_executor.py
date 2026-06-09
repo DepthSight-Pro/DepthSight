@@ -291,6 +291,11 @@ class CcxtExecutor:
             if self._exchange_pro:
                 self._exchange_pro.options["defaultType"] = "swap"
 
+        if self.exchange_id == "bybit" and self.supports_positions:
+            self._exchange.options["defaultType"] = "swap"
+            if self._exchange_pro:
+                self._exchange_pro.options["defaultType"] = "swap"
+
         if self.exchange_id == "gateio" and self.supports_positions:
             if uid:
                 self._set_gateio_uid(str(uid).strip())
