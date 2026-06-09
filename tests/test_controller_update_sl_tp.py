@@ -484,9 +484,9 @@ class TestReplaceTakeProfit:
                 found_correct_cancel = True
                 break
 
-        assert (
-            found_correct_cancel
-        ), f"Expected cancel_order call with orderId={old_tp_order_id}"
+        assert found_correct_cancel, (
+            f"Expected cancel_order call with orderId={old_tp_order_id}"
+        )
 
     @pytest.mark.asyncio
     async def test_replace_take_profit_updates_partial_tp_orders(

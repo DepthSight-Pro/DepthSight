@@ -196,9 +196,9 @@ async def test_backtester_oracle_allows_trade():
 
     # 4. Verify
     # Expect the trade to open because at some point the oracle will return (0, 95.0)
-    assert (
-        results["trades"] > 0
-    ), "Trade should have opened when the oracle gave permission"
+    assert results["trades"] > 0, (
+        "Trade should have opened when the oracle gave permission"
+    )
     assert len(bt.trade_log) == 1
     # Check that the trade opened exactly on the candle where the oracle triggered
     entry_time = bt.trade_log[0]["entry_time"]
@@ -260,6 +260,6 @@ async def test_backtester_oracle_rejects_all_trades():
     results = await bt.run_async()
 
     # 4. Verify
-    assert (
-        results["trades"] == 0
-    ), "There should be no trades as the oracle always prohibited them"
+    assert results["trades"] == 0, (
+        "There should be no trades as the oracle always prohibited them"
+    )

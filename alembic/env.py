@@ -20,7 +20,6 @@ from api.database import (
 )
 
 
-
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -77,7 +76,6 @@ def run_migrations_online() -> None:
 
     url = config.get_main_option("sqlalchemy.url")
     connectable = create_engine(url)
-
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

@@ -396,9 +396,9 @@ def test_volume_breakout_no_signal_low_activity(set_strategy_defaults, monkeypat
     market_data = get_default_market_data(pair_info)
 
     sig, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-    assert (
-        sig is None
-    ), "Signal generated despite low market activity (and high foundation threshold)"
+    assert sig is None, (
+        "Signal generated despite low market activity (and high foundation threshold)"
+    )
 
 
 def test_volume_breakout_signal_long(set_strategy_defaults, monkeypatch):
@@ -431,17 +431,17 @@ def test_volume_breakout_signal_long(set_strategy_defaults, monkeypatch):
 
     foundations_status, _ = strat.check_foundations(pair_info, market_data)
 
-    assert (
-        foundations_status["pattern_detected"] == "VolBreakUp"
-    ), f"Pattern VolBreakUp not detected, got {foundations_status['pattern_detected']}"
+    assert foundations_status["pattern_detected"] == "VolBreakUp", (
+        f"Pattern VolBreakUp not detected, got {foundations_status['pattern_detected']}"
+    )
     foundations_status[FOUNDATION_VOLUME_CONFIRMATION] = True
     foundations_status[FOUNDATION_PATTERN] = True
 
     sig = strat._check_specific_signal_logic(pair_info, market_data, foundations_status)
 
-    assert isinstance(
-        sig, StrategySignal
-    ), f"Signal not generated. Foundations used in test: {foundations_status}"
+    assert isinstance(sig, StrategySignal), (
+        f"Signal not generated. Foundations used in test: {foundations_status}"
+    )
     assert sig.direction == SignalDirection.LONG
 
 
@@ -472,14 +472,14 @@ def test_density_bounce_no_signal_max_touches_exceeded(
     )
 
     sig1, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-    assert isinstance(
-        sig1, StrategySignal
-    ), "Signal expected on first touch for DensityBounce"
+    assert isinstance(sig1, StrategySignal), (
+        "Signal expected on first touch for DensityBounce"
+    )
 
     sig2, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-    assert (
-        sig2 is None
-    ), "Signal generated on second touch when max_touch_count=1 for DensityBounce"
+    assert sig2 is None, (
+        "Signal generated on second touch when max_touch_count=1 for DensityBounce"
+    )
 
 
 def test_density_bounce_signal_long(set_strategy_defaults, monkeypatch):
@@ -506,9 +506,9 @@ def test_density_bounce_signal_long(set_strategy_defaults, monkeypatch):
     )
 
     sig, _, _ = strat.check_signal_sync(pair_info, market_data, None)
-    assert isinstance(
-        sig, StrategySignal
-    ), f"Signal not generated for DensityBounce LONG. Foundations: {strat.check_foundations(pair_info, market_data)}"
+    assert isinstance(sig, StrategySignal), (
+        f"Signal not generated for DensityBounce LONG. Foundations: {strat.check_foundations(pair_info, market_data)}"
+    )
 
 
 # --- FakeBreakoutStrategy Tests ---
@@ -642,17 +642,17 @@ def test_fake_breakout_signal_short_on_false_breakup(
 
     foundations_status, _ = strat.check_foundations(pair_info, market_data)
 
-    assert (
-        foundations_status["pattern_detected"] == "FakeBreakUp"
-    ), "Pattern not detected as expected for FakeBreakout"
+    assert foundations_status["pattern_detected"] == "FakeBreakUp", (
+        "Pattern not detected as expected for FakeBreakout"
+    )
     foundations_status[FOUNDATION_VOLUME_CONFIRMATION] = True
     foundations_status[FOUNDATION_PATTERN] = True
 
     sig = strat._check_specific_signal_logic(pair_info, market_data, foundations_status)
 
-    assert isinstance(
-        sig, StrategySignal
-    ), f"Signal not generated. Foundations used in test: {foundations_status}"
+    assert isinstance(sig, StrategySignal), (
+        f"Signal not generated. Foundations used in test: {foundations_status}"
+    )
 
 
 # --- ConsolidationImpulseStrategy Tests ---
@@ -756,17 +756,17 @@ def test_consolidation_impulse_signal_long(set_strategy_defaults, monkeypatch):
 
     foundations_status, _ = strat.check_foundations(pair_info, market_data)
 
-    assert (
-        foundations_status["pattern_detected"] == "ConsImpulseUp"
-    ), f"Pattern not ConsImpulseUp, got {foundations_status['pattern_detected']}"
+    assert foundations_status["pattern_detected"] == "ConsImpulseUp", (
+        f"Pattern not ConsImpulseUp, got {foundations_status['pattern_detected']}"
+    )
     foundations_status[FOUNDATION_VOLUME_CONFIRMATION] = True
     foundations_status[FOUNDATION_PATTERN] = True
 
     sig = strat._check_specific_signal_logic(pair_info, market_data, foundations_status)
 
-    assert isinstance(
-        sig, StrategySignal
-    ), f"Signal not generated. Foundations used in test: {foundations_status}"
+    assert isinstance(sig, StrategySignal), (
+        f"Signal not generated. Foundations used in test: {foundations_status}"
+    )
 
 
 # --- AggTradeReversalStrategy Tests ---
@@ -868,17 +868,17 @@ def test_agg_trade_reversal_signal_short_on_up_spike(
 
     foundations_status, _ = strat.check_foundations(pair_info, market_data)
 
-    assert (
-        foundations_status["pattern_detected"] == "AggReversalUpSpike"
-    ), f"Pattern not AggReversalUpSpike, got {foundations_status['pattern_detected']}"
+    assert foundations_status["pattern_detected"] == "AggReversalUpSpike", (
+        f"Pattern not AggReversalUpSpike, got {foundations_status['pattern_detected']}"
+    )
     foundations_status[FOUNDATION_PATTERN] = True
     foundations_status[FOUNDATION_VOLUME_CONFIRMATION] = True
 
     sig = strat._check_specific_signal_logic(pair_info, market_data, foundations_status)
 
-    assert isinstance(
-        sig, StrategySignal
-    ), f"Signal not generated. Foundations used in test: {foundations_status}"
+    assert isinstance(sig, StrategySignal), (
+        f"Signal not generated. Foundations used in test: {foundations_status}"
+    )
 
 
 # --- FirstPullbacksInTrendStrategy Tests ---
@@ -988,20 +988,20 @@ def test_first_pullback_signal_long_sma_pullback(set_strategy_defaults, monkeypa
 
     foundations_status, _ = strat.check_foundations(pair_info, market_data)
 
-    assert (
-        foundations_status["trend_detected"] == "LONG"
-    ), f"Trend not LONG, got {foundations_status['trend_detected']}"
-    assert (
-        foundations_status["pattern_detected"] == "PullbackSmaLong"
-    ), f"Pattern not PullbackSmaLong, got {foundations_status['pattern_detected']}"
+    assert foundations_status["trend_detected"] == "LONG", (
+        f"Trend not LONG, got {foundations_status['trend_detected']}"
+    )
+    assert foundations_status["pattern_detected"] == "PullbackSmaLong", (
+        f"Pattern not PullbackSmaLong, got {foundations_status['pattern_detected']}"
+    )
     foundations_status[FOUNDATION_VOLUME_CONFIRMATION] = True
     foundations_status[FOUNDATION_PATTERN] = True
 
     sig = strat._check_specific_signal_logic(pair_info, market_data, foundations_status)
 
-    assert isinstance(
-        sig, StrategySignal
-    ), f"Signal not generated. Foundations used in test: {foundations_status}"
+    assert isinstance(sig, StrategySignal), (
+        f"Signal not generated. Foundations used in test: {foundations_status}"
+    )
     assert sig.direction == SignalDirection.LONG
     assert sig.trigger_price == trigger_price_expected
 
@@ -1045,9 +1045,9 @@ def test_visual_strategy_simple_and_condition_not_met(visual_strategy_instance):
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
-    assert (
-        signal is None
-    ), "Signal MUST NOT be generated because one of the AND conditions is not met"
+    assert signal is None, (
+        "Signal MUST NOT be generated because one of the AND conditions is not met"
+    )
 
 
 @pytest.mark.asyncio
@@ -1108,6 +1108,6 @@ async def test_visual_strategy_or_condition_met(visual_strategy_instance, monkey
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
-    assert isinstance(
-        signal, StrategySignal
-    ), "Signal MUST be generated because one of the OR conditions (significant_level) is met"
+    assert isinstance(signal, StrategySignal), (
+        "Signal MUST be generated because one of the OR conditions (significant_level) is met"
+    )

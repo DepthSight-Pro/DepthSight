@@ -236,6 +236,6 @@ async def test_manage_position_exits_early_without_timestamp_dt():
         "and is_stop_at_be should remain False"
     )
 
-    assert (
-        updated_position.current_sl_price == 98.0
-    ), "Without timestamp_dt, SL should not have changed"
+    assert updated_position.current_sl_price == 98.0, (
+        "Without timestamp_dt, SL should not have changed"
+    )

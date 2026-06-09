@@ -294,9 +294,9 @@ async def test_e2e_dca_grid_on_testnet(e2e_controller: TradingController):
         }
         signal, _, _ = await strategy_instance.check_signal(mock_pair_info, {})
 
-        assert (
-            signal is not None
-        ), f"Attempt {attempt + 1}: Strategy failed to generate a signal."
+        assert signal is not None, (
+            f"Attempt {attempt + 1}: Strategy failed to generate a signal."
+        )
 
         test_config_id = "e2e-dca-id"
         signal.config_id = test_config_id
@@ -327,9 +327,9 @@ async def test_e2e_dca_grid_on_testnet(e2e_controller: TradingController):
             await controller.close_position(test_symbol, "E2E_RETRY_CLEANUP")
             await asyncio.sleep(10)
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"Position did not open. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"Position did not open. Status: {position.status if position else 'None'}"
+    )
 
     initial_entry_price = position.entry_price
     initial_qty = position.remaining_quantity
@@ -386,9 +386,9 @@ async def test_e2e_dca_grid_on_testnet(e2e_controller: TradingController):
         # SO 3 should be ~3.38% below entry
         # Qty should grow by 1.3x each step
 
-    assert (
-        len(dca_order_ids) > 0
-    ), "Controller did not save the DCA grid ID in the position object!"
+    assert len(dca_order_ids) > 0, (
+        "Controller did not save the DCA grid ID in the position object!"
+    )
     assert len(limit_orders) >= 3, "DCA Grid orders are not placed on the testnet!"
 
     # --- PHASE 3: Closing ---
@@ -496,9 +496,9 @@ async def test_e2e_grid_management_on_testnet(e2e_controller: TradingController)
         if position and position.status == "OPEN":
             break
 
-    assert (
-        position and position.status == "OPEN"
-    ), f"Position did not open. Status: {position.status if position else 'None'}"
+    assert position and position.status == "OPEN", (
+        f"Position did not open. Status: {position.status if position else 'None'}"
+    )
 
     # --- PHASE 2: Position management trigger for placing the Grid ---
     print("\n[PHASE 2] Executing Position Management for Grid Init")
@@ -535,9 +535,9 @@ async def test_e2e_grid_management_on_testnet(e2e_controller: TradingController)
     print(
         f"[PHASE 2] API returned {len(limit_orders)} LIMIT orders. Expecting at least 5 (our grid)."
     )
-    assert (
-        len(grid_order_ids) > 0
-    ), "Controller did not save the grid ID in the position object!"
+    assert len(grid_order_ids) > 0, (
+        "Controller did not save the grid ID in the position object!"
+    )
 
     # Ensure that LIMIT orders are actually created on the exchange (our grid)
     limit_order_ids_on_exchange = [o["orderId"] for o in limit_orders]

@@ -72,21 +72,21 @@ class TestRequiredDataTypes:
         assert "kline_5m" in required, "Must require the main timeframe"
 
         # There should be NO extra subscriptions
-        assert (
-            "depth" not in required
-        ), "Should not require depth without order book blocks"
-        assert (
-            "aggTrade" not in required
-        ), "Should not require aggTrade without tape blocks"
-        assert (
-            "kline_1d" not in required
-        ), "Should not require kline_1d without significant_level"
-        assert (
-            "kline_1h" not in required
-        ), "Should not require kline_1h without significant_level"
-        assert (
-            "kline_4h" not in required
-        ), "Should not require kline_4h without significant_level"
+        assert "depth" not in required, (
+            "Should not require depth without order book blocks"
+        )
+        assert "aggTrade" not in required, (
+            "Should not require aggTrade without tape blocks"
+        )
+        assert "kline_1d" not in required, (
+            "Should not require kline_1d without significant_level"
+        )
+        assert "kline_1h" not in required, (
+            "Should not require kline_1h without significant_level"
+        )
+        assert "kline_4h" not in required, (
+            "Should not require kline_4h without significant_level"
+        )
 
     def test_orderbook_strategy_requires_depth(self):
         """
@@ -154,9 +154,9 @@ class TestRequiredDataTypes:
 
         required = strategy.required_data_types
 
-        assert (
-            "open_interest" in required
-        ), "Should require open_interest for the open_interest block"
+        assert "open_interest" in required, (
+            "Should require open_interest for the open_interest block"
+        )
 
     def test_significant_level_requires_higher_timeframes(self):
         """
@@ -218,12 +218,12 @@ class TestRequiredDataTypes:
         assert "kline_5m" in required, "Must require the main timeframe"
 
         # There should NOT be depth and aggTrade for purely indicator strategies
-        assert (
-            "depth" not in required
-        ), "Genetic strategy without order book should not require depth"
-        assert (
-            "aggTrade" not in required
-        ), "Genetic strategy without tape should not require aggTrade"
+        assert "depth" not in required, (
+            "Genetic strategy without order book should not require depth"
+        )
+        assert "aggTrade" not in required, (
+            "Genetic strategy without tape should not require aggTrade"
+        )
 
 
 # ==============================================================================
@@ -535,20 +535,20 @@ class TestGlobalWebSocketRegistry:
 
         # Check that the record is created with ref_count = 1
         stream_key = "binance:futures_usdtm:btcusdt@kline_1m"
-        assert (
-            stream_key in _global_ws_registry
-        ), f"Record {stream_key} should be created in the global registry. Available: {list(_global_ws_registry.keys())}"
-        assert (
-            _global_ws_registry[stream_key]["ref_count"] == 1
-        ), "ref_count should be 1 after the first subscription"
+        assert stream_key in _global_ws_registry, (
+            f"Record {stream_key} should be created in the global registry. Available: {list(_global_ws_registry.keys())}"
+        )
+        assert _global_ws_registry[stream_key]["ref_count"] == 1, (
+            "ref_count should be 1 after the first subscription"
+        )
 
         # The second one subscribes to the same stream
         await consumer2.ensure_subscription("kline_1m", "BTCUSDT")
 
         # ref_count must increase to 2
-        assert (
-            _global_ws_registry[stream_key]["ref_count"] == 2
-        ), "ref_count must increase to 2"
+        assert _global_ws_registry[stream_key]["ref_count"] == 2, (
+            "ref_count must increase to 2"
+        )
 
         # There should be only one WebSocket task
         assert (
@@ -601,20 +601,20 @@ class TestGlobalWebSocketRegistry:
         await consumer1.remove_subscription("kline_1m", "BTCUSDT")
 
         # ref_count should decrease to 1, WebSocket should remain
-        assert (
-            stream_key in _global_ws_registry
-        ), "The record must remain in the registry"
-        assert (
-            _global_ws_registry[stream_key]["ref_count"] == 1
-        ), "ref_count must decrease to 1"
+        assert stream_key in _global_ws_registry, (
+            "The record must remain in the registry"
+        )
+        assert _global_ws_registry[stream_key]["ref_count"] == 1, (
+            "ref_count must decrease to 1"
+        )
 
         # Second one unsubscribes
         await consumer2.remove_subscription("kline_1m", "BTCUSDT")
 
         # Now the record must be deleted
-        assert (
-            stream_key not in _global_ws_registry
-        ), "Record should be deleted when ref_count = 0"
+        assert stream_key not in _global_ws_registry, (
+            "Record should be deleted when ref_count = 0"
+        )
 
     @pytest.mark.asyncio
     async def test_event_broadcast_to_all_queues(
@@ -660,14 +660,14 @@ class TestGlobalWebSocketRegistry:
         stream_key = "binance:futures_usdtm:btcusdt@kline_1m"
 
         # Checking that both queues are registered for broadcast
-        assert (
-            stream_key in _global_event_queues
-        ), "stream_key should be in _global_event_queues"
+        assert stream_key in _global_event_queues, (
+            "stream_key should be in _global_event_queues"
+        )
         assert queue1 in _global_event_queues[stream_key], "queue1 must be registered"
         assert queue2 in _global_event_queues[stream_key], "queue2 must be registered"
-        assert (
-            len(_global_event_queues[stream_key]) == 2
-        ), "There must be exactly 2 queues"
+        assert len(_global_event_queues[stream_key]) == 2, (
+            "There must be exactly 2 queues"
+        )
 
         # Simulating event receipt via _update_local_cache
         test_payload = {
@@ -1474,9 +1474,9 @@ class TestSubscriptionIntegration:
         required = strategy.required_data_types
 
         # There must be at least one kline
-        assert any(
-            r.startswith("kline_") for r in required
-        ), "There must be at least one kline"
+        assert any(r.startswith("kline_") for r in required), (
+            "There must be at least one kline"
+        )
 
         # Should not require spot orderbook
         assert not strategy.requires_spot_orderbook

@@ -413,9 +413,9 @@ async def test_trade_executes_when_l2_condition_is_met(
     results = await bt.run_async()
 
     assert results is not None
-    assert (
-        results["trades"] >= 1
-    ), f"Trade should have opened. Trades: {results.get('trades')}"
+    assert results["trades"] >= 1, (
+        f"Trade should have opened. Trades: {results.get('trades')}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -442,9 +442,9 @@ async def test_no_trade_when_l2_condition_is_not_met(
 
     results = await bt.run_async()
     assert results is not None
-    assert (
-        results["trades"] == 0
-    ), "Trade should not have been executed (weight < threshold)"
+    assert results["trades"] == 0, (
+        "Trade should not have been executed (weight < threshold)"
+    )
 
 
 @pytest.mark.parametrize(
@@ -602,9 +602,9 @@ async def test_partial_take_profits_and_be(depthsight_backtester_setup, mocker):
 
     assert results["trades"] == 1, "Trade was not opened"
     assert len(bt.trade_log) == 1
-    assert (
-        "SL_AT_BE" in bt.trade_log[0]["exit_reason"]
-    ), f"Invalid reason: {bt.trade_log[0].get('exit_reason')}"
+    assert "SL_AT_BE" in bt.trade_log[0]["exit_reason"], (
+        f"Invalid reason: {bt.trade_log[0].get('exit_reason')}"
+    )
     assert bt.trade_log[0]["num_partial_tp_hits"] == 1
 
 

@@ -218,10 +218,16 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
         logger.info("Redis client initialized.")
 
         # 2.5 Initialize Telegram bot handlers and polling if enabled
-        if telegram_notifier and config.TELEGRAM_NOTIFICATIONS_ENABLED:
+        # Only start polling on shard 0 to avoid 409 Conflict from multiple workers
+        if telegram_notifier and config.TELEGRAM_NOTIFICATIONS_ENABLED and shard_id == 0:
             telegram_notifier.setup_handlers(get_db, redis_client)
             await telegram_notifier.start_polling()
             logger.info("Telegram Bot handlers registered and polling started.")
+        elif telegram_notifier and config.TELEGRAM_NOTIFICATIONS_ENABLED:
+            logger.info(
+                "Telegram polling skipped on shard %s (only shard 0 polls).",
+                shard_id,
+            )
 
         # 3. Connect to DB and initialize controllers for each user
         logger.info("Connecting to the database to set up user controllers...")

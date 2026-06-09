@@ -576,9 +576,9 @@ async def _assert_bybit_exit_and_dca_orders(
             return pos if has_sl and has_tp and has_dca else None
 
     position = await _wait_until(position_with_orders, timeout=60.0)
-    assert (
-        position is not None
-    ), "Bybit controller did not place SL, partial TP and DCA orders."
+    assert position is not None, (
+        "Bybit controller did not place SL, partial TP and DCA orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(BYBIT_SYMBOL)
     algo_orders = await controller.executors["live"].get_open_algo_orders(BYBIT_SYMBOL)
@@ -609,9 +609,9 @@ async def _assert_bybit_spot_sl_and_dca_orders(controller: TradingController) ->
             return pos if has_sl and has_dca else None
 
     position = await _wait_until(position_with_sl_and_dca, timeout=60.0)
-    assert (
-        position is not None
-    ), "Bybit spot controller did not place SL and DCA orders."
+    assert position is not None, (
+        "Bybit spot controller did not place SL and DCA orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(BYBIT_SYMBOL)
     algo_orders = await controller.executors["live"].get_open_algo_orders(BYBIT_SYMBOL)
@@ -657,19 +657,19 @@ async def _place_and_assert_spot_partial_tps_sequentially(
         return free_qty if free_qty > 0 else None
 
     free_base_qty = await _wait_until(free_base_available, timeout=20.0)
-    assert (
-        free_base_qty
-    ), f"No free {base_asset} balance released after cancelling spot SL."
+    assert free_base_qty, (
+        f"No free {base_asset} balance released after cancelling spot SL."
+    )
 
     async with controller._positions_dict_lock:
         pos = controller._active_positions.get(BYBIT_SYMBOL)
-        assert (
-            pos is not None and pos.status == "OPEN"
-        ), "Bybit spot position disappeared before TP placement."
+        assert pos is not None and pos.status == "OPEN", (
+            "Bybit spot position disappeared before TP placement."
+        )
         available_qty = min(float(pos.remaining_quantity), free_base_qty)
-        assert (
-            available_qty > 0
-        ), f"No free {base_asset} balance available for spot TP placement."
+        assert available_qty > 0, (
+            f"No free {base_asset} balance available for spot TP placement."
+        )
         first_qty = available_qty * 0.25
         second_qty = available_qty * 0.25
         entry_price = float(pos.entry_price or pos.trigger_price)
@@ -783,9 +783,9 @@ async def test_bybit_controller_signal_to_position_sl_tp_dca_and_close(
     )
 
     ticker = await executor.get_ticker_price(BYBIT_SYMBOL)
-    assert ticker and ticker.get(
-        "price"
-    ), f"Could not fetch Bybit ticker for {BYBIT_SYMBOL}"
+    assert ticker and ticker.get("price"), (
+        f"Could not fetch Bybit ticker for {BYBIT_SYMBOL}"
+    )
     current_price = float(ticker["price"])
 
     pair_info = {
@@ -838,9 +838,9 @@ async def test_bybit_controller_signal_to_position_sl_tp_dca_and_close(
         _position_removed(controller),
         timeout=60.0,
     )
-    assert (
-        closed
-    ), f"Bybit {market_type}/{direction.name} position was not removed after close."
+    assert closed, (
+        f"Bybit {market_type}/{direction.name} position was not removed after close."
+    )
 
     await asyncio.sleep(2)
     open_orders_after_close = await executor.get_open_orders(BYBIT_SYMBOL)

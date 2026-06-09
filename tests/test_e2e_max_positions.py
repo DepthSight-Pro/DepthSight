@@ -321,9 +321,9 @@ async def test_max_concurrent_positions_limit(
         print(f"Active positions: {list(controller._active_positions.keys())}")
 
         assert pos_btc is not None, "BTCUSDT should still be open"
-        assert (
-            pos_eth is None
-        ), "ETHUSDT should NOT be in active positions because maxConcurrentTrades=1"
+        assert pos_eth is None, (
+            "ETHUSDT should NOT be in active positions because maxConcurrentTrades=1"
+        )
 
     print("[STEP 2] SUCCESS: ETHUSDT was blocked")
 
@@ -426,12 +426,12 @@ async def test_max_concurrent_positions_limit_race_condition(
         open_symbols = [p.symbol for p in open_positions]
         print(f"[RACE TEST] Resulting open positions: {open_symbols}")
 
-        assert (
-            len(open_positions) == 1
-        ), f"Expected exactly 1 position to open, but found {len(open_positions)}: {open_symbols}"
-        assert (
-            open_symbols[0] in symbols
-        ), f"Opened position {open_symbols[0]} is not one of the test symbols"
+        assert len(open_positions) == 1, (
+            f"Expected exactly 1 position to open, but found {len(open_positions)}: {open_symbols}"
+        )
+        assert open_symbols[0] in symbols, (
+            f"Opened position {open_symbols[0]} is not one of the test symbols"
+        )
 
     # Cleanup
     for sym in open_symbols:

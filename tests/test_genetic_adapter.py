@@ -217,9 +217,9 @@ def test_time_filter(genetic_strategy, pair_info, test_id, hour_utc, params, exp
     res, details = genetic_strategy._check_filter_time_genetic(
         pair_info, {}, params, {}
     )
-    assert (
-        res == expected
-    ), f"FAIL [{test_id}]: Expected {expected}, got {res}. Details: {details}"
+    assert res == expected, (
+        f"FAIL [{test_id}]: Expected {expected}, got {res}. Details: {details}"
+    )
 
 
 def test_ma_cross_condition(genetic_strategy, pair_info):

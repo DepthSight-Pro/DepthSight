@@ -249,25 +249,25 @@ async def test_full_oracle_filtering_cycle(controller_with_oracle_mode, mock_con
     # === CHECKS ===
 
     # 1. Check that the correct number of symbols is filtered
-    assert (
-        len(desired_symbols_set) == 3
-    ), f"3 symbols should be selected, received {len(desired_symbols_set)}"
+    assert len(desired_symbols_set) == 3, (
+        f"3 symbols should be selected, received {len(desired_symbols_set)}"
+    )
 
     # 2. Check that the correct symbols are selected (top-3 by confidence with regime=1 and confidence>=70%)
     expected_symbols = {"BTCUSDT", "ETHUSDT", "BNBUSDT"}
-    assert (
-        desired_symbols_set == expected_symbols
-    ), f"Expected {expected_symbols}, received {desired_symbols_set}"
+    assert desired_symbols_set == expected_symbols, (
+        f"Expected {expected_symbols}, received {desired_symbols_set}"
+    )
 
     # 3. Check that currently_managed_symbols contains the correct symbols
-    assert (
-        controller.currently_managed_symbols == expected_symbols
-    ), f"currently_managed_symbols should contain {expected_symbols}, received {controller.currently_managed_symbols}"
+    assert controller.currently_managed_symbols == expected_symbols, (
+        f"currently_managed_symbols should contain {expected_symbols}, received {controller.currently_managed_symbols}"
+    )
 
     # 4. Check that _last_known_symbols_from_consumer is synchronized
-    assert (
-        controller._last_known_symbols_from_consumer == expected_symbols
-    ), f"_last_known_symbols_from_consumer should contain {expected_symbols}, received {controller._last_known_symbols_from_consumer}"
+    assert controller._last_known_symbols_from_consumer == expected_symbols, (
+        f"_last_known_symbols_from_consumer should contain {expected_symbols}, received {controller._last_known_symbols_from_consumer}"
+    )
 
     # 5. Check that unsuitable symbols did NOT get into the selection
     rejected_symbols = {
@@ -280,15 +280,15 @@ async def test_full_oracle_filtering_cycle(controller_with_oracle_mode, mock_con
         "LINKUSDT",
     }
     for symbol in rejected_symbols:
-        assert (
-            symbol not in desired_symbols_set
-        ), f"{symbol} should not be in the selection"
-        assert (
-            symbol not in controller.currently_managed_symbols
-        ), f"{symbol} should not be in currently_managed_symbols"
-        assert (
-            symbol not in controller._last_known_symbols_from_consumer
-        ), f"{symbol} should not be in _last_known_symbols_from_consumer"
+        assert symbol not in desired_symbols_set, (
+            f"{symbol} should not be in the selection"
+        )
+        assert symbol not in controller.currently_managed_symbols, (
+            f"{symbol} should not be in currently_managed_symbols"
+        )
+        assert symbol not in controller._last_known_symbols_from_consumer, (
+            f"{symbol} should not be in _last_known_symbols_from_consumer"
+        )
 
     # 6. Check that _monitored_symbols is updated
     # (start_managing_symbol calls _update_monitored_symbols)
@@ -440,16 +440,16 @@ async def test_oracle_mode_updates_on_new_screener_data(
 
     # Checking that the list has updated
     expected_symbols_2 = {"SOLUSDT", "ADAUSDT", "DOGEUSDT"}
-    assert (
-        controller.currently_managed_symbols == expected_symbols_2
-    ), f"After the second update, expected {expected_symbols_2}, received {controller.currently_managed_symbols}"
+    assert controller.currently_managed_symbols == expected_symbols_2, (
+        f"After the second update, expected {expected_symbols_2}, received {controller.currently_managed_symbols}"
+    )
 
     # Check that old symbols are removed
     old_symbols = {"BTCUSDT", "ETHUSDT", "BNBUSDT"}
     for symbol in old_symbols:
-        assert (
-            symbol not in controller.currently_managed_symbols
-        ), f"{symbol} should be deleted"
+        assert symbol not in controller.currently_managed_symbols, (
+            f"{symbol} should be deleted"
+        )
 
     # Checking synchronization
     assert controller._last_known_symbols_from_consumer == expected_symbols_2
@@ -506,15 +506,15 @@ async def test_static_mode_does_not_use_screener(
     await controller._check_and_update_symbols()
 
     # Check that static symbols are used, not from the screener
-    assert (
-        controller._last_known_symbols_from_consumer == static_symbols
-    ), f"In STATIC mode, symbols from the config should be used: {static_symbols}, received {controller._last_known_symbols_from_consumer}"
+    assert controller._last_known_symbols_from_consumer == static_symbols, (
+        f"In STATIC mode, symbols from the config should be used: {static_symbols}, received {controller._last_known_symbols_from_consumer}"
+    )
 
     # Check that symbols from the screener are NOT used
     screener_symbols = {"BTCUSDT", "ETHUSDT"}
-    assert (
-        controller._last_known_symbols_from_consumer != screener_symbols
-    ), "In STATIC mode, symbols from the screener should not be used"
+    assert controller._last_known_symbols_from_consumer != screener_symbols, (
+        "In STATIC mode, symbols from the screener should not be used"
+    )
 
     print("✅ STATIC mode test passed!")
     print(f"✅ Static symbols are used: {static_symbols}")

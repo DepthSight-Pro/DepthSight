@@ -156,9 +156,9 @@ async def test_full_trade_lifecycle_tp_hit(
 
     # --- 5. ASSERT: Checking the TP trigger result ---
     assert not paper_executor._positions, "Position was not removed after TP trigger"
-    assert (
-        len(paper_executor._open_orders) == 1
-    ), "Executed TP order was not removed from _open_orders"
+    assert len(paper_executor._open_orders) == 1, (
+        "Executed TP order was not removed from _open_orders"
+    )
 
     remaining_order = list(paper_executor._open_orders.values())[0]
     assert remaining_order["type"] == "STOP_MARKET"

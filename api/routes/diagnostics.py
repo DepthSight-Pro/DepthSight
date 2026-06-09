@@ -897,9 +897,7 @@ async def find_available_symbols(
         return {"data": found_symbols[:limit]}
 
     except Exception as e:
-        logger.error(
-            f"Error scanning directory '{base_path}': {e}", exc_info=True
-        )
+        logger.error(f"Error scanning directory '{base_path}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Server error when searching for available symbols."
         )

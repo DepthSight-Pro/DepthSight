@@ -265,13 +265,13 @@ async def test_all_indicators_parity():
             break
 
     diff = abs(len(fast_bt.trade_log) - len(strategy_trades))
-    assert (
-        diff <= 5
-    ), f"Mismatch in count! Fast: {len(fast_bt.trade_log)}, Repl: {len(strategy_trades)}"
+    assert diff <= 5, (
+        f"Mismatch in count! Fast: {len(fast_bt.trade_log)}, Repl: {len(strategy_trades)}"
+    )
 
     # Check first 5 trades for exact time parity
     for i in range(min(5, min_len)):
         f, s = fast_bt.trade_log[i], strategy_trades[i]
-        assert _to_utc_ts(f["entry_time"]) == _to_utc_ts(
-            s["entry_time"]
-        ), f"Trade {i} entry time mismatch"
+        assert _to_utc_ts(f["entry_time"]) == _to_utc_ts(s["entry_time"]), (
+            f"Trade {i} entry time mismatch"
+        )

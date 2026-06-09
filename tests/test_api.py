@@ -699,9 +699,9 @@ async def test_get_backtest_klines_without_time_range(
     response = await authenticated_client.get(
         f"/api/v1/backtests/{run_id}/klines?timeframe=15m"
     )
-    assert (
-        response.status_code == 200
-    ), f"Expected status 200, but received {response.status_code}. Response body: {response.text}"
+    assert response.status_code == 200, (
+        f"Expected status 200, but received {response.status_code}. Response body: {response.text}"
+    )
 
     mock_data_loader.download_klines.assert_called_once()
     _, kwargs = mock_data_loader.download_klines.call_args

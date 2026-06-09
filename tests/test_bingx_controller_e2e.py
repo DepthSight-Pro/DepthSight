@@ -162,9 +162,9 @@ async def bingx_controller_case(request, monkeypatch):
         session=session,
         market_type="futures_usdtm",
     )
-    assert (
-        executor.sandbox is True
-    ), "BingX e2e must run against prod-vst/open-api-vst, not live trading."
+    assert executor.sandbox is True, (
+        "BingX e2e must run against prod-vst/open-api-vst, not live trading."
+    )
     executor._exchange.timeout = BINGX_CCXT_TIMEOUT_MS
     if executor._exchange_pro:
         executor._exchange_pro.timeout = BINGX_CCXT_TIMEOUT_MS
@@ -455,9 +455,9 @@ async def _assert_bingx_exit_and_dca_orders(controller: TradingController) -> No
             return pos if has_sl and has_tp and has_dca else None
 
     position = await _wait_until(position_with_orders, timeout=60.0)
-    assert (
-        position is not None
-    ), "BingX controller did not place SL, partial TP and DCA orders."
+    assert position is not None, (
+        "BingX controller did not place SL, partial TP and DCA orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(BINGX_SYMBOL)
     algo_orders = await controller.executors["live"].get_open_algo_orders(BINGX_SYMBOL)
@@ -500,9 +500,9 @@ async def test_bingx_controller_signal_to_position_sl_tp_dca_and_close(
         )
 
     ticker = await executor.get_ticker_price(BINGX_SYMBOL)
-    assert ticker and ticker.get(
-        "price"
-    ), f"Could not fetch BingX ticker for {BINGX_SYMBOL}"
+    assert ticker and ticker.get("price"), (
+        f"Could not fetch BingX ticker for {BINGX_SYMBOL}"
+    )
     current_price = float(ticker["price"])
 
     pair_info = {
@@ -540,13 +540,15 @@ async def test_bingx_controller_signal_to_position_sl_tp_dca_and_close(
         _position_removed(controller),
         timeout=60.0,
     )
-    assert (
-        closed
-    ), f"BingX futures/{direction.name} position was not removed after close."
+    assert closed, (
+        f"BingX futures/{direction.name} position was not removed after close."
+    )
 
     await asyncio.sleep(2)
     open_orders_after_close = await executor.get_open_orders(BINGX_SYMBOL)
-    assert not open_orders_after_close, f"BingX futures/{direction.name} left open orders after close: {open_orders_after_close}"
+    assert not open_orders_after_close, (
+        f"BingX futures/{direction.name} left open orders after close: {open_orders_after_close}"
+    )
 
 
 def _position_removed(controller: TradingController):

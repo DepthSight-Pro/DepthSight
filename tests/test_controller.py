@@ -2282,17 +2282,17 @@ async def test_check_and_close_positions_without_sl_triggers_for_old_position(
         await asyncio.sleep(1.5)
 
     # MAIN TEST: the position must be REMOVED from active ones after successful closing
-    assert (
-        controller._active_position_get(symbol, "futures_usdtm") is None
-    ), f"Position {symbol} should be removed after emergency closing, but it is still in _active_positions"
+    assert controller._active_position_get(symbol, "futures_usdtm") is None, (
+        f"Position {symbol} should be removed after emergency closing, but it is still in _active_positions"
+    )
 
     # Telegram notification must be sent
     mock_notifier.bot_error.assert_called()
 
     # MARKET order to close must be sent
-    assert (
-        place_order_call_count >= 1
-    ), "There should be at least one place_order call for closing"
+    assert place_order_call_count >= 1, (
+        "There should be at least one place_order call for closing"
+    )
 
 
 @pytest.mark.asyncio
@@ -2374,9 +2374,9 @@ async def test_check_and_close_positions_without_sl_retries_stuck_closing(
     await asyncio.sleep(0.2)
 
     # The position must be removed after successful re-closure
-    assert (
-        controller._active_position_get(symbol, "futures_usdtm") is None
-    ), f"Stuck position {symbol} should be deleted after re-closing"
+    assert controller._active_position_get(symbol, "futures_usdtm") is None, (
+        f"Stuck position {symbol} should be deleted after re-closing"
+    )
 
     # Check that place_order was called (MARKET order for closure)
     assert mock_executor.place_order.called, "place_order must be called for closing"
@@ -2466,9 +2466,9 @@ async def test_close_position_syncs_with_exchange_before_closing(
     )
 
     # Position should be deleted
-    assert (
-        controller._active_position_get(symbol, "futures_usdtm") is None
-    ), f"Position {symbol} should be deleted after closing"
+    assert controller._active_position_get(symbol, "futures_usdtm") is None, (
+        f"Position {symbol} should be deleted after closing"
+    )
 
 
 @pytest.mark.asyncio
@@ -2558,21 +2558,21 @@ async def test_close_position_with_small_qty_below_minqty(controller, mock_execu
     await asyncio.sleep(0.2)
 
     # MAIN TEST 1: place_order MUST be called even with a small quantity
-    assert (
-        mock_executor.place_order.called
-    ), f"close_position must call place_order even for a small quantity {small_qty}"
+    assert mock_executor.place_order.called, (
+        f"close_position must call place_order even for a small quantity {small_qty}"
+    )
 
     # MAIN TEST 2: Quantity must be correctly rounded (not 0)
-    assert (
-        captured_qty is not None and captured_qty > 0
-    ), f"Quantity for the closing order must be > 0, but received {captured_qty}"
+    assert captured_qty is not None and captured_qty > 0, (
+        f"Quantity for the closing order must be > 0, but received {captured_qty}"
+    )
 
     # MAIN TEST 3: reduceOnly must be True
-    assert (
-        captured_reduce_only
-    ), "The closing order must have reduceOnly=True to bypass the minQty filter"
+    assert captured_reduce_only, (
+        "The closing order must have reduceOnly=True to bypass the minQty filter"
+    )
 
     # Position should be deleted
-    assert (
-        symbol not in controller._active_positions
-    ), f"Position {symbol} should be deleted after closing"
+    assert symbol not in controller._active_positions, (
+        f"Position {symbol} should be deleted after closing"
+    )

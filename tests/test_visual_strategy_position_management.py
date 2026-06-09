@@ -606,9 +606,9 @@ async def test_pm_scale_in(mocker):
     assert len(backtester.trade_log) == 1, "There should be 1 trade after scale-in"
     trade = backtester.trade_log[0]
     assert trade["entry_price"] >= 100.0
-    assert (
-        backtester.stats.get("number_of_entries") == 2
-    ), "Number of entries should be 2"
+    assert backtester.stats.get("number_of_entries") == 2, (
+        "Number of entries should be 2"
+    )
 
 
 @pytest.mark.asyncio
@@ -733,9 +733,9 @@ async def test_pm_scale_in_works_across_multiple_trades(mocker):
         await backtester.run_async()
 
     assert len(backtester.trade_log) == 2, "There should be exactly 2 trades in the log"
-    assert (
-        backtester.stats.get("number_of_entries") == 4
-    ), "Total number of entries (2 main + 2 scale-in) should be 4"
+    assert backtester.stats.get("number_of_entries") == 4, (
+        "Total number of entries (2 main + 2 scale-in) should be 4"
+    )
 
 
 @pytest.mark.asyncio

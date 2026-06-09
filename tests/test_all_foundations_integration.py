@@ -208,13 +208,13 @@ def test_strategy_all_foundations_and_summation(
     # The 'round_number_level' foundation is not met (weight 10), so the expected weight is 100 - 10 = 90
     expected_weight_scenario1 = 90.0
 
-    assert (
-        actual_weight == expected_weight_scenario1
-    ), f"[{strategy_name}] Expected weight {expected_weight_scenario1}, received {actual_weight}. Basis log: {foundation_log}. Pattern from details: {pattern_detected_in_details}"
+    assert actual_weight == expected_weight_scenario1, (
+        f"[{strategy_name}] Expected weight {expected_weight_scenario1}, received {actual_weight}. Basis log: {foundation_log}. Pattern from details: {pattern_detected_in_details}"
+    )
 
-    assert (
-        signal_obj is not None
-    ), f"[{strategy_name}] Signal should not be None when weight {actual_weight} (expected {expected_weight_scenario1}) is sufficient."
+    assert signal_obj is not None, (
+        f"[{strategy_name}] Signal should not be None when weight {actual_weight} (expected {expected_weight_scenario1}) is sufficient."
+    )
 
     print(
         f"\n--- Strategy testing: {strategy_name} (Scenario 2: Insufficient weight) ---"
@@ -250,9 +250,9 @@ def test_strategy_all_foundations_and_summation(
             f"Foundations log of erroneous signal for {strategy_name}: {foundation_log_rejected}"
         )
 
-    assert (
-        signal_rejected is None
-    ), f"[{strategy_name}] Signal should be None when weight is insufficient."
+    assert signal_rejected is None, (
+        f"[{strategy_name}] Signal should be None when weight is insufficient."
+    )
 
     if original_highs is not None:
         market_data["kline_1m"].loc[market_data["kline_1m"].index[44:58], "high"] = (

@@ -692,9 +692,9 @@ async def created_strategy_config(
     response = await authenticated_client.post(
         "/api/v1/strategies/config", json=payload
     )
-    assert (
-        response.status_code == 201
-    ), f"Failed to create strategy config: {response.text}"
+    assert response.status_code == 201, (
+        f"Failed to create strategy config: {response.text}"
+    )
     created_config_data = response.json()["data"]
 
     yield created_config_data

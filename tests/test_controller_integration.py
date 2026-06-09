@@ -142,6 +142,6 @@ async def test_all_redis_commands_are_processed(
             bot_config.REDIS_COMMAND_CHANNEL, json.dumps(command)
         )
         await asyncio.sleep(0.5)
-        assert (
-            mock_target_method.await_count >= 1
-        ), f"Expected {command_info['target_path']} to have been awaited."
+        assert mock_target_method.await_count >= 1, (
+            f"Expected {command_info['target_path']} to have been awaited."
+        )

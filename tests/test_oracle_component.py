@@ -91,9 +91,9 @@ async def test_oracle_initialization_and_prediction(mock_model_path, mock_datase
     print(f"Result obtained: Mode={regime}, Confidence={confidence:.2f}%")
 
     assert isinstance(regime, int), "Regime must be an integer (int)"
-    assert isinstance(
-        confidence, float
-    ), "Confidence must be a floating-point number (float)"
+    assert isinstance(confidence, float), (
+        "Confidence must be a floating-point number (float)"
+    )
     assert regime >= 0, "Regime ID cannot be negative in a successful scenario"
     assert 0.0 <= confidence <= 100.0, "Confidence must be in the range from 0 to 100"
 

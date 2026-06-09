@@ -276,7 +276,9 @@ async def test_sl_moves_to_be_after_first_tp(
             assert kwargs_call.get("reduceOnly") == "true"
             found_new_sl_placement = True
             break
-    assert found_new_sl_placement, f"New SL order with BE price {expected_be_sl_price} was not placed. Calls: {mock_executor.place_order.call_args_list}"
+    assert found_new_sl_placement, (
+        f"New SL order with BE price {expected_be_sl_price} was not placed. Calls: {mock_executor.place_order.call_args_list}"
+    )
 
     async with controller._positions_dict_lock:
         final_position = controller._active_position_get(symbol)

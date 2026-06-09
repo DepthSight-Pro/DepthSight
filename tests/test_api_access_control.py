@@ -155,9 +155,9 @@ async def test_free_user_backtest_quota(
 
     for i in range(10):
         response = await free_user_client.post(url, json=payload)
-        assert (
-            response.status_code == 202
-        ), f"Backtest #{i + 1} failed unexpectedly with status {response.status_code} {response.text}"
+        assert response.status_code == 202, (
+            f"Backtest #{i + 1} failed unexpectedly with status {response.status_code} {response.text}"
+        )
         # Simulating that the task has finished and released a concurrency slot
         await mock_redis_client.decr(redis_concurrent_key)
 
@@ -236,9 +236,9 @@ async def test_pro_user_optimization_quota(
 
     for i in range(10):
         response = await pro_user_client.post(url, json=payload)
-        assert (
-            response.status_code == 202
-        ), f"Monthly quota check failed at run #{i + 1}"
+        assert response.status_code == 202, (
+            f"Monthly quota check failed at run #{i + 1}"
+        )
         await mock_redis_client.decr(redis_concurrent_key)
 
     # TEMPORARY: expecting 202, as the Redis mock does not track usage quota

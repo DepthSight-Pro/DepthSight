@@ -159,9 +159,9 @@ def test_data_flow_between_blocks(visual_strategy_instance, get_default_pair_inf
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
 
     assert signal is not None, "Signal should have been generated"
-    assert signal.entry_price == pytest.approx(
-        105.0
-    ), "Entry price in the signal must be equal to the found level"
+    assert signal.entry_price == pytest.approx(105.0), (
+        "Entry price in the signal must be equal to the found level"
+    )
 
 
 def test_integration_btc_dependent_filters(

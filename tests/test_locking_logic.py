@@ -49,9 +49,9 @@ async def test_symbol_lock_independence():
 
     # Verify that operation B did not wait for 0.5s for operation A to finish
     wait_time_b = results[1]
-    assert (
-        wait_time_b < 0.2
-    ), f"Symbol B was blocked by Symbol A! Wait time: {wait_time_b:.4f}s"
+    assert wait_time_b < 0.2, (
+        f"Symbol B was blocked by Symbol A! Wait time: {wait_time_b:.4f}s"
+    )
     print(f"Lock independence verified. B wait time: {wait_time_b:.4f}s")
 
 
@@ -126,9 +126,9 @@ async def test_concurrency_limit_integrity_with_fine_grained_locks():
     # Verify that only ONE position was created
     async with controller._positions_dict_lock:
         active_count = len(controller._active_positions)
-        assert (
-            active_count == 1
-        ), f"Concurrency limit breached! Created {active_count} positions, expected 1."
+        assert active_count == 1, (
+            f"Concurrency limit breached! Created {active_count} positions, expected 1."
+        )
 
     print("Concurrency limit integrity verified with hybrid locking.")
 
@@ -182,9 +182,9 @@ async def test_reconcile_does_not_block_dictionary_structure():
         end_wait = time.time()
 
         assert can_access_dict
-        assert (
-            end_wait - start_wait
-        ) < 0.1, "Dictionary lock was held too long by reconciliation!"
+        assert (end_wait - start_wait) < 0.1, (
+            "Dictionary lock was held too long by reconciliation!"
+        )
 
         await reconcile_task
 

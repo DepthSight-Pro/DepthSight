@@ -159,9 +159,9 @@ async def test_backtester_with_bookdepth_integration(historical_data_with_bookde
     results = await bt.run_async()
 
     assert results is not None
-    assert (
-        results["trades"] == 1
-    ), f"Exactly one trade should have been opened, but opened {results['trades']}"
+    assert results["trades"] == 1, (
+        f"Exactly one trade should have been opened, but opened {results['trades']}"
+    )
 
     trade = bt.trade_log[0]
 
@@ -169,6 +169,6 @@ async def test_backtester_with_bookdepth_integration(historical_data_with_bookde
     # Entry occurs at the open price of the next candle i=85 (standard backtester behavior).
     # open[85] = close[84] + delta ≈ 143.45
     expected_entry_price = 143.45
-    assert (
-        trade["entry_price"] == pytest.approx(expected_entry_price, abs=0.1)
-    ), f"Entry price should be around {expected_entry_price}, but it is {trade['entry_price']}"
+    assert trade["entry_price"] == pytest.approx(expected_entry_price, abs=0.1), (
+        f"Entry price should be around {expected_entry_price}, but it is {trade['entry_price']}"
+    )

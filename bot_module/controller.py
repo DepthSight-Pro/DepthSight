@@ -3854,14 +3854,16 @@ class TradingController:
 
                             # Synchronization with self.currently_managed_symbols
                             current_managed_set = self.currently_managed_symbols.copy()
+                            changed = False
 
-                            # New targets
+                            # New targets — batch all changes before calling _update_monitored_symbols
                             for symbol in desired_symbols_set:
                                 if symbol not in current_managed_set:
                                     logger.info(
                                         f"{log_prefix} New target: {symbol}. Starting management."
                                     )
-                                    await self.start_managing_symbol(symbol)
+                                    self._last_known_symbols_from_consumer.add(symbol)
+                                    changed = True
 
                             # Obsolete targets
                             for symbol in current_managed_set:
@@ -3869,7 +3871,12 @@ class TradingController:
                                     logger.info(
                                         f"{log_prefix} Outdated target: {symbol}. Stopping management."
                                     )
-                                    await self.stop_managing_symbol(symbol)
+                                    if symbol in self._last_known_symbols_from_consumer:
+                                        self._last_known_symbols_from_consumer.remove(symbol)
+                                    changed = True
+
+                            if changed:
+                                await self._update_monitored_symbols()
 
                             self.currently_managed_symbols = desired_symbols_set.copy()
                             logger.info(
@@ -5809,7 +5816,7 @@ class TradingController:
                     self._closing_managed_symbols.add(symbol)
                 else:
                     # The symbol is no longer needed by strategies or for position management
-                    logger.info(
+                    logger.debug(
                         f"{log_prefix} Symbol {symbol} no longer required. Unsubscribing from all data."
                     )
                     await self.consumer.remove_all_subscriptions_for_symbol(symbol)

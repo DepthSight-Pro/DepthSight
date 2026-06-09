@@ -168,18 +168,18 @@ async def test_genetic_adapter_rr_breakeven_with_data_loss():
     # Output the trade log for debugging if the assertion fails
     print(f"\nTrade Log: {backtester.trade_log}")
 
-    assert (
-        len(backtester.trade_log) == 1
-    ), f"Trade not executed. Log: {backtester.trade_log}"
+    assert len(backtester.trade_log) == 1, (
+        f"Trade not executed. Log: {backtester.trade_log}"
+    )
     trade = backtester.trade_log[0]
 
     print(f"Exit Reason: {trade['exit_reason']}")
     print(f"Exit Price: {trade['exit_price']}")
 
     # Checking Fallback operation (if initial_stop_loss is lost, BE should trigger)
-    assert (
-        trade["exit_reason"] == "SL_AT_BE"
-    ), f"Expected SL_AT_BE, received {trade['exit_reason']}"
+    assert trade["exit_reason"] == "SL_AT_BE", (
+        f"Expected SL_AT_BE, received {trade['exit_reason']}"
+    )
 
     # Price check (Entry 100.0 + 2 pips (0.02) = 100.02)
     assert trade["exit_price"] == pytest.approx(100.02, abs=0.01)

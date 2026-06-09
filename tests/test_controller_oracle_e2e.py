@@ -269,9 +269,9 @@ class TestDynamicOracleMode:
         )
 
         # Checking filtration
-        assert (
-            len(filtered_symbols) == 5
-        ), f"Should be 5 symbols with regime=1 and confidence>=0.70, received {len(filtered_symbols)}"
+        assert len(filtered_symbols) == 5, (
+            f"Should be 5 symbols with regime=1 and confidence>=0.70, received {len(filtered_symbols)}"
+        )
 
         # Applying limit
         max_concurrent = controller.symbol_selection_config.max_concurrent_symbols
@@ -279,9 +279,9 @@ class TestDynamicOracleMode:
 
         # Checking the result
         expected = {"SOLUSDT", "BTCUSDT", "AVAXUSDT"}
-        assert (
-            desired_symbols == expected
-        ), f"Expected {expected}, received {desired_symbols}"
+        assert desired_symbols == expected, (
+            f"Expected {expected}, received {desired_symbols}"
+        )
 
     @pytest.mark.asyncio
     async def test_confidence_normalization_issue(self, controller):
@@ -328,9 +328,9 @@ class TestDynamicOracleMode:
             for s in test_data
             if s.get("oracle_confidence", 0.0) >= min_confidence  # 0.85 >= 70 = False!
         ]
-        assert (
-            len(filtered_wrong) == 0
-        ), "Without normalization, nothing passes the filter!"
+        assert len(filtered_wrong) == 0, (
+            "Without normalization, nothing passes the filter!"
+        )
 
         # With normalization (CORRECT)
         min_confidence_normalized = min_confidence / 100.0
@@ -340,9 +340,9 @@ class TestDynamicOracleMode:
             if s.get("oracle_confidence", 0.0)
             >= min_confidence_normalized  # 0.85 >= 0.70 = True!
         ]
-        assert (
-            len(filtered_correct) == 2
-        ), f"With normalization, 2 symbols should pass, received {len(filtered_correct)}"
+        assert len(filtered_correct) == 2, (
+            f"With normalization, 2 symbols should pass, received {len(filtered_correct)}"
+        )
 
         symbols = {s["symbol"] for s in filtered_correct}
         assert symbols == {"TEST1", "TEST3"}
@@ -380,17 +380,17 @@ class TestMaxConcurrentSymbols:
         filtered.sort(key=lambda x: x.get("oracle_confidence", 0.0), reverse=True)
 
         # Without a limit, there would be 7 characters
-        assert (
-            len(filtered) == 7
-        ), f"Without limit, there should be 7 symbols, received {len(filtered)}"
+        assert len(filtered) == 7, (
+            f"Without limit, there should be 7 symbols, received {len(filtered)}"
+        )
 
         # With a limit of only 2
         max_concurrent = controller.symbol_selection_config.max_concurrent_symbols
         desired = {s["symbol"] for s in filtered[:max_concurrent]}
 
-        assert (
-            len(desired) == 2
-        ), f"With limit, there should be 2 symbols, received {len(desired)}"
+        assert len(desired) == 2, (
+            f"With limit, there should be 2 symbols, received {len(desired)}"
+        )
         # Top-2 by confidence: SOLUSDT(0.92), BTCUSDT(0.85)
         assert desired == {"SOLUSDT", "BTCUSDT"}
 

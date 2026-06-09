@@ -470,9 +470,9 @@ async def _assert_spot_sl_and_dca_orders(controller: TradingController) -> None:
             return pos if has_sl and has_dca else None
 
     position = await _wait_until(position_with_sl_and_dca, timeout=60.0)
-    assert (
-        position is not None
-    ), "Binance spot controller did not place SL and DCA orders."
+    assert position is not None, (
+        "Binance spot controller did not place SL and DCA orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(
         BINANCE_SPOT_SYMBOL
@@ -525,9 +525,9 @@ async def _place_and_assert_spot_partial_tps_sequentially(
     sl_cancelled = await _wait_until(
         lambda: _position_without_sl(controller), timeout=20.0
     )
-    assert (
-        sl_cancelled
-    ), "Binance spot SL was not cleared before sequential TP placement."
+    assert sl_cancelled, (
+        "Binance spot SL was not cleared before sequential TP placement."
+    )
 
     base_asset = _base_asset_from_symbol(BINANCE_SPOT_SYMBOL)
 
@@ -537,19 +537,19 @@ async def _place_and_assert_spot_partial_tps_sequentially(
         return free_qty if free_qty > 0 else None
 
     free_base_qty = await _wait_until(free_base_available, timeout=20.0)
-    assert (
-        free_base_qty
-    ), f"No free {base_asset} balance released after cancelling spot SL."
+    assert free_base_qty, (
+        f"No free {base_asset} balance released after cancelling spot SL."
+    )
 
     async with controller._positions_dict_lock:
         pos = controller._active_position_get(BINANCE_SPOT_SYMBOL, "spot")
-        assert (
-            pos is not None and pos.status == "OPEN"
-        ), "Binance spot position disappeared before TP placement."
+        assert pos is not None and pos.status == "OPEN", (
+            "Binance spot position disappeared before TP placement."
+        )
         available_qty = min(float(pos.remaining_quantity), float(free_base_qty))
-        assert (
-            available_qty > 0
-        ), f"No free {base_asset} balance available for spot TP placement."
+        assert available_qty > 0, (
+            f"No free {base_asset} balance available for spot TP placement."
+        )
         entry_price = float(pos.entry_price or pos.trigger_price)
         first_qty = available_qty * 0.5
         second_qty = available_qty * 0.5
@@ -581,9 +581,9 @@ async def _place_and_assert_spot_partial_tps_sequentially(
         placed = await _wait_until(
             lambda idx=idx: _spot_tp_placed(controller, idx), timeout=20.0
         )
-        assert (
-            placed
-        ), f"Binance spot partial TP #{idx + 1} was not placed sequentially."
+        assert placed, (
+            f"Binance spot partial TP #{idx + 1} was not placed sequentially."
+        )
 
     open_orders = await executor.get_open_orders(BINANCE_SPOT_SYMBOL)
     open_order_ids = {str(o.get("orderId")) for o in open_orders if o.get("orderId")}
@@ -637,9 +637,9 @@ async def test_binance_spot_controller_signal_to_position_sl_tp_dca_and_close(
     )
 
     ticker = await executor.get_ticker_price(BINANCE_SPOT_SYMBOL)
-    assert ticker and ticker.get(
-        "price"
-    ), f"Could not fetch Binance spot ticker for {BINANCE_SPOT_SYMBOL}"
+    assert ticker and ticker.get("price"), (
+        f"Could not fetch Binance spot ticker for {BINANCE_SPOT_SYMBOL}"
+    )
     current_price = float(ticker["price"])
 
     pair_info = {
@@ -670,9 +670,9 @@ async def test_binance_spot_controller_signal_to_position_sl_tp_dca_and_close(
         await _force_entry_fill_if_websocket_did_not_deliver(controller, executor)
         position = await _wait_for_open_position(controller)
 
-        assert (
-            position is not None and position.status == "OPEN"
-        ), f"Binance spot position was not opened. Last controller position: {position}"
+        assert position is not None and position.status == "OPEN", (
+            f"Binance spot position was not opened. Last controller position: {position}"
+        )
         assert position.direction == SignalDirection.LONG
         assert position.remaining_quantity > 0
 
@@ -690,6 +690,6 @@ async def test_binance_spot_controller_signal_to_position_sl_tp_dca_and_close(
 
     await asyncio.sleep(2)
     open_orders_after_close = await executor.get_open_orders(BINANCE_SPOT_SYMBOL)
-    assert (
-        not open_orders_after_close
-    ), f"Binance spot left open orders after close: {open_orders_after_close}"
+    assert not open_orders_after_close, (
+        f"Binance spot left open orders after close: {open_orders_after_close}"
+    )

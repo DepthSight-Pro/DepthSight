@@ -586,9 +586,7 @@ def _optuna_objective_global(trial: optuna.Trial, **kwargs) -> float:
         historical_data_copy = {
             k: v.copy() if v is not None else None for k, v in historical_data.items()
         }
-        symbol_specific_exchange_info = exchange_info_all_symbols.get(
-            symbol, {}
-        )
+        symbol_specific_exchange_info = exchange_info_all_symbols.get(symbol, {})
 
         # Check visual compatibility and select backtester
         strategy_config = full_params_for_strategy
@@ -733,9 +731,7 @@ def _run_ml_backtest_for_symbol_process(
         end_dt = fixed_args["end_dt"]
         exchange_info_all = fixed_args["exchange_info_all"]
         initial_balance = fixed_args["initial_balance"]
-        backtest_exec_config = fixed_args[
-            "backtest_exec_config"
-        ]  # Expecting this key
+        backtest_exec_config = fixed_args["backtest_exec_config"]  # Expecting this key
         strategy_defaults_all = fixed_args["strategy_defaults_all"]
         ml_training_cfg = fixed_args["ml_training_cfg"]
         ml_sim_log_path = fixed_args["ml_sim_log_path"]

@@ -168,6 +168,6 @@ async def test_backtester_loads_and_uses_real_oracle_for_filtering(
     print(f"Trade was opened at: {trade_entry_time}")
 
     # Checking the correct entry time
-    assert (
-        trade_entry_time.hour == 13 and trade_entry_time.minute == 45
-    ), "The trade did not open on the same candle where the Oracle gave permission"
+    assert trade_entry_time.hour == 13 and trade_entry_time.minute == 45, (
+        "The trade did not open on the same candle where the Oracle gave permission"
+    )

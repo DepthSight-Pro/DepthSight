@@ -132,20 +132,20 @@ async def test_move_to_breakeven_rr_multiplier_triggers():
         await backtester.run_async()
 
     # Checks
-    assert (
-        len(backtester.trade_log) == 1
-    ), f"There should be one trade, but received: {len(backtester.trade_log)}"
+    assert len(backtester.trade_log) == 1, (
+        f"There should be one trade, but received: {len(backtester.trade_log)}"
+    )
     trade = backtester.trade_log[0]
 
     # Main check: stop should have moved to BE and triggered
-    assert (
-        trade["exit_reason"] == "SL_AT_BE"
-    ), f"Expected exit by SL_AT_BE, but got: {trade['exit_reason']}"
+    assert trade["exit_reason"] == "SL_AT_BE", (
+        f"Expected exit by SL_AT_BE, but got: {trade['exit_reason']}"
+    )
 
     # Check that the exit price is approximately equal to entry + offset (100.0 + 0.02 = 100.02)
-    assert trade["exit_price"] == pytest.approx(
-        100.02, abs=0.01
-    ), f"Expected exit_price ~100.02, received: {trade['exit_price']}"
+    assert trade["exit_price"] == pytest.approx(100.02, abs=0.01), (
+        f"Expected exit_price ~100.02, received: {trade['exit_price']}"
+    )
 
     # PnL should be around zero (small plus due to offset)
     assert trade["pnl"] >= 0, f"PnL on BE exit should be >= 0, got: {trade['pnl']}"
@@ -275,12 +275,12 @@ async def test_move_to_breakeven_rr_not_triggers_if_below_target():
     trade = backtester.trade_log[0]
 
     # Should be a regular STOP_LOSS, not SL_AT_BE
-    assert (
-        trade["exit_reason"] == "STOP_LOSS"
-    ), f"Expected STOP_LOSS (RR not reached), got: {trade['exit_reason']}"
-    assert trade["exit_price"] == pytest.approx(
-        98.0, abs=0.01
-    ), "Expected exit_price = 98.0 (original SL)"
+    assert trade["exit_reason"] == "STOP_LOSS", (
+        f"Expected STOP_LOSS (RR not reached), got: {trade['exit_reason']}"
+    )
+    assert trade["exit_price"] == pytest.approx(98.0, abs=0.01), (
+        "Expected exit_price = 98.0 (original SL)"
+    )
 
 
 @pytest.mark.asyncio
@@ -406,11 +406,11 @@ async def test_move_to_breakeven_rr_short_position():
     trade = backtester.trade_log[0]
 
     # Main check: SL_AT_BE should also trigger for SHORT
-    assert (
-        trade["exit_reason"] == "SL_AT_BE"
-    ), f"Expected SL_AT_BE for SHORT, received: {trade['exit_reason']}"
+    assert trade["exit_reason"] == "SL_AT_BE", (
+        f"Expected SL_AT_BE for SHORT, received: {trade['exit_reason']}"
+    )
 
     # For SHORT: BE = entry - offset = 100.0 - 0.02 = 99.98
-    assert trade["exit_price"] == pytest.approx(
-        99.98, abs=0.01
-    ), f"Expected exit_price ~99.98, received: {trade['exit_price']}"
+    assert trade["exit_price"] == pytest.approx(99.98, abs=0.01), (
+        f"Expected exit_price ~99.98, received: {trade['exit_price']}"
+    )

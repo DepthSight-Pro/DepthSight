@@ -34,9 +34,9 @@ async def test_full_backtest_workflow(
     response = await client.post("/api/v1/backtests", json=backtest_payload)
 
     # 3. THEN: Check that the task is accepted
-    assert (
-        response.status_code == 202
-    ), f"Expected 202, got {response.status_code}. Body: {response.text}"
+    assert response.status_code == 202, (
+        f"Expected 202, got {response.status_code}. Body: {response.text}"
+    )
     task_id = response.json()["data"]["task_id"]
     assert task_id
     print(f"[E2E Test] Backtest task submitted with ID: {task_id}")
@@ -133,9 +133,9 @@ async def test_full_backtest_workflow(
         print("[E2E Test] Polling for task completion...")
         while asyncio.get_event_loop().time() - start_time < timeout:
             status_response = await client.get(f"/api/v1/tasks/{task_id}")
-            assert (
-                status_response.status_code == 200
-            ), f"Polling failed with {status_response.status_code}: {status_response.text}"
+            assert status_response.status_code == 200, (
+                f"Polling failed with {status_response.status_code}: {status_response.text}"
+            )
 
             task_data = status_response.json()["data"]
             print(f"[E2E Test] Polling... Task status: {task_data['status']}")
@@ -148,9 +148,9 @@ async def test_full_backtest_workflow(
             await asyncio.sleep(0.5)
 
         # 5. THEN: Check that the task completed successfully and we have a run_id
-        assert (
-            found_run_id == run_id
-        ), f"Task did not complete successfully or returned wrong run_id. Expected {run_id}, got {found_run_id}"
+        assert found_run_id == run_id, (
+            f"Task did not complete successfully or returned wrong run_id. Expected {run_id}, got {found_run_id}"
+        )
 
     print(f"[E2E Test] Task completed. Backtest Run ID: {found_run_id}")
 

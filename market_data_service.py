@@ -55,19 +55,51 @@ class MarketDataService:
     def __init__(self) -> None:
         self.redis: Optional[redis_asyncio.Redis] = None
         self.pubsub: Optional[Any] = None
-        self.consumer: Optional[DataConsumer] = None
+        self.consumers: Dict[str, DataConsumer] = {}
         self.session: Optional[aiohttp.ClientSession] = None
         self._stream_subscribers: Dict[str, Set[str]] = defaultdict(set)
         self._stream_specs: Dict[str, Dict[str, Any]] = {}
         self._stop_event = asyncio.Event()
 
+    def _get_consumer(self, exchange_id: str) -> DataConsumer:
+        """Dynamically creates or retrieves a DataConsumer for the specified exchange."""
+        exchange_id = exchange_id.lower()
+        if exchange_id not in self.consumers:
+            logger.info("Creating DataConsumer for exchange: %s", exchange_id)
+            futures_executor = create_exchange_executor(
+                exchange=exchange_id,
+                api_key="",
+                api_secret="",
+                session=self.session,
+                market_type="futures_usdtm",
+            )
+            spot_executor = create_exchange_executor(
+                exchange=exchange_id,
+                api_key="",
+                api_secret="",
+                session=self.session,
+                market_type="spot",
+            )
+            consumer = DataConsumer(
+                loop=asyncio.get_running_loop(),
+                executor=futures_executor,
+                market_data_mode="direct",
+                market_data_publish_callback=self._publish_market_payload,
+            )
+            consumer.set_market_executors(
+                {"futures_usdtm": futures_executor, "spot": spot_executor}
+            )
+            consumer._running = True
+            self.consumers[exchange_id] = consumer
+        return self.consumers[exchange_id]
+
     async def start(self) -> None:
         timeout = aiohttp.ClientTimeout(total=config.API_REQUEST_TIMEOUT_SECONDS * 2)
         self.session = aiohttp.ClientSession(timeout=timeout)
         self.redis = redis_asyncio.Redis(
-            host=config.REDIS_HOST,
-            port=config.REDIS_PORT,
-            db=config.REDIS_DB,
+            host=config.MARKET_REDIS_HOST,
+            port=config.MARKET_REDIS_PORT,
+            db=config.MARKET_REDIS_DB,
             username=config.REDIS_USERNAME,
             password=config.REDIS_PASSWORD,
             decode_responses=True,
@@ -75,30 +107,8 @@ class MarketDataService:
         await self.redis.ping()
         self.pubsub = self.redis.pubsub()
 
-        futures_executor = create_exchange_executor(
-            exchange="binance",
-            api_key="",
-            api_secret="",
-            session=self.session,
-            market_type="futures_usdtm",
-        )
-        spot_executor = create_exchange_executor(
-            exchange="binance",
-            api_key="",
-            api_secret="",
-            session=self.session,
-            market_type="spot",
-        )
-        self.consumer = DataConsumer(
-            loop=asyncio.get_running_loop(),
-            executor=futures_executor,
-            market_data_mode="direct",
-            market_data_publish_callback=self._publish_market_payload,
-        )
-        self.consumer.set_market_executors(
-            {"futures_usdtm": futures_executor, "spot": spot_executor}
-        )
-        self.consumer._running = True
+        # Initialize default consumer (Binance)
+        self._get_consumer("binance")
 
         await self.pubsub.subscribe(config.MARKET_DATA_REDIS_COMMAND_CHANNEL)
         logger.info(
@@ -114,11 +124,14 @@ class MarketDataService:
                 await self.pubsub.close()
             except Exception:
                 logger.debug("Error closing market-data pubsub.", exc_info=True)
-        if self.consumer:
+        
+        for exchange_id, consumer in self.consumers.items():
             try:
-                await self.consumer.stop()
+                await consumer.stop()
             except Exception:
-                logger.debug("Error stopping market-data consumer.", exc_info=True)
+                logger.debug("Error stopping market-data consumer for %s.", exchange_id, exc_info=True)
+        self.consumers.clear()
+
         if self.redis:
             await self.redis.close()
         if self.session:
@@ -126,6 +139,8 @@ class MarketDataService:
 
     async def run(self) -> None:
         await self.start()
+        last_msg_time = time.monotonic()
+        watchdog_timeout = getattr(config, "MDS_PUBSUB_WATCHDOG_SECONDS", 30)
         try:
             while not self._stop_event.is_set():
                 if not self.pubsub:
@@ -134,13 +149,31 @@ class MarketDataService:
                 message = await self.pubsub.get_message(
                     ignore_subscribe_messages=True, timeout=1.0
                 )
-                if not message or message.get("type") != "message":
-                    continue
-                raw = message.get("data")
-                payload = json.loads(raw) if isinstance(raw, str) else raw
-                await self._handle_command(payload)
+                if message and message.get("type") == "message":
+                    last_msg_time = time.monotonic()
+                    raw = message.get("data")
+                    payload = json.loads(raw) if isinstance(raw, str) else raw
+                    await self._handle_command(payload)
+                elif time.monotonic() - last_msg_time > watchdog_timeout:
+                    logger.warning(
+                        "Pubsub watchdog timeout (%ss) — no messages. Reconnecting...",
+                        watchdog_timeout,
+                    )
+                    await self._reconnect_pubsub()
+                    last_msg_time = time.monotonic()
         finally:
             await self.stop()
+
+    async def _reconnect_pubsub(self) -> None:
+        try:
+            if self.pubsub:
+                await self.pubsub.unsubscribe(config.MARKET_DATA_REDIS_COMMAND_CHANNEL)
+                await self.pubsub.close()
+        except Exception:
+            logger.debug("Error closing stale pubsub.", exc_info=True)
+        self.pubsub = self.redis.pubsub()
+        await self.pubsub.subscribe(config.MARKET_DATA_REDIS_COMMAND_CHANNEL)
+        logger.info("Pubsub reconnected and re-subscribed to %s.", config.MARKET_DATA_REDIS_COMMAND_CHANNEL)
 
     async def _handle_command(self, payload: Dict[str, Any]) -> None:
         if not isinstance(payload, dict):
@@ -152,9 +185,6 @@ class MarketDataService:
             await self._handle_unsubscribe(payload)
 
     async def _handle_subscribe(self, command: Dict[str, Any]) -> None:
-        if not self.consumer:
-            return
-
         subscriber_id = str(command.get("subscriber_id") or "")
         if not subscriber_id:
             logger.warning("Ignoring market-data subscribe without subscriber_id.")
@@ -178,10 +208,13 @@ class MarketDataService:
             data_type_key = spec.get("data_type_key") or command.get("data_type_key")
             symbol = spec.get("symbol") or command.get("symbol")
             market_type = spec.get("market_type") or command.get("market_type")
+            exchange_id = spec.get("exchange_id") or "binance"
+            
+            consumer = self._get_consumer(exchange_id)
 
             if required_metrics:
-                async with self.consumer._metrics_lock:
-                    self.consumer._required_metrics[str(symbol).upper()].update(
+                async with consumer._metrics_lock:
+                    consumer._required_metrics[str(symbol).upper()].update(
                         required_metrics
                     )
 
@@ -192,26 +225,23 @@ class MarketDataService:
                 }
                 if required_metrics:
                     ensure_kwargs["required_metrics"] = required_metrics
-                await self.consumer.ensure_subscription(
+                await consumer.ensure_subscription(
                     data_type_key,
                     symbol,
                     **ensure_kwargs,
                 )
             if required_metrics and str(data_type_key).startswith("kline_"):
                 timeframe = str(data_type_key).split("_", 1)[1]
-                await self.consumer._recalculate_kline_indicators(
+                await consumer._recalculate_kline_indicators(
                     str(symbol).upper(),
                     timeframe,
                     market_type=market_type,
-                    exchange_id=spec.get("exchange_id") or "binance",
+                    exchange_id=exchange_id,
                 )
 
             await self._write_snapshot_for_spec(spec)
 
     async def _handle_unsubscribe(self, command: Dict[str, Any]) -> None:
-        if not self.consumer:
-            return
-
         subscriber_id = str(command.get("subscriber_id") or "")
         if not subscriber_id:
             return
@@ -232,7 +262,11 @@ class MarketDataService:
 
             self._stream_subscribers.pop(stream_key, None)
             self._stream_specs.pop(stream_key, None)
-            await self.consumer.remove_subscription(
+            
+            exchange_id = spec.get("exchange_id") or "binance"
+            consumer = self._get_consumer(exchange_id)
+            
+            await consumer.remove_subscription(
                 spec.get("data_type_key"),
                 spec.get("symbol"),
                 market_type=spec.get("market_type"),
@@ -303,8 +337,9 @@ class MarketDataService:
                 "pair_state": pair_state,
                 "created_at_ms": int(time.time() * 1000),
             }
-        elif data_type_key == "depth" and self.consumer:
-            depth = await self.consumer.get_latest_depth(symbol, market_type)
+        elif data_type_key == "depth":
+            consumer = self._get_consumer(exchange_id)
+            depth = await consumer.get_latest_depth(symbol, market_type)
             if not depth:
                 return False
             snapshot = {
@@ -318,8 +353,9 @@ class MarketDataService:
                 "pair_state": pair_state,
                 "created_at_ms": int(time.time() * 1000),
             }
-        elif data_type_key == "open_interest" and self.consumer:
-            df = await self.consumer.get_open_interest_history(symbol)
+        elif data_type_key == "open_interest":
+            consumer = self._get_consumer(exchange_id)
+            df = await consumer.get_open_interest_history(symbol)
             if df is None or df.empty:
                 return False
             rows = df.reset_index().to_dict(orient="records")

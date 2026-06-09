@@ -1711,7 +1711,9 @@ async def get_all_symbol_strategy_performance(
     Loads all strategy performance records for the specified user.
     Used for initializing RiskManager.
     """
-    logger.debug(f"Querying all SymbolStrategyPerformance records for user_id={user_id}")
+    logger.debug(
+        f"Querying all SymbolStrategyPerformance records for user_id={user_id}"
+    )
     try:
         result = await db.execute(
             select(models.SymbolStrategyPerformance).filter(
@@ -1774,9 +1776,7 @@ async def update_or_create_symbol_strategy_performance(
             return new_record
 
     except Exception as e:
-        logger.error(
-            f"{log_prefix} Error during UPSERT operation: {e}", exc_info=True
-        )
+        logger.error(f"{log_prefix} Error during UPSERT operation: {e}", exc_info=True)
         # Roll back transaction to avoid partial saving
         await db.rollback()
         raise

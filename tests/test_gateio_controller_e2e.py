@@ -567,9 +567,9 @@ async def _assert_gateio_exit_and_dca_orders(
             return pos if has_sl and has_tp and has_dca else None
 
     position = await _wait_until(position_with_orders, timeout=60.0)
-    assert (
-        position is not None
-    ), f"Gate.io {market_type} controller did not place expected SL/DCA/TP orders."
+    assert position is not None, (
+        f"Gate.io {market_type} controller did not place expected SL/DCA/TP orders."
+    )
 
     open_orders = await controller.executors["live"].get_open_orders(symbol)
     algo_orders = await controller.executors["live"].get_open_algo_orders(symbol)
@@ -631,14 +631,14 @@ async def test_gateio_controller_signal_to_position_sl_tp_dca_and_close(
         if market_type == "spot"
         else GATEIO_MIN_USDT_BALANCE
     )
-    assert (
-        usdt_free >= required_usdt_balance
-    ), f"Insufficient Gate.io {market_type} USDT balance: {usdt_free} < {required_usdt_balance}"
+    assert usdt_free >= required_usdt_balance, (
+        f"Insufficient Gate.io {market_type} USDT balance: {usdt_free} < {required_usdt_balance}"
+    )
 
     ticker = await executor.get_ticker_price(symbol)
-    assert ticker and ticker.get(
-        "price"
-    ), f"Could not fetch Gate.io ticker for {symbol}"
+    assert ticker and ticker.get("price"), (
+        f"Could not fetch Gate.io ticker for {symbol}"
+    )
     current_price = float(ticker["price"])
 
     pair_info = {
@@ -682,9 +682,9 @@ async def test_gateio_controller_signal_to_position_sl_tp_dca_and_close(
         _position_removed(controller, symbol),
         timeout=60.0,
     )
-    assert (
-        closed
-    ), f"Gate.io {market_type}/{direction.name} position was not removed after close."
+    assert closed, (
+        f"Gate.io {market_type}/{direction.name} position was not removed after close."
+    )
 
     await asyncio.sleep(2)
     open_orders_after_close = await executor.get_open_orders(symbol)

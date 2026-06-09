@@ -158,9 +158,9 @@ async def test_update_api_key_status_endpoint(
             "exchange": "binance_futures",
         },
     )
-    assert (
-        create_response.status_code == 201
-    ), f"Failed to create key: {create_response.text}"
+    assert create_response.status_code == 201, (
+        f"Failed to create key: {create_response.text}"
+    )
     key_id = create_response.json()["data"]["id"]
 
     # Deactivate the key via API
@@ -381,9 +381,9 @@ async def test_full_multi_account_workflow(
             "exchange": "binance_futures",
         },
     )
-    assert (
-        key1_response.status_code == 201
-    ), f"Key1 creation failed: {key1_response.text}"
+    assert key1_response.status_code == 201, (
+        f"Key1 creation failed: {key1_response.text}"
+    )
     key1_id = key1_response.json()["data"]["id"]
 
     key2_response = await pro_user_client.post(
@@ -395,9 +395,9 @@ async def test_full_multi_account_workflow(
             "exchange": "binance_futures",
         },
     )
-    assert (
-        key2_response.status_code == 201
-    ), f"Key2 creation failed: {key2_response.text}"
+    assert key2_response.status_code == 201, (
+        f"Key2 creation failed: {key2_response.text}"
+    )
 
     # 2. Getting balances - both accounts should be present (filtering by market to avoid duplicates with spot)
     balances_response = await pro_user_client.get(
