@@ -196,13 +196,14 @@ export const TradeChart = ({
 	useEffect(() => {
 		if (!chartContainerRef.current || !klines || klines.length === 0) return;
 
-		chartContainerRef.current.innerHTML = "";
-		chartContainerRef.current.style.position = "relative";
-
+		const container = chartContainerRef.current;
+		container.innerHTML = "";
+		container.style.position = "relative";
+		const initialWidth = container.clientWidth || 800;
 		const priceFormat = getPriceFormat(tickSize);
 
-		const chart = createChart(chartContainerRef.current, {
-			width: chartContainerRef.current.clientWidth,
+		const chart = createChart(container, {
+			width: initialWidth,
 			height: 500,
 			layout: {
 				background: { type: ColorType.Solid, color: chartColors.background },
@@ -316,8 +317,11 @@ export const TradeChart = ({
 		chart.timeScale().subscribeVisibleTimeRangeChange(syncExecutionOverlay);
 
 		const handleResize = () => {
-			chart.applyOptions({ width: chartContainerRef.current?.clientWidth });
-			syncExecutionOverlay();
+			const w = chartContainerRef.current?.clientWidth;
+			if (w && w > 0) {
+				chart.resize(w, 500);
+				syncExecutionOverlay();
+			}
 		};
 		window.addEventListener("resize", handleResize);
 

@@ -647,6 +647,7 @@ async def list_positions(
 )
 async def close_position(
     symbol: str,
+    api_key_id: Optional[int] = Query(None, description="Close position for a specific API key (subaccount)"),
     current_user: models.User = Depends(get_current_user),
     http_session: aiohttp.ClientSession = HttpSessDep,
     db: AsyncSession = Depends(get_db),
@@ -658,12 +659,17 @@ async def close_position(
     from ..depthsight_api import create_exchange_executor, grant_achievement
 
     logger.info(
-        f"User '{current_user.username}' requested to close position for {symbol}."
+        f"User '{current_user.username}' requested to close position for {symbol} (api_key_id={api_key_id})."
     )
 
     try:
         # Get user-specific API key
-        active_key = await crud.get_active_api_key_for_user(db, user_id=current_user.id)
+        if api_key_id is not None:
+            active_key = await crud.get_api_key_by_id(
+                db, user_id=current_user.id, key_id=api_key_id
+            )
+        else:
+            active_key = await crud.get_active_api_key_for_user(db, user_id=current_user.id)
         if not active_key:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -729,6 +735,31 @@ async def close_position(
                 detail=f"Binance API error: {close_order_resp.get('msg')}",
             )
 
+        # Cancel all open orders (limit entry, stop-loss, take-profit etc.)
+        try:
+            logger.info(f"Cancelling all open orders for {symbol} after closing position.")
+            cancel_standard_resp = await executor.cancel_all_open_orders(symbol=symbol.upper())
+            logger.info(f"Cancel standard orders response: {cancel_standard_resp}")
+        except Exception as e:
+            logger.error(f"Error cancelling standard orders for {symbol}: {e}", exc_info=True)
+
+        try:
+            logger.info(f"Checking for remaining/algo orders to cancel for {symbol}.")
+            open_algo_orders = await executor.get_open_algo_orders(symbol=symbol.upper())
+            if open_algo_orders:
+                logger.info(f"Found {len(open_algo_orders)} open algo/conditional orders. Cancelling them...")
+                for order in open_algo_orders:
+                    order_id = order.get("orderId") or order.get("id")
+                    if order_id:
+                        cancel_algo_resp = await executor.cancel_order(
+                            symbol=symbol.upper(),
+                            orderId=order_id,
+                            is_algo_order=True
+                        )
+                        logger.info(f"Cancelled algo order {order_id}: {cancel_algo_resp}")
+        except Exception as e:
+            logger.error(f"Error cancelling algo orders for {symbol}: {e}", exc_info=True)
+
         # Grant 'the_intervention' achievement
         await grant_achievement(db, current_user.id, "the_intervention")
 
@@ -773,26 +804,33 @@ async def update_position_sl_tp(
         )
 
     # Use user-specific key to isolate data between users
-    user_positions_key = f"{REDIS_STATE_KEY_POSITIONS}:{current_user.id}"
-    positions_json = await redis_client.get(user_positions_key)
-    if not positions_json:
-        logger.warning(
-            f"User '{current_user.username}' (ID: {current_user.id}) - SL/TP Update: Positions list not found in Redis key '{user_positions_key}' for position {position_id}."
-        )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Positions data not available.",
-        )
-
+    base_positions_key = f"{REDIS_STATE_KEY_POSITIONS}:{current_user.id}"
+    pattern = f"{base_positions_key}:*"
+    
     try:
-        all_positions_data = json.loads(positions_json)
-    except json.JSONDecodeError:
+        keys = await redis_client.keys(pattern)
+        all_positions_data = []
+        if keys:
+            values = await redis_client.mget(keys)
+            for v in values:
+                if v:
+                    all_positions_data.extend(json.loads(v))
+    except Exception as e:
         logger.error(
-            f"User '{current_user.username}' (ID: {current_user.id}) - SL/TP Update: Failed to decode positions list from Redis for position {position_id}."
+            f"User '{current_user.username}' (ID: {current_user.id}) - SL/TP Update: Failed to fetch/parse positions from Redis: {e}"
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error reading positions data.",
+        )
+
+    if not all_positions_data:
+        logger.warning(
+            f"User '{current_user.username}' (ID: {current_user.id}) - SL/TP Update: Positions list not found in Redis keys for position {position_id}."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Positions data not available.",
         )
 
     target_position_data = None

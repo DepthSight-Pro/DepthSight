@@ -7165,6 +7165,7 @@ class FastVectorBacktester:
             "trades": self.trade_log,
             "equity_curve": equity_curve_list,
             "analytics_report": self.structured_report,
+            "tick_size": self._get_tick_size(),
         }
 
     def _get_default_kpis(self) -> Dict[str, Any]:
@@ -7195,4 +7196,5 @@ class FastVectorBacktester:
             "analytics_report": getattr(
                 self, "structured_report", self._build_structured_report()
             ),
+            "tick_size": self._get_tick_size(),
         }

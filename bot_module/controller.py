@@ -292,6 +292,8 @@ class LivePosition(BasePosition):
     # Summed across all partial executions (partial TP + final exit)
     accumulated_realized_pnl_from_exchange: float = 0.0
 
+    _is_averaging_down: bool = False
+
     @property
     def has_partial_tp(self) -> bool:
         return bool(self.partial_tp_orders)
@@ -356,7 +358,12 @@ class LivePosition(BasePosition):
                 int(k): v for k, v in data["ptp_placement_initiated_flags"].items()
             }
 
-        return cls(**data)
+        # Filter out unexpected keys to prevent __init__ errors
+        import inspect
+        valid_keys = {k for k in inspect.signature(cls).parameters}
+        filtered_data = {k: v for k, v in data.items() if k in valid_keys}
+
+        return cls(**filtered_data)
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> Optional[float]:
@@ -4309,12 +4316,14 @@ class TradingController:
                             )
                             if current_pos and current_pos.status == "OPEN":
                                 # Comparing our real stop with what the strategy returned
+                                # Force SL replacement on SCALE_IN_RECALC to update quantity,
+                                # or if the strategy explicitly moved the SL.
                                 if (
                                     current_pos.current_sl_price
                                     != updated_pos_obj.current_sl_price
-                                ):
+                                ) or event_type == "SCALE_IN_RECALC":
                                     logger.info(
-                                        f"{log_prefix_pm} Strategy moved SL from {current_pos.current_sl_price} to {updated_pos_obj.current_sl_price}"
+                                        f"{log_prefix_pm} SL update needed (Price change or SCALE_IN_RECALC volume update). SL: {current_pos.current_sl_price} -> {updated_pos_obj.current_sl_price}"
                                     )
 
                                     self.loop.create_task(
@@ -4516,6 +4525,12 @@ class TradingController:
             # Incrementing the DCA counter (if applicable)
             if position.dca_active_sos is not None:
                 position.dca_active_sos += 1
+
+            # Determine if this was an averaging down (DCA) or averaging up (Pyramiding) fill
+            if position.direction == SignalDirection.LONG:
+                position._is_averaging_down = fill_price < old_entry
+            else:
+                position._is_averaging_down = fill_price > old_entry
 
             # Reset the trigger flag so the strategy can trigger again on the next bar
             position.scale_in_triggered = None
@@ -9216,7 +9231,8 @@ class TradingController:
             return False
 
     async def _replace_take_profit(
-        self, symbol: str, new_tp_price: float, market_type: Optional[str] = None
+        self, symbol: str, new_tp_price: float, market_type: Optional[str] = None,
+        partial_targets: Optional[List[Tuple[float, float, bool]]] = None
     ) -> bool:
         """
         Replaces the take-profit order for the specified position.
@@ -9225,6 +9241,8 @@ class TradingController:
         Arguments:
             symbol: Position symbol
             new_tp_price: New price for take-profit
+            market_type: Market type (e.g. spot, futures)
+            partial_targets: Optional list of tuples (price, fraction, is_filled)
 
         Returns:
             True if TP is successfully replaced, False otherwise
@@ -9263,18 +9281,48 @@ class TradingController:
                 )
                 return False
 
-            # Create a new TP list with one order for the entire position at the new price
-            # Clearing old ones and adding a new one
-            position.partial_tp_orders = [
-                PartialTpOrderInfo(
-                    target_price=new_tp_price,
-                    orig_fraction=1.0,  # 100% of position
-                    quantity=total_quantity,
-                    order_id=None,
-                    client_order_id=None,
-                    status="PENDING",
-                )
-            ]
+            # Create a new TP list. If partial_targets are provided, use them. Otherwise, 100% at new_tp_price.
+            new_ptp_orders = []
+            if partial_targets and len(partial_targets) > 0:
+                remaining_fraction = 1.0
+                for pt_price, pt_frac, pt_filled in partial_targets:
+                    if pt_filled:
+                        continue
+                    pt_qty = total_quantity * pt_frac
+                    if pt_qty > 0:
+                        new_ptp_orders.append(
+                            PartialTpOrderInfo(
+                                target_price=pt_price,
+                                orig_fraction=pt_frac,
+                                quantity=pt_qty,
+                                status="PENDING",
+                            )
+                        )
+                        remaining_fraction -= pt_frac
+                
+                if remaining_fraction > 0.01:
+                    rem_qty = total_quantity * remaining_fraction
+                    new_ptp_orders.append(
+                        PartialTpOrderInfo(
+                            target_price=new_tp_price,
+                            orig_fraction=remaining_fraction,
+                            quantity=rem_qty,
+                            status="PENDING",
+                        )
+                    )
+            else:
+                new_ptp_orders = [
+                    PartialTpOrderInfo(
+                        target_price=new_tp_price,
+                        orig_fraction=1.0,  # 100% of position
+                        quantity=total_quantity,
+                        order_id=None,
+                        client_order_id=None,
+                        status="PENDING",
+                    )
+                ]
+            
+            position.partial_tp_orders = new_ptp_orders
             # Resetting initiation flags for new TP
             position.ptp_placement_initiated_flags = {}
 
@@ -9315,20 +9363,21 @@ class TradingController:
             logger.error(f"{log_prefix} Position reference lost after lock release.")
             return False
 
-        # 2. Placing a new TP order
+        # 2. Placing new TP orders
         logger.info(
-            f"{log_prefix} Placing new TP order for position {entry_cid_for_log}"
+            f"{log_prefix} Placing new TP orders for position {entry_cid_for_log}"
         )
 
-        # Use _place_partial_tp to place a new order
         try:
-            await self._place_partial_tp(
-                position_obj_ref=position_ref_for_new_tp,
-                target_price=new_tp_price,
-                quantity_to_close=position_ref_for_new_tp.remaining_quantity,
-                orig_fraction=1.0,
-                ptp_internal_idx=0,  # First (and only) TP in the list
-            )
+            for idx, ptp in enumerate(position_ref_for_new_tp.partial_tp_orders):
+                if ptp.status == "PENDING" and not ptp.order_id and not ptp.client_order_id:
+                    await self._place_partial_tp(
+                        position_obj_ref=position_ref_for_new_tp,
+                        target_price=ptp.target_price,
+                        quantity_to_close=ptp.quantity,
+                        orig_fraction=ptp.orig_fraction,
+                        ptp_internal_idx=idx,
+                    )
 
             # Checking the result
             symbol_lock_tp_final = self._get_lock_for_position(symbol, market_type)
@@ -9338,7 +9387,7 @@ class TradingController:
                     first_tp = updated_pos.partial_tp_orders[0]
                     if first_tp.order_id or first_tp.client_order_id:
                         logger.info(
-                            f"{log_prefix} New TP order placed successfully (OrderID: {first_tp.order_id}, ClientID: {first_tp.client_order_id})"
+                            f"{log_prefix} New TP order(s) placed successfully."
                         )
 
                         self.trade_logger.log_event(
@@ -9347,8 +9396,7 @@ class TradingController:
                                 "symbol": symbol,
                                 "new_tp_price": new_tp_price,
                                 "old_tp_count": len(old_tp_orders_to_cancel),
-                                "new_tp_order_id": first_tp.order_id,
-                                "new_tp_client_order_id": first_tp.client_order_id,
+                                "new_tp_count": len(updated_pos.partial_tp_orders),
                                 "entry_client_order_id": entry_cid_for_log,
                             },
                         )
@@ -12686,36 +12734,17 @@ class TradingController:
                         f"{log_prefix} Position synchronization error via REST API: {sync_err}"
                     )
 
-            # For spot, if we have already sent a closing order, we can consider the position closed
-            elif close_order_placed:
-                logger.info(
-                    f"{log_prefix} Market order to close the spot position has already been sent. Closing confirmed."
-                )
-                symbol_lock_spot_placed = self._get_lock_for_position(
-                    symbol, normalized_market_type
-                )
-                async with symbol_lock_spot_placed:
-                    async with self._positions_dict_lock:
-                        if self._active_position_get(symbol, normalized_market_type):
-                            self._active_position_pop(symbol, normalized_market_type)
-                is_confirmed_closed = True
-                break
-
-            # 2. Checking internal position status
-            symbol_lock_internal = self._get_lock_for_position(
-                symbol, normalized_market_type
-            )
-            async with symbol_lock_internal:
-                if not self._active_position_get(symbol, normalized_market_type):
+            # Retrieve direction and qty for spot check and order placement
+            current_direction = None
+            current_qty = 0.0
+            async with self._get_lock_for_position(symbol, normalized_market_type):
+                pos = self._active_position_get(symbol, normalized_market_type)
+                if pos:
+                    current_direction = pos.direction
+                    current_qty = pos.remaining_quantity
+                else:
                     is_confirmed_closed = True
-                    logger.info(
-                        f"{log_prefix} Position {symbol} is missing from active. Closing confirmed."
-                    )
                     break
-
-                position = self._active_position_get(symbol, normalized_market_type)
-                current_qty = position.remaining_quantity
-                current_direction = position.direction
 
             if (
                 not getattr(executor, "supports_positions", False)

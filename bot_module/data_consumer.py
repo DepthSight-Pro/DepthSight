@@ -3542,6 +3542,11 @@ class DataConsumer:
             stream_key = f"{exchange_id}:{market_type or self._effective_market_type()}:{uc_symbol.lower()}@openInterest"
 
         if self._market_data_publish_callback and stream_key:
+            logger.info(
+                "[BroadcastCheck] stream_key=%s data_type_key=%s",
+                stream_key,
+                data_type_key,
+            )
             try:
                 await self._market_data_publish_callback(
                     {
@@ -3711,7 +3716,7 @@ class DataConsumer:
                     # Re-raise or handle to ensure the outer loop's reconnect logic is triggered
                     raise  # This will be caught by the outer try-except block
 
-                logger.info(f"{log_prefix} Successfully connected to Binance WS.")
+                logger.info(f"{log_prefix} Successfully connected to Binance WS. websocket_state={websocket.state}")
                 async with self._binance_market_data_ws_lock:
                     if (
                         self._binance_market_data_ws_tasks.get(binance_stream_id)
@@ -3725,6 +3730,7 @@ class DataConsumer:
 
                 reconnect_delay = getattr(config, "BINANCE_WS_RECONNECT_DELAY_BASE", 5)
 
+                logger.info(f"{log_prefix} Starting message loop.")
                 async for message in websocket:
                     if not await _is_global_stream_active(
                         binance_stream_id, current_task
@@ -3747,6 +3753,11 @@ class DataConsumer:
                                 payload_to_process,
                                 market_type=market_type_for_cache,
                                 exchange_id=exchange_id,
+                            )
+                            logger.info(
+                                "%s UpdateLocalCache called for msg_type=%s",
+                                log_prefix,
+                                parsed_message.get("e", "?"),
                             )
                         else:
                             logger.warning(

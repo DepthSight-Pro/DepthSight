@@ -214,12 +214,13 @@ export const FoundationChart = ({
 	useEffect(() => {
 		if (!chartContainerRef.current || !klines || klines.length === 0) return;
 
-		chartContainerRef.current.innerHTML = "";
-		chartContainerRef.current.style.position = "relative";
+		const container = chartContainerRef.current;
+		const initialWidth = container.clientWidth || 800;
+		const initialHeight = container.clientHeight || 500;
 
-		const chart = createChart(chartContainerRef.current, {
-			width: chartContainerRef.current.clientWidth,
-			height: chartContainerRef.current.clientHeight,
+		const chart = createChart(container, {
+			width: initialWidth,
+			height: initialHeight,
 			layout: {
 				background: { type: ColorType.Solid, color: "transparent" },
 				textColor: "#888888",
@@ -734,12 +735,13 @@ export const FoundationChart = ({
 		chart.timeScale().subscribeVisibleTimeRangeChange(syncTradeOverlay);
 
 		const handleResize = () => {
-			if (chartContainerRef.current) {
-				chart.applyOptions({
-					width: chartContainerRef.current.clientWidth,
-					height: chartContainerRef.current.clientHeight,
-				});
-				syncTradeOverlay();
+			if (container) {
+				const w = container.clientWidth;
+				const h = container.clientHeight;
+				if (w > 0 && h > 0) {
+					chart.resize(w, h);
+					syncTradeOverlay();
+				}
 			}
 		};
 		window.addEventListener("resize", handleResize);

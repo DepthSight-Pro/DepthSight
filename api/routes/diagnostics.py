@@ -169,6 +169,122 @@ async def proxy_binance_klines(
         )
 
 
+@diagnostics_router.get("/proxy/binance/exchange-info")
+async def proxy_binance_exchange_info(
+    symbol: Optional[str] = None,
+    http_session: aiohttp.ClientSession = HttpSessDep,
+):
+    """
+    Proxy to fetch exchange info from Binance API.
+    Tries futures API first, falls back to spot on error.
+    """
+    params = {}
+    if symbol:
+        params["symbol"] = symbol.upper()
+
+    # Try futures API first
+    binance_futures_url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+    binance_spot_url = "https://api.binance.com/api/v3/exchangeInfo"
+
+    try:
+        async with http_session.get(binance_futures_url, params=params) as response:
+            if response.status == 200:
+                return await response.json()
+    except Exception:
+        pass
+
+    try:
+        async with http_session.get(binance_spot_url, params=params) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise HTTPException(
+                    status_code=response.status,
+                    detail=f"Binance API error: {error_text}",
+                )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect to Binance API: {exc}",
+        )
+
+
+@diagnostics_router.get("/proxy/bybit/exchange-info")
+async def proxy_bybit_exchange_info(
+    symbol: Optional[str] = None,
+    category: str = "linear",
+    http_session: aiohttp.ClientSession = HttpSessDep,
+):
+    """
+    Proxy to fetch instruments info from Bybit V5 API.
+    """
+    params = {"category": category}
+    if symbol:
+        params["symbol"] = symbol.upper()
+
+    url = "https://api.bybit.com/v5/market/instruments-info"
+    try:
+        async with http_session.get(url, params=params) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                error_text = await response.text()
+                raise HTTPException(
+                    status_code=response.status,
+                    detail=f"Bybit API error: {error_text}",
+                )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect to Bybit API: {exc}",
+        )
+
+
+@diagnostics_router.get("/proxy/bybit/klines")
+async def proxy_bybit_klines(
+    symbol: str,
+    interval: str,
+    category: str = "linear",
+    start: Optional[int] = None,
+    end: Optional[int] = None,
+    limit: int = 1000,
+    http_session: aiohttp.ClientSession = HttpSessDep,
+):
+    """
+    Proxy to fetch klines data from Bybit V5 API.
+    """
+    params = {
+        "category": category,
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "limit": limit
+    }
+    if start:
+        params["start"] = start
+    if end:
+        params["end"] = end
+
+    url = "https://api.bybit.com/v5/market/kline"
+    try:
+        async with http_session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise HTTPException(
+                    status_code=response.status,
+                    detail=f"Bybit API error for {symbol}: {error_text}",
+                )
+    except aiohttp.ClientError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect to Bybit API: {exc}",
+        )
+
+
+
 @diagnostics_router.get(
     "/diagnostics/preview-foundation",
     response_model=schemas.ApiResponseData[schemas.FoundationPreviewResponse],

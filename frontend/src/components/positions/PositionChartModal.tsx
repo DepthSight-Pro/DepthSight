@@ -342,9 +342,13 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	useEffect(() => {
 		if (!chartContainerRef.current || !isOpen) return;
 
-		const chart = createChart(chartContainerRef.current, {
-			width: chartContainerRef.current.clientWidth,
-			height: chartContainerRef.current.clientHeight,
+		const container = chartContainerRef.current;
+		const initialWidth = container.clientWidth || 800;
+		const initialHeight = container.clientHeight || 500;
+
+		const chart = createChart(container, {
+			width: initialWidth,
+			height: initialHeight,
 			layout: {
 				textColor: "#d1d5db",
 				background: { type: ColorType.Solid, color: "#09090b" },
@@ -425,12 +429,13 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 		overlayRef.current = svg;
 
 		const handleResize = () => {
-			if (chartContainerRef.current) {
-				chart.applyOptions({
-					width: chartContainerRef.current.clientWidth,
-					height: chartContainerRef.current.clientHeight,
-				});
-				syncOverlayRef.current();
+			if (container) {
+				const w = container.clientWidth;
+				const h = container.clientHeight;
+				if (w > 0 && h > 0) {
+					chart.resize(w, h);
+					syncOverlayRef.current();
+				}
 			}
 		};
 

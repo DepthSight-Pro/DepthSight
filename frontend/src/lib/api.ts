@@ -1986,11 +1986,13 @@ export const useClosePosition = () => {
 	const queryClient = useQueryClient();
 	const { toast } = useToast();
 	const { t } = useTranslation(["common"]);
-	return useMutation<unknown, Error, string>({
+	return useMutation<unknown, Error, { symbol: string; apiKeyId?: number }>({
 		// Mutation function sends a DELETE request to the /positions/<symbol> endpoint
-		mutationFn: (symbol: string) =>
-			apiClient(`/positions/${symbol}`, { method: "DELETE" }),
-		onSuccess: (_, symbol) => {
+		mutationFn: ({ symbol, apiKeyId }) => {
+			const url = apiKeyId !== undefined ? `/positions/${symbol}?api_key_id=${apiKeyId}` : `/positions/${symbol}`;
+			return apiClient(url, { method: "DELETE" });
+		},
+		onSuccess: (_, { symbol }) => {
 			toast({
 				title: t("common:closePositionSuccessTitle"),
 				description: t("common:closePositionSuccessDescription", { symbol }),

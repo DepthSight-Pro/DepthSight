@@ -186,6 +186,11 @@ fi
 # Update .env with networking
 sed -i "s|PUBLIC_BASE_URL=.*|PUBLIC_BASE_URL=$PROTOCOL://$DOMAIN|g" .env
 sed -i "s|VITE_API_URL=.*|VITE_API_URL=$PROTOCOL://$DOMAIN|g" .env
+if grep -q "^API_DOMAIN=" .env; then
+    sed -i "s|API_DOMAIN=.*|API_DOMAIN=$DOMAIN|g" .env
+else
+    sed -i "s|PUBLIC_BASE_URL=.*|&\nAPI_DOMAIN=$DOMAIN|g" .env
+fi
 WS_PROTO="ws"
 [ "$PROTOCOL" == "https" ] && WS_PROTO="wss"
 sed -i "s|VITE_WS_URL=.*|VITE_WS_URL=$WS_PROTO://$DOMAIN/ws|g" .env

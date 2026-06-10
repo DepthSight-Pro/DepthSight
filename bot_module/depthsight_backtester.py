@@ -3015,6 +3015,9 @@ class DepthSightBacktester:
             "avg_total_slippage_pct": 0.0,
             "trades_all": 0,
             "excluded_end_of_data_trades": 0,
+            "tick_size": self.exchange_info.get(
+                "tick_size", self.config.DEFAULT_TICK_SIZE
+            ),
         }
         trades_all = len(trade_log_list)
         filtered_trade_log = [

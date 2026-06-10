@@ -134,6 +134,7 @@ export interface TradeData {
 	quantity?: number;
 	executions?: TradeExecution[];
 	trade_mode: "LIVE" | "PAPER";
+	tick_size?: number;
 
 	// New fields for grouping partial exits by positions
 	position_entry_id?: string; // Entry ID for grouping (e.g.: "x-entry-4286085483cf46")
@@ -153,6 +154,7 @@ export interface TradeData {
 
 	// Decision trace for foundation analysis (works for visual and genetic strategies)
 	signal_details_json?: Record<string, unknown>;
+	exchange?: string;
 }
 /**
  * Describes data for direct strategy launch.
@@ -223,6 +225,7 @@ export interface PositionData {
 	market_type?: "futures_usdtm" | "spot";
 	marketType?: "futures_usdtm" | "spot";
 	signal_details_json?: Record<string, unknown>; // Decision trace for foundation analytics
+	api_key_id?: number;
 }
 
 // --- Types for tasks (backtest/optimization) ---
@@ -271,6 +274,7 @@ export interface BacktestTrade {
 	exit_reason: string;
 	decision_trace_json: Record<string, unknown> | null;
 	executions?: TradeExecution[];
+	tick_size?: number;
 }
 
 // --- Final KPIs (replaces the old BacktestResultsData) ---
@@ -316,6 +320,7 @@ export interface BacktestRunDetailsData {
 	trades: BacktestTrade[];
 	progress_info?: ProgressInfoData;
 	error_message?: string;
+	tick_size?: number;
 }
 
 // --- Share Backtest Types ---

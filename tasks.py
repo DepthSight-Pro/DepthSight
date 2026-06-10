@@ -891,6 +891,10 @@ async def _single_symbol_backtest_body(
             request_params.get("backtest_engine"), default="vector"
         )
 
+        # Pre-fetch exchange info for the symbol
+        all_exchange_info = trainer._get_exchange_info()
+        symbol_exchange_info = all_exchange_info.get(symbol, {})
+
         if engine == "vector":
             logger.info(
                 f"Task {task_id} (Symbol: {symbol}): Initializing FastVectorBacktester..."
@@ -914,6 +918,7 @@ async def _single_symbol_backtest_body(
                 strategy_name=run_request_schema.strategy_name,
                 market_type=run_request_schema.market_type,
                 actual_trading_start_dt=start_dt,
+                exchange_info=symbol_exchange_info,
             )
             raw_vector_results = backtester.run()
             normalized_vector_trades, total_vector_commission = (
@@ -990,6 +995,7 @@ async def _single_symbol_backtest_body(
                 progress_callback=progress_callback,
                 ml_training_config={},
                 ml_sim_log_path=None,
+                exchange_info=symbol_exchange_info,
             )
             results = await backtester.run_async()
 

@@ -354,6 +354,14 @@ async def get_backtest_details(
         trade.strategy_name = db_run.strategy_name
 
     response_data = schemas.BacktestRunDetails.model_validate(db_run)
+    
+    # Try to populate tick_size from parameters_json if it's there
+    if not response_data.tick_size and db_run.parameters_json:
+        response_data.tick_size = db_run.parameters_json.get("tick_size")
+    
+    # If still not there, maybe it's in kpi_results_json
+    if not response_data.tick_size and db_run.kpi_results_json:
+        response_data.tick_size = db_run.kpi_results_json.get("tick_size")
 
     if response_data.status in ["PENDING", "RUNNING"] and response_data.task_id:
         try:

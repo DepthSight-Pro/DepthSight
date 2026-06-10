@@ -48,10 +48,12 @@ import { apiClient } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
 	fetchKlines,
+	fetchSymbolInfo,
 	KLINE_INTERVALS,
 	type Kline,
 	type KlineInterval,
 } from "@/services/binanceService";
+import { fetchBybitKlines } from "@/services/bybitService";
 import type {
 	StrategyConfigData,
 	TradeData,
@@ -497,6 +499,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 	const [foundationData, setFoundationData] =
 		useState<FoundationChartProps | null>(null);
 	const [foundationLoading, setFoundationLoading] = useState(false);
+	const [tickSize, setTickSize] = useState<number | undefined>(trade.tick_size);
 
 	// Ruler state
 	const [isRulerActive, setIsRulerActive] = useState(false);
@@ -2530,7 +2533,9 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			text.setAttribute("y", String(current.y + 5));
 			text.setAttribute("fill", "white");
 			text.setAttribute("font-size", "12px");
-			text.textContent = `${percentDiff > 0 ? "+" : ""}${percentDiff.toFixed(2)}% ($${priceDiff.toFixed(4)})`;
+			const percentDiffStr = Number.isFinite(percentDiff) ? percentDiff.toFixed(2) : "0.00";
+			const priceDiffStr = Number.isFinite(priceDiff) ? priceDiff.toFixed(4) : "0.0000";
+			text.textContent = `${percentDiff > 0 ? "+" : ""}${percentDiffStr}% ($${priceDiffStr})`;
 			overlay.appendChild(text);
 		}
 
@@ -2790,6 +2795,21 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		setError(null);
 
 		try {
+			// Fetch tick size if not provided
+			if (!tickSize) {
+				fetchSymbolInfo(trade.symbol).then((info) => {
+					if (info && info.symbols && info.symbols[0]) {
+						const symbolInfo = info.symbols[0];
+						const priceFilter = symbolInfo.filters.find(
+							(f: any) => f.filterType === "PRICE_FILTER",
+						);
+						if (priceFilter && priceFilter.tickSize) {
+							setTickSize(parseFloat(priceFilter.tickSize));
+						}
+					}
+				});
+			}
+
 			let data: Kline[];
 
 			const intervalToUse = interval || effectiveInterval;
@@ -2827,13 +2847,40 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					volume: Number(d[5] || 0),
 				}));
 			} else {
-				// Convert seconds back to ms for fetchKlines (Binance)
-				data = await fetchKlines(
-					trade.symbol,
-					startTime,
-					endTime,
-					intervalToUse,
-				);
+				const isBybit = String(trade.exchange || "").toLowerCase().includes("bybit");
+				if (isBybit) {
+					data = await fetchBybitKlines(
+						trade.symbol,
+						startTime,
+						endTime,
+						intervalToUse,
+					);
+					if (data.length === 0) {
+						// Fallback to Binance
+						data = await fetchKlines(
+							trade.symbol,
+							startTime,
+							endTime,
+							intervalToUse,
+						);
+					}
+				} else {
+					data = await fetchKlines(
+						trade.symbol,
+						startTime,
+						endTime,
+						intervalToUse,
+					);
+					if (data.length === 0) {
+						// Fallback to Bybit
+						data = await fetchBybitKlines(
+							trade.symbol,
+							startTime,
+							endTime,
+							intervalToUse,
+						);
+					}
+				}
 			}
 
 			if (data.length === 0) {
@@ -2849,7 +2896,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		} finally {
 			setLoading(false);
 		}
-	}, [trade.symbol, entryTime, exitTime, interval, effectiveInterval, runId]);
+	}, [trade.symbol, trade.exchange, entryTime, exitTime, interval, effectiveInterval, runId]);
 
 	useEffect(() => {
 		loadPriceAction();
@@ -2863,10 +2910,12 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		// If showIndicators is TRUE, the main chart is 65% height. Otherwise 100%.
 		// We rely on the ResizeObserver to adjust the internal canvas size, but we need initial dimensions.
 		const container = chartContainerRef.current;
+		const initialWidth = container.clientWidth || 800;
+		const initialHeight = container.clientHeight || 500;
 
 		const mainChart = createChart(container, {
-			width: container.clientWidth,
-			height: container.clientHeight,
+			width: initialWidth,
+			height: initialHeight,
 			layout: {
 				textColor: "#9ca3af",
 				background: { type: ColorType.Solid, color: "#0a0a0a" },
@@ -2894,8 +2943,12 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			if (!mainChart || !container) return;
 			const entry = entries[0];
 			if (entry) {
-				mainChart.resize(entry.contentRect.width, entry.contentRect.height);
-				syncOverlay();
+				const w = Math.floor(entry.contentRect.width);
+				const h = Math.floor(entry.contentRect.height);
+				if (w > 0 && h > 0) {
+					mainChart.resize(w, h);
+					syncOverlay();
+				}
 			}
 		});
 		resizeObserverMain.observe(container);
@@ -2956,6 +3009,13 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			wickUpColor: "#22c55e",
 			wickDownColor: "#ef4444",
 			autoscaleInfoProvider: autoScaleProvider,
+			priceFormat: tickSize
+				? {
+						type: "price",
+						precision: Math.ceil(Math.max(0, -Math.log10(tickSize))),
+						minMove: tickSize,
+					}
+				: undefined,
 		});
 
 		seriesRef.current = candlestickSeries;
@@ -3117,9 +3177,11 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			// --- 3. Create Indicator Chart (if needed) ---
 			if (indicatorContainerRef.current && indicatorPaneKeys.length > 0) {
 				const indContainer = indicatorContainerRef.current;
+				const initialIndWidth = indContainer.clientWidth || 800;
+				const initialIndHeight = indContainer.clientHeight || 180;
 				indChart = createChart(indContainer, {
-					width: indContainer.clientWidth,
-					height: indContainer.clientHeight,
+					width: initialIndWidth,
+					height: initialIndHeight,
 					layout: {
 						textColor: "#9ca3af",
 						background: { type: ColorType.Solid, color: "#0a0a0a" },
@@ -3142,7 +3204,11 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					if (!indChart || !indContainer) return;
 					const entry = entries[0];
 					if (entry) {
-						indChart.resize(entry.contentRect.width, entry.contentRect.height);
+						const w = Math.floor(entry.contentRect.width);
+						const h = Math.floor(entry.contentRect.height);
+						if (w > 0 && h > 0) {
+							indChart.resize(w, h);
+						}
 					}
 				});
 				resizeObserverInd.observe(indContainer);
@@ -3498,17 +3564,23 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 						{[
 							{
 								label: t("result", "Result"),
-								value: `${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)}`,
+								value: realizedPnl != null && Number.isFinite(realizedPnl)
+									? `${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)}`
+									: "N/A",
 								color: realizedPnl >= 0 ? "text-profit" : "text-loss",
 							},
 							{
 								label: t("entry", "Entry"),
-								value: `$${entryPrice.toFixed(4)}`,
+								value: entryPrice != null && Number.isFinite(entryPrice)
+									? `$${entryPrice.toFixed(4)}`
+									: "N/A",
 								color: "text-primary",
 							},
 							{
 								label: t("exit", "Exit"),
-								value: `$${exitPrice.toFixed(4)}`,
+								value: exitPrice != null && Number.isFinite(exitPrice)
+									? `$${exitPrice.toFixed(4)}`
+									: "N/A",
 								color: "text-amber-500",
 							},
 							{
@@ -3712,6 +3784,18 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 										<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
 										<span className="text-muted-foreground animate-pulse">
 											{t("fetchingData", "Fetching market data...")}
+										</span>
+									</div>
+								) : error || klines.length === 0 ? (
+									<div className="h-full flex items-center justify-center flex-col gap-2 text-muted-foreground">
+										<AlertCircle className="w-10 h-10 mb-2" />
+										<span className="font-bold text-foreground">
+											{error || t("dataUnavailable", "Data Unavailable")}
+										</span>
+										<span className="text-xs text-muted-foreground">
+											Symbol: {trade.symbol}, Period:{" "}
+											{new Date(entryTime * 1000).toLocaleString()} -{" "}
+											{new Date(exitTime * 1000).toLocaleString()}
 										</span>
 									</div>
 								) : (

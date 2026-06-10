@@ -453,6 +453,7 @@ const BacktestViewerPage = () => {
 							signal_details_json:
 								tradeForVisualization.decision_trace_json || undefined,
 							trade_mode: "PAPER",
+							tick_size: displayRun.tick_size,
 						} as unknown as TradeData
 					}
 					relatedTrades={
@@ -464,6 +465,7 @@ const BacktestViewerPage = () => {
 							timestamp_close: new Date(t.timestamp_exit).getTime(),
 							signal_details_json: t.decision_trace_json || undefined,
 							trade_mode: "PAPER",
+							tick_size: displayRun.tick_size,
 						})) as unknown as TradeData[]
 					}
 					strategyConfig={displayRun.parameters_json?.config}

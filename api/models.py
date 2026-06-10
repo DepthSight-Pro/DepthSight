@@ -327,6 +327,11 @@ class Trade(Base):
     )  # MFL - Maximum floating loss in USD
 
     strategy_config = relationship("StrategyConfig")
+    api_key = relationship("ApiKey", lazy="selectin")
+
+    @property
+    def exchange(self) -> str:
+        return self.api_key.exchange if self.api_key else "binance"
 
 
 from sqlalchemy.types import JSON

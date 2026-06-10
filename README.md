@@ -58,8 +58,8 @@ DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 6
 3. **Horizontal Worker Scaling:** Trading bot processes run in a sharded, stateless pool, evenly dividing computation and risk management processing across CPU cores or physical nodes.
 4. **PgBouncer-Ready:** Designed to pool PostgreSQL connections, seamlessly handling thousands of concurrent connections from stateless FastAPI or bot worker nodes.
 
-- **Supported Exchanges:** Native integration with **Binance**, **Bybit**, **Bitget**, **OKX**, **Gate.io**, and **BingX**. 
-  *Note: While Binance support is stable, integrations for other exchanges have been recently added and are currently in active testing (Beta).*
+- **Supported Exchanges:** Native integration with **Binance** and **Bybit** (Fully tested and stable). Support for **Bitget**, **OKX**, **Gate.io**, and **BingX** is currently in development and will be enabled in future updates. 
+  *Note: We recommend using Binance or Bybit for live trading at this stage.*
 - **Multi-Tenant SaaS Ready:** Built-in JWT authentication, Redis-based quota management, and fully isolated execution environments designed for multi-user, commercial deployments.
 - **Crypto Billing & Payments:** Native integration with Bitcart for processing cryptocurrency subscriptions and payments.
 - **Modern Clients:** Full-featured React web dashboard and a mobile-optimized PWA.

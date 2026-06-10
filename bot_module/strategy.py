@@ -4106,43 +4106,48 @@ class BaseStrategy:
             )
 
             if sl_value is not None:
-                sl_price_raw = 0.0
-                no_sl_mode = False
-                if sl_type == "fixed_price":
-                    sl_price_raw = float(sl_value)
-                elif sl_type == "atr_multiplier":
-                    if float(sl_value) == 0:
-                        no_sl_mode = True
-                    elif atr and atr > 0:
-                        sl_price_raw = (
-                            entry_price - (atr * float(sl_value))
-                            if position.direction == SignalDirection.LONG
-                            else entry_price + (atr * float(sl_value))
-                        )
-                    else:
-                        no_sl_mode = True
-                elif sl_type == "percent_from_price":
-                    if float(sl_value) == 0:
-                        no_sl_mode = True
-                    else:
-                        sl_price_raw = (
-                            entry_price * (1 - float(sl_value) / 100.0)
-                            if position.direction == SignalDirection.LONG
-                            else entry_price * (1 + float(sl_value) / 100.0)
-                        )
+                is_averaging_down = getattr(position, "_is_averaging_down", False)
+                preserve_sl = getattr(position, "current_sl_price", None) is not None and is_averaging_down
+                if preserve_sl:
+                    logger.info(f"{log_prefix} Preserving original SL price: {position.current_sl_price:.8f} during DCA/Scale-In recalculation.")
+                else:
+                    sl_price_raw = 0.0
+                    no_sl_mode = False
+                    if sl_type == "fixed_price":
+                        sl_price_raw = float(sl_value)
+                    elif sl_type == "atr_multiplier":
+                        if float(sl_value) == 0:
+                            no_sl_mode = True
+                        elif atr and atr > 0:
+                            sl_price_raw = (
+                                entry_price - (atr * float(sl_value))
+                                if position.direction == SignalDirection.LONG
+                                else entry_price + (atr * float(sl_value))
+                            )
+                        else:
+                            no_sl_mode = True
+                    elif sl_type == "percent_from_price":
+                        if float(sl_value) == 0:
+                            no_sl_mode = True
+                        else:
+                            sl_price_raw = (
+                                entry_price * (1 - float(sl_value) / 100.0)
+                                if position.direction == SignalDirection.LONG
+                                else entry_price * (1 + float(sl_value) / 100.0)
+                            )
 
-                if not no_sl_mode:
-                    sl_rounding = (
-                        ROUND_DOWN
-                        if position.direction == SignalDirection.LONG
-                        else ROUND_UP
-                    )
-                    position.current_sl_price = round_price_by_tick(
-                        sl_price_raw, tick_size, sl_rounding
-                    )
-                    logger.info(
-                        f"{log_prefix} Recalculated SL: {position.current_sl_price:.8f}"
-                    )
+                    if not no_sl_mode:
+                        sl_rounding = (
+                            ROUND_DOWN
+                            if position.direction == SignalDirection.LONG
+                            else ROUND_UP
+                        )
+                        position.current_sl_price = round_price_by_tick(
+                            sl_price_raw, tick_size, sl_rounding
+                        )
+                        logger.info(
+                            f"{log_prefix} Recalculated SL: {position.current_sl_price:.8f}"
+                        )
 
             # 2. Take Profit recalculation
             tp_type = params.get("tp_type", "rr_multiplier")

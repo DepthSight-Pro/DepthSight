@@ -98,7 +98,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 									{stats.sl_would_hit}
 								</p>
 								<p className="text-sm text-emerald-400">
-									{stats.be_saved_pct.toFixed(1)}%
+									{(stats.be_saved_pct ?? 0).toFixed(1)}%
 								</p>
 							</div>
 							<ShieldCheck className="w-12 h-12 text-emerald-400/40" />
@@ -121,7 +121,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 									{stats.tp_would_hit}
 								</p>
 								<p className="text-sm text-rose-400">
-									{stats.be_stolen_pct.toFixed(1)}%
+									{(stats.be_stolen_pct ?? 0).toFixed(1)}%
 								</p>
 							</div>
 							<ThumbsDown className="w-12 h-12 text-rose-400/40" />
@@ -145,7 +145,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 								</p>
 								<p className="text-sm text-slate-400">
 									{stats.total_be_trades > 0
-										? ((stats.timeout / stats.total_be_trades) * 100).toFixed(1)
+										? (((stats.timeout ?? 0) / stats.total_be_trades) * 100).toFixed(1)
 										: "0.0"}
 									%
 								</p>
@@ -193,9 +193,9 @@ export const PhantomAnalysisTab: React.FC = () => {
 									/>
 									<div className="absolute inset-0 flex items-center justify-center">
 										<span className="text-sm font-bold text-white drop-shadow-lg">
-											{stats.be_saved_pct >= stats.be_stolen_pct
-												? `+${(stats.be_saved_pct - stats.be_stolen_pct).toFixed(1)}%`
-												: `${(stats.be_saved_pct - stats.be_stolen_pct).toFixed(1)}%`}
+											{(stats.be_saved_pct ?? 0) >= (stats.be_stolen_pct ?? 0)
+												? `+${((stats.be_saved_pct ?? 0) - (stats.be_stolen_pct ?? 0)).toFixed(1)}%`
+												: `${((stats.be_saved_pct ?? 0) - (stats.be_stolen_pct ?? 0)).toFixed(1)}%`}
 										</span>
 									</div>
 								</div>
@@ -234,7 +234,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 					</CardHeader>
 					<CardContent>
 						<p className="text-3xl font-bold text-emerald-400">
-							+{stats.avg_mfe_after_be.toFixed(2)}%
+							+{(stats.avg_mfe_after_be ?? 0).toFixed(2)}%
 						</p>
 						<p className="text-sm text-muted-foreground">
 							{t("analytics:beAnalysis.mfeDesc")}
@@ -253,7 +253,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 					</CardHeader>
 					<CardContent>
 						<p className="text-3xl font-bold text-rose-400">
-							-{stats.avg_mae_after_be.toFixed(2)}%
+							-{(stats.avg_mae_after_be ?? 0).toFixed(2)}%
 						</p>
 						<p className="text-sm text-muted-foreground">
 							{t("analytics:beAnalysis.maeDesc")}
@@ -277,7 +277,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 								{t("analytics:beAnalysis.ifTpHit")}
 							</p>
 							<p className="text-2xl font-bold text-emerald-400">
-								+{stats.avg_phantom_pnl_if_tp.toFixed(2)}%
+								+{(stats.avg_phantom_pnl_if_tp ?? 0).toFixed(2)}%
 							</p>
 							<p className="text-xs text-muted-foreground">
 								{t("analytics:beAnalysis.avgPnlPerTrade")}
@@ -288,7 +288,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 								{t("analytics:beAnalysis.ifSlHit")}
 							</p>
 							<p className="text-2xl font-bold text-rose-400">
-								{stats.avg_phantom_pnl_if_sl.toFixed(2)}%
+								{(stats.avg_phantom_pnl_if_sl ?? 0).toFixed(2)}%
 							</p>
 							<p className="text-xs text-muted-foreground">
 								{t("analytics:beAnalysis.avgPnlPerTrade")}
@@ -423,7 +423,7 @@ export const PhantomAnalysisTab: React.FC = () => {
 																: ""
 													}`}
 												>
-													{trade.phantom_pnl_pct
+													{trade.phantom_pnl_pct != null
 														? `${trade.phantom_pnl_pct > 0 ? "+" : ""}${trade.phantom_pnl_pct.toFixed(2)}%`
 														: "-"}
 												</TableCell>

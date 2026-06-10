@@ -71,8 +71,17 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = (
         "max-age=31536000; includeSubDomains"
     )
+    
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "https://app.depthsight.pro").strip()
+    api_domain = os.getenv("API_DOMAIN", "app.depthsight.pro").strip()
+    ws_protocol = "wss" if public_base_url.startswith("https") else "ws"
+    ws_url = f"{ws_protocol}://{api_domain}"
+
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; frame-ancestors 'none';"
+        f"default-src 'self'; "
+        f"connect-src 'self' {ws_url} {public_base_url} "
+        f"https://api.binance.com https://fapi.binance.com https://api.bybit.com; "
+        f"frame-ancestors 'none';"
     )
     return response
 

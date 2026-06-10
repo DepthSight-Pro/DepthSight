@@ -385,8 +385,11 @@ export const AssetDeepDiveView: React.FC = () => {
 		setTimeout(syncOverlay, 100);
 
 		const handleResize = () => {
-			chart.resize(chartContainer.clientWidth, 500);
-			syncOverlay();
+			const w = chartContainer.clientWidth;
+			if (w > 0) {
+				chart.resize(w, 500);
+				syncOverlay();
+			}
 		};
 		window.addEventListener("resize", handleResize);
 

@@ -112,7 +112,7 @@ export default function Positions() {
 	const [viewingPositionId, setViewingPositionId] = useState<string | null>(
 		null,
 	);
-	const [closingSymbol, setClosingSymbol] = useState<string | null>(null);
+	const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
 
 	// Local state for fake positions (only for testing)
 	const [testPositions, setTestPositions] = useState<PositionData[]>([]);
@@ -258,6 +258,7 @@ export default function Positions() {
 		symbol: string,
 		e: React.MouseEvent,
 		id?: string,
+		apiKeyId?: number,
 	) => {
 		e.stopPropagation();
 
@@ -274,16 +275,19 @@ export default function Positions() {
 		});
 		const isConfirmed = window.confirm(confirmationText);
 
-		if (isConfirmed) {
+		if (isConfirmed && id) {
 			// 1. Set the "loading" state for a specific button
-			setClosingSymbol(symbol);
+			setClosingPositionId(id);
 			// 2. Call the mutation, passing callbacks here
-			closePosition(symbol, {
-				onSettled: () => {
-					// 3. Reset the "loading" state after the request is completed
-					setClosingSymbol(null);
+			closePosition(
+				{ symbol, apiKeyId },
+				{
+					onSettled: () => {
+						// 3. Reset the "loading" state after the request is completed
+						setClosingPositionId(null);
+					},
 				},
-			});
+			);
 		}
 	};
 
@@ -322,7 +326,7 @@ export default function Positions() {
 				variant="destructive"
 				size="sm"
 				onClick={() => setShowConfirm(true)}
-				disabled={isStoppingAll || !!closingSymbol || isPaperMode}
+				disabled={isStoppingAll || !!closingPositionId || isPaperMode}
 			>
 				{isStoppingAll ? (
 					<Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -507,7 +511,7 @@ export default function Positions() {
 														setEditingPosition(pos);
 													}}
 													disabled={
-														!!closingSymbol ||
+														!!closingPositionId ||
 														isStoppingAll ||
 														(isPaperMode && !pos.id.startsWith("test-"))
 													}
@@ -519,15 +523,15 @@ export default function Positions() {
 													size="sm"
 													className="px-2 h-8 w-[60px]" // Set a fixed width for the button
 													onClick={(e) =>
-														handleClosePosition(pos.symbol, e, pos.id)
+														handleClosePosition(pos.symbol, e, pos.id, pos.api_key_id)
 													}
 													disabled={
 														isStoppingAll ||
-														!!closingSymbol ||
+														!!closingPositionId ||
 														(isPaperMode && !pos.id.startsWith("test-"))
 													}
 												>
-													{closingSymbol === pos.symbol ? (
+													{closingPositionId === pos.id ? (
 														<Loader2 className="w-4 h-4 animate-spin" />
 													) : (
 														t("common:close")

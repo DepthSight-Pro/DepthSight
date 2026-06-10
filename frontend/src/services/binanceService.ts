@@ -1,5 +1,7 @@
 // frontend/src/services/binanceService.ts
 
+import { apiClient } from "@/lib/api";
+
 export interface Kline {
 	time: number;
 	open: number;
@@ -54,39 +56,51 @@ export async function fetchKlines(
 	const paddedStart = Math.floor(startTime - padding);
 	const paddedEnd = Math.min(Date.now(), Math.floor(endTime + padding));
 
-	// IMPORTANT: Try Futures API first since we primarily trade futures
-	const endpoints = [
-		`https://fapi.binance.com/fapi/v1/klines?symbol=${cleanSymbol}&interval=${interval}&startTime=${paddedStart}&endTime=${paddedEnd}&limit=1500`,
-		`https://api.binance.com/api/v3/klines?symbol=${cleanSymbol}&interval=${interval}&startTime=${paddedStart}&endTime=${paddedEnd}&limit=1500`,
-	];
+	try {
+		const params = new URLSearchParams({
+			symbol: cleanSymbol,
+			interval: interval,
+			startTime: paddedStart.toString(),
+			endTime: paddedEnd.toString(),
+			limit: "1500",
+		});
+		const data = await apiClient<[number, string, string, string, string, string, ...unknown[]][]>(
+			`/proxy/binance/klines?${params.toString()}`
+		);
 
-	for (const url of endpoints) {
-		try {
-			const response = await fetch(url);
-			if (!response.ok) continue;
+		if (!Array.isArray(data) || data.length === 0) return [];
 
-			const data = await response.json();
-			if (!Array.isArray(data) || data.length === 0) continue;
-
-			return data.map(
-				(
-					d: [number, string, string, string, string, string, ...unknown[]],
-				) => ({
-					time: d[0] as number,
-					open: parseFloat(d[1]),
-					high: parseFloat(d[2]),
-					low: parseFloat(d[3]),
-					close: parseFloat(d[4]),
-					volume: parseFloat(d[5]),
-				}),
-			);
-		} catch (error) {
-			console.warn(`Error fetching from ${url}:`, error);
-		}
+		return data.map(
+			(
+				d: [number, string, string, string, string, string, ...unknown[]],
+			) => ({
+				time: d[0] as number,
+				open: parseFloat(d[1]),
+				high: parseFloat(d[2]),
+				low: parseFloat(d[3]),
+				close: parseFloat(d[4]),
+				volume: parseFloat(d[5]),
+			}),
+		);
+	} catch (error) {
+		console.warn(`Error fetching from Binance proxy:`, error);
 	}
 
-	console.error(
-		`Could not fetch data for ${cleanSymbol} from any Binance endpoint.`,
-	);
 	return [];
 }
+
+/**
+ * Fetches symbol info (exchange info) from Binance proxy.
+ */
+export async function fetchSymbolInfo(symbol: string): Promise<any> {
+	try {
+		const response = await apiClient.get<ApiResponse<any>>(
+			`/proxy/binance/exchange-info?symbol=${symbol.toUpperCase()}`,
+		);
+		return response.data.data;
+	} catch (error) {
+		console.warn(`Error fetching symbol info for ${symbol}:`, error);
+		return null;
+	}
+}
+

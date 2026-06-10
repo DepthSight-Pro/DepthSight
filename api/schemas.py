@@ -669,6 +669,15 @@ class Task(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class TradeExecution(BaseModel):
+    timestamp: datetime
+    price: float
+    quantity: float
+    type: str  # 'ENTRY' | 'EXIT'
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # --- Trade Schema (NEW SCHEMA) ---
 class Trade(BaseModel):
     id: int
@@ -696,8 +705,43 @@ class Trade(BaseModel):
     max_floating_loss: Optional[float] = None  # MAE - Maximum floating loss in USD
     # Decision trace for foundation analysis (works for visual and genetic strategies)
     signal_details_json: Optional[Dict[str, Any]] = None
+    exchange: Optional[str] = None
+    tick_size: Optional[float] = None
+    executions: List[TradeExecution] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def extract_executions(self) -> "Trade":
+        if not self.executions and self.signal_details_json:
+            # Check both possible keys for executions
+            exec_events = self.signal_details_json.get(
+                "execution_events"
+            ) or self.signal_details_json.get("executions")
+
+            if exec_events and isinstance(exec_events, list):
+                extracted = []
+                for event in exec_events:
+                    try:
+                        # Handle potential string or numeric timestamps
+                        timestamp = event.get("timestamp") or event.get("time")
+                        price = event.get("price") or event.get("fill_price")
+                        quantity = event.get("quantity") or event.get("qty")
+                        exec_type = event.get("type") or event.get("execution_type")
+
+                        if timestamp and price is not None and quantity is not None:
+                            extracted.append(
+                                TradeExecution(
+                                    timestamp=timestamp,
+                                    price=float(price),
+                                    quantity=float(quantity),
+                                    type=str(exec_type or "ENTRY").upper(),
+                                )
+                            )
+                    except Exception:
+                        continue
+                self.executions = extracted
+        return self
 
 
 class TradeAnalyticsCreate(BaseModel):
@@ -785,15 +829,6 @@ class BacktestResults(BaseModel):
     trades: List[Trade] = []
 
 
-class TradeExecution(BaseModel):
-    timestamp: datetime
-    price: float
-    quantity: float
-    type: str  # 'ENTRY' | 'EXIT'
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class BacktestTrade(BaseModel):
     id: int
     direction: str
@@ -811,6 +846,7 @@ class BacktestTrade(BaseModel):
 
     symbol: str
     strategy_name: str
+    tick_size: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1002,6 +1038,7 @@ class PositionResponseItem(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     market_type: Optional[str] = None
+    api_key_id: Optional[int] = None
 
 
 # --- Strategy Operation Schemas (moved from depthsight_api.py) ---
@@ -1183,6 +1220,7 @@ class PositionData(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     user_id: Optional[Any] = None  # Added to support authorization
+    api_key_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
