@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 # api/models.py
 import enum
+import uuid
 from sqlalchemy import (
     Column,
     Integer,
@@ -18,7 +19,6 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
 from datetime import datetime, timezone
-import uuid
 
 
 class User(Base):
@@ -176,6 +176,23 @@ class Commission(Base):
     )
     referred_user = relationship("User", foreign_keys=[referred_user_id])
     source_payment = relationship("Payment", back_populates="commission")
+
+
+class AffiliatePayout(Base):
+    __tablename__ = "affiliate_payouts"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    status = Column(
+        String, default="pending", nullable=False
+    )  # pending, paid, rejected
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    transaction_id = Column(String, nullable=True)
+    payout_address = Column(String, nullable=True)
+
+    user = relationship("User")
 
 
 class AppConfig(Base):

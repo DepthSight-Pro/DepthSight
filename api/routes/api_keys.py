@@ -294,6 +294,7 @@ async def get_multi_account_balances(
         market_types_for_filter,
         fetch_api_key_market_balance,
         build_market_balance_breakdown,
+        get_deduplicated_balances_for_totals,
     )
 
     normalized_market_type = normalize_market_type_filter(market_type)
@@ -345,19 +346,20 @@ async def get_multi_account_balances(
     ]
     accounts_balances = await asyncio.gather(*tasks) if tasks else []
     market_breakdown = build_market_balance_breakdown(list(accounts_balances))
+    dedup_balances = get_deduplicated_balances_for_totals(list(accounts_balances))
 
     return {
         "data": schemas.MultiAccountOverview(
             market_type=normalized_market_type,
-            total_balance=sum(account.balance for account in accounts_balances),
+            total_balance=sum(account.balance for account in dedup_balances),
             total_available=sum(
-                account.available_balance for account in accounts_balances
+                account.available_balance for account in dedup_balances
             ),
             total_unrealized_pnl=sum(
-                account.unrealized_pnl for account in accounts_balances
+                account.unrealized_pnl for account in dedup_balances
             ),
-            total_margin_used=sum(account.margin_used for account in accounts_balances),
-            total_equity=sum(account.total_equity for account in accounts_balances),
+            total_margin_used=sum(account.margin_used for account in dedup_balances),
+            total_equity=sum(account.total_equity for account in dedup_balances),
             market_breakdown=market_breakdown,
             accounts=accounts_balances,
         )

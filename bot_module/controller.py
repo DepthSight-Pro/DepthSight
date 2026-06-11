@@ -274,6 +274,7 @@ class LivePosition(BasePosition):
     trigger_price: Optional[float] = None
     mode: str = "live"  # Add mode to distinguish between live and paper
     market_type: str = "futures_usdtm"
+    entry_fill_processed: bool = False
 
     # Counter for failed close attempts (for escalation)
     failed_close_attempts: int = 0
@@ -360,6 +361,7 @@ class LivePosition(BasePosition):
 
         # Filter out unexpected keys to prevent __init__ errors
         import inspect
+
         valid_keys = {k for k in inspect.signature(cls).parameters}
         filtered_data = {k: v for k, v in data.items() if k in valid_keys}
 
@@ -1299,8 +1301,16 @@ class TradingController:
                         # Adding a handler for the new command
                         elif command_type == "CLOSE_POSITION":
                             user_id_from_cmd = payload.get("user_id")
-                            if user_id_from_cmd != self.user_id:
-                                return
+                            if str(user_id_from_cmd) != str(self.user_id):
+                                continue
+
+                            cmd_api_key_id = payload.get("api_key_id")
+                            if (
+                                cmd_api_key_id is not None
+                                and self.api_key_id is not None
+                                and int(cmd_api_key_id) != self.api_key_id
+                            ):
+                                continue
 
                             symbol_to_close = payload.get("symbol")
                             market_type_to_close = payload.get(
@@ -1427,8 +1437,8 @@ class TradingController:
 
                         elif command_type == "EMERGENCY_STOP":
                             user_id = payload.get("user_id")
-                            if user_id != self.user_id:
-                                return
+                            if str(user_id) != str(self.user_id):
+                                continue
                             logger.info(
                                 f"Handling EMERGENCY_STOP for user_id: {user_id}"
                             )
@@ -1437,8 +1447,8 @@ class TradingController:
                         elif command_type == "TEST_NOTIFICATION":
                             user_id = payload.get("user_id")
                             chat_id = payload.get("chat_id")
-                            if user_id != self.user_id:
-                                return
+                            if str(user_id) != str(self.user_id):
+                                continue
                             logger.info(
                                 f"Handling TEST_NOTIFICATION for user_id: {user_id}, chat_id: {chat_id}"
                             )
@@ -1457,7 +1467,7 @@ class TradingController:
                         # Instant configuration reload
                         elif command_type == "RELOAD_CONFIG":
                             user_id = payload.get("user_id")
-                            if user_id != self.user_id:
+                            if str(user_id) != str(self.user_id):
                                 continue  # Command for another user
                             logger.info(
                                 f"Handling RELOAD_CONFIG for user_id: {user_id} - Applying settings immediately."
@@ -3259,7 +3269,7 @@ class TradingController:
             "total_equity": round(equity, 2),
             "today_pnl": round(self.rm.stats.today_pnl, 2),
             "consecutive_losses": self.rm.stats.consecutive_losses,
-            "is_trading_allowed": self.rm._is_trading_allowed,
+            "is_trading_allowed": getattr(self.rm, "_is_trading_allowed", True),
             "margin_usage_percent": 0.0,
             "active_positions_count": len(positions_to_publish),
             "active_strategies_count": len(strategies_to_publish),
@@ -3879,7 +3889,9 @@ class TradingController:
                                         f"{log_prefix} Outdated target: {symbol}. Stopping management."
                                     )
                                     if symbol in self._last_known_symbols_from_consumer:
-                                        self._last_known_symbols_from_consumer.remove(symbol)
+                                        self._last_known_symbols_from_consumer.remove(
+                                            symbol
+                                        )
                                     changed = True
 
                             if changed:
@@ -4421,6 +4433,9 @@ class TradingController:
                                             updated_pos_obj.initial_take_profit,
                                             market_type=self._market_type_for_position(
                                                 current_pos
+                                            ),
+                                            partial_targets=getattr(
+                                                updated_pos_obj, "partial_targets", None
                                             ),
                                         ),
                                         name=f"StrategyMgmtUpdateTP_{symbol}",
@@ -5290,9 +5305,7 @@ class TradingController:
         for instance, _cfg in applicable_instances:
             required_union.update(instance.required_data_types)
 
-        logger.info(
-            f"[SignalCheck:{symbol}] required_data_keys={required_union}"
-        )
+        logger.info(f"[SignalCheck:{symbol}] required_data_keys={required_union}")
 
         shared_market_data = await self._gather_market_data_for_required_keys(
             symbol=symbol,
@@ -5479,9 +5492,7 @@ class TradingController:
                         f"{log_prefix} Signal REJECTED: {', '.join(reasons) if reasons else 'no details'}"
                     )
                 else:
-                    logger.info(
-                        f"{log_prefix} Signal REJECTED (weight={weight:.2f})."
-                    )
+                    logger.info(f"{log_prefix} Signal REJECTED (weight={weight:.2f}).")
             if isinstance(signal_result, StrategySignal):
                 if signal_result.details is None:
                     signal_result.details = {}
@@ -7414,6 +7425,12 @@ class TradingController:
                 )
                 return
 
+            if getattr(position, "entry_fill_processed", False):
+                logger.info(
+                    f"{log_prefix} Entry fill has already been processed for position {position.entry_client_order_id}. Skipping duplicate call."
+                )
+                return
+
             intentional_no_sl_mode = self._position_is_intentional_no_sl_mode(position)
 
             logger.info(
@@ -7439,6 +7456,7 @@ class TradingController:
 
             # More robust status update logic
             if is_final_fill_status:
+                position.entry_fill_processed = True
                 current_order_binance_status = position.entry_order_status
                 if current_order_binance_status not in [
                     "FILLED",
@@ -7688,13 +7706,9 @@ class TradingController:
 
                 # Now creating new TPs based on original_partial_targets_plan and the CURRENT position.initial_quantity
                 new_planned_ptps: List[PartialTpOrderInfo] = []
-                total_partial_fraction = (
-                    0.0  # Initialize in advance to calculate the remaining fraction
-                )
 
                 if (
-                    position.original_partial_targets_plan
-                    and position.initial_quantity > 0
+                    position.initial_quantity > 0
                 ):
                     position_market_type = self._market_type_for_position(position)
                     lot_p_recalc_final = await self._get_market_info(
@@ -7704,49 +7718,90 @@ class TradingController:
                         symbol, "min_notional", market_type=position_market_type
                     )
 
-                    for orig_pt_plan in position.original_partial_targets_plan:
-                        qty_pt_raw_final = (
-                            position.initial_quantity * orig_pt_plan.fraction
-                        )
-                        qty_pt_adj_final = self.rm._adjust_and_round_quantity(
-                            qty_pt_raw_final,
-                            symbol,
-                            orig_pt_plan.price,
-                            lot_p_recalc_final,
-                            min_n_recalc_final,
-                        )
+                    # Collect all candidate targets (both partial and final)
+                    targets_to_plan = []
+                    if position.original_partial_targets_plan:
+                        for orig_pt_plan in position.original_partial_targets_plan:
+                            targets_to_plan.append({
+                                "price": orig_pt_plan.price,
+                                "fraction": orig_pt_plan.fraction,
+                            })
+                    
+                    total_partial_fraction_sum = sum(t["fraction"] for t in targets_to_plan)
+                    remaining_fraction = 1.0 - total_partial_fraction_sum
+                    
+                    if remaining_fraction > 0.01 and position.initial_take_profit:
+                        targets_to_plan.append({
+                            "price": position.initial_take_profit,
+                            "fraction": remaining_fraction,
+                        })
 
-                        if qty_pt_adj_final and qty_pt_adj_final > 0:
-                            # Checking the validity of the TP price relative to the current entry and SL
-                            entry_p_check = position.entry_price
-                            sl_p_check = (
-                                position.current_sl_price
-                                if self._position_has_active_stop_target(position)
-                                else None
-                            )
-                            is_ptp_still_valid_final = self._is_exit_target_valid(
-                                orig_pt_plan.price,
-                                entry_p_check,
-                                sl_p_check,
-                                position.direction,
-                            )
-
-                            if is_ptp_still_valid_final:
-                                new_planned_ptps.append(
-                                    PartialTpOrderInfo(
-                                        target_price=orig_pt_plan.price,
-                                        orig_fraction=orig_pt_plan.fraction,
-                                        quantity=qty_pt_adj_final,
-                                        status=planned_tp_status,
-                                    )
-                                )
-                            else:
-                                logger.warning(
-                                    f"{log_prefix} Original TP target {orig_pt_plan.price} is no longer valid against entry {entry_p_check} / SL {sl_p_check}. Skipping."
-                                )
+                    # Filter to get only valid targets
+                    valid_targets = []
+                    entry_p_check = position.entry_price
+                    sl_p_check = (
+                        position.current_sl_price
+                        if self._position_has_active_stop_target(position)
+                        else None
+                    )
+                    
+                    for t in targets_to_plan:
+                        is_valid = self._is_exit_target_valid(
+                            t["price"],
+                            entry_p_check,
+                            sl_p_check,
+                            position.direction,
+                        )
+                        if is_valid:
+                            valid_targets.append(t)
                         else:
                             logger.warning(
-                                f"{log_prefix} Cannot calculate valid quantity for original TP target {orig_pt_plan.price} (final qty {position.initial_quantity}). Skipping."
+                                f"{log_prefix} TP target {t['price']} is no longer valid against entry {entry_p_check} / SL {sl_p_check}. Skipping."
+                            )
+
+                    placed_qty_sum = 0.0
+                    placed_fractions_sum = 0.0
+                    
+                    for idx, t in enumerate(valid_targets):
+                        is_last = (idx == len(valid_targets) - 1)
+                        
+                        if is_last:
+                            # The last valid target gets all the leftover quantity
+                            qty_pt_adj_final = position.initial_quantity - placed_qty_sum
+                            # Round to stepSize just in case of tiny float representation errors
+                            if lot_p_recalc_final and lot_p_recalc_final.get("stepSize", 0) > 0:
+                                step = Decimal(str(lot_p_recalc_final["stepSize"]))
+                                qty_dec = Decimal(f"{qty_pt_adj_final:.12f}")
+                                qty_pt_adj_final = float(
+                                    (qty_dec / step).quantize(Decimal("0"), rounding=ROUND_DOWN) * step
+                                )
+                        else:
+                            qty_pt_raw_final = position.initial_quantity * t["fraction"]
+                            qty_pt_adj_final = self.rm._adjust_and_round_quantity(
+                                qty_pt_raw_final,
+                                symbol,
+                                t["price"],
+                                lot_p_recalc_final,
+                                min_n_recalc_final,
+                            )
+                        
+                        if qty_pt_adj_final and qty_pt_adj_final > 0:
+                            new_planned_ptps.append(
+                                PartialTpOrderInfo(
+                                    target_price=t["price"],
+                                    orig_fraction=t["fraction"],
+                                    quantity=qty_pt_adj_final,
+                                    status=planned_tp_status,
+                                )
+                            )
+                            placed_qty_sum += qty_pt_adj_final
+                            placed_fractions_sum += t["fraction"]
+                            logger.info(
+                                f"{log_prefix} Planned TP at {t['price']:.8f} (qty {qty_pt_adj_final:.8f}, is_last={is_last})."
+                            )
+                        else:
+                            logger.warning(
+                                f"{log_prefix} Cannot calculate valid quantity for TP target {t['price']}. Skipping."
                             )
 
                     position.partial_tp_orders = (
@@ -7755,73 +7810,6 @@ class TradingController:
                     logger.info(
                         f"{log_prefix} Re-planned {len(new_planned_ptps)} partial TPs based on final entry quantity {position.initial_quantity:.8f}."
                     )
-                    # Updating the sum of partial exit fractions
-                    total_partial_fraction = sum(
-                        ptp.orig_fraction for ptp in new_planned_ptps
-                    )
-
-                # Calculating the remaining fraction after all partial exits
-                remaining_fraction = 1.0 - total_partial_fraction
-
-                # If there is a remaining fraction AND a final TP, add an order for the remaining part
-                if (
-                    remaining_fraction > 0.01
-                    and position.initial_take_profit
-                    and position.initial_quantity > 0
-                ):
-                    final_tp_price = (
-                        position.initial_take_profit
-                    )  # Using the value possibly already recalculated in the SL block
-                    position_market_type = self._market_type_for_position(position)
-                    lot_p_final_single = await self._get_market_info(
-                        symbol, "lot_params", market_type=position_market_type
-                    )
-                    min_n_final_single = await self._get_market_info(
-                        symbol, "min_notional", market_type=position_market_type
-                    )
-                    # Calculate the quantity for the remaining fraction
-                    qty_remaining_raw = position.initial_quantity * remaining_fraction
-                    qty_final_tp_single = self.rm._adjust_and_round_quantity(
-                        qty_remaining_raw,
-                        symbol,
-                        final_tp_price,
-                        lot_p_final_single,
-                        min_n_final_single,
-                    )
-
-                    if qty_final_tp_single and qty_final_tp_single > 0:
-                        entry_p_check_s = position.entry_price
-                        sl_p_check_s = (
-                            position.current_sl_price
-                            if self._position_has_active_stop_target(position)
-                            else None
-                        )
-                        is_final_tp_still_valid = self._is_exit_target_valid(
-                            final_tp_price,
-                            entry_p_check_s,
-                            sl_p_check_s,
-                            position.direction,
-                        )
-                        if is_final_tp_still_valid:
-                            position.partial_tp_orders.append(
-                                PartialTpOrderInfo(
-                                    target_price=final_tp_price,
-                                    orig_fraction=remaining_fraction,
-                                    quantity=qty_final_tp_single,
-                                    status=planned_tp_status,
-                                )
-                            )
-                            logger.info(
-                                f"{log_prefix} Planned final TP at {final_tp_price:.8f} for remaining {remaining_fraction * 100:.1f}% (qty {qty_final_tp_single:.8f})."
-                            )
-                        else:
-                            logger.warning(
-                                f"{log_prefix} Final TP at {final_tp_price} is no longer valid for remaining {remaining_fraction * 100:.1f}%. Skipping."
-                            )
-                    else:
-                        logger.warning(
-                            f"{log_prefix} Cannot calculate valid quantity for final TP at {final_tp_price} (remaining fraction {remaining_fraction * 100:.1f}%). Skipping."
-                        )
 
                 # Check for emergency closure if TP is not possible
                 if (
@@ -7972,6 +7960,12 @@ class TradingController:
                 logger.info(
                     f"{log_prefix} No partial TPs to schedule for placement for position {position_to_manage_exits.entry_client_order_id}."
                 )
+
+        # Publish state immediately after entry fill
+        self.loop.create_task(
+            self._publish_state_to_redis(),
+            name=f"PublishState_EntryFill_{symbol}",
+        )
 
     async def _handle_partial_tp_fill(
         self,
@@ -8231,10 +8225,9 @@ class TradingController:
             # Collect order IDs for cancellation BEFORE the position is deleted or its status changes such that,
             # that _cancel_all_exit_orders will not be able to find them.
             # Exclude the order that has already been filled and triggered this exit (order_id).
-            if (
-                position.current_sl_order_id is not None
-                and str(position.current_sl_order_id) != str(order_id)
-            ):
+            if position.current_sl_order_id is not None and str(
+                position.current_sl_order_id
+            ) != str(order_id):
                 orders_to_cancel_after_lock.append(
                     (
                         symbol,
@@ -8384,6 +8377,7 @@ class TradingController:
             logger.info(
                 f"{log_prefix} Scheduling cancellation of {len(orders_to_cancel_after_lock)} associated exit orders for {symbol}."
             )
+            tasks = []
             for (
                 sym_cancel,
                 oid_cancel,
@@ -8391,25 +8385,45 @@ class TradingController:
                 is_algo,
             ) in orders_to_cancel_after_lock:
                 if oid_cancel:  # Ensure that orderId is not None
-                    self.loop.create_task(
+                    tasks.append(
                         executor_for_cancel.cancel_order(
                             symbol=sym_cancel,
                             orderId=oid_cancel,
                             origClientOrderId=cid_cancel,
                             is_algo_order=is_algo,
-                        ),
-                        name=f"FinalExitAssocCancel_{sym_cancel}_{oid_cancel}",
+                        )
                     )
+            if tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=10.0,
+                    )
+                    logger.info(f"{log_prefix} Associated exit orders for {symbol} cancelled successfully.")
+                except asyncio.TimeoutError:
+                    logger.warning(f"{log_prefix} Timeout cancelling associated exit orders for {symbol}. Moving on to hard reset.")
+                except Exception as e:
+                    logger.error(f"{log_prefix} Error cancelling associated exit orders: {e}", exc_info=True)
 
         # HARD RESET: Cancel ALL open orders for this symbol to be 100% safe
         # This should ALWAYS happen when closing a position, even if the orders_to_cancel_after_lock list is empty
         logger.info(
             f"{log_prefix} Triggering symbol-wide 'Hard Reset' order cancellation for {symbol}."
         )
-        self.loop.create_task(
-            executor_for_cancel.cancel_all_open_orders(symbol),
-            name=f"FinalExitHardCancel_{symbol}",
-        )
+        try:
+            await asyncio.wait_for(
+                executor_for_cancel.cancel_all_open_orders(symbol),
+                timeout=10.0,
+            )
+            logger.info(f"{log_prefix} Hard Reset: All open orders for {symbol} cancelled successfully.")
+        except asyncio.TimeoutError:
+            logger.warning(f"{log_prefix} Hard Reset: Timeout cancelling open orders for {symbol}. Scheduling background retry.")
+            self.loop.create_task(
+                executor_for_cancel.cancel_all_open_orders(symbol),
+                name=f"FinalExitHardCancelRetry_{symbol}",
+            )
+        except Exception as e:
+            logger.error(f"{log_prefix} Hard Reset: Error cancelling open orders: {e}", exc_info=True)
 
         if position_to_process_copy:
             await self.rm.update_trade_result(
@@ -8863,6 +8877,12 @@ class TradingController:
                 f"{log_prefix} Position data was not available for post-lock processing for {symbol}."
             )
 
+        # Publish state immediately after final exit
+        self.loop.create_task(
+            self._publish_state_to_redis(),
+            name=f"PublishState_FinalExit_{symbol}",
+        )
+
     async def _move_stop_loss_to_be(
         self,
         symbol: str,
@@ -9231,8 +9251,11 @@ class TradingController:
             return False
 
     async def _replace_take_profit(
-        self, symbol: str, new_tp_price: float, market_type: Optional[str] = None,
-        partial_targets: Optional[List[Tuple[float, float, bool]]] = None
+        self,
+        symbol: str,
+        new_tp_price: float,
+        market_type: Optional[str] = None,
+        partial_targets: Optional[List[Tuple[float, float, bool]]] = None,
     ) -> bool:
         """
         Replaces the take-profit order for the specified position.
@@ -9284,32 +9307,68 @@ class TradingController:
             # Create a new TP list. If partial_targets are provided, use them. Otherwise, 100% at new_tp_price.
             new_ptp_orders = []
             if partial_targets and len(partial_targets) > 0:
-                remaining_fraction = 1.0
-                for pt_price, pt_frac, pt_filled in partial_targets:
+                lot_params = await self._get_market_info(
+                    symbol, "lot_params", market_type=market_type
+                )
+                step_size = 0.0
+                if lot_params:
+                    try:
+                        step_size = float(lot_params.get("stepSize") or 0.0)
+                    except (ValueError, TypeError):
+                        pass
+
+                accumulated_qty = 0.0
+                active_targets = []
+
+                for pt in partial_targets:
+                    # Support both list of tuples/lists and PartialTarget objects
+                    if isinstance(pt, (tuple, list)):
+                        pt_price = pt[0]
+                        pt_frac = pt[1]
+                        pt_filled = pt[2] if len(pt) > 2 else False
+                    else:
+                        pt_price = getattr(pt, "price", None)
+                        pt_frac = getattr(pt, "fraction", None)
+                        pt_filled = getattr(pt, "is_filled", False)
+
+                    if pt_price is None or pt_frac is None:
+                        continue
                     if pt_filled:
                         continue
-                    pt_qty = total_quantity * pt_frac
+                    active_targets.append((pt_price, pt_frac))
+
+                active_fractions_sum = sum(frac for _, frac in active_targets)
+                rem_frac = 1.0 - active_fractions_sum
+                if rem_frac > 0.01:
+                    active_targets.append((new_tp_price, rem_frac))
+
+                for idx, (pt_price, pt_frac) in enumerate(active_targets):
+                    is_last_target = (idx == len(active_targets) - 1)
+                    if is_last_target:
+                        pt_qty = total_quantity - accumulated_qty
+                    else:
+                        pt_qty_raw = total_quantity * pt_frac
+                        if step_size > 0:
+                            pt_qty = round(pt_qty_raw / step_size) * step_size
+                        else:
+                            pt_qty = pt_qty_raw
+
+                    if step_size > 0:
+                        pt_qty = round(pt_qty / step_size) * step_size
+
                     if pt_qty > 0:
-                        new_ptp_orders.append(
-                            PartialTpOrderInfo(
-                                target_price=pt_price,
-                                orig_fraction=pt_frac,
-                                quantity=pt_qty,
-                                status="PENDING",
+                        if accumulated_qty + pt_qty > total_quantity:
+                            pt_qty = total_quantity - accumulated_qty
+                        if pt_qty > 0:
+                            new_ptp_orders.append(
+                                PartialTpOrderInfo(
+                                    target_price=pt_price,
+                                    orig_fraction=pt_frac,
+                                    quantity=pt_qty,
+                                    status="PENDING",
+                                )
                             )
-                        )
-                        remaining_fraction -= pt_frac
-                
-                if remaining_fraction > 0.01:
-                    rem_qty = total_quantity * remaining_fraction
-                    new_ptp_orders.append(
-                        PartialTpOrderInfo(
-                            target_price=new_tp_price,
-                            orig_fraction=remaining_fraction,
-                            quantity=rem_qty,
-                            status="PENDING",
-                        )
-                    )
+                            accumulated_qty += pt_qty
             else:
                 new_ptp_orders = [
                     PartialTpOrderInfo(
@@ -9321,7 +9380,7 @@ class TradingController:
                         status="PENDING",
                     )
                 ]
-            
+
             position.partial_tp_orders = new_ptp_orders
             # Resetting initiation flags for new TP
             position.ptp_placement_initiated_flags = {}
@@ -9337,23 +9396,22 @@ class TradingController:
                 logger.info(
                     f"{log_prefix} Cancelling {len(old_tp_orders_to_cancel)} old TP order(s)..."
                 )
+                cancel_tasks = []
                 for order_id, client_order_id in old_tp_orders_to_cancel:
-                    try:
-                        self.loop.create_task(
-                            executor.cancel_order(
-                                symbol=symbol,
-                                orderId=order_id,
-                                origClientOrderId=client_order_id,
-                            ),
-                            name=f"CancelOldTP_ForReplace_{symbol}_{order_id or client_order_id}",
+                    cancel_tasks.append(
+                        executor.cancel_order(
+                            symbol=symbol,
+                            orderId=order_id,
+                            origClientOrderId=client_order_id,
                         )
+                    )
+                if cancel_tasks:
+                    try:
+                        await asyncio.gather(*cancel_tasks, return_exceptions=True)
                     except Exception as e:
                         logger.warning(
-                            f"{log_prefix} Failed to create cancel task for TP {order_id}: {e}"
+                            f"{log_prefix} Exception waiting for cancel tasks: {e}"
                         )
-                await asyncio.sleep(
-                    0.1
-                )  # Allowing time for sending cancellation requests
             else:
                 logger.error(
                     f"{log_prefix} Could not get executor to cancel old TP orders."
@@ -9370,7 +9428,11 @@ class TradingController:
 
         try:
             for idx, ptp in enumerate(position_ref_for_new_tp.partial_tp_orders):
-                if ptp.status == "PENDING" and not ptp.order_id and not ptp.client_order_id:
+                if (
+                    ptp.status == "PENDING"
+                    and not ptp.order_id
+                    and not ptp.client_order_id
+                ):
                     await self._place_partial_tp(
                         position_obj_ref=position_ref_for_new_tp,
                         target_price=ptp.target_price,
@@ -12151,12 +12213,14 @@ class TradingController:
 
                     # We assume it closes the entire position if the quantity matches the remaining one with a small tolerance
                     # quantity_filled_cumulative here is the filled quantity for THIS unknown order
+                    lot_step_size = 1e-8
+                    if isinstance(position.signal_details, dict):
+                        lot_step_size = float(
+                            position.signal_details.get("lot_step_size", 1e-8)
+                        )
                     closes_entire_known_position = is_opposing_trade and (
                         abs(quantity_filled_cumulative - position.remaining_quantity)
-                        < (
-                            float(position.signal_details.get("lot_step_size", 1e-8))
-                            * 0.5
-                        )
+                        < (lot_step_size * 0.5)
                     )  # Comparison with half of the lot step
 
                     if closes_entire_known_position:
@@ -12486,6 +12550,10 @@ class TradingController:
                 else:
                     # Set the CLOSING status only if it is not already set
                     position.status = "CLOSING"
+                    self.loop.create_task(
+                        self._publish_state_to_redis(),
+                        name=f"PublishState_Closing_{symbol}",
+                    )
 
                 position.exit_reason = reason
                 # Creating a copy for subsequent processing, even if the position is deleted
@@ -12519,6 +12587,10 @@ class TradingController:
 
                 position.status = "CLOSING"
                 position.exit_reason = reason
+                self.loop.create_task(
+                    self._publish_state_to_redis(),
+                    name=f"PublishState_Closing_{symbol}",
+                )
                 position_obj_snapshot = copy.deepcopy(position)
                 logger.info(
                     f"{log_prefix} Internal position status: 'CLOSING' ({normalized_market_type}). Remaining qty: {position.remaining_quantity:.8f}"
@@ -12651,29 +12723,32 @@ class TradingController:
                                         )
                 else:
                     logger.warning(
-                        f"{log_prefix} No position found on exchange for {symbol}. Removing from internal state."
+                        f"{log_prefix} No position found on exchange for {symbol}. Triggering final exit to sync with DB and clean up."
                     )
-                    symbol_lock_missing = self._get_lock_for_position(
-                        symbol, normalized_market_type
+                    last_price_info = None
+                    try:
+                        last_price_info = await executor.get_ticker_price(symbol)
+                    except Exception as e_price:
+                        logger.warning(f"{log_prefix} Could not fetch price for final exit: {e_price}")
+                    approx_exit_price = float(last_price_info["price"]) if last_price_info and "price" in last_price_info else 0.0
+
+                    await self._handle_final_exit(
+                        symbol=symbol,
+                        reason=reason,
+                        exit_price=approx_exit_price,
+                        commission=0.0,
+                        commission_asset="USDT",
+                        order_id=None,
+                        client_order_id=None,
+                        market_type=normalized_market_type,
                     )
-                    async with symbol_lock_missing:
-                        async with self._positions_dict_lock:
-                            if self._active_position_get(
-                                symbol, normalized_market_type
-                            ):
-                                self._active_position_pop(
-                                    symbol, normalized_market_type
-                                )
-                                logger.info(
-                                    f"{log_prefix} Position {symbol} removed from _active_positions (was not on exchange)."
-                                )
 
                     if self.telegram_notifier:
                         self.loop.create_task(
                             self.telegram_notifier.bot_error(
                                 error_description=f"⚠️ Position {symbol} is missing on the exchange, but was in the bot's memory!",
                                 module_function="close_position",
-                                action_taken=f"Position removed from internal state. Closing reason: {reason}",
+                                action_taken=f"Position removed from internal state and final exit processed. Closing reason: {reason}",
                                 chat_id=self.user_telegram_chat_id,
                                 api_key_name=self.api_key_name,
                             )
@@ -12705,17 +12780,7 @@ class TradingController:
                         logger.info(
                             f"{log_prefix} Position {symbol} is missing on the exchange according to REST API data. Closing confirmed."
                         )
-                        symbol_lock_conf = self._get_lock_for_position(
-                            symbol, normalized_market_type
-                        )
-                        async with symbol_lock_conf:
-                            async with self._positions_dict_lock:
-                                if self._active_position_get(
-                                    symbol, normalized_market_type
-                                ):
-                                    self._active_position_pop(
-                                        symbol, normalized_market_type
-                                    )
+                        # Cleanup and pop is deferred to _handle_final_exit
                         is_confirmed_closed = True
                         break
                     else:
@@ -12809,15 +12874,9 @@ class TradingController:
 
             if current_qty <= 0:
                 logger.warning(
-                    f"{log_prefix} Position has zero size but is not deleted. Deleting forcibly."
+                    f"{log_prefix} Position has zero size but is not deleted. Confirming close."
                 )
-                symbol_lock_zero_rem = self._get_lock_for_position(
-                    symbol, normalized_market_type
-                )
-                async with symbol_lock_zero_rem:
-                    async with self._positions_dict_lock:
-                        if self._active_position_get(symbol, normalized_market_type):
-                            self._active_position_pop(symbol, normalized_market_type)
+                # Cleanup and pop is deferred to _handle_final_exit
                 is_confirmed_closed = True
                 break
 

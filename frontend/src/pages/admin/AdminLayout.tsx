@@ -2,12 +2,15 @@
 
 import {
 	Activity,
-	AlertCircle,
 	ArrowLeft,
 	ClipboardList,
 	LayoutDashboard,
 	Share2,
 	Users,
+	Database,
+	ShieldAlert,
+	LifeBuoy,
+	HeartPulse,
 } from "lucide-react";
 import type React from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -31,19 +34,24 @@ const AdminLayout: React.FC = () => {
 			icon: <ClipboardList className="h-4 w-4" />,
 		},
 		{
+			to: "/admin/data-pipeline",
+			text: "Data Pipeline",
+			icon: <Database className="h-4 w-4" />,
+		},
+		{
 			to: "/admin/error-logs",
 			text: "Error Logs",
-			icon: <AlertCircle className="h-4 w-4" />,
+			icon: <ShieldAlert className="h-4 w-4" />,
 		},
 		{
 			to: "/admin/support",
 			text: "Support",
-			icon: <AlertCircle className="h-4 w-4 text-orange-500" />,
+			icon: <LifeBuoy className="h-4 w-4 text-orange-500" />,
 		},
 		{
 			to: "/admin/health",
 			text: "Platform Health",
-			icon: <Activity className="h-4 w-4" />,
+			icon: <HeartPulse className="h-4 w-4" />,
 		},
 	];
 

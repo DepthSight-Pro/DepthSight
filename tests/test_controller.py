@@ -1083,6 +1083,86 @@ async def test_handle_order_update_entry_filled(
 
 
 @pytest.mark.asyncio
+async def test_handle_order_update_entry_filled_duplicate(
+    controller, mock_executor, mock_trade_logger
+):
+    strategy_name = "FirstPullbacksInTrend"
+    symbol = "ETHUSDT"
+    client_order_id = "x-bot-entry1-dup"
+    order_id = 123456
+    initial_qty = 0.5
+    entry_price = 3000.0
+    sl = 2950.0
+    tp = 3100.0
+    planned_risk = 100.0
+
+    controller.executors["live"].market_type = "futures_usdtm"
+
+    position = Position(
+        symbol=symbol,
+        direction=SignalDirection.LONG,
+        entry_price=None,
+        initial_quantity=initial_qty,
+        remaining_quantity=initial_qty,
+        entry_time=time.time(),
+        strategy=strategy_name,
+        initial_stop_loss=sl,
+        current_sl_price=sl,
+        initial_take_profit=tp,
+        status="PENDING_ENTRY",
+        entry_order_id=order_id,
+        entry_client_order_id=client_order_id,
+        entry_order_status="NEW",
+        initial_risk_usd_planned=planned_risk,
+        original_partial_targets_plan=[PartialTarget(price=tp, fraction=1.0)],
+    )
+    controller._active_positions[symbol] = position
+
+    exec_report = {
+        "e": "ORDER_TRADE_UPDATE",
+        "E": time.time() * 1000,
+        "o": {
+            "s": symbol,
+            "c": client_order_id,
+            "i": order_id,
+            "S": "BUY",
+            "ot": "MARKET",
+            "x": "TRADE",
+            "X": "FILLED",
+            "q": str(initial_qty),
+            "z": str(initial_qty),
+            "l": str(initial_qty),
+            "L": str(entry_price),
+            "ap": str(entry_price),
+            "n": "0.003",
+            "N": "ETH",
+            "rp": "0",
+        },
+    }
+    mock_executor.place_order.side_effect = create_mock_executor_place_order_sequence(
+        symbol
+    )
+    mock_executor.get_ticker_price = AsyncMock(return_value={"price": str(entry_price)})
+
+    # First call - should process
+    await controller._handle_order_update(exec_report)
+    await asyncio.sleep(0.1)
+
+    # Second call (duplicate) - should be skipped
+    await controller._handle_order_update(exec_report)
+    await asyncio.sleep(0.7)
+
+    assert symbol in controller._active_positions
+    updated_position = controller._active_positions[symbol]
+    assert updated_position.status == "OPEN"
+    assert updated_position.entry_fill_processed is True
+
+    # Place order should only have been called twice (1 SL, 1 TP) for the first call
+    # If the second call was processed, call_count would be larger.
+    assert mock_executor.place_order.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_spot_with_active_sl_tracks_tp_virtual_and_rearms_sl(
     controller, mock_executor
 ):

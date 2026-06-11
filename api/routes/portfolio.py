@@ -171,6 +171,7 @@ async def get_portfolio_status(
         market_types_for_filter,
         fetch_api_key_market_balance,
         build_market_balance_breakdown,
+        get_deduplicated_balances_for_totals,
     )
 
     normalized_market_type = normalize_market_type_filter(market_type)
@@ -273,7 +274,9 @@ async def get_portfolio_status(
                     None,
                 )
                 raise ValueError(f"Failed to fetch account balance: {first_error}")
-            total_equity = sum(account.total_equity for account in account_balances)
+            
+            dedup_balances = get_deduplicated_balances_for_totals(account_balances)
+            total_equity = sum(account.total_equity for account in dedup_balances)
 
         else:
             # --- All Accounts Mode (Aggregation) ---
@@ -312,7 +315,9 @@ async def get_portfolio_status(
                 for result in results
                 if isinstance(result, schemas.AccountBalance)
             ]
-            total_equity = sum(account.total_equity for account in account_balances)
+            
+            dedup_balances = get_deduplicated_balances_for_totals(account_balances)
+            total_equity = sum(account.total_equity for account in dedup_balances)
 
         # Calculate today's PnL from completed trades (LIVE mode)
         today_start = datetime.now(timezone.utc).replace(
@@ -342,16 +347,16 @@ async def get_portfolio_status(
             timestamp_utc=datetime.now(timezone.utc),
             market_type=normalized_market_type,
             total_available=sum(
-                account.available_balance for account in account_balances
+                account.available_balance for account in dedup_balances
             ),
             total_unrealized_pnl=sum(
-                account.unrealized_pnl for account in account_balances
+                account.unrealized_pnl for account in dedup_balances
             ),
-            total_margin_used=sum(account.margin_used for account in account_balances),
+            total_margin_used=sum(account.margin_used for account in dedup_balances),
             market_breakdown=market_breakdown,
         )
         logger.info(
-            f"Successfully fetched live portfolio status from Binance for user '{current_user.username}'."
+            f"Successfully fetched live portfolio status from exchange for user '{current_user.username}'."
         )
         return {"data": live_portfolio_status}
 
@@ -649,136 +654,48 @@ async def close_position(
     symbol: str,
     api_key_id: Optional[int] = Query(None, description="Close position for a specific API key (subaccount)"),
     current_user: models.User = Depends(get_current_user),
-    http_session: aiohttp.ClientSession = HttpSessDep,
+    redis_client: redis.Redis = Depends(get_redis_client),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Closes an active futures position by placing a reduce-only market order
-    directly via Binance API. Uses the user's specific API key.
+    Closes an active futures position by sending a CLOSE_POSITION command to the bot controller via Redis.
     """
-    from ..depthsight_api import create_exchange_executor, grant_achievement
+    from ..depthsight_api import grant_achievement
 
     logger.info(
         f"User '{current_user.username}' requested to close position for {symbol} (api_key_id={api_key_id})."
     )
 
+    command = {
+        "command": "CLOSE_POSITION",
+        "payload": {
+            "symbol": symbol.upper(),
+            "user_id": str(current_user.id),
+            "api_key_id": api_key_id,
+        },
+    }
+
     try:
-        # Get user-specific API key
-        if api_key_id is not None:
-            active_key = await crud.get_api_key_by_id(
-                db, user_id=current_user.id, key_id=api_key_id
-            )
-        else:
-            active_key = await crud.get_active_api_key_for_user(db, user_id=current_user.id)
-        if not active_key:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User has no active API key configured to perform this action.",
-            )
-
-        # Decrypt keys
-        api_key = security.decrypt_data(active_key.encrypted_api_key)
-        api_secret = security.decrypt_data(active_key.encrypted_api_secret)
-        if not api_key or not api_secret:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to decrypt API keys.",
-            )
-
-        # --- Pass common session to Executor ---
-        executor = create_exchange_executor(
-            exchange=active_key.exchange,
-            api_key=api_key,
-            api_secret=api_secret,
-            session=http_session,
-        )
-
-        positions = await executor.get_open_positions()
-        position_to_close = next(
-            (p for p in positions if p.get("symbol") == symbol.upper()), None
-        )
-
-        if not position_to_close:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No open position found for symbol {symbol}.",
-            )
-
-        position_amt = float(position_to_close.get("positionAmt", 0))
-        if abs(position_amt) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Position for {symbol} has zero size.",
-            )
-
-        close_side = "SELL" if position_amt > 0 else "BUY"
-        quantity_to_close = abs(position_amt)
-
+        await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
         logger.info(
-            f"Placing market {close_side} order for {quantity_to_close} {symbol} to close position for user '{current_user.username}'."
+            f"CLOSE_POSITION command sent to Redis for user '{current_user.username}', symbol {symbol}."
         )
-
-        close_order_resp = await executor.place_order(
-            symbol=symbol.upper(),
-            side=close_side,
-            order_type="MARKET",
-            quantity=quantity_to_close,
-            reduceOnly=True,
-        )
-
-        if close_order_resp.get("error"):
-            logger.error(
-                f"Failed to place close order for {symbol} for user '{current_user.username}': {close_order_resp.get('msg')}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Binance API error: {close_order_resp.get('msg')}",
-            )
-
-        # Cancel all open orders (limit entry, stop-loss, take-profit etc.)
-        try:
-            logger.info(f"Cancelling all open orders for {symbol} after closing position.")
-            cancel_standard_resp = await executor.cancel_all_open_orders(symbol=symbol.upper())
-            logger.info(f"Cancel standard orders response: {cancel_standard_resp}")
-        except Exception as e:
-            logger.error(f"Error cancelling standard orders for {symbol}: {e}", exc_info=True)
-
-        try:
-            logger.info(f"Checking for remaining/algo orders to cancel for {symbol}.")
-            open_algo_orders = await executor.get_open_algo_orders(symbol=symbol.upper())
-            if open_algo_orders:
-                logger.info(f"Found {len(open_algo_orders)} open algo/conditional orders. Cancelling them...")
-                for order in open_algo_orders:
-                    order_id = order.get("orderId") or order.get("id")
-                    if order_id:
-                        cancel_algo_resp = await executor.cancel_order(
-                            symbol=symbol.upper(),
-                            orderId=order_id,
-                            is_algo_order=True
-                        )
-                        logger.info(f"Cancelled algo order {order_id}: {cancel_algo_resp}")
-        except Exception as e:
-            logger.error(f"Error cancelling algo orders for {symbol}: {e}", exc_info=True)
-
+        
         # Grant 'the_intervention' achievement
         await grant_achievement(db, current_user.id, "the_intervention")
-
-        return {
-            "message": f"Close order for {symbol} sent successfully.",
-            "details": close_order_resp,
-        }
-
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
+        
+    except redis.exceptions.ConnectionError as e:
         logger.error(
-            f"Failed to process close_position for {symbol} for user '{current_user.username}': {e}",
-            exc_info=True,
+            f"Could not send CLOSE_POSITION command to Redis for user '{current_user.username}': {e}"
         )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal error occurred while trying to close the position.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not send command to Redis: {e}",
         )
+
+    return {
+        "message": f"CLOSE_POSITION command for {symbol} has been sent to the bot successfully.",
+    }
 
 
 @portfolio_router.patch(

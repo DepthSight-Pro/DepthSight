@@ -1758,8 +1758,6 @@ class DataConsumer:
             task_and_client_key = (
                 f"{exchange_id}:{market_type_sub}:{binance_stream_part}"
             )
-            full_ws_url = f"{ws_base_url}/{binance_stream_part}"
-
             if data_type_key.startswith("kline_"):
                 timeframe = data_type_key.split("_", 1)[1]
                 history_loaded = await self._ensure_history_loaded(
@@ -1790,36 +1788,20 @@ class DataConsumer:
                     at_least_one_subscription_made = True
                 else:
                     # Creating a NEW global subscription
-                    if not is_binance:
-                        logger.info(
-                            f"{log_prefix} Using CCXT Pro for non-Binance exchange: {exchange_id}"
-                        )
-                        task = self.loop.create_task(
-                            self._ccxt_pro_data_ws_loop(
-                                uc_symbol,
-                                data_type_key,
-                                task_and_client_key,
-                                market_type_sub,
-                                executor_for_market,
-                                exchange_id,
-                            ),
-                            name=f"CcxtProWS_{exchange_id}_{uc_symbol}_{data_type_key}_{market_type_sub}",
-                        )
-                    else:
-                        logger.info(
-                            f"{log_prefix} Creating NEW global WebSocket: {task_and_client_key} for URL {full_ws_url}"
-                        )
-                        task = self.loop.create_task(
-                            self._binance_data_ws_loop(
-                                uc_symbol,
-                                data_type_key,
-                                task_and_client_key,
-                                full_ws_url,
-                                market_type_sub,
-                                exchange_id,
-                            ),
-                            name=f"BinanceWS_{exchange_id}_{uc_symbol}_{data_type_key}_{market_type_sub}",
-                        )
+                    logger.info(
+                        f"{log_prefix} Using CCXT Pro for {exchange_id}"
+                    )
+                    task = self.loop.create_task(
+                        self._ccxt_pro_data_ws_loop(
+                            uc_symbol,
+                            data_type_key,
+                            task_and_client_key,
+                            market_type_sub,
+                            executor_for_market,
+                            exchange_id,
+                        ),
+                        name=f"CcxtProWS_{exchange_id}_{uc_symbol}_{data_type_key}_{market_type_sub}",
+                    )
 
                     _global_ws_registry[task_and_client_key] = {
                         "task": task,

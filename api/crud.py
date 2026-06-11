@@ -326,6 +326,85 @@ async def create_commission_for_payment(db: AsyncSession, payment: models.Paymen
     )
 
 
+async def update_commission_statuses(db: AsyncSession) -> int:
+    """
+    Moves commissions from 'pending' to 'available' if the hold period has passed.
+    """
+    now = datetime.now(timezone.utc)
+    query = (
+        update(models.Commission)
+        .where(models.Commission.status == "pending")
+        .where(models.Commission.becomes_available_at <= now)
+        .values(status="available")
+    )
+    result = await db.execute(query)
+    logger.info(f"Updated {result.rowcount} commissions to 'available' status.")
+    return result.rowcount
+
+
+async def create_payout_request(db: AsyncSession, user_id: int) -> models.AffiliatePayout:
+    """
+    Creates a payout request for all currently 'available' commissions.
+    """
+    # 1. Get total available amount
+    available_commissions_query = select(models.Commission).filter(
+        models.Commission.affiliate_user_id == user_id,
+        models.Commission.status == "available",
+    )
+    result = await db.execute(available_commissions_query)
+    available_commissions = result.scalars().all()
+
+    if not available_commissions:
+        raise ValueError("No available commissions for payout.")
+
+    total_amount = sum(c.commission_amount_usd for c in available_commissions)
+
+    # 2. Get user's payout address (logically it should be stored in User or separate profile)
+    # For now, we'll just create the payout and let the route handle details if needed.
+    # Actually, the route logs the address. We should probably store it.
+
+    # 3. Create Payout record
+    new_payout = models.AffiliatePayout(
+        user_id=user_id,
+        amount=total_amount,
+        status="pending",
+    )
+    db.add(new_payout)
+    await db.flush()
+
+    # 4. Mark commissions as 'paid' (or 'processing' if we want to be more granular)
+    # The current frontend expects 'paid' to count towards total paid out.
+    for commission in available_commissions:
+        commission.status = "paid"
+
+    await db.commit()
+    return new_payout
+
+
+async def get_payouts_for_user(
+    db: AsyncSession, user_id: int, skip: int = 0, limit: int = 10
+) -> Tuple[List[models.AffiliatePayout], int]:
+    """
+    Retrieves a paginated list of payouts for a specific user.
+    """
+    count_query = select(func.count(models.AffiliatePayout.id)).filter(
+        models.AffiliatePayout.user_id == user_id
+    )
+    total_count = await db.scalar(count_query)
+
+    query = (
+        select(models.AffiliatePayout)
+        .filter(models.AffiliatePayout.user_id == user_id)
+        .order_by(desc(models.AffiliatePayout.created_at))
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    payouts = result.scalars().all()
+
+    return payouts, total_count
+
+
 async def get_affiliate_dashboard_stats(
     db: AsyncSession, redis_client: Any, user_id: int
 ) -> Dict[str, Any]:

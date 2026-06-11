@@ -41,6 +41,7 @@ import AdminAnalyticsPage from "./pages/admin/AnalyticsPage";
 import AdminAffiliateDetailPage from "./pages/admin/affiliates/AdminAffiliateDetailPage";
 import ErrorLogsPage from "./pages/admin/ErrorLogsPage";
 import PlatformHealthPage from "./pages/admin/PlatformHealthPage";
+import DataPipelinePage from "./pages/admin/DataPipelinePage";
 import BacktestViewerPage from "./pages/BacktestViewer";
 import CommunityHub from "./pages/CommunityHub";
 import ConfirmEmailPage from "./pages/ConfirmEmail";
@@ -179,6 +180,10 @@ function App() {
 															<Route
 																path="error-logs"
 																element={<ErrorLogsPage />}
+															/>
+															<Route
+																path="data-pipeline"
+																element={<DataPipelinePage />}
 															/>
 															<Route
 																path="support"

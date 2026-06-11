@@ -3061,6 +3061,10 @@ def setup_periodic_tasks(sender, **kwargs):
         check_expired_subscriptions.s(),
     )
     sender.add_periodic_task(
+        crontab(hour=0, minute=15),
+        update_affiliate_commissions_task.s(),
+    )
+    sender.add_periodic_task(
         crontab(minute=0),
         update_leaderboard_ranks_task.s(),
     )
@@ -3078,6 +3082,29 @@ def check_expired_subscriptions():
     """
     logger.info("Running periodic task: check_expired_subscriptions")
     run_async_from_sync(_async_check_expired_subscriptions())
+
+
+@celery_app.task
+def update_affiliate_commissions_task():
+    """
+    Moves commissions from 'pending' to 'available' if the hold period has passed.
+    """
+    logger.info("Running periodic task: update_affiliate_commissions_task")
+    run_async_from_sync(_async_update_affiliate_commissions())
+
+
+async def _async_update_affiliate_commissions():
+    async with get_isolated_worker_session() as session:
+        try:
+            updated_count = await crud.update_commission_statuses(session)
+            await session.commit()
+            if updated_count > 0:
+                logger.info(
+                    f"Successfully updated {updated_count} affiliate commissions to 'available' status."
+                )
+        except Exception as e:
+            logger.error(f"Error updating affiliate commissions: {e}", exc_info=True)
+            await session.rollback()
 
 
 async def _publish_live_deactivation_commands(

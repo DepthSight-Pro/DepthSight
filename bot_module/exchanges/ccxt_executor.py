@@ -933,6 +933,11 @@ class CcxtExecutor:
             # We must pass either id or clientOrderId
             order_id_to_use = str(orderId) if orderId else None
             params = {}
+            if self.exchange_id == "bybit" and is_algo_order:
+                if self.supports_positions:
+                    params["orderFilter"] = "StopOrder"
+                else:
+                    params["orderFilter"] = "tpslOrder"
             if (
                 self.exchange_id == "bitget"
                 and not self.supports_positions
@@ -1136,6 +1141,23 @@ class CcxtExecutor:
                 )
                 return []
 
+        if self.exchange_id == "bybit":
+            ccxt_symbol = self._normalize_symbol(symbol) if symbol else None
+            try:
+                filter_val = "StopOrder" if self.supports_positions else "tpslOrder"
+                trigger_orders = await self._exchange.fetch_open_orders(
+                    ccxt_symbol,
+                    params={"orderFilter": filter_val},
+                )
+                return [
+                    self._map_ccxt_order_to_binance(o) for o in trigger_orders or []
+                ]
+            except Exception as e:
+                logger.warning(
+                    f"Could not fetch Bybit open trigger orders for {symbol or 'all symbols'}: {e}"
+                )
+                return []
+
         orders = await self.get_open_orders(symbol)
         algo_orders: List[Dict[str, Any]] = []
         for order in orders:
@@ -1242,6 +1264,19 @@ class CcxtExecutor:
                     logger.warning(
                         f"Could not fetch OKX trigger orders for cancellation: {te}"
                     )
+            if self.exchange_id == "bybit":
+                try:
+                    filter_val = "StopOrder" if self.supports_positions else "tpslOrder"
+                    trigger_orders = await self._exchange.fetch_open_orders(
+                        ccxt_symbol,
+                        params={"orderFilter": filter_val},
+                    )
+                    if isinstance(trigger_orders, list):
+                        orders.extend(trigger_orders)
+                except Exception as te:
+                    logger.warning(
+                        f"Could not fetch Bybit trigger orders for cancellation: {te}"
+                    )
             results = []
             for order in orders:
                 order_id = order.get("id")
@@ -1289,6 +1324,14 @@ class CcxtExecutor:
                     if self.exchange_id == "okx":
                         if order.get("type") == "trigger" or order.get("stopPrice"):
                             cancel_params["stop"] = True
+                    if self.exchange_id == "bybit":
+                        if (
+                            order.get("triggerPrice")
+                            or order.get("stopPrice")
+                            or (order.get("info") or {}).get("triggerPrice")
+                        ):
+                            filter_val = "StopOrder" if self.supports_positions else "tpslOrder"
+                            cancel_params["orderFilter"] = filter_val
                     results.append(
                         await self._exchange.cancel_order(
                             order_id, ccxt_symbol, cancel_params

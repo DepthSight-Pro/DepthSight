@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import select
 
@@ -80,9 +80,16 @@ async def get_affiliate_referrals(
 
 @affiliate_router.get("/payouts", response_model=schemas.PaginatedAffiliatePayouts)
 async def get_affiliate_payouts(
-    page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=100)
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
 ):
-    return {"total": 0, "payouts": []}
+    skip = (page - 1) * page_size
+    payouts, total = await crud.get_payouts_for_user(
+        db, user_id=current_user.id, skip=skip, limit=page_size
+    )
+    return {"total": total, "payouts": payouts}
 
 
 @affiliate_router.post("/payout-details")
@@ -99,9 +106,16 @@ async def update_payout_details(
 
 
 @affiliate_router.post("/request-payout")
-async def request_payout(current_user: models.User = Depends(get_current_user)):
+async def request_payout(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     logger.info("User %s requested a payout.", current_user.id)
-    return {
-        "status": "ok",
-        "message": "Payout requested successfully. It will be processed soon.",
-    }
+    try:
+        payout = await crud.create_payout_request(db, user_id=current_user.id)
+        return {
+            "status": "ok",
+            "message": f"Payout of ${payout.amount:.2f} requested successfully. It will be processed soon.",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -364,6 +364,39 @@ async def fetch_api_key_market_balance(
     )
 
 
+def get_deduplicated_balances_for_totals(
+    accounts: List[schemas.AccountBalance],
+) -> List[schemas.AccountBalance]:
+    """
+    Deduplicates accounts for summing totals.
+    For unified account exchanges (Bybit, OKX), if both spot and futures_usdtm
+    balances are fetched for the same API key, we only keep futures_usdtm to
+    avoid double counting the unified wallet balance.
+    """
+    by_key = {}
+    for acc in accounts:
+        by_key.setdefault(acc.api_key_id, []).append(acc)
+
+    deduplicated = []
+    for key_id, key_accounts in by_key.items():
+        if len(key_accounts) > 1:
+            first_acc = key_accounts[0]
+            if first_acc.exchange in {"bybit", "okx"}:
+                futures_acc = next(
+                    (a for a in key_accounts if a.market_type == MARKET_TYPE_FUTURES),
+                    None,
+                )
+                if futures_acc:
+                    deduplicated.append(futures_acc)
+                else:
+                    deduplicated.append(key_accounts[0])
+            else:
+                deduplicated.extend(key_accounts)
+        else:
+            deduplicated.extend(key_accounts)
+    return deduplicated
+
+
 def build_market_balance_breakdown(
     accounts: List[schemas.AccountBalance],
 ) -> List[schemas.MarketBalanceSummary]:

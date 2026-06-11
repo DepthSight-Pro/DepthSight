@@ -49,15 +49,32 @@ export const AppHeader = () => {
 			(acc, bal) => {
 				const existing = acc[bal.apiKeyId];
 				if (existing) {
-					acc[bal.apiKeyId] = {
-						...existing,
-						balance: existing.balance + bal.balance,
-						availableBalance: existing.availableBalance + bal.availableBalance,
-						unrealizedPnl: existing.unrealizedPnl + bal.unrealizedPnl,
-						marginUsed: existing.marginUsed + bal.marginUsed,
-						totalEquity: existing.totalEquity + bal.totalEquity,
-						assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
-					};
+					if (bal.exchange === "bybit" || bal.exchange === "okx") {
+						// For unified accounts, keep the one with futures_usdtm if it exists, otherwise keep spot.
+						// We combine assets, but do not sum wallet balances, equity, etc.
+						if (bal.marketType === "futures_usdtm") {
+							acc[bal.apiKeyId] = {
+								...bal,
+								assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
+							};
+						} else {
+							// If the new one is spot, keep existing (which might be futures_usdtm) but merge assets
+							acc[bal.apiKeyId] = {
+								...existing,
+								assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
+							};
+						}
+					} else {
+						acc[bal.apiKeyId] = {
+							...existing,
+							balance: existing.balance + bal.balance,
+							availableBalance: existing.availableBalance + bal.availableBalance,
+							unrealizedPnl: existing.unrealizedPnl + bal.unrealizedPnl,
+							marginUsed: existing.marginUsed + bal.marginUsed,
+							totalEquity: existing.totalEquity + bal.totalEquity,
+							assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
+						};
+					}
 				} else {
 					acc[bal.apiKeyId] = bal;
 				}

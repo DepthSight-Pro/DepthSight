@@ -1,8 +1,11 @@
 import logging
 import json
+import subprocess
 from pathlib import Path
 from typing import Optional, List
-from datetime import timedelta
+from datetime import timedelta, datetime, date
+import pandas as pd
+from pydantic import BaseModel
 
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -447,3 +450,188 @@ async def admin_get_affiliate_referrals(
         db, affiliate_user_id=user_id, skip=skip, limit=limit
     )
     return {"total": total, "referrals": users}
+
+PIPELINE_LOG_FILE = Path("logs") / "download_pipeline.log"
+_pipeline_process = None
+
+class PipelineStartRequest(BaseModel):
+    symbols: str
+    data_types: str
+    start_date: str = ""
+    end_date: str = ""
+    timeframes: str = "1m"
+    update_only: bool = False
+    enrich_only: bool = False
+    delete_aggtrades: bool = False
+
+class CatchUpRequest(BaseModel):
+    delete_aggtrades: bool = True
+
+@admin_router.post("/data-pipeline/start")
+async def start_data_pipeline(req: PipelineStartRequest):
+    global _pipeline_process
+    
+    if _pipeline_process is not None and _pipeline_process.poll() is None:
+        raise HTTPException(status_code=400, detail="Pipeline is already running.")
+        
+    cmd = ["python", "scripts/download_pipeline.py"]
+    cmd.extend(["--symbols", req.symbols])
+    cmd.extend(["--data-types", req.data_types])
+    cmd.extend(["--timeframes", req.timeframes])
+    
+    if req.update_only:
+        cmd.append("--update")
+    else:
+        if not req.start_date or not req.end_date:
+             raise HTTPException(status_code=400, detail="Start and end dates are required unless update_only is true.")
+        cmd.extend(["--start-date", req.start_date])
+        cmd.extend(["--end-date", req.end_date])
+        
+    if req.enrich_only:
+        cmd.append("--enrich-only")
+    if req.delete_aggtrades:
+        cmd.append("--delete-aggtrades")
+        
+    # Ensure log directory exists
+    PIPELINE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    log_file = open(PIPELINE_LOG_FILE, "w", encoding="utf-8")
+    
+    try:
+        _pipeline_process = subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            cwd=str(Path(__file__).parent.parent.parent.resolve())
+        )
+    except Exception as e:
+        log_file.close()
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return {"message": "Pipeline started successfully."}
+
+@admin_router.get("/data-pipeline/status")
+async def get_data_pipeline_status():
+    global _pipeline_process
+    
+    is_running = _pipeline_process is not None and _pipeline_process.poll() is None
+    
+    logs = ""
+    if PIPELINE_LOG_FILE.exists():
+        try:
+            with open(PIPELINE_LOG_FILE, "r", encoding="utf-8") as f:
+                # Read last 100 lines
+                lines = f.readlines()
+                logs = "".join(lines[-100:])
+        except Exception:
+            pass
+            
+    return {
+        "is_running": is_running,
+        "logs": logs
+    }
+
+@admin_router.post("/data-pipeline/stop")
+async def stop_data_pipeline():
+    global _pipeline_process
+    
+    if _pipeline_process is None or _pipeline_process.poll() is not None:
+        raise HTTPException(status_code=400, detail="Pipeline is not running.")
+        
+    _pipeline_process.terminate()
+    try:
+        _pipeline_process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        _pipeline_process.kill()
+        
+    _pipeline_process = None
+    return {"message": "Pipeline stopped."}
+
+
+@admin_router.get("/data-pipeline/storage-info")
+async def get_data_pipeline_storage_info():
+    import pyarrow.parquet as pq
+    project_root = Path(__file__).parent.parent.parent.resolve()
+    base_path = project_root / "data_storage" / "binance" / "futures"
+    
+    if not base_path.exists():
+        return {"symbols": []}
+    
+    symbols_data = []
+    
+    for symbol_dir in base_path.iterdir():
+        if symbol_dir.is_dir():
+            symbol = symbol_dir.name.upper()
+            
+            # 1. Detect all kline timeframes
+            timeframes = []
+            klines_1m_info = None
+            for f in symbol_dir.glob("kline_*.parquet"):
+                tf = f.name.replace("kline_", "").replace(".parquet", "")
+                timeframes.append(tf)
+                
+                # Special check for 1m (main range and enrichment)
+                if tf == "1m":
+                    try:
+                        pfile = pq.ParquetFile(f)
+                        # Fast range check from metadata
+                        # We still use pandas for index read if metadata is not enough
+                        df_index = pd.read_parquet(f, columns=[], engine="pyarrow")
+                        if len(df_index) > 0:
+                            klines_1m_info = {
+                                "start_date": df_index.index[0].date().isoformat(),
+                                "end_date": df_index.index[-1].date().isoformat(),
+                                "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
+                                "is_enriched": "tape_total_count_5s" in pfile.schema.names
+                            }
+                    except Exception as e:
+                        logger.error(f"Error inspecting {f}: {e}")
+
+            info = {
+                "symbol": symbol,
+                "timeframes": sorted(timeframes),
+                "klines_1m": klines_1m_info,
+                "has_aggtrades": (symbol_dir / "aggTrade").exists(),
+                "has_klines_1s": (symbol_dir / "klines_1s").exists(),
+                "has_oi": (symbol_dir / "open_interest.parquet").exists(),
+                "has_depth": (symbol_dir / "bookDepth").exists(),
+            }
+            symbols_data.append(info)
+            
+    return {"symbols": symbols_data}
+
+
+@admin_router.post("/data-pipeline/catch-up")
+async def catch_up_data_pipeline(req_params: CatchUpRequest):
+    info = await get_data_pipeline_storage_info()
+    
+    # We'll determine data types based on what's already there
+    # or just use the full suite for symbols that have at least some data
+    target_symbols = [s["symbol"] for s in info["symbols"] if s["klines_1m"] is not None]
+    
+    if not target_symbols:
+        raise HTTPException(status_code=400, detail="No symbols with existing history found.")
+    
+    # Find global min end_date to decide start point
+    min_end_date = None
+    for s in info["symbols"]:
+        if s["klines_1m"]:
+            ed = date.fromisoformat(s["klines_1m"]["end_date"])
+            if min_end_date is None or ed < min_end_date:
+                min_end_date = ed
+
+    start_date = (min_end_date + timedelta(days=1)).isoformat()
+    end_date = (datetime.utcnow().date() - timedelta(days=1)).isoformat()
+    
+    if start_date > end_date:
+        return {"message": "Data is already up to date."}
+        
+    req = PipelineStartRequest(
+        symbols=",".join(target_symbols),
+        data_types="klines,aggTrades,open_interest,bookDepth",
+        start_date=start_date,
+        end_date=end_date,
+        timeframes="1m,5m,15m,1h,4h,1d",
+        delete_aggtrades=req_params.delete_aggtrades
+    )
+    return await start_data_pipeline(req)
