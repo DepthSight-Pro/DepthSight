@@ -23,15 +23,13 @@ async def test_full_integration_visual_strategy(mocker):
         return_value=pd.DataFrame(
             {
                 "open_time": pd.to_datetime(
-                    pd.date_range(
-                        start="2023-01-01", periods=100, freq="1min", tz="UTC"
-                    )
+                    pd.date_range(start="2023-01-01", periods=20, freq="1min", tz="UTC")
                 ),
-                "open": [100] * 100,
-                "high": [100] * 100,
-                "low": [100] * 100,
-                "close": [100] * 100,
-                "volume": [100] * 100,
+                "open": [100] * 20,
+                "high": [100] * 20,
+                "low": [100] * 20,
+                "close": [100] * 20,
+                "volume": [100] * 20,
             }
         ).set_index("open_time"),
     )
@@ -223,6 +221,7 @@ async def test_full_integration_visual_strategy(mocker):
                     "open": 100.0,
                 }
             ]
+            * 20
         )
 
         async def mock_gather_market_data(strategy_instance, sym):
@@ -251,6 +250,12 @@ async def test_full_integration_visual_strategy(mocker):
             "last_price": 102.0,
         }
         consumer._active_pairs["TESTUSDT"] = dc_module._global_active_pairs["TESTUSDT"]
+
+        # Mock global kline cache
+        cache_key = dc_module._kline_cache_key(
+            "TESTUSDT", "1m", "binance", "futures_usdtm"
+        )
+        dc_module._global_kline_df_cache[cache_key] = mock_kline_df
 
         logging.info("DEBUG: Calling controller._handle_event with CANDLE_CLOSE...")
         await controller._handle_event(candle_close_event)

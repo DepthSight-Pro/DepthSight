@@ -130,14 +130,18 @@ async def test_data_consumer_subscription_isolation(mock_session, mock_data_load
     mock_executor_main.sandbox = False
     mock_executor_main.exchange_id = "binance"
     mock_executor_main.market_type = "futures_usdtm"
-    consumer_main = DataConsumer(loop=loop, executor=mock_executor_main)
+    consumer_main = DataConsumer(
+        loop=loop, executor=mock_executor_main, market_data_mode="direct"
+    )
 
     # 2. Setting up the testnet consumer
     mock_executor_test = MagicMock()
     mock_executor_test.sandbox = True
     mock_executor_test.exchange_id = "binance"
     mock_executor_test.market_type = "futures_usdtm"
-    consumer_test = DataConsumer(loop=loop, executor=mock_executor_test)
+    consumer_test = DataConsumer(
+        loop=loop, executor=mock_executor_test, market_data_mode="direct"
+    )
 
     # Mock methods to avoid running real WS
     consumer_main._get_valid_symbols_from_exchange_info = AsyncMock(

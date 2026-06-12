@@ -90,7 +90,13 @@ def _plan_allows_live_trading(plan_name: Optional[str]) -> bool:
 
 
 def _user_is_live_eligible(user: models.User) -> bool:
-    return _plan_allows_live_trading(getattr(user, "plan", None))
+    plan = getattr(user, "plan", None)
+    if plan:
+        plan_config = plans_config.get_plan(plan)
+        limits = plan_config.get("limits", {})
+        if limits.get("allow_free_bybit_trading", False):
+            return True
+    return _plan_allows_live_trading(plan)
 
 
 def _api_key_belongs_to_shard(
@@ -113,6 +119,16 @@ async def _get_sharded_active_api_keys_for_user(
         return []
 
     active_keys = await crud.get_active_api_keys_for_user(db, user.id)
+
+    plan_name = getattr(user, "plan", None)
+    if plan_name:
+        plan_config = plans_config.get_plan(plan_name)
+        limits = plan_config.get("limits", {})
+        if limits.get(
+            "allow_free_bybit_trading", False
+        ) and "allow_real_trading" not in plan_config.get("permissions", []):
+            active_keys = [k for k in active_keys if k.exchange.lower() == "bybit"]
+
     return [
         api_key_obj
         for api_key_obj in active_keys
@@ -533,6 +549,23 @@ async def _run_command_listener(
                             )
 
                             if user and api_key_obj:
+                                plan_config = plans_config.get_plan(user.plan)
+                                limits = plan_config.get("limits", {})
+                                if limits.get(
+                                    "allow_free_bybit_trading", False
+                                ) and "allow_real_trading" not in plan_config.get(
+                                    "permissions", []
+                                ):
+                                    if api_key_obj.exchange.lower() != "bybit":
+                                        logger.warning(
+                                            "[Shard %s] Ignoring ACTIVATE_API_KEY for user_id=%s, api_key_id=%s because plan '%s' only allows Bybit key live trading.",
+                                            shard_id,
+                                            user_id,
+                                            api_key_id,
+                                            user.plan,
+                                        )
+                                        continue
+
                                 if not _user_is_live_eligible(user):
                                     logger.warning(
                                         "[Shard %s] Ignoring ACTIVATE_API_KEY for user_id=%s, api_key_id=%s because plan '%s' does not allow live trading.",

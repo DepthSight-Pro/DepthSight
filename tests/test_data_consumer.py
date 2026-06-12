@@ -2,9 +2,8 @@
 import pytest
 import asyncio
 import json
-from unittest.mock import AsyncMock, patch, ANY
+from unittest.mock import AsyncMock, patch
 import pandas as pd
-import time
 import websockets
 import websockets.protocol  # Added for State enum
 
@@ -161,7 +160,11 @@ async def data_consumer_instance(mock_executor):
     global_config.BINANCE_FUTURES_USDTM_MAINNET_MARKET_DATA_WS_URL = (
         "wss://test.binance.futures/ws"
     )
-    consumer = DataConsumer(loop=asyncio.get_running_loop(), executor=mock_executor)
+    consumer = DataConsumer(
+        loop=asyncio.get_running_loop(),
+        executor=mock_executor,
+        market_data_mode="direct",
+    )
     # Link local keys to global ones to match application behavior (app adds to global but checks local)
     consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
     yield consumer
@@ -295,16 +298,15 @@ async def test_ensure_subscription_for_kline_and_history_load(
     timeframe = "1m"
     data_type_key = f"kline_{timeframe}"
 
-    mock_ws_client_instance = MockPersistentWebSocket()
+    # Mock _ccxt_pro_data_ws_loop to avoid real CCXT Pro logic
+    monkeypatch.setattr(
+        data_consumer.DataConsumer, "_ccxt_pro_data_ws_loop", AsyncMock()
+    )
 
-    with (
-        patch(
-            "bot_module.data_consumer.download_klines", new_callable=AsyncMock
-        ) as mock_download,
-        patch("websockets.connect", new_callable=AsyncMock) as mock_connect_patch,
-    ):
+    with patch(
+        "bot_module.data_consumer.download_klines", new_callable=AsyncMock
+    ) as mock_download:
         mock_download.return_value = pd.DataFrame()
-        mock_connect_patch.side_effect = mock_ws_client_instance.mock_connect_method
 
         await data_consumer_instance.ensure_subscription(data_type_key, symbol)
         await asyncio.sleep(0.2)
@@ -329,9 +331,6 @@ async def test_kline_data_processing_from_mock_ws(data_consumer_instance, monkey
     monkeypatch.setattr(global_config, "TRADING_MARKET_TYPE", "spot")
     monkeypatch.setattr(global_config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
 
-    expected_ws_url = f"wss://test.binance.spot/ws/{symbol.lower()}@kline_{timeframe}"
-    mock_ws_client_instance = MockPersistentWebSocket()
-
     hist_df = pd.DataFrame(
         [
             [
@@ -355,48 +354,41 @@ async def test_kline_data_processing_from_mock_ws(data_consumer_instance, monkey
         ],
     ).set_index("open_time")
 
-    with (
-        patch(
-            "bot_module.data_consumer.download_klines", new_callable=AsyncMock
-        ) as mock_download,
-        patch("websockets.connect", new_callable=AsyncMock) as mock_connect_patch,
-    ):
+    # Mock CCXT Pro watch_ohlcv
+    kline_start_time = int(
+        (hist_df.index[-1] + pd.Timedelta(minutes=1)).timestamp() * 1000
+    )
+    ohlcv_data = [[kline_start_time, 110, 112, 109, 111.5, 1000]]
+
+    mock_exchange_pro = AsyncMock()
+
+    async def mock_watch_ohlcv(*args, **kwargs):
+        if mock_exchange_pro.watch_ohlcv.call_count == 1:
+            return ohlcv_data
+        await asyncio.Future()  # hang
+
+    mock_exchange_pro.watch_ohlcv = AsyncMock(side_effect=mock_watch_ohlcv)
+    data_consumer_instance._executor._exchange_pro = mock_exchange_pro
+
+    with patch(
+        "bot_module.data_consumer.download_klines", new_callable=AsyncMock
+    ) as mock_download:
         mock_download.return_value = hist_df
-        mock_connect_patch.side_effect = mock_ws_client_instance.mock_connect_method
 
         await data_consumer_instance.ensure_subscription(f"kline_{timeframe}", symbol)
-        await asyncio.sleep(0.2)
 
-        mock_connect_patch.assert_called_with(
-            expected_ws_url, ping_interval=ANY, ping_timeout=ANY, open_timeout=ANY
-        )
-
-        kline_start_time = int(
-            (hist_df.index[-1] + pd.Timedelta(minutes=1)).timestamp() * 1000
-        )
-        kline_msg_data = {
-            "t": kline_start_time,
-            "o": "110",
-            "h": "112",
-            "l": "109",
-            "c": "111.5",
-            "v": "1000",
-            "x": True,
-        }
-        kline_payload_to_send = {
-            "e": "kline",
-            "E": int(time.time() * 1000),
-            "s": symbol.upper(),
-            "k": kline_msg_data,
-        }
-
-        await mock_ws_client_instance.push_message_to_client(
-            json.dumps(kline_payload_to_send)
-        )
-        await asyncio.sleep(0.2)
+        # wait for message to be processed
+        for _ in range(30):
+            kline_cache = await data_consumer_instance.get_kline_history(
+                symbol, timeframe
+            )
+            if kline_cache is not None and len(kline_cache) == 2:
+                break
+            await asyncio.sleep(0.1)
 
         kline_cache = await data_consumer_instance.get_kline_history(symbol, timeframe)
         assert len(kline_cache) == 2
+        assert float(kline_cache["close"].iloc[-1]) == 111.5
 
 
 @pytest.mark.asyncio
@@ -480,15 +472,44 @@ async def test_aggtrade_data_processing_from_mock_ws(
     monkeypatch.setattr(global_config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
     symbol = "VALIDSPOT"
 
-    expected_ws_url = f"wss://test.binance.spot/ws/{symbol.lower()}@aggTrade"
-    mock_ws_client_instance = MockPersistentWebSocket()
+    trade_data = [
+        {
+            "symbol": "VALIDSPOT",
+            "id": "12345",
+            "timestamp": 1699999999000,
+            "datetime": "2023-11-14T12:00:00.000Z",
+            "side": "buy",
+            "price": 100.5,
+            "amount": 1.0,
+            "info": {
+                "m": True,  # isBuyerMaker
+            },
+        }
+    ]
+    mock_exchange_pro = AsyncMock()
 
-    with patch("websockets.connect", new_callable=AsyncMock) as mock_connect_patch:
-        mock_connect_patch.side_effect = mock_ws_client_instance.mock_connect_method
+    async def mock_watch_trades(*args, **kwargs):
+        if mock_exchange_pro.watch_trades.call_count == 1:
+            return trade_data
+        await asyncio.Future()  # hang
 
-        await data_consumer_instance.ensure_subscription("aggTrade", symbol)
-        await asyncio.sleep(0.2)
+    mock_exchange_pro.watch_trades = AsyncMock(side_effect=mock_watch_trades)
+    data_consumer_instance._executor._exchange_pro = mock_exchange_pro
+    data_consumer_instance.event_queue = asyncio.Queue()
 
-        mock_connect_patch.assert_called_with(
-            expected_ws_url, ping_interval=ANY, ping_timeout=ANY, open_timeout=ANY
-        )
+    await data_consumer_instance.ensure_subscription("aggTrade", symbol)
+
+    # wait for message to be processed
+    event = None
+    for _ in range(30):
+        if not data_consumer_instance.event_queue.empty():
+            event = data_consumer_instance.event_queue.get_nowait()
+            break
+        await asyncio.sleep(0.1)
+
+    assert event is not None
+    assert event["type"] == "TICK"
+    assert event["symbol"] == "VALIDSPOT"
+    assert event["price"] == 100.5
+    assert event["quantity"] == 1.0
+    assert event["timestamp_ms"] == 1699999999000

@@ -302,3 +302,61 @@ class TestUserPlans:
         run_backtest_task.apply_async.assert_called_once()
         _, kwargs = run_backtest_task.apply_async.call_args
         assert kwargs.get("priority") == expected_priority
+
+    async def test_free_user_bybit_trading(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mock_redis_client,
+        mock_celery_tasks,
+    ):
+        """Verifies that a free plan user can trade only on Bybit and not other exchanges."""
+        from api import models
+
+        # 1. Add a Bybit API key for the free user
+        bybit_key = models.ApiKey(
+            user_id=free_user.id,
+            name="Bybit Test Key",
+            exchange="bybit",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="bybit...1234",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(bybit_key)
+        await db_session.commit()
+        await db_session.refresh(bybit_key)
+
+        # 2. Try starting strategy with the Bybit key (should return 202)
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": bybit_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202, (
+            f"Failed starting strategy with Bybit key: {response.text}"
+        )
+
+        # 3. Add a Binance API key for the free user
+        binance_key = models.ApiKey(
+            user_id=free_user.id,
+            name="Binance Test Key",
+            exchange="binance",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="binance...1234",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(binance_key)
+        await db_session.commit()
+        await db_session.refresh(binance_key)
+
+        # 4. Try starting strategy with the Binance key (should return 403)
+        payload["api_key_id"] = binance_key.id
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 403
+        assert "only allowed using Bybit API keys" in response.json()["error"]

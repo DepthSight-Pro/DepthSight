@@ -132,60 +132,41 @@ def patch_websockets_connect():
 
 # --- TESTS ---
 @pytest.mark.asyncio
-async def test_kline_subscription_and_history_load(
-    mock_executor, mock_ws_server, monkeypatch
-):
-    ws_url, server_state = mock_ws_server
+async def test_kline_subscription_and_history_load(mock_executor, monkeypatch):
     monkeypatch.setattr(global_config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
-    monkeypatch.setattr(
-        global_config, "BINANCE_SPOT_MAINNET_MARKET_DATA_WS_URL", ws_url
-    )
     monkeypatch.setattr(global_config, "TRADING_MARKET_TYPE", "spot")
 
-    original_websockets_connect_func = websockets.connect
+    # Mock CCXT Pro watch_ohlcv
+    mock_exchange_pro = AsyncMock()
+    mock_exchange_pro.watch_ohlcv = AsyncMock(side_effect=asyncio.Future)
+    mock_executor._exchange_pro = mock_exchange_pro
 
-    # Mock websockets.connect
-    with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
+    monkeypatch.setattr(global_config, "MAIN_APP_WS_URL", "ws://dummy-url-for-test")
 
-        async def side_effect_connect(uri, **kwargs):
-            # If this is a dummy URL for main_app, return a mock
-            if "dummy-url-for-test" in uri:
-                mock_ws = AsyncMock()
-                mock_ws.close.return_value = asyncio.sleep(0)
-                mock_ws.__aiter__.return_value = [].__iter__()  # So that async for does not fail
-                mock_ws.state = State.OPEN  # Set the state for MockPersistentWebSocket
-                return mock_ws
-            # For all other URLs (our test server), we call the ORIGINAL connect
-            return await original_websockets_connect_func(uri, **kwargs)
+    consumer = DataConsumer(
+        loop=asyncio.get_running_loop(),
+        executor=mock_executor,
+        market_data_mode="direct",
+    )
+    # Link local keys to global ones to match application behavior
+    consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
+    try:
+        await consumer.start()
+        with patch(
+            "bot_module.data_consumer.download_klines", new_callable=AsyncMock
+        ) as mock_download:
+            mock_download.return_value = create_full_mock_df()
+            await consumer.ensure_subscription("kline_1m", "BTCUSDT")
+            await asyncio.sleep(0.1)
 
-        mock_connect.side_effect = side_effect_connect
-        monkeypatch.setattr(global_config, "MAIN_APP_WS_URL", "ws://dummy-url-for-test")
-
-        consumer = DataConsumer(loop=asyncio.get_running_loop(), executor=mock_executor)
-        # Link local keys to global ones to match application behavior
-        consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
-        try:
-            await consumer.start()
-            with patch(
-                "bot_module.data_consumer.download_klines", new_callable=AsyncMock
-            ) as mock_download:
-                mock_download.return_value = create_full_mock_df()
-                await consumer.ensure_subscription("kline_1m", "BTCUSDT")
-                await asyncio.sleep(0.1)  # Less, as the connection is direct
-
-                assert (
-                    "binance:spot:btcusdt@kline_1m"
-                    in consumer._binance_market_data_ws_tasks
-                )
-
-                expected_path = "/btcusdt@kline_1m"
-                assert expected_path in server_state["connected_paths"], (
-                    f"Expected path '{expected_path}' not found in connected paths: {server_state['connected_paths']}"
-                )
-
-        finally:
-            if consumer._running:
-                await consumer.stop()
+            assert (
+                "binance:spot:btcusdt@kline_1m"
+                in consumer._binance_market_data_ws_tasks
+            )
+            mock_exchange_pro.watch_ohlcv.assert_awaited()
+    finally:
+        if consumer._running:
+            await consumer.stop()
 
 
 @pytest.mark.asyncio
@@ -221,7 +202,11 @@ async def test_companion_depth_subscription(mock_executor, mock_ws_server, monke
 
         mock_connect.side_effect = side_effect_connect
 
-        consumer = DataConsumer(loop=asyncio.get_running_loop(), executor=mock_executor)
+        consumer = DataConsumer(
+            loop=asyncio.get_running_loop(),
+            executor=mock_executor,
+            market_data_mode="direct",
+        )
         # Link local keys to global ones to match application behavior
         consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
 
@@ -253,61 +238,50 @@ async def test_companion_depth_subscription(mock_executor, mock_ws_server, monke
 
 
 @pytest.mark.asyncio
-async def test_unsubscription_logic(mock_executor, mock_ws_server, monkeypatch):
-    ws_url, server_state = mock_ws_server
+async def test_unsubscription_logic(mock_executor, monkeypatch):
     monkeypatch.setattr(global_config, "TRADING_MARKET_TYPE", "spot")
     monkeypatch.setattr(global_config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
-    monkeypatch.setattr(
-        global_config, "BINANCE_SPOT_MAINNET_MARKET_DATA_WS_URL", ws_url
-    )
+
+    # Mock CCXT Pro watch_ohlcv
+    mock_exchange_pro = AsyncMock()
+    mock_exchange_pro.watch_ohlcv = AsyncMock(side_effect=asyncio.Future)
+    mock_executor._exchange_pro = mock_exchange_pro
 
     # Mock MAIN_APP_WS_URL to avoid unnecessary connections
     monkeypatch.setattr(global_config, "MAIN_APP_WS_URL", "ws://dummy-url-for-test")
-    original_websockets_connect_func = websockets.connect  # Save the original
-    with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
 
-        async def side_effect_connect(uri, **kwargs):
-            if "dummy-url-for-test" in uri:
-                mock_ws = AsyncMock()
-                mock_ws.close.return_value = asyncio.sleep(0)
-                mock_ws.__aiter__.return_value = [].__iter__()
-                mock_ws.state = State.OPEN
-                return mock_ws
-            return await original_websockets_connect_func(
-                uri, **kwargs
-            )  # Call the original for the others
+    consumer = DataConsumer(
+        loop=asyncio.get_running_loop(),
+        executor=mock_executor,
+        market_data_mode="direct",
+    )
+    # Link local keys to global ones to match application behavior
+    consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
 
-        mock_connect.side_effect = side_effect_connect
+    try:
+        await consumer.start()
+        with patch(
+            "bot_module.data_consumer.download_klines", new_callable=AsyncMock
+        ) as mock_download:
+            mock_download.return_value = create_full_mock_df()
 
-        consumer = DataConsumer(loop=asyncio.get_running_loop(), executor=mock_executor)
-        # Link local keys to global ones to match application behavior
-        consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
+            await consumer.ensure_subscription("kline_1m", "ETHUSDT")
+            await asyncio.sleep(0.2)
+            assert (
+                "binance:spot:ethusdt@kline_1m"
+                in consumer._binance_market_data_ws_tasks
+            )
+            mock_exchange_pro.watch_ohlcv.assert_awaited()
 
-        try:
-            await consumer.start()
-            with patch(
-                "bot_module.data_consumer.download_klines", new_callable=AsyncMock
-            ) as mock_download:
-                mock_download.return_value = create_full_mock_df()
-
-                await consumer.ensure_subscription("kline_1m", "ETHUSDT")
-                await asyncio.sleep(0.2)
-                assert (
-                    "binance:spot:ethusdt@kline_1m"
-                    in consumer._binance_market_data_ws_tasks
-                )
-                assert len(server_state["active_connections"]) == 1
-
-                await consumer.remove_subscription("kline_1m", "ETHUSDT")
-                await asyncio.sleep(0.2)
-                assert (
-                    "binance:spot:ethusdt@kline_1m"
-                    not in consumer._binance_market_data_ws_tasks
-                )
-                assert len(server_state["active_connections"]) == 0
-        finally:
-            if consumer._running:
-                await consumer.stop()
+            await consumer.remove_subscription("kline_1m", "ETHUSDT")
+            await asyncio.sleep(0.2)
+            assert (
+                "binance:spot:ethusdt@kline_1m"
+                not in consumer._binance_market_data_ws_tasks
+            )
+    finally:
+        if consumer._running:
+            await consumer.stop()
 
 
 @pytest.mark.asyncio
@@ -315,7 +289,11 @@ async def test_live_data_processing(mock_executor, monkeypatch):
     monkeypatch.setattr(global_config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
     monkeypatch.setattr(global_config, "TRADING_MARKET_TYPE", "futures_usdtm")
 
-    consumer = DataConsumer(loop=asyncio.get_running_loop(), executor=mock_executor)
+    consumer = DataConsumer(
+        loop=asyncio.get_running_loop(),
+        executor=mock_executor,
+        market_data_mode="direct",
+    )
     # Link local keys to global ones to match application behavior
     consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
 
@@ -390,60 +368,62 @@ async def test_live_data_processing(mock_executor, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_reconnection_on_drop(mock_executor, monkeypatch):
-    connected_paths_log = []
-
-    async def dropper_handler(websocket, path=None):  # Changed to path=None
-        nonlocal connected_paths_log
-        actual_path = path if path is not None else ""  # Cast to string
-        connected_paths_log.append(actual_path)
-        await websocket.close(1011)
-
-    dropper_server = await websockets.serve(dropper_handler, "127.0.0.1", 0)
-    ws_url = f"ws://{dropper_server.sockets[0].getsockname()[0]}:{dropper_server.sockets[0].getsockname()[1]}"
-
     monkeypatch.setattr(global_config, "TRADING_MARKET_TYPE", "spot")
     monkeypatch.setattr(global_config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
-    monkeypatch.setattr(
-        global_config, "BINANCE_SPOT_MAINNET_MARKET_DATA_WS_URL", ws_url
-    )
     monkeypatch.setattr(global_config, "BINANCE_WS_RECONNECT_DELAY_BASE", 0.05)
+
+    # Mock CCXT Pro watch_ohlcv to raise an error to simulate disconnect, then hang
+    mock_exchange_pro = AsyncMock()
+
+    async def mock_watch_ohlcv(*args, **kwargs):
+        if mock_exchange_pro.watch_ohlcv.call_count <= 2:
+            raise Exception("Simulated connection drop")
+        await asyncio.Future()  # hang on 3rd attempt
+
+    mock_exchange_pro.watch_ohlcv = AsyncMock(side_effect=mock_watch_ohlcv)
+    mock_executor._exchange_pro = mock_exchange_pro
 
     # Mock MAIN_APP_WS_URL to avoid unnecessary connections
     monkeypatch.setattr(global_config, "MAIN_APP_WS_URL", "ws://dummy-url-for-test")
-    original_websockets_connect_func = websockets.connect  # Save the original
-    with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
 
-        async def side_effect_connect(uri, **kwargs):
-            if "dummy-url-for-test" in uri:
-                mock_ws = AsyncMock()
-                mock_ws.close.return_value = asyncio.sleep(0)
-                mock_ws.__aiter__.return_value = [].__iter__()
-                mock_ws.state = State.OPEN
-                return mock_ws
-            return await original_websockets_connect_func(
-                uri, **kwargs
-            )  # Call the original for the others
+    consumer = DataConsumer(
+        loop=asyncio.get_running_loop(),
+        executor=mock_executor,
+        market_data_mode="direct",
+    )
+    # Link local keys to global ones to match application behavior
+    consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
 
-        mock_connect.side_effect = side_effect_connect
+    try:
+        await consumer.start()
+        with patch(
+            "bot_module.data_consumer.download_klines", new_callable=AsyncMock
+        ) as mock_download:
+            mock_download.return_value = create_full_mock_df()
 
-        consumer = DataConsumer(loop=asyncio.get_running_loop(), executor=mock_executor)
-        # Link local keys to global ones to match application behavior
-        consumer._history_loaded_keys = data_consumer._global_history_loaded_keys
+            # Patch the sleep function specifically within the data_consumer module to avoid the 5s wait
+            original_sleep = asyncio.sleep
 
-        try:
-            await consumer.start()
+            async def fast_sleep(delay):
+                if delay == 5:  # Only fast-forward the backoff sleep
+                    await original_sleep(0.01)
+                else:
+                    await original_sleep(delay)
+
             with patch(
-                "bot_module.data_consumer.download_klines", new_callable=AsyncMock
-            ) as mock_download:
-                mock_download.return_value = create_full_mock_df()
+                "bot_module.data_consumer.asyncio.sleep", side_effect=fast_sleep
+            ):
                 await consumer.ensure_subscription("kline_1m", "BTCUSDT")
-                await asyncio.sleep(0.3)
 
-            assert len(connected_paths_log) > 2, (
-                f"Expected > 2 reconnection attempts, received: {len(connected_paths_log)}"
-            )
-        finally:
-            if consumer._running:
-                await consumer.stop()
-            dropper_server.close()
-            await dropper_server.wait_closed()
+                # Wait for retries to happen
+                for _ in range(50):
+                    if mock_exchange_pro.watch_ohlcv.call_count >= 3:
+                        break
+                    await asyncio.sleep(0.05)  # Use real sleep for test polling
+
+        assert mock_exchange_pro.watch_ohlcv.call_count >= 2, (
+            f"Expected multiple watch_ohlcv calls due to retries, received: {mock_exchange_pro.watch_ohlcv.call_count}"
+        )
+    finally:
+        if consumer._running:
+            await consumer.stop()

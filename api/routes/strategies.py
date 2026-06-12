@@ -357,7 +357,6 @@ async def delete_saved_strategy_configuration(
     "",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=schemas.ApiResponseData,
-    dependencies=[Depends(require_permission("allow_real_trading"))],
 )
 async def start_strategy_instance(
     request: schemas.StrategyStartRequest,
@@ -376,6 +375,7 @@ async def start_strategy_instance(
         _coerce_strategy_config_dict,
         _enforce_strategy_plan_restrictions,
     )
+    from ..plans import plans_config
 
     config_id = request.config_id
     mode = request.mode
@@ -412,6 +412,25 @@ async def start_strategy_instance(
                 detail="You need at least one active API key to run paper trading.",
             )
         request.api_key_id = active_keys[0].id
+        api_key = active_keys[0]
+
+    # --- Live/Paper Trading Permission Checks ---
+    user_plan = plans_config.get_plan(current_user.plan)
+    limits = user_plan.get("limits", {})
+    if "allow_real_trading" not in user_plan.get("permissions", []):
+        allow_free_bybit = limits.get("allow_free_bybit_trading", False)
+        if allow_free_bybit:
+            # Check if the API key being used is Bybit
+            if not api_key or api_key.exchange.lower() != "bybit":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Trading on your plan is only allowed using Bybit API keys.",
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Your current plan ({current_user.plan}) does not allow trading.",
+            )
 
     await _enforce_live_strategy_limit(
         user=current_user,
@@ -514,7 +533,6 @@ async def start_strategy_instance(
     "/{instance_id}",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=schemas.ApiResponseData,
-    dependencies=[Depends(require_permission("allow_real_trading"))],
 )
 async def stop_strategy_instance(
     instance_id: str,
@@ -524,6 +542,18 @@ async def stop_strategy_instance(
     """
     Stops running strategy instance by sending command to the bot.
     """
+    from ..plans import plans_config
+
+    # Enforce stop strategy permission
+    user_plan = plans_config.get_plan(current_user.plan)
+    if "allow_real_trading" not in user_plan.get("permissions", []):
+        limits = user_plan.get("limits", {})
+        if not limits.get("allow_free_bybit_trading", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Your current plan ({current_user.plan}) does not allow stopping strategies.",
+            )
+
     logger.info(
         f"User '{current_user.username}' (ID: {current_user.id}) requested to stop strategy instance ID: {instance_id}."
     )

@@ -1474,11 +1474,16 @@ async def test_close_position_waits_for_spot_locked_balance_before_close(
         {"XRP": {"free": "2.0", "locked": "0"}},
     ]
     mock_executor.get_ticker_price.return_value = {"price": "2.0"}
-    mock_executor.place_order.return_value = {
-        "orderId": 9101,
-        "clientOrderId": "x-close-ok",
-        "status": "FILLED",
-    }
+
+    async def mock_place_order(*args, **kwargs):
+        controller._active_position_pop(symbol, "spot")
+        return {
+            "orderId": 9101,
+            "clientOrderId": "x-close-ok",
+            "status": "FILLED",
+        }
+
+    mock_executor.place_order = AsyncMock(side_effect=mock_place_order)
     controller._market_info_cache[symbol] = {
         "tick_size": 0.0001,
         "lot_params": {"minQty": 0.0001, "maxQty": 100000000.0, "stepSize": 0.0001},
@@ -1500,13 +1505,13 @@ async def test_close_position_waits_for_spot_locked_balance_before_close(
         entry_client_order_id="x-entry-locked-release",
         market_type="spot",
     )
-    controller._active_positions[symbol] = position
+    controller._active_positions["spot:XRPUSDT"] = position
 
     await controller.close_position(symbol, reason="TEST_LOCKED_RELEASE_CLOSE")
 
     mock_executor.place_order.assert_called_once()
     assert mock_executor.place_order.call_args.kwargs["quantity"] == pytest.approx(2.0)
-    assert symbol not in controller._active_positions
+    assert "spot:XRPUSDT" not in controller._active_positions
 
 
 def test_strategy_signal_treats_zero_stop_as_no_stop_loss():
@@ -1742,14 +1747,14 @@ async def test_order_update_routes_same_symbol_by_event_market_type(controller):
         await controller._handle_order_update(futures_event)
         await asyncio.sleep(0)
         assert len(entry_fill_calls) == 1
-        assert entry_fill_calls[-1]["order_id"] == 101
+        assert entry_fill_calls[-1]["order_id"] == "101"
         assert entry_fill_calls[-1]["market_type"] == "futures_usdtm"
 
         entry_fill_calls.clear()
         await controller._handle_order_update(spot_event)
         await asyncio.sleep(0)
         assert len(entry_fill_calls) == 1
-        assert entry_fill_calls[-1]["order_id"] == 202
+        assert entry_fill_calls[-1]["order_id"] == "202"
         assert entry_fill_calls[-1]["market_type"] == "spot"
 
 
@@ -1787,13 +1792,16 @@ async def test_close_position_with_market_type_closes_only_that_market(
         "BTC": {"free": "0.01", "locked": "0"}
     }
     spot_executor.get_ticker_price.return_value = {"price": "50000.0"}
-    spot_executor.place_order = AsyncMock(
-        return_value={
+
+    async def mock_place_order_spot(*args, **kwargs):
+        controller._active_position_pop("BTCUSDT", "spot")
+        return {
             "orderId": 3001,
             "clientOrderId": "x-close-spot",
             "status": "FILLED",
         }
-    )
+
+    spot_executor.place_order = AsyncMock(side_effect=mock_place_order_spot)
     controller.market_executors["spot"] = spot_executor
     controller._market_info_cache[symbol] = {
         "tick_size": 0.01,
@@ -2189,6 +2197,7 @@ async def test_place_stop_loss_failure_triggers_emergency_close(
 
     mock_notifier = MagicMock()
     mock_notifier.bot_error = AsyncMock()
+    mock_notifier.position_closed = AsyncMock()
     controller.telegram_notifier = mock_notifier
 
     entry_price = 50000.0
@@ -2276,6 +2285,7 @@ async def test_check_and_close_positions_without_sl_triggers_for_old_position(
 
     mock_notifier = MagicMock()
     mock_notifier.bot_error = AsyncMock()
+    mock_notifier.position_closed = AsyncMock()
     controller.telegram_notifier = mock_notifier
 
     initial_qty = 0.5
@@ -2344,10 +2354,8 @@ async def test_check_and_close_positions_without_sl_triggers_for_old_position(
     mock_executor.get_open_positions.side_effect = mock_get_open_positions
 
     # Mocking _handle_final_exit so it simply removes the position
-    # Note: side_effect for the method receives self as the first argument
-    async def mock_handle_final_exit(
-        self_arg, symbol_arg, reason, exit_price, *args, **kwargs
-    ):
+    async def mock_handle_final_exit(*args, **kwargs):
+        symbol_arg = kwargs.get("symbol")
         async with controller._positions_dict_lock:
             if controller._active_position_get(symbol_arg, "futures_usdtm"):
                 controller._active_position_pop(symbol_arg, "futures_usdtm")
@@ -2390,6 +2398,7 @@ async def test_check_and_close_positions_without_sl_retries_stuck_closing(
 
     mock_notifier = MagicMock()
     mock_notifier.bot_error = AsyncMock()
+    mock_notifier.position_closed = AsyncMock()
     controller.telegram_notifier = mock_notifier
 
     initial_qty = 0.01
@@ -2566,6 +2575,7 @@ async def test_close_position_with_small_qty_below_minqty(controller, mock_execu
 
     mock_notifier = MagicMock()
     mock_notifier.bot_error = AsyncMock()
+    mock_notifier.position_closed = AsyncMock()
     controller.telegram_notifier = mock_notifier
 
     # Simulating a case with a very small quantity (below minQty)

@@ -84,6 +84,8 @@ plans:
       max_backtest_duration_days: 90
       celery_task_priority: 9
       max_concurrent_tasks: 1
+      allow_free_bybit_trading: true
+      max_free_bybit_live_strategies: 1
 
   standard:
     name: "Standard"

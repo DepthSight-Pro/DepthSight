@@ -154,6 +154,8 @@ async def test_ccxt_pro_ws_optimization():
 async def test_data_consumer_unsubscription_logic():
     """Check that unsubscription correctly parses new stream_id with prefixes."""
     consumer = DataConsumer()
+    # Force direct mode to ensure it uses _binance_market_data_ws_tasks
+    consumer._use_redis_market_data = False
 
     # exchange:market:symbol@type
     stream_id_1 = "binance:futures_usdtm:btcusdt@kline_1m"
@@ -161,17 +163,22 @@ async def test_data_consumer_unsubscription_logic():
     stream_id_3 = "binance:futures_usdtm:ethusdt@kline_1m"
 
     # Mock remove_subscription so that it actually deletes from the dictionary
-    async def side_effect(dt_key, symbol):
-        # Emulate remove_subscription behavior - deletion from the dictionary by key
-        # In reality it calls pop, but we will simplify
-        to_del = []
-        for sid in consumer._binance_market_data_ws_tasks:
-            if symbol.lower() in sid and dt_key in sid:
-                to_del.append(sid)
-        for d in to_del:
-            consumer._binance_market_data_ws_tasks.pop(d, None)
+    async def side_effect(dt_key, symbol, market_type=None):
+        # We need to find all keys in _binance_market_data_ws_tasks that match this unsubscription.
+        # DataConsumer uses multiple formats for keys, so we check for both symbol and dt_key.
+        async with consumer._binance_market_data_ws_lock:
+            to_pop = []
+            symbol_lc = symbol.lower()
+            dt_key_lc = dt_key.lower()
+            for stream_id in consumer._binance_market_data_ws_tasks:
+                if symbol_lc in stream_id.lower() and dt_key_lc in stream_id.lower():
+                    to_pop.append(stream_id)
+
+            for key in to_pop:
+                consumer._binance_market_data_ws_tasks.pop(key, None)
 
     consumer.remove_subscription = AsyncMock(side_effect=side_effect)
+    consumer._binance_market_data_ws_lock = asyncio.Lock()
 
     mock_task = MagicMock()
     consumer._binance_market_data_ws_tasks = {
@@ -179,6 +186,9 @@ async def test_data_consumer_unsubscription_logic():
         stream_id_2: mock_task,
         stream_id_3: mock_task,
     }
+
+    # Populate global registry NOT NECESSARY anymore because it uses _binance_market_data_ws_tasks keys
+    # but let's keep it if it's used elsewhere, although the logic we just read uses .keys()
 
     await consumer.remove_all_subscriptions_for_symbol("BTCUSDT")
 

@@ -223,7 +223,7 @@ async def test_tp_update_logic_in_main_loop(controller, mock_deps):
 
     # Should detect missing TP and call _replace_take_profit
     controller._replace_take_profit.assert_called_once_with(
-        symbol, 110.0, market_type="futures_usdtm"
+        symbol, 110.0, market_type="futures_usdtm", partial_targets=None
     )
 
 
