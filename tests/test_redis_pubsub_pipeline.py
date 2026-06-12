@@ -180,10 +180,12 @@ async def test_multiple_rapid_subscriptions(shared_server, publisher):
 def _patch_config_and_redis(server):
     """Patch config and redis.asyncio.Redis *before* DataConsumer import."""
     import numpy as np
+
     if not hasattr(np, "NaN"):
         np.NaN = np.nan
 
     import bot_module.config as cfg
+
     cfg.MARKET_DATA_FANOUT_MODE = "redis"
     cfg.MARKET_DATA_REDIS_EVENT_CHANNEL_PREFIX = "depthsight:market_data:events"
     cfg.MARKET_REDIS_HOST = "fake"
@@ -195,8 +197,10 @@ def _patch_config_and_redis(server):
     cfg.BINANCE_DEPTH_STREAM_NAME = "@depth"
 
     import bot_module.data_consumer as dc_mod
+
     # FakeRedis with decode_responses=True (matching DataConsumer's Redis init)
     def fake_factory(**kw):
         kw.setdefault("decode_responses", True)
         return fakeredis.aioredis.FakeRedis(server=server, **kw)
+
     dc_mod.redis_asyncio.Redis = fake_factory

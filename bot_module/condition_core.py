@@ -797,7 +797,7 @@ def evaluate_stochastic_scalar(
         return False, {"error": "Not enough data"}
 
     try:
-        slice_df = df.tail(k_per + 20).copy()
+        slice_df = df.tail(max(250, k_per + 20)).copy()
         stoch = slice_df.ta.stoch(k=k_per, d=d_per, smooth_k=smooth)
 
         if stoch is None or stoch.empty:
@@ -855,7 +855,7 @@ def evaluate_bollinger_scalar(
         return False, {"error": "Not enough data"}
 
     try:
-        slice_df = df.tail(period + 5).copy()
+        slice_df = df.tail(max(250, period + 5)).copy()
         bb = slice_df.ta.bbands(length=period, std=std_dev)
 
         if bb is None or bb.empty:
@@ -908,7 +908,7 @@ def evaluate_ma_cross_scalar(
         return False, {"error": "No data"}
 
     try:
-        slice_df = df.tail(max(fast_p, slow_p) + 5).copy()
+        slice_df = df.tail(max(250, max(fast_p, slow_p) + 5)).copy()
         ema_fast = slice_df.ta.ema(length=fast_p)
         ema_slow = slice_df.ta.ema(length=slow_p)
 
@@ -954,7 +954,7 @@ def evaluate_natr_scalar(
         }
 
     try:
-        slice_df = df.tail(required_len).copy()
+        slice_df = df.tail(max(250, required_len)).copy()
         # Scalper formula (as in genetic_adapter)
         percent_range = (
             (slice_df["high"] - slice_df["low"]) / slice_df["close"].replace(0, 1) * 100
@@ -998,7 +998,7 @@ def evaluate_adx_scalar(
         }
 
     try:
-        slice_df = df.tail(required_len).copy()
+        slice_df = df.tail(max(250, required_len)).copy()
         adx_df = slice_df.ta.adx(length=period)
 
         if adx_df is None or adx_df.empty:
@@ -1047,7 +1047,7 @@ def evaluate_macd_scalar(
         }
 
     try:
-        slice_df = df.tail(required_len).copy()
+        slice_df = df.tail(max(250, required_len)).copy()
         macd_df = slice_df.ta.macd(fast=fast, slow=slow, signal=signal)
 
         if macd_df is None or macd_df.empty:
@@ -1115,7 +1115,7 @@ def evaluate_trend_direction_scalar(
         return False, {"error": f"Not enough data for SMA {slow_p}"}
 
     try:
-        slice_df = df.tail(required_len).copy()
+        slice_df = df.tail(max(250, required_len)).copy()
 
         sma_fast = slice_df.ta.sma(length=fast_p)
         sma_slow = slice_df.ta.sma(length=slow_p)
@@ -1168,7 +1168,7 @@ def evaluate_rsi_scalar(
         }
 
     try:
-        slice_df = df.tail(required_len).copy()
+        slice_df = df.tail(max(250, required_len)).copy()
         rsi_series = slice_df.ta.rsi(length=period)
 
         if rsi_series is None or rsi_series.empty:

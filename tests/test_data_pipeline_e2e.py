@@ -187,8 +187,10 @@ class TestDataPipelineMDS:
 
         # --- Patch Redis with fakeredis ---
         with (
-            patch("market_data_service.redis_asyncio.Redis",
-                  return_value=mock_redis_client),
+            patch(
+                "market_data_service.redis_asyncio.Redis",
+                return_value=mock_redis_client,
+            ),
             patch("market_data_service.aiohttp.ClientSession") as mock_session_cls,
             patch("market_data_service.DataConsumer") as mock_dc_cls,
         ):
@@ -219,9 +221,7 @@ class TestDataPipelineMDS:
                 stream_key = payload.get("stream_key")
                 if stream_key:
                     channel = _event_channel(stream_key)
-                    await mock_redis_client.publish(
-                        channel, json.dumps(payload)
-                    )
+                    await mock_redis_client.publish(channel, json.dumps(payload))
 
             mds_internal_consumer._market_data_publish_callback = capture_publish
 
@@ -331,9 +331,7 @@ class TestDataPipelineMDS:
             await bot_consumer.stop()
 
     @pytest.mark.asyncio
-    async def test_candle_close_triggers_signal_check(
-        self, controller_and_strategy
-    ):
+    async def test_candle_close_triggers_signal_check(self, controller_and_strategy):
         """
         Verify that a CANDLE_CLOSE event arriving at the controller
         triggers _check_signals_for_symbol_on_event and calls strategy.build_signal.
@@ -359,9 +357,7 @@ class TestDataPipelineMDS:
         assert True  # No exception = path works
 
     @pytest.mark.asyncio
-    async def test_full_chain_inject(
-        self, mock_executor, reset_global_state
-    ):
+    async def test_full_chain_inject(self, mock_executor, reset_global_state):
         """
         End-to-end: inject kline data into DataConsumer's Redis handler →
         verify CANDLE_CLOSE event → verify it's consumable by controller's
@@ -441,9 +437,7 @@ class TestDataPipelineMDS:
                 "m": False,
             },
         }
-        consumer._redis_market_stream_keys.add(
-            "binance:futures_usdtm:btcusdt@aggTrade"
-        )
+        consumer._redis_market_stream_keys.add("binance:futures_usdtm:btcusdt@aggTrade")
         await consumer._handle_redis_market_payload(tick_payload)
 
         tick_event = await asyncio.wait_for(event_queue.get(), timeout=1.0)
@@ -455,12 +449,17 @@ class TestDataPipelineMDS:
         await consumer.stop()
 
     @pytest.mark.asyncio
-    async def test_global_event_queue_broadcast(self, mock_executor, reset_global_state):
+    async def test_global_event_queue_broadcast(
+        self, mock_executor, reset_global_state
+    ):
         """
         Test that multiple consumers receive events from a single data source
         via the _global_event_queues broadcast mechanism.
         """
-        from bot_module.data_consumer import _global_event_queues, _global_event_queues_lock
+        from bot_module.data_consumer import (
+            _global_event_queues,
+            _global_event_queues_lock,
+        )
 
         queue1 = asyncio.Queue()
         queue2 = asyncio.Queue()
@@ -596,9 +595,7 @@ class TestDataPipelineMDS:
         strategy.NAME = "VisualBuilderStrategy"
         strategy.required_data_types = {"kline_1m"}
         strategy.build_signal = AsyncMock(return_value=None)
-        strategy.manage_position = AsyncMock(
-            return_value=(MagicMock(), None)
-        )
+        strategy.manage_position = AsyncMock(return_value=(MagicMock(), None))
 
         config_dict = {
             "id": "test-config-001",

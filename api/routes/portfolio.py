@@ -274,7 +274,7 @@ async def get_portfolio_status(
                     None,
                 )
                 raise ValueError(f"Failed to fetch account balance: {first_error}")
-            
+
             dedup_balances = get_deduplicated_balances_for_totals(account_balances)
             total_equity = sum(account.total_equity for account in dedup_balances)
 
@@ -315,7 +315,7 @@ async def get_portfolio_status(
                 for result in results
                 if isinstance(result, schemas.AccountBalance)
             ]
-            
+
             dedup_balances = get_deduplicated_balances_for_totals(account_balances)
             total_equity = sum(account.total_equity for account in dedup_balances)
 
@@ -652,7 +652,9 @@ async def list_positions(
 )
 async def close_position(
     symbol: str,
-    api_key_id: Optional[int] = Query(None, description="Close position for a specific API key (subaccount)"),
+    api_key_id: Optional[int] = Query(
+        None, description="Close position for a specific API key (subaccount)"
+    ),
     current_user: models.User = Depends(get_current_user),
     redis_client: redis.Redis = Depends(get_redis_client),
     db: AsyncSession = Depends(get_db),
@@ -680,10 +682,10 @@ async def close_position(
         logger.info(
             f"CLOSE_POSITION command sent to Redis for user '{current_user.username}', symbol {symbol}."
         )
-        
+
         # Grant 'the_intervention' achievement
         await grant_achievement(db, current_user.id, "the_intervention")
-        
+
     except redis.exceptions.ConnectionError as e:
         logger.error(
             f"Could not send CLOSE_POSITION command to Redis for user '{current_user.username}': {e}"
@@ -723,7 +725,7 @@ async def update_position_sl_tp(
     # Use user-specific key to isolate data between users
     base_positions_key = f"{REDIS_STATE_KEY_POSITIONS}:{current_user.id}"
     pattern = f"{base_positions_key}:*"
-    
+
     try:
         keys = await redis_client.keys(pattern)
         all_positions_data = []

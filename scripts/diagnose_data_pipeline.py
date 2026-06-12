@@ -72,8 +72,11 @@ async def diagnose():
         ok(f"Redis ping OK ({config.REDIS_HOST}:{config.REDIS_PORT})")
     except Exception as e:
         fail(f"Cannot connect to Redis: {e}")
-        log.error("  FIX: Ensure Redis is running on %s:%s",
-                  config.REDIS_HOST, config.REDIS_PORT)
+        log.error(
+            "  FIX: Ensure Redis is running on %s:%s",
+            config.REDIS_HOST,
+            config.REDIS_PORT,
+        )
         return
 
     # ---- 2. MDS command channel - check if MDS is subscribed ----
@@ -84,7 +87,7 @@ async def diagnose():
         num_subs = await r.pubsub_numsub(cmd_channel)
         # num_subs returns list of (channel, count) tuples
         sub_count = 0
-        for ch, cnt in (num_subs or []):
+        for ch, cnt in num_subs or []:
             sub_count = cnt
         if sub_count and int(sub_count) > 0:
             ok(f"MDS is subscribed to '{cmd_channel}' ({sub_count} subscriber(s))")
@@ -101,8 +104,9 @@ async def diagnose():
     log.info("\n[3/5] Market data snapshots in Redis")
     try:
         snapshot_prefix = getattr(
-            config, "MARKET_DATA_REDIS_SNAPSHOT_KEY_PREFIX",
-            "depthsight:market_data:snapshot"
+            config,
+            "MARKET_DATA_REDIS_SNAPSHOT_KEY_PREFIX",
+            "depthsight:market_data:snapshot",
         )
         cursor = 0
         snapshot_keys = []
@@ -139,8 +143,9 @@ async def diagnose():
     log.info("\n[4/5] Market data events in Redis (last 10 seconds)")
     try:
         event_prefix = getattr(
-            config, "MARKET_DATA_REDIS_EVENT_CHANNEL_PREFIX",
-            "depthsight:market_data:events"
+            config,
+            "MARKET_DATA_REDIS_EVENT_CHANNEL_PREFIX",
+            "depthsight:market_data:events",
         )
         cursor = 0
         event_channels = []
@@ -173,15 +178,23 @@ async def diagnose():
                 ok(f"Received {len(received)} event(s) in 3s — data IS flowing")
                 for m in received[:3]:
                     try:
-                        d = json.loads(m["data"]) if isinstance(m["data"], str) else m["data"]
-                        log.info("    Sample: type=%s stream=%s",
-                                 d.get("data_type_key", "?"),
-                                 d.get("stream_key", "?"))
+                        d = (
+                            json.loads(m["data"])
+                            if isinstance(m["data"], str)
+                            else m["data"]
+                        )
+                        log.info(
+                            "    Sample: type=%s stream=%s",
+                            d.get("data_type_key", "?"),
+                            d.get("stream_key", "?"),
+                        )
                     except Exception:
                         log.info("    (raw)")
             else:
                 fail("No events received in 3s — data is NOT flowing through Redis")
-                log.error("  FIX: Check if Rust WebSocket connector or MDS is publishing data")
+                log.error(
+                    "  FIX: Check if Rust WebSocket connector or MDS is publishing data"
+                )
         else:
             fail("No event channels found — no subscriptions have been created")
             log.error("  FIX: Check if bot workers have subscribed (restart if needed)")
@@ -244,7 +257,9 @@ async def diagnose():
             ok("Test kline payload processed correctly (CANDLE_CLOSE + cache)")
         except asyncio.QueueEmpty:
             fail("No CANDLE_CLOSE event in queue after injecting payload")
-            log.error("  FIX: Check DataConsumer._handle_redis_market_payload → _update_local_cache")
+            log.error(
+                "  FIX: Check DataConsumer._handle_redis_market_payload → _update_local_cache"
+            )
 
         await consumer.clear_all_subscriptions()
         await consumer.stop()
@@ -252,6 +267,7 @@ async def diagnose():
     except Exception as e:
         log.error("  Test inject failed with exception: %s", e)
         import traceback
+
         traceback.print_exc()
 
     # ---- Summary ----

@@ -7707,9 +7707,7 @@ class TradingController:
                 # Now creating new TPs based on original_partial_targets_plan and the CURRENT position.initial_quantity
                 new_planned_ptps: List[PartialTpOrderInfo] = []
 
-                if (
-                    position.initial_quantity > 0
-                ):
+                if position.initial_quantity > 0:
                     position_market_type = self._market_type_for_position(position)
                     lot_p_recalc_final = await self._get_market_info(
                         symbol, "lot_params", market_type=position_market_type
@@ -7722,19 +7720,25 @@ class TradingController:
                     targets_to_plan = []
                     if position.original_partial_targets_plan:
                         for orig_pt_plan in position.original_partial_targets_plan:
-                            targets_to_plan.append({
-                                "price": orig_pt_plan.price,
-                                "fraction": orig_pt_plan.fraction,
-                            })
-                    
-                    total_partial_fraction_sum = sum(t["fraction"] for t in targets_to_plan)
+                            targets_to_plan.append(
+                                {
+                                    "price": orig_pt_plan.price,
+                                    "fraction": orig_pt_plan.fraction,
+                                }
+                            )
+
+                    total_partial_fraction_sum = sum(
+                        t["fraction"] for t in targets_to_plan
+                    )
                     remaining_fraction = 1.0 - total_partial_fraction_sum
-                    
+
                     if remaining_fraction > 0.01 and position.initial_take_profit:
-                        targets_to_plan.append({
-                            "price": position.initial_take_profit,
-                            "fraction": remaining_fraction,
-                        })
+                        targets_to_plan.append(
+                            {
+                                "price": position.initial_take_profit,
+                                "fraction": remaining_fraction,
+                            }
+                        )
 
                     # Filter to get only valid targets
                     valid_targets = []
@@ -7744,7 +7748,7 @@ class TradingController:
                         if self._position_has_active_stop_target(position)
                         else None
                     )
-                    
+
                     for t in targets_to_plan:
                         is_valid = self._is_exit_target_valid(
                             t["price"],
@@ -7761,19 +7765,27 @@ class TradingController:
 
                     placed_qty_sum = 0.0
                     placed_fractions_sum = 0.0
-                    
+
                     for idx, t in enumerate(valid_targets):
-                        is_last = (idx == len(valid_targets) - 1)
-                        
+                        is_last = idx == len(valid_targets) - 1
+
                         if is_last:
                             # The last valid target gets all the leftover quantity
-                            qty_pt_adj_final = position.initial_quantity - placed_qty_sum
+                            qty_pt_adj_final = (
+                                position.initial_quantity - placed_qty_sum
+                            )
                             # Round to stepSize just in case of tiny float representation errors
-                            if lot_p_recalc_final and lot_p_recalc_final.get("stepSize", 0) > 0:
+                            if (
+                                lot_p_recalc_final
+                                and lot_p_recalc_final.get("stepSize", 0) > 0
+                            ):
                                 step = Decimal(str(lot_p_recalc_final["stepSize"]))
                                 qty_dec = Decimal(f"{qty_pt_adj_final:.12f}")
                                 qty_pt_adj_final = float(
-                                    (qty_dec / step).quantize(Decimal("0"), rounding=ROUND_DOWN) * step
+                                    (qty_dec / step).quantize(
+                                        Decimal("0"), rounding=ROUND_DOWN
+                                    )
+                                    * step
                                 )
                         else:
                             qty_pt_raw_final = position.initial_quantity * t["fraction"]
@@ -7784,7 +7796,7 @@ class TradingController:
                                 lot_p_recalc_final,
                                 min_n_recalc_final,
                             )
-                        
+
                         if qty_pt_adj_final and qty_pt_adj_final > 0:
                             new_planned_ptps.append(
                                 PartialTpOrderInfo(
@@ -8399,11 +8411,18 @@ class TradingController:
                         asyncio.gather(*tasks, return_exceptions=True),
                         timeout=10.0,
                     )
-                    logger.info(f"{log_prefix} Associated exit orders for {symbol} cancelled successfully.")
+                    logger.info(
+                        f"{log_prefix} Associated exit orders for {symbol} cancelled successfully."
+                    )
                 except asyncio.TimeoutError:
-                    logger.warning(f"{log_prefix} Timeout cancelling associated exit orders for {symbol}. Moving on to hard reset.")
+                    logger.warning(
+                        f"{log_prefix} Timeout cancelling associated exit orders for {symbol}. Moving on to hard reset."
+                    )
                 except Exception as e:
-                    logger.error(f"{log_prefix} Error cancelling associated exit orders: {e}", exc_info=True)
+                    logger.error(
+                        f"{log_prefix} Error cancelling associated exit orders: {e}",
+                        exc_info=True,
+                    )
 
         # HARD RESET: Cancel ALL open orders for this symbol to be 100% safe
         # This should ALWAYS happen when closing a position, even if the orders_to_cancel_after_lock list is empty
@@ -8415,15 +8434,22 @@ class TradingController:
                 executor_for_cancel.cancel_all_open_orders(symbol),
                 timeout=10.0,
             )
-            logger.info(f"{log_prefix} Hard Reset: All open orders for {symbol} cancelled successfully.")
+            logger.info(
+                f"{log_prefix} Hard Reset: All open orders for {symbol} cancelled successfully."
+            )
         except asyncio.TimeoutError:
-            logger.warning(f"{log_prefix} Hard Reset: Timeout cancelling open orders for {symbol}. Scheduling background retry.")
+            logger.warning(
+                f"{log_prefix} Hard Reset: Timeout cancelling open orders for {symbol}. Scheduling background retry."
+            )
             self.loop.create_task(
                 executor_for_cancel.cancel_all_open_orders(symbol),
                 name=f"FinalExitHardCancelRetry_{symbol}",
             )
         except Exception as e:
-            logger.error(f"{log_prefix} Hard Reset: Error cancelling open orders: {e}", exc_info=True)
+            logger.error(
+                f"{log_prefix} Hard Reset: Error cancelling open orders: {e}",
+                exc_info=True,
+            )
 
         if position_to_process_copy:
             await self.rm.update_trade_result(
@@ -9343,7 +9369,7 @@ class TradingController:
                     active_targets.append((new_tp_price, rem_frac))
 
                 for idx, (pt_price, pt_frac) in enumerate(active_targets):
-                    is_last_target = (idx == len(active_targets) - 1)
+                    is_last_target = idx == len(active_targets) - 1
                     if is_last_target:
                         pt_qty = total_quantity - accumulated_qty
                     else:
@@ -12729,8 +12755,14 @@ class TradingController:
                     try:
                         last_price_info = await executor.get_ticker_price(symbol)
                     except Exception as e_price:
-                        logger.warning(f"{log_prefix} Could not fetch price for final exit: {e_price}")
-                    approx_exit_price = float(last_price_info["price"]) if last_price_info and "price" in last_price_info else 0.0
+                        logger.warning(
+                            f"{log_prefix} Could not fetch price for final exit: {e_price}"
+                        )
+                    approx_exit_price = (
+                        float(last_price_info["price"])
+                        if last_price_info and "price" in last_price_info
+                        else 0.0
+                    )
 
                     await self._handle_final_exit(
                         symbol=symbol,

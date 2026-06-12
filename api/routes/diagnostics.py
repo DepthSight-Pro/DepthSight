@@ -258,7 +258,7 @@ async def proxy_bybit_klines(
         "category": category,
         "symbol": symbol.upper(),
         "interval": interval,
-        "limit": limit
+        "limit": limit,
     }
     if start:
         params["start"] = start
@@ -282,7 +282,6 @@ async def proxy_bybit_klines(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to connect to Bybit API: {exc}",
         )
-
 
 
 @diagnostics_router.get(

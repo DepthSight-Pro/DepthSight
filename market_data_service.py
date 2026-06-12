@@ -124,12 +124,16 @@ class MarketDataService:
                 await self.pubsub.close()
             except Exception:
                 logger.debug("Error closing market-data pubsub.", exc_info=True)
-        
+
         for exchange_id, consumer in self.consumers.items():
             try:
                 await consumer.stop()
             except Exception:
-                logger.debug("Error stopping market-data consumer for %s.", exchange_id, exc_info=True)
+                logger.debug(
+                    "Error stopping market-data consumer for %s.",
+                    exchange_id,
+                    exc_info=True,
+                )
         self.consumers.clear()
 
         if self.redis:
@@ -173,7 +177,10 @@ class MarketDataService:
             logger.debug("Error closing stale pubsub.", exc_info=True)
         self.pubsub = self.redis.pubsub()
         await self.pubsub.subscribe(config.MARKET_DATA_REDIS_COMMAND_CHANNEL)
-        logger.info("Pubsub reconnected and re-subscribed to %s.", config.MARKET_DATA_REDIS_COMMAND_CHANNEL)
+        logger.info(
+            "Pubsub reconnected and re-subscribed to %s.",
+            config.MARKET_DATA_REDIS_COMMAND_CHANNEL,
+        )
 
     async def _handle_command(self, payload: Dict[str, Any]) -> None:
         if not isinstance(payload, dict):
@@ -209,7 +216,7 @@ class MarketDataService:
             symbol = spec.get("symbol") or command.get("symbol")
             market_type = spec.get("market_type") or command.get("market_type")
             exchange_id = spec.get("exchange_id") or "binance"
-            
+
             consumer = self._get_consumer(exchange_id)
 
             if required_metrics:
@@ -262,10 +269,10 @@ class MarketDataService:
 
             self._stream_subscribers.pop(stream_key, None)
             self._stream_specs.pop(stream_key, None)
-            
+
             exchange_id = spec.get("exchange_id") or "binance"
             consumer = self._get_consumer(exchange_id)
-            
+
             await consumer.remove_subscription(
                 spec.get("data_type_key"),
                 spec.get("symbol"),
@@ -292,7 +299,13 @@ class MarketDataService:
         channel = _event_channel(str(stream_key))
         logger.info(
             "Publishing market payload: type=%s stream_key=%s channel=%s data_type=%s symbol=%s market_type=%s is_closed=%s",
-            payload_type, stream_key, channel, data_type, symbol, market_type, is_closed,
+            payload_type,
+            stream_key,
+            channel,
+            data_type,
+            symbol,
+            market_type,
+            is_closed,
         )
         await redis_client.publish(channel, json.dumps(payload))
 

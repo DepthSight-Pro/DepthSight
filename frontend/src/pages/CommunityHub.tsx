@@ -103,6 +103,7 @@ interface HubTopicResponse {
 	name?: string;
 	author?: string;
 	created_at: string;
+	is_admin?: boolean;
 }
 
 interface HubCommentResponse {
@@ -111,6 +112,7 @@ interface HubCommentResponse {
 	author_name: string;
 	text: string;
 	created_at: string;
+	is_admin?: boolean;
 }
 
 interface HubNodeResponse {
@@ -1212,13 +1214,17 @@ const CommunityHub = () => {
 		setSubmittingComment(true);
 		try {
 			const author = user?.username || "Anonymous";
+			const headers: Record<string, string> = {
+				"Content-Type": "application/json",
+			};
+			if (adminKey) {
+				headers.Authorization = `Bearer ${adminKey}`;
+			}
 			const res = await fetch(
 				`${hubApiUrl}/topics/${selectedTopic.id}/comments`,
 				{
 					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
+					headers,
 					body: JSON.stringify({
 						author_name: author,
 						text: newCommentText.trim(),
@@ -1269,11 +1275,15 @@ const CommunityHub = () => {
 		setSubmittingNewsComment(true);
 		try {
 			const author = user?.username || "Anonymous";
+			const headers: Record<string, string> = {
+				"Content-Type": "application/json",
+			};
+			if (adminKey) {
+				headers.Authorization = `Bearer ${adminKey}`;
+			}
 			const res = await fetch(`${hubApiUrl}/news/${selectedNews.id}/comments`, {
 				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
+				headers,
 				body: JSON.stringify({
 					author_name: author,
 					text: newNewsCommentText.trim(),
@@ -1351,11 +1361,15 @@ const CommunityHub = () => {
 		setPublishingTopic(true);
 		try {
 			const author = user?.username || "Anonymous";
+			const headers: Record<string, string> = {
+				"Content-Type": "application/json",
+			};
+			if (adminKey) {
+				headers.Authorization = `Bearer ${adminKey}`;
+			}
 			const res = await fetch(`${hubApiUrl}/topics`, {
 				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
+				headers,
 				body: JSON.stringify({
 					topic_type: "discussion",
 					title: newTopicTitle.trim(),
@@ -1994,9 +2008,17 @@ const CommunityHub = () => {
 																			{getTopicTitle(idea, t)}
 																		</CardTitle>
 																	</div>
-																	<span className="text-[10px] text-muted-foreground flex items-center gap-1">
-																		<UserIcon className="w-3 h-3" />
+																	<span className={cn("text-[10px] text-muted-foreground flex items-center gap-1", idea.is_admin && "text-purple-400 font-bold")}>
+																		<UserIcon className={cn("w-3 h-3", idea.is_admin && "text-purple-400")} />
 																		{idea.author_name}
+																		{idea.is_admin && (
+																			<Badge
+																				variant="outline"
+																				className="text-[8px] h-3.5 border-purple-500/30 text-purple-400 bg-purple-500/5 px-1 py-0 uppercase tracking-wide shrink-0"
+																			>
+																				{isRu ? "Админ" : "Admin"}
+																			</Badge>
+																		)}
 																	</span>
 																</div>
 																<CardDescription className="line-clamp-2 text-xs pt-1">
@@ -2213,9 +2235,17 @@ const CommunityHub = () => {
 														{topic.title}
 													</h4>
 													<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-														<span className="flex items-center gap-1">
-															<UserIcon className="w-3 h-3" />
+														<span className={cn("flex items-center gap-1", topic.is_admin && "text-purple-400 font-bold")}>
+															<UserIcon className={cn("w-3 h-3", topic.is_admin && "text-purple-400")} />
 															{topic.author_name}
+															{topic.is_admin && (
+																<Badge
+																	variant="outline"
+																	className="text-[8px] h-3.5 border-purple-500/30 text-purple-400 bg-purple-500/5 px-1 py-0 uppercase tracking-wide shrink-0"
+																>
+																	{isRu ? "Админ" : "Admin"}
+																</Badge>
+															)}
 														</span>
 														<span className="flex items-center gap-1">
 															<Calendar className="w-3 h-3" />
@@ -2888,9 +2918,17 @@ const CommunityHub = () => {
 												? selectedTopic.symbol || "Strategy"
 												: "Discussion"}
 										</Badge>
-										<span className="text-xs text-muted-foreground flex items-center gap-1">
-											<UserIcon className="w-3.5 h-3.5" />
+										<span className={cn("text-xs text-muted-foreground flex items-center gap-1", selectedTopic.is_admin && "text-purple-400 font-bold")}>
+											<UserIcon className={cn("w-3.5 h-3.5", selectedTopic.is_admin && "text-purple-400")} />
 											{selectedTopic.author_name}
+											{selectedTopic.is_admin && (
+												<Badge
+													variant="outline"
+													className="text-[8px] h-3.5 border-purple-500/30 text-purple-400 bg-purple-500/5 px-1 py-0 uppercase tracking-wide shrink-0"
+												>
+													{isRu ? "Админ" : "Admin"}
+												</Badge>
+											)}
 										</span>
 									</div>
 									<h2 className="text-xl md:text-2xl font-bold leading-tight">
@@ -3086,8 +3124,16 @@ const CommunityHub = () => {
 												className="p-3 rounded-lg bg-card border border-border/20 space-y-1"
 											>
 												<div className="flex justify-between text-xs">
-													<span className="font-semibold text-foreground/80">
+													<span className={cn("font-semibold text-foreground/80 flex items-center gap-1", comment.is_admin && "text-purple-400 font-bold")}>
 														{comment.author_name}
+														{comment.is_admin && (
+															<Badge
+																variant="outline"
+																className="text-[8px] h-3.5 border-purple-500/30 text-purple-400 bg-purple-500/5 px-1 py-0 uppercase tracking-wide shrink-0"
+															>
+																{isRu ? "Админ" : "Admin"}
+															</Badge>
+														)}
 													</span>
 													<span className="text-[10px] text-muted-foreground font-mono">
 														{new Date(comment.created_at).toLocaleString(
@@ -3223,8 +3269,16 @@ const CommunityHub = () => {
 												className="p-3 rounded-lg bg-card border border-border/20 space-y-1"
 											>
 												<div className="flex justify-between text-xs">
-													<span className="font-semibold text-foreground/80">
+													<span className={cn("font-semibold text-foreground/80 flex items-center gap-1", (comment as any).is_admin && "text-purple-400 font-bold")}>
 														{comment.author_name}
+														{(comment as any).is_admin && (
+															<Badge
+																variant="outline"
+																className="text-[8px] h-3.5 border-purple-500/30 text-purple-400 bg-purple-500/5 px-1 py-0 uppercase tracking-wide shrink-0"
+															>
+																{isRu ? "Админ" : "Admin"}
+															</Badge>
+														)}
 													</span>
 													<span className="text-[10px] text-muted-foreground font-mono">
 														{new Date(comment.created_at).toLocaleString(

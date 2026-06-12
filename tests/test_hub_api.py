@@ -549,3 +549,77 @@ async def test_hub_news_interactions(
     assert target_news is not None
     assert target_news["likes_count"] == 1
     assert target_news["comments_count"] == 1
+
+
+async def test_admin_signature_highlighting(
+    test_client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    """
+    Test that when a comment or topic is posted by the admin (passing Authorization header),
+    the username is cryptographically signed, and when retrieved, the signature is validated,
+    stripped, and the response is marked with is_admin: True.
+    """
+    from api import hub_router
+
+    monkeypatch.setattr(hub_router, "HUB_ADMIN_API_KEY", "super-secret-admin-key")
+    headers = {"Authorization": "Bearer super-secret-admin-key"}
+
+    # 1. Create a topic as admin
+    topic_payload = {
+        "topic_type": "discussion",
+        "title": "Admin Discussion",
+        "description": "Discussion from the central hub admin.",
+        "author_name": "AdminUser",
+    }
+    response = await test_client.post(
+        "/api/v1/hub/topics", json=topic_payload, headers=headers
+    )
+    assert response.status_code == 201
+    topic_data = response.json()
+    assert topic_data["author_name"] == "AdminUser"
+    assert topic_data["is_admin"] is True
+    topic_id = topic_data["id"]
+
+    # Verify how it is stored in DB
+    result = await db_session.execute(
+        select(models.HubTopic).filter(models.HubTopic.id == topic_id)
+    )
+    topic_in_db = result.scalars().first()
+    assert topic_in_db is not None
+    # author_name should have [a:<sig>] suffix
+    assert topic_in_db.author_name != "AdminUser"
+    assert "[a:" in topic_in_db.author_name
+
+    # 2. Get topics list and verify clean name + is_admin: True
+    response = await test_client.get("/api/v1/hub/topics?type=discussion")
+    assert response.status_code == 200
+    topics = response.json()
+    matched = next(t for t in topics if t["id"] == topic_id)
+    assert matched["author_name"] == "AdminUser"
+    assert matched["is_admin"] is True
+
+    # 3. Post a comment as admin
+    comment_payload = {"author_name": "AdminUser", "text": "Admin comment reply."}
+    response = await test_client.post(
+        f"/api/v1/hub/topics/{topic_id}/comments", json=comment_payload, headers=headers
+    )
+    assert response.status_code == 201
+    comment_data = response.json()
+    assert comment_data["author_name"] == "AdminUser"
+    assert comment_data["is_admin"] is True
+    comment_id = comment_data["id"]
+
+    # Verify comment in DB has signature
+    result = await db_session.execute(
+        select(models.HubComment).filter(models.HubComment.id == comment_id)
+    )
+    comment_in_db = result.scalars().first()
+    assert "[a:" in comment_in_db.author_name
+
+    # 4. Get comments list and verify clean name + is_admin: True
+    response = await test_client.get(f"/api/v1/hub/topics/{topic_id}/comments")
+    assert response.status_code == 200
+    comments = response.json()
+    matched_c = next(c for c in comments if c["id"] == comment_id)
+    assert matched_c["author_name"] == "AdminUser"
+    assert matched_c["is_admin"] is True
