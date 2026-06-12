@@ -1012,11 +1012,23 @@ def run_pipeline(
     """
     Programmatic entry point for starting load/enrichment pipeline.
     """
+    total_symbols = len(symbols)
+    total_types = len(data_types)
+    total_steps = total_symbols * total_types
+    current_step = 0
+
+    def print_progress(msg: str = ""):
+        nonlocal current_step
+        progress = (current_step / total_steps) * 100
+        print(f"[PROGRESS]: {progress:.1f}% | {msg}")
+
     if not enrich_only:
         session = requests.Session()
         for symbol in symbols:
             print(f"\n{'=' * 20} PROCESSING SYMBOL: {symbol} {'=' * 20}")
             for data_type in data_types:
+                current_step += 1
+                print_progress(f"Processing {symbol} {data_type}...")
                 print(f"\n--- Data type: {data_type} ---")
 
                 # --- Logic for aggTrades (hybrid load) ---

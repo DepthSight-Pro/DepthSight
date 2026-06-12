@@ -342,9 +342,10 @@ async def update_commission_statuses(db: AsyncSession) -> int:
     return result.rowcount
 
 
-async def create_payout_request(db: AsyncSession, user_id: int) -> models.AffiliatePayout:
+async def create_payout_request(db: AsyncSession, user_id: int) -> dict:
     """
-    Creates a payout request for all currently 'available' commissions.
+    Creates a payout request by marking all currently 'available' commissions as 'paid'.
+    (No-migration version: we don't store a separate payout record, just update commissions).
     """
     # 1. Get total available amount
     available_commissions_query = select(models.Commission).filter(
@@ -359,50 +360,25 @@ async def create_payout_request(db: AsyncSession, user_id: int) -> models.Affili
 
     total_amount = sum(c.commission_amount_usd for c in available_commissions)
 
-    # 2. Get user's payout address (logically it should be stored in User or separate profile)
-    # For now, we'll just create the payout and let the route handle details if needed.
-    # Actually, the route logs the address. We should probably store it.
-
-    # 3. Create Payout record
-    new_payout = models.AffiliatePayout(
-        user_id=user_id,
-        amount=total_amount,
-        status="pending",
-    )
-    db.add(new_payout)
-    await db.flush()
-
-    # 4. Mark commissions as 'paid' (or 'processing' if we want to be more granular)
-    # The current frontend expects 'paid' to count towards total paid out.
+    # 2. Mark commissions as 'paid'
     for commission in available_commissions:
         commission.status = "paid"
 
     await db.commit()
-    return new_payout
+
+    # Return a dict instead of a model
+    return {"amount": total_amount}
 
 
 async def get_payouts_for_user(
     db: AsyncSession, user_id: int, skip: int = 0, limit: int = 10
-) -> Tuple[List[models.AffiliatePayout], int]:
+) -> Tuple[List[dict], int]:
     """
-    Retrieves a paginated list of payouts for a specific user.
+    Retrieves a paginated list of 'payouts' for a specific user.
+    (No-migration version: we just return an empty list or aggregate 'paid' commissions).
+    Currently returning empty history as there is no payouts table.
     """
-    count_query = select(func.count(models.AffiliatePayout.id)).filter(
-        models.AffiliatePayout.user_id == user_id
-    )
-    total_count = await db.scalar(count_query)
-
-    query = (
-        select(models.AffiliatePayout)
-        .filter(models.AffiliatePayout.user_id == user_id)
-        .order_by(desc(models.AffiliatePayout.created_at))
-        .offset(skip)
-        .limit(limit)
-    )
-    result = await db.execute(query)
-    payouts = result.scalars().all()
-
-    return payouts, total_count
+    return [], 0
 
 
 async def get_affiliate_dashboard_stats(

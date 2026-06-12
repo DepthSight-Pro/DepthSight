@@ -2471,6 +2471,7 @@ class HubNewsCommentResponse(BaseModel):
     author_name: str
     text: str
     created_at: datetime
+    is_admin: bool = False
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -2511,6 +2512,7 @@ class HubTopicResponse(BaseModel):
     is_verified: bool = False
     tags: Optional[List[str]] = None
     created_at: datetime
+    is_admin: bool = False
 
     @computed_field
     @property
@@ -2540,6 +2542,7 @@ class HubCommentResponse(BaseModel):
     author_name: str
     text: str
     created_at: datetime
+    is_admin: bool = False
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

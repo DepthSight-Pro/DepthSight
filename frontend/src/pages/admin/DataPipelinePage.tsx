@@ -33,6 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 
 interface StorageSymbol {
   symbol: string;
@@ -69,16 +70,24 @@ const DataPipelinePage: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState("config");
   const [catchUpDeleteAggtrades, setCatchUpDeleteAggtrades] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [currentTask, setCurrentTask] = useState("");
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
   const fetchStatus = async () => {
     try {
-      const data = await apiClient<{ is_running: boolean; logs: string }>(
-        "/admin/data-pipeline/status"
-      );
+      const data = await apiClient<{ 
+        is_running: boolean; 
+        logs: string;
+        progress: number;
+        current_task: string;
+      }>("/admin/data-pipeline/status");
+      
       setIsRunning(data.is_running);
       setLogs(data.logs);
+      setProgress(data.progress);
+      setCurrentTask(data.current_task);
     } catch (error) {
       console.error("Error fetching pipeline status:", error);
     }
@@ -518,6 +527,19 @@ const DataPipelinePage: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="terminal" className="space-y-6">
+          {(isRunning || logs) && (
+            <div className="space-y-2">
+              <div className="flex justify-between items-end">
+                 <div className="space-y-1">
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Current Activity</span>
+                    <p className="text-sm font-medium">{currentTask || (isRunning ? "Initializing pipeline..." : "Pipeline finished")}</p>
+                 </div>
+                 <span className="text-2xl font-mono font-bold text-primary">{Math.round(progress)}%</span>
+              </div>
+              <Progress value={progress} className="h-2" />
+            </div>
+          )}
+
           <Card className="bg-black border-zinc-800 overflow-hidden shadow-2xl">
              <div className="bg-zinc-900 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">

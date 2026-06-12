@@ -1330,7 +1330,9 @@ class CcxtExecutor:
                             or order.get("stopPrice")
                             or (order.get("info") or {}).get("triggerPrice")
                         ):
-                            filter_val = "StopOrder" if self.supports_positions else "tpslOrder"
+                            filter_val = (
+                                "StopOrder" if self.supports_positions else "tpslOrder"
+                            )
                             cancel_params["orderFilter"] = filter_val
                     results.append(
                         await self._exchange.cancel_order(

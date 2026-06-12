@@ -14,9 +14,85 @@ from .database import get_db
 from . import schemas, crud, models
 from .depthsight_api import limiter, get_limit_value, APP_VERSION
 
+import hmac
+
 logger = logging.getLogger(__name__)
 
 HUB_ADMIN_API_KEY = os.getenv("HUB_ADMIN_API_KEY")
+
+
+def sign_admin_name(author_name: str, key: Optional[str]) -> str:
+    if not key or not author_name:
+        return author_name
+    sig = hmac.new(key.encode(), author_name.encode(), hashlib.sha256).hexdigest()[:12]
+    return f"{author_name}[a:{sig}]"
+
+
+def verify_and_clean_admin_name(
+    author_name: str, key: Optional[str]
+) -> tuple[str, bool]:
+    if not author_name:
+        return "", False
+    if not key:
+        return author_name, False
+
+    if "[a:" in author_name and author_name.endswith("]"):
+        parts = author_name.rsplit("[a:", 1)
+        if len(parts) == 2:
+            original_name, sig_part = parts
+            sig = sig_part[:-1]
+            expected_sig = hmac.new(
+                key.encode(), original_name.encode(), hashlib.sha256
+            ).hexdigest()[:12]
+            if hmac.compare_digest(sig, expected_sig):
+                return original_name, True
+
+    return author_name, False
+
+
+def make_topic_response(topic: models.HubTopic) -> schemas.HubTopicResponse:
+    clean_name, is_admin = verify_and_clean_admin_name(
+        topic.author_name, HUB_ADMIN_API_KEY
+    )
+    res = schemas.HubTopicResponse.model_validate(topic)
+    res.author_name = clean_name
+    res.is_admin = is_admin
+    return res
+
+
+def make_topic_create_response(
+    topic: models.HubTopic,
+) -> schemas.HubTopicCreateResponse:
+    clean_name, is_admin = verify_and_clean_admin_name(
+        topic.author_name, HUB_ADMIN_API_KEY
+    )
+    res = schemas.HubTopicCreateResponse.model_validate(topic)
+    res.author_name = clean_name
+    res.is_admin = is_admin
+    return res
+
+
+def make_comment_response(comment: models.HubComment) -> schemas.HubCommentResponse:
+    clean_name, is_admin = verify_and_clean_admin_name(
+        comment.author_name, HUB_ADMIN_API_KEY
+    )
+    res = schemas.HubCommentResponse.model_validate(comment)
+    res.author_name = clean_name
+    res.is_admin = is_admin
+    return res
+
+
+def make_news_comment_response(
+    comment: models.HubNewsComment,
+) -> schemas.HubNewsCommentResponse:
+    clean_name, is_admin = verify_and_clean_admin_name(
+        comment.author_name, HUB_ADMIN_API_KEY
+    )
+    res = schemas.HubNewsCommentResponse.model_validate(comment)
+    res.author_name = clean_name
+    res.is_admin = is_admin
+    return res
+
 
 router = APIRouter(prefix="/api/v1/hub", tags=["Federation Hub"])
 
@@ -28,7 +104,7 @@ async def get_hub_strategies(db: AsyncSession = Depends(get_db)):
     """
     try:
         strategies = await crud.get_hub_strategies(db)
-        return strategies
+        return [make_topic_response(s) for s in strategies]
     except Exception as e:
         logger.error(f"Error getting verified strategies: {e}", exc_info=True)
         raise HTTPException(
@@ -281,6 +357,7 @@ async def unpin_news_item(
 async def post_news_comment(
     news_id: int,
     comment: schemas.HubNewsCommentCreate,
+    authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -290,12 +367,22 @@ async def post_news_comment(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="News item not found."
             )
+
+        admin_key = None
+        if authorization and authorization.startswith("Bearer "):
+            admin_key = authorization.split(" ")[1]
+
+        if HUB_ADMIN_API_KEY and admin_key == HUB_ADMIN_API_KEY:
+            comment.author_name = sign_admin_name(
+                comment.author_name, HUB_ADMIN_API_KEY
+            )
+
         new_comment = await crud.create_hub_news_comment(
             db, news_id=news_id, comment_data=comment
         )
         await db.commit()
         await db.refresh(new_comment)
-        return new_comment
+        return make_news_comment_response(new_comment)
     except HTTPException:
         raise
     except Exception as e:
@@ -312,7 +399,7 @@ async def post_news_comment(
 async def get_news_comments(news_id: int, db: AsyncSession = Depends(get_db)):
     try:
         comments = await crud.get_hub_news_comments(db, news_id=news_id)
-        return comments
+        return [make_news_comment_response(c) for c in comments]
     except Exception as e:
         logger.error(f"Error retrieving news comments: {e}", exc_info=True)
         raise HTTPException(
@@ -404,7 +491,7 @@ async def get_hub_topics(
     """
     try:
         topics = await crud.get_hub_topics(db, topic_type=type)
-        return topics
+        return [make_topic_response(t) for t in topics]
     except Exception as e:
         logger.error(f"Error retrieving hub topics: {e}", exc_info=True)
         raise HTTPException(
@@ -422,16 +509,24 @@ async def get_hub_topics(
 async def post_hub_topic(
     request: Request,
     topic: schemas.HubTopicCreate,
+    authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Publishes a new topic (strategy idea or discussion) to the Hub.
     """
     try:
+        admin_key = None
+        if authorization and authorization.startswith("Bearer "):
+            admin_key = authorization.split(" ")[1]
+
+        if HUB_ADMIN_API_KEY and admin_key == HUB_ADMIN_API_KEY:
+            topic.author_name = sign_admin_name(topic.author_name, HUB_ADMIN_API_KEY)
+
         new_topic = await crud.create_hub_topic(db, topic_data=topic)
         await db.commit()
         await db.refresh(new_topic)
-        return new_topic
+        return make_topic_create_response(new_topic)
     except Exception as e:
         logger.error(f"Error creating hub topic: {e}", exc_info=True)
         raise HTTPException(
@@ -458,7 +553,7 @@ async def like_hub_topic(
             )
         await db.commit()
         await db.refresh(updated_topic)
-        return updated_topic
+        return make_topic_response(updated_topic)
     except HTTPException:
         raise
     except Exception as e:
@@ -478,7 +573,7 @@ async def get_hub_comments(topic_id: str, db: AsyncSession = Depends(get_db)):
     """
     try:
         comments = await crud.get_hub_comments(db, topic_id=topic_id)
-        return comments
+        return [make_comment_response(c) for c in comments]
     except Exception as e:
         logger.error(
             f"Error retrieving comments for topic {topic_id}: {e}", exc_info=True
@@ -499,18 +594,28 @@ async def post_hub_comment(
     request: Request,
     topic_id: str,
     comment: schemas.HubCommentCreate,
+    authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Adds a new comment to a specific Hub topic.
     """
     try:
+        admin_key = None
+        if authorization and authorization.startswith("Bearer "):
+            admin_key = authorization.split(" ")[1]
+
+        if HUB_ADMIN_API_KEY and admin_key == HUB_ADMIN_API_KEY:
+            comment.author_name = sign_admin_name(
+                comment.author_name, HUB_ADMIN_API_KEY
+            )
+
         new_comment = await crud.create_hub_comment(
             db, topic_id=topic_id, comment_data=comment
         )
         await db.commit()
         await db.refresh(new_comment)
-        return new_comment
+        return make_comment_response(new_comment)
     except Exception as e:
         logger.error(f"Error creating comment for topic {topic_id}: {e}", exc_info=True)
         raise HTTPException(

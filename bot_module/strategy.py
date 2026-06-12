@@ -4107,9 +4107,14 @@ class BaseStrategy:
 
             if sl_value is not None:
                 is_averaging_down = getattr(position, "_is_averaging_down", False)
-                preserve_sl = getattr(position, "current_sl_price", None) is not None and is_averaging_down
+                preserve_sl = (
+                    getattr(position, "current_sl_price", None) is not None
+                    and is_averaging_down
+                )
                 if preserve_sl:
-                    logger.info(f"{log_prefix} Preserving original SL price: {position.current_sl_price:.8f} during DCA/Scale-In recalculation.")
+                    logger.info(
+                        f"{log_prefix} Preserving original SL price: {position.current_sl_price:.8f} during DCA/Scale-In recalculation."
+                    )
                 else:
                     sl_price_raw = 0.0
                     no_sl_mode = False

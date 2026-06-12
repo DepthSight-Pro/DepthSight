@@ -363,7 +363,9 @@ class DataConsumer:
             logger.warning("DataConsumer is already running.")
             return
         self._running = True
-        logger.info("Starting DataConsumer... market_data_mode=%s", self._market_data_mode)
+        logger.info(
+            "Starting DataConsumer... market_data_mode=%s", self._market_data_mode
+        )
         if self._use_redis_market_data:
             started = await self._ensure_redis_market_data_started()
             logger.info(
@@ -371,7 +373,8 @@ class DataConsumer:
                 started,
                 self._redis_market_client is not None,
                 self._redis_market_pubsub is not None,
-                self._redis_market_listener_task is not None and not self._redis_market_listener_task.done(),
+                self._redis_market_listener_task is not None
+                and not self._redis_market_listener_task.done(),
             )
             if not started:
                 self._running = False
@@ -1115,7 +1118,9 @@ class DataConsumer:
                     "needs_companion_orderbook": needs_companion_orderbook,
                 }
             )
-        logger.debug("_stream_specs_for_subscription(%s, %s) -> %s", data_type_key, symbol, specs)
+        logger.debug(
+            "_stream_specs_for_subscription(%s, %s) -> %s", data_type_key, symbol, specs
+        )
         return specs
 
     async def _ensure_redis_market_data_started(self) -> bool:
@@ -1140,14 +1145,23 @@ class DataConsumer:
                 # Verify Redis connectivity immediately
                 try:
                     await self._redis_market_client.ping()
-                    logger.info("Redis market client PING OK (host=%s port=%s db=%s user=%s)",
-                                config.MARKET_REDIS_HOST, config.MARKET_REDIS_PORT,
-                                config.MARKET_REDIS_DB, config.REDIS_USERNAME)
+                    logger.info(
+                        "Redis market client PING OK (host=%s port=%s db=%s user=%s)",
+                        config.MARKET_REDIS_HOST,
+                        config.MARKET_REDIS_PORT,
+                        config.MARKET_REDIS_DB,
+                        config.REDIS_USERNAME,
+                    )
                 except Exception as e:
-                    logger.error("Redis market client PING FAILED (host=%s port=%s db=%s user=%s): %s",
-                                 config.MARKET_REDIS_HOST, config.MARKET_REDIS_PORT,
-                                 config.MARKET_REDIS_DB, config.REDIS_USERNAME, e,
-                                 exc_info=True)
+                    logger.error(
+                        "Redis market client PING FAILED (host=%s port=%s db=%s user=%s): %s",
+                        config.MARKET_REDIS_HOST,
+                        config.MARKET_REDIS_PORT,
+                        config.MARKET_REDIS_DB,
+                        config.REDIS_USERNAME,
+                        e,
+                        exc_info=True,
+                    )
             if (
                 self._redis_market_listener_task is None
                 or self._redis_market_listener_task.done()
@@ -1173,10 +1187,15 @@ class DataConsumer:
 
     async def _redis_market_data_listener(self) -> None:
         log_prefix = f"[RedisMarketData:{self._market_data_subscriber_id}]"
-        logger.info("%s listener started. mode=%s host=%s:%s db=%s user=%s", log_prefix,
-                    self._market_data_mode,
-                    config.MARKET_REDIS_HOST, config.MARKET_REDIS_PORT,
-                    config.MARKET_REDIS_DB, config.REDIS_USERNAME)
+        logger.info(
+            "%s listener started. mode=%s host=%s:%s db=%s user=%s",
+            log_prefix,
+            self._market_data_mode,
+            config.MARKET_REDIS_HOST,
+            config.MARKET_REDIS_PORT,
+            config.MARKET_REDIS_DB,
+            config.REDIS_USERNAME,
+        )
         last_heartbeat_log = time.monotonic()
         pubsub_broken_since: float = 0.0
         had_subscriptions: bool = False
@@ -1187,10 +1206,11 @@ class DataConsumer:
                     continue
                 # Heartbeat log every 30s to confirm listener is alive
                 if time.monotonic() - last_heartbeat_log > 30:
-                    logger.info("%s listener alive. stream_keys=%d",
-                                log_prefix,
-                                len(self._redis_market_stream_keys),
-                                )
+                    logger.info(
+                        "%s listener alive. stream_keys=%d",
+                        log_prefix,
+                        len(self._redis_market_stream_keys),
+                    )
                     last_heartbeat_log = time.monotonic()
                 try:
                     # MUST hold lock: get_message and subscribe share the same pubsub connection.
@@ -1214,19 +1234,32 @@ class DataConsumer:
                         had_subscriptions = True
                         if pubsub_broken_since == 0:
                             pubsub_broken_since = now
-                            logger.warning("%s pubsub connection dropped after subscribe, will retry... (stream_keys=%d)",
-                                           log_prefix, len(self._redis_market_stream_keys))
+                            logger.warning(
+                                "%s pubsub connection dropped after subscribe, will retry... (stream_keys=%d)",
+                                log_prefix,
+                                len(self._redis_market_stream_keys),
+                            )
                         elif now - pubsub_broken_since > 10:
-                            logger.error("%s pubsub broken for 10s after subscribe. Attempting reconnect... (stream_keys=%d)",
-                                         log_prefix, len(self._redis_market_stream_keys))
+                            logger.error(
+                                "%s pubsub broken for 10s after subscribe. Attempting reconnect... (stream_keys=%d)",
+                                log_prefix,
+                                len(self._redis_market_stream_keys),
+                            )
                             async with self._redis_market_lock:
-                                self._redis_market_pubsub = self._redis_market_client.pubsub()
+                                self._redis_market_pubsub = (
+                                    self._redis_market_client.pubsub()
+                                )
                                 for sk in list(self._redis_market_stream_keys):
                                     ch = _market_data_redis_event_channel(sk)
                                     try:
                                         await self._redis_market_pubsub.subscribe(ch)
                                     except Exception as sub_e:
-                                        logger.error("%s reconnect subscribe failed for %s: %s", log_prefix, sk, sub_e)
+                                        logger.error(
+                                            "%s reconnect subscribe failed for %s: %s",
+                                            log_prefix,
+                                            sk,
+                                            sub_e,
+                                        )
                             logger.info("%s reconnect attempt finished.", log_prefix)
                             pubsub_broken_since = 0
                             had_subscriptions = False
@@ -1520,19 +1553,32 @@ class DataConsumer:
                 if self._redis_market_pubsub:
                     try:
                         await self._redis_market_pubsub.subscribe(channel)
-                        logger.info("[RedisMarketData] subscribed to channel=%s (stream_key=%s)", channel, stream_key)
+                        logger.info(
+                            "[RedisMarketData] subscribed to channel=%s (stream_key=%s)",
+                            channel,
+                            stream_key,
+                        )
                     except Exception as sub_e:
-                        logger.error("[RedisMarketData] subscribe FAILED for channel=%s (stream_key=%s): %s",
-                                     channel, stream_key, sub_e,
-                                     exc_info=True)
+                        logger.error(
+                            "[RedisMarketData] subscribe FAILED for channel=%s (stream_key=%s): %s",
+                            channel,
+                            stream_key,
+                            sub_e,
+                            exc_info=True,
+                        )
                         continue
                 else:
-                    logger.error("[RedisMarketData] CANNOT SUBSCRIBE: _redis_market_pubsub is None! stream_key=%s", stream_key)
+                    logger.error(
+                        "[RedisMarketData] CANNOT SUBSCRIBE: _redis_market_pubsub is None! stream_key=%s",
+                        stream_key,
+                    )
                     continue
                 self._redis_market_stream_keys.add(stream_key)
                 self._redis_market_stream_specs[stream_key] = spec
             new_specs.append(spec)
-            logger.info("[RedisMarketData] added stream_key to local set: %s", stream_key)
+            logger.info(
+                "[RedisMarketData] added stream_key to local set: %s", stream_key
+            )
 
             # Load historical kline data from exchange REST API for cache priming
             dk = spec.get("data_type_key", data_type_key)
@@ -1788,9 +1834,7 @@ class DataConsumer:
                     at_least_one_subscription_made = True
                 else:
                     # Creating a NEW global subscription
-                    logger.info(
-                        f"{log_prefix} Using CCXT Pro for {exchange_id}"
-                    )
+                    logger.info(f"{log_prefix} Using CCXT Pro for {exchange_id}")
                     task = self.loop.create_task(
                         self._ccxt_pro_data_ws_loop(
                             uc_symbol,
@@ -3182,7 +3226,9 @@ class DataConsumer:
 
         if "IS_VOLUME_SPIKE" in custom_indicators:
             try:
-                kline_df = add_volume_percentile_rank(kline_df, period=1000, percentile=90)
+                kline_df = add_volume_percentile_rank(
+                    kline_df, period=1000, percentile=90
+                )
                 logger.debug(
                     f"[IndicatorCalc:{uc_symbol}] is_volume_spike calculated (period=1000, pct=90)."
                 )
@@ -3698,7 +3744,9 @@ class DataConsumer:
                     # Re-raise or handle to ensure the outer loop's reconnect logic is triggered
                     raise  # This will be caught by the outer try-except block
 
-                logger.info(f"{log_prefix} Successfully connected to Binance WS. websocket_state={websocket.state}")
+                logger.info(
+                    f"{log_prefix} Successfully connected to Binance WS. websocket_state={websocket.state}"
+                )
                 async with self._binance_market_data_ws_lock:
                     if (
                         self._binance_market_data_ws_tasks.get(binance_stream_id)
