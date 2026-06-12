@@ -256,32 +256,21 @@ async def test_the_intervention_achievement(
     auto_mock_grant_achievement: AsyncMock,
 ):
     """Tests that 'the_intervention' is granted when a user manually closes a position."""
-    with (
-        patch(
-            "api.depthsight_api.crud.get_active_api_key_for_user",
-            new_callable=AsyncMock,
-        ) as mock_get_key,
-        patch("api.depthsight_api.security.decrypt_data", return_value="decrypted_key"),
-        patch("api.depthsight_api.create_exchange_executor") as mock_executor,
-    ):
-        mock_get_key.return_value = models.ApiKey(
-            id=1, user_id=test_user.id, name="Test"
-        )
+    mock_redis = AsyncMock()
 
-        # Mock the executor instance and its methods
-        mock_instance = mock_executor.return_value
-        mock_instance.get_open_positions = AsyncMock(
-            return_value=[{"symbol": "BTCUSDT", "positionAmt": "1.0"}]
-        )
-        mock_instance.place_order = AsyncMock(return_value={})
-
-        await close_position(
-            "BTCUSDT", current_user=test_user, http_session=AsyncMock(), db=db_session
-        )
+    await close_position(
+        "BTCUSDT",
+        api_key_id=None,
+        current_user=test_user,
+        redis_client=mock_redis,
+        db=db_session,
+    )
 
     auto_mock_grant_achievement.assert_called_once_with(
         ANY, test_user.id, "the_intervention"
     )
+    # Verify redis command was sent
+    mock_redis.publish.assert_called_once()
 
 
 async def test_pulling_the_plug_achievement(

@@ -2840,7 +2840,7 @@ class TradingController:
                     current_pos = self._active_position_get(
                         symbol, reconcile_market_type
                     )
-                    if current_pos and current_pos.status == "OPEN":
+                    if current_pos and current_pos.status in {"OPEN", "CLOSING"}:
                         logger.warning(
                             f"{log_prefix} Position {symbol} exists internally but NOT on exchange. Marking as CLOSED."
                         )
@@ -12891,10 +12891,43 @@ class TradingController:
                             )
                             if position_for_sync:
                                 position_for_sync.remaining_quantity = free_base_qty
+                    total_qty = free_base_qty + locked_base_qty
+                    lot_params_sync = await self._get_market_info(
+                        symbol, "lot_params", market_type=position_market_type
+                    )
+                    if not lot_params_sync and hasattr(executor, "get_lot_size_params"):
+                        try:
+                            lot_params_sync = await executor.get_lot_size_params(symbol)
+                        except Exception:
+                            pass
+                    min_qty_sync = float((lot_params_sync or {}).get("minQty", 0) or 0)
+
+                    if (
+                        total_qty <= 0
+                        or (min_qty_sync > 0 and total_qty < min_qty_sync)
+                        or total_qty < 1e-9
+                    ):
+                        logger.info(
+                            f"{log_prefix} SPOT SYNC: Total {base_asset} balance is {total_qty:.8f} "
+                            f"(free={free_base_qty:.8f}, locked={locked_base_qty:.8f}), "
+                            f"which is below minimum tradable quantity ({min_qty_sync}). Closing confirmed."
+                        )
+                        symbol_lock_spot_closed = self._get_lock_for_position(
+                            symbol, normalized_market_type
+                        )
+                        async with symbol_lock_spot_closed:
+                            position_for_sync = self._active_position_get(
+                                symbol, normalized_market_type
+                            )
+                            if position_for_sync:
+                                position_for_sync.remaining_quantity = 0.0
+                        is_confirmed_closed = True
+                        break
                     elif free_base_qty <= 0:
                         logger.warning(
-                            f"{log_prefix} SPOT SYNC: Free {base_asset} balance is {free_base_qty:.8f}; "
-                            "open orders may still be locking funds."
+                            f"{log_prefix} SPOT SYNC: Free {base_asset} balance is {free_base_qty:.8f} "
+                            f"while locked balance is {locked_base_qty:.8f}. "
+                            "Open orders may still be locking funds."
                         )
                         await asyncio.sleep(retry_delay)
                         continue

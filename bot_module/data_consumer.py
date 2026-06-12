@@ -1903,6 +1903,12 @@ class DataConsumer:
         Returns:
             bool: True if history was successfully loaded (or was loaded previously), False in case of error.
         """
+        if self._market_data_mode == "redis":
+            logger.debug(
+                f"DataConsumer is in REDIS mode. Skipping local history download for {data_type_key}:{symbol_uc}."
+            )
+            return True
+
         # Step 1: Define a unique key for the cache and a prefix for logs
         log_prefix_base = f"[HistLoadEnsure:{symbol_uc}]"
         cache_key = ""

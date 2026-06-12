@@ -538,13 +538,29 @@ async def _sync_live_runtime_for_plan_change(
     previous_plan: Optional[str],
     new_plan: Optional[str],
 ) -> None:
-    previous_live = plan_allows_live_trading(previous_plan)
-    new_live = plan_allows_live_trading(new_plan)
+    def allows_all_keys(plan: Optional[str]) -> bool:
+        if not plan:
+            return False
+        plan_config = plans_config.get_plan(plan)
+        return plan_allows_live_trading(plan) and not plan_config.get("limits", {}).get(
+            "allow_free_bybit_trading", False
+        )
 
-    if previous_live == new_live:
-        return
+    def allows_free_bybit(plan: Optional[str]) -> bool:
+        if not plan:
+            return False
+        plan_config = plans_config.get_plan(plan)
+        return plan_config.get("limits", {}).get(
+            "allow_free_bybit_trading", False
+        ) and "allow_real_trading" not in plan_config.get("permissions", [])
 
-    if new_live:
+    prev_all = allows_all_keys(previous_plan)
+    new_all = allows_all_keys(new_plan)
+    prev_free = allows_free_bybit(previous_plan)
+    new_free = allows_free_bybit(new_plan)
+
+    # Case 1: No live trading in previous plan, but live trading is allowed now
+    if not (prev_all or prev_free) and (new_all or new_free):
         command = build_initialize_user_controller_command(user_id)
         await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
         logger.info(
@@ -555,18 +571,50 @@ async def _sync_live_runtime_for_plan_change(
         )
         return
 
-    active_keys = await crud.get_active_api_keys_for_user(db, user_id=user_id)
-    for api_key_id in get_active_api_key_ids(active_keys):
-        command = build_deactivate_api_key_command(user_id, api_key_id)
-        await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
+    # Case 2: Live trading allowed previously, but not allowed now
+    if (prev_all or prev_free) and not (new_all or new_free):
+        active_keys = await crud.get_active_api_keys_for_user(db, user_id=user_id)
+        for api_key_id in get_active_api_key_ids(active_keys):
+            command = build_deactivate_api_key_command(user_id, api_key_id)
+            await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
+        logger.info(
+            "Published %s DEACTIVATE_API_KEY commands after plan change for user_id=%s (%s -> %s).",
+            len(get_active_api_key_ids(active_keys)),
+            user_id,
+            previous_plan,
+            new_plan,
+        )
+        return
 
-    logger.info(
-        "Published %s DEACTIVATE_API_KEY commands after plan change for user_id=%s (%s -> %s).",
-        len(get_active_api_key_ids(active_keys)),
-        user_id,
-        previous_plan,
-        new_plan,
-    )
+    # Case 3: Upgrading from free to standard/pro (now non-Bybit keys can run too)
+    if prev_free and new_all:
+        command = build_initialize_user_controller_command(user_id)
+        await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
+        logger.info(
+            "Published INITIALIZE_USER_CONTROLLER after upgrade from free to standard/pro for user_id=%s (%s -> %s).",
+            user_id,
+            previous_plan,
+            new_plan,
+        )
+        return
+
+    # Case 4: Downgrading from standard/pro to free (only Bybit keys can run now)
+    if prev_all and new_free:
+        active_keys = await crud.get_active_api_keys_for_user(db, user_id=user_id)
+        deactivated_count = 0
+        for key in active_keys:
+            if key.exchange.lower() != "bybit":
+                command = build_deactivate_api_key_command(user_id, key.id)
+                await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
+                deactivated_count += 1
+        logger.info(
+            "Published %s DEACTIVATE_API_KEY commands for non-Bybit keys after downgrade to free for user_id=%s (%s -> %s).",
+            deactivated_count,
+            user_id,
+            previous_plan,
+            new_plan,
+        )
+        return
 
 
 async def _enforce_live_strategy_limit(
@@ -580,6 +628,13 @@ async def _enforce_live_strategy_limit(
         return
 
     live_limit = get_max_live_strategies(user.plan)
+    plan_config = plans_config.get_plan(user.plan)
+    limits = plan_config.get("limits", {})
+    if limits.get(
+        "allow_free_bybit_trading", False
+    ) and "allow_real_trading" not in plan_config.get("permissions", []):
+        live_limit = int(limits.get("max_free_bybit_live_strategies", 1))
+
     if live_limit is None or live_limit < 0:
         return
 

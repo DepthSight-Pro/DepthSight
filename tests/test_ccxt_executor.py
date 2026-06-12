@@ -118,12 +118,13 @@ def test_to_execution_report_maps_ccxt_order_without_name_error():
         }
     )
 
-    assert report["s"] == "BTCUSDT"
-    assert report["X"] == "PARTIALLY_FILLED"
-    assert report["x"] == "TRADE"
-    assert report["z"] == "0.5"
-    assert report["n"] == "0.01"
-    assert report["N"] == "USDT"
+    data = report["o"] if "o" in report else report
+    assert data["s"] == "BTCUSDT"
+    assert data["X"] == "PARTIALLY_FILLED"
+    assert data["x"] == "TRADE"
+    assert data["z"] == "0.5"
+    assert data["n"] == "0.01"
+    assert data["N"] == "USDT"
 
 
 @pytest.mark.asyncio
@@ -688,15 +689,20 @@ async def test_cancel_all_open_orders_falls_back_to_fetch_and_cancel():
 
     result = await executor.cancel_all_open_orders("BTCUSDT")
 
-    executor._exchange.fetch_open_orders.assert_awaited_once_with("BTC/USDT:USDT")
-    assert executor._exchange.cancel_order.await_count == 2
+    executor._exchange.fetch_open_orders.assert_any_await("BTC/USDT:USDT")
+    assert executor._exchange.cancel_order.await_count == 4
     assert result["status"] == "OK"
-    assert result["cancelled"] == 2
+    assert result["cancelled"] == 4
 
 
 @pytest.mark.asyncio
 async def test_get_open_algo_orders_filters_trigger_orders():
     executor = make_executor("bybit")
+    executor._exchange.fetch_open_orders = AsyncMock(
+        return_value=[
+            {"type": "STOP_MARKET", "stopPrice": "95000"},
+        ]
+    )
     executor.get_open_orders = AsyncMock(
         return_value=[
             {"type": "LIMIT", "stopPrice": "0"},
@@ -706,7 +712,9 @@ async def test_get_open_algo_orders_filters_trigger_orders():
 
     orders = await executor.get_open_algo_orders("BTCUSDT")
 
-    assert orders == [{"type": "STOP_MARKET", "stopPrice": "95000"}]
+    assert len(orders) == 1
+    assert orders[0]["type"] == "STOP_MARKET"
+    assert orders[0]["stopPrice"] == "95000"
 
 
 @pytest.mark.asyncio

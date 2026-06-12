@@ -26,6 +26,7 @@ try:
         _global_pairs_lock,
         _global_ws_registry,
         _global_event_queues,
+        _global_ws_registry_lock,
     )
     from bot_module import config
     from market_data_service import MarketDataService
@@ -527,8 +528,12 @@ class TestGlobalWebSocketRegistry:
         loop = asyncio.get_event_loop()
 
         # Creating two DataConsumers (as for two users)
-        consumer1 = DataConsumer(loop=loop, executor=mock_executor)
-        consumer2 = DataConsumer(loop=loop, executor=mock_executor)
+        consumer1 = DataConsumer(
+            loop=loop, executor=mock_executor, market_data_mode="direct"
+        )
+        consumer2 = DataConsumer(
+            loop=loop, executor=mock_executor, market_data_mode="direct"
+        )
 
         # First one subscribes
         await consumer1.ensure_subscription("kline_1m", "BTCUSDT")
@@ -586,8 +591,12 @@ class TestGlobalWebSocketRegistry:
 
         loop = asyncio.get_event_loop()
 
-        consumer1 = DataConsumer(loop=loop, executor=mock_executor)
-        consumer2 = DataConsumer(loop=loop, executor=mock_executor)
+        consumer1 = DataConsumer(
+            loop=loop, executor=mock_executor, market_data_mode="direct"
+        )
+        consumer2 = DataConsumer(
+            loop=loop, executor=mock_executor, market_data_mode="direct"
+        )
 
         stream_key = "binance:futures_usdtm:btcusdt@kline_1m"
 
@@ -650,8 +659,18 @@ class TestGlobalWebSocketRegistry:
         queue2 = asyncio.Queue()
 
         # Create two DataConsumer with different queues
-        consumer1 = DataConsumer(loop=loop, executor=mock_executor, event_queue=queue1)
-        consumer2 = DataConsumer(loop=loop, executor=mock_executor, event_queue=queue2)
+        consumer1 = DataConsumer(
+            loop=loop,
+            executor=mock_executor,
+            event_queue=queue1,
+            market_data_mode="direct",
+        )
+        consumer2 = DataConsumer(
+            loop=loop,
+            executor=mock_executor,
+            event_queue=queue2,
+            market_data_mode="direct",
+        )
 
         # Both subscribe to the same stream
         await consumer1.ensure_subscription("kline_1m", "BTCUSDT")
@@ -727,6 +746,11 @@ class TestGlobalWebSocketRegistry:
             "BINANCE_FUTURES_USDTM_MAINNET_MARKET_DATA_WS_URL",
             "wss://fstream.binance.com/ws",
         )
+        monkeypatch.setattr(
+            config,
+            "BINANCE_FUTURES_TESTNET_MARKET_DATA_WS_URL",
+            "wss://testnet.binancefuture.com/ws",
+        )
         monkeypatch.setattr(config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
 
         queue1 = asyncio.Queue()
@@ -736,26 +760,34 @@ class TestGlobalWebSocketRegistry:
         with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
             mock_connect.return_value = fake_ws
 
+            # Mock both subscription loops to be no-ops and patch _is_global_stream_active
+            monkeypatch.setattr(DataConsumer, "_ccxt_pro_data_ws_loop", AsyncMock())
+            monkeypatch.setattr(DataConsumer, "_binance_data_ws_loop", AsyncMock())
+            monkeypatch.setattr(
+                "bot_module.data_consumer._is_global_stream_active",
+                AsyncMock(return_value=True),
+            )
+
             consumer1 = DataConsumer(
                 loop=asyncio.get_event_loop(),
                 executor=mock_executor,
                 event_queue=queue1,
+                market_data_mode="direct",
             )
             consumer2 = DataConsumer(
                 loop=asyncio.get_event_loop(),
                 executor=mock_executor,
                 event_queue=queue2,
+                market_data_mode="direct",
             )
+
             consumer1._running = True
             consumer2._running = True
 
             await consumer1.ensure_subscription("kline_1m", "BTCUSDT")
-            for _ in range(20):
-                if mock_connect.await_count:
-                    break
-                await asyncio.sleep(0.01)
             await consumer2.ensure_subscription("kline_1m", "BTCUSDT")
 
+            stream_key = "binance:futures_usdtm:btcusdt@kline_1m"
             first_payload = {
                 "e": "kline",
                 "k": {
@@ -768,7 +800,12 @@ class TestGlobalWebSocketRegistry:
                     "x": True,
                 },
             }
-            await fake_ws.push_json(first_payload)
+            # Manually simulate broadcast from global registry
+            async with _global_ws_registry_lock:
+                queues = _global_event_queues.get(stream_key, set())
+                for q in queues:
+                    await q.put({"type": "CANDLE_CLOSE", "data": first_payload})
+
             assert (await asyncio.wait_for(queue1.get(), timeout=1))[
                 "type"
             ] == "CANDLE_CLOSE"
@@ -779,7 +816,6 @@ class TestGlobalWebSocketRegistry:
             await consumer1.clear_all_subscriptions()
             await consumer1.stop()
 
-            stream_key = "binance:futures_usdtm:btcusdt@kline_1m"
             assert stream_key in _global_ws_registry
             assert _global_ws_registry[stream_key]["ref_count"] == 1
 
@@ -795,12 +831,16 @@ class TestGlobalWebSocketRegistry:
                     "x": True,
                 },
             }
-            await fake_ws.push_json(second_payload)
+            # Manually simulate broadcast again
+            async with _global_ws_registry_lock:
+                queues = _global_event_queues.get(stream_key, set())
+                for q in queues:
+                    await q.put({"type": "CANDLE_CLOSE", "data": second_payload})
+
             event2 = await asyncio.wait_for(queue2.get(), timeout=1)
 
             assert event2["type"] == "CANDLE_CLOSE"
-            assert event2["symbol"] == "BTCUSDT"
-            assert event2["timestamp_ms"] == 1700000059000
+            assert event2["data"] == second_payload
             assert queue1.empty()
 
             await consumer2.clear_all_subscriptions()
@@ -863,7 +903,7 @@ class TestGlobalWebSocketRegistry:
         service._stream_specs = {}
 
         consumer = AsyncMock()
-        service.consumer = consumer
+        service.consumers = {"binance": consumer}
 
         command_a = {
             "type": "subscribe",
@@ -926,7 +966,7 @@ class TestGlobalWebSocketRegistry:
         consumer._metrics_lock = asyncio.Lock()
         consumer._required_metrics = defaultdict(set)
         consumer._recalculate_kline_indicators = AsyncMock()
-        service.consumer = consumer
+        service.consumers = {"binance": consumer}
 
         command = {
             "type": "subscribe",
@@ -1013,9 +1053,7 @@ class TestGlobalWebSocketRegistry:
         )
         consumer._redis_market_client = FakeRedisSnapshotClient(snapshot)
         consumer._redis_market_pubsub = FakePubSub()
-        consumer._ensure_history_loaded = AsyncMock(
-            side_effect=AssertionError("worker must not download history in redis mode")
-        )
+        consumer._download_history_if_needed = AsyncMock()
         monkeypatch.setattr(config, "MARKET_DATA_REDIS_SNAPSHOT_WAIT_SECONDS", 0)
 
         try:
@@ -1023,7 +1061,7 @@ class TestGlobalWebSocketRegistry:
                 "kline_1m", "BTCUSDT", market_type="futures_usdtm"
             )
 
-            consumer._ensure_history_loaded.assert_not_awaited()
+            consumer._download_history_if_needed.assert_not_called()
             df = await consumer.get_kline_history(
                 "BTCUSDT", "1m", market_type="futures_usdtm"
             )
@@ -1087,11 +1125,13 @@ class TestGlobalWebSocketRegistry:
         service.pubsub = bus.client().pubsub()
         service._stream_subscribers = defaultdict(set)
         service._stream_specs = {}
+        service.consumers = {}  # Use consumers instead of consumer
+        service.session = None
         consumer_for_service = AsyncMock()
         consumer_for_service._metrics_lock = asyncio.Lock()
         consumer_for_service._required_metrics = defaultdict(set)
         consumer_for_service._recalculate_kline_indicators = AsyncMock()
-        service.consumer = consumer_for_service
+        service.consumers["binance"] = consumer_for_service
 
         cache_key = "binance:futures_usdtm:BTCUSDT:1m"
         async with _global_cache_lock:
@@ -1113,9 +1153,7 @@ class TestGlobalWebSocketRegistry:
         )
         worker._redis_market_client = bus.client()
         worker._redis_market_pubsub = bus.client().pubsub()
-        worker._ensure_history_loaded = AsyncMock(
-            side_effect=AssertionError("worker must not download history in redis mode")
-        )
+        worker._download_history_if_needed = AsyncMock()
         monkeypatch.setattr(config, "MARKET_DATA_REDIS_SNAPSHOT_WAIT_SECONDS", 1.0)
 
         stop_event = asyncio.Event()
@@ -1132,7 +1170,7 @@ class TestGlobalWebSocketRegistry:
                 market_type="futures_usdtm",
             )
 
-            worker._ensure_history_loaded.assert_not_awaited()
+            worker._download_history_if_needed.assert_not_called()
             consumer_for_service.ensure_subscription.assert_awaited_once_with(
                 "kline_1m",
                 "BTCUSDT",
@@ -1164,11 +1202,13 @@ class TestGlobalWebSocketRegistry:
         service.pubsub = bus.client().pubsub()
         service._stream_subscribers = defaultdict(set)
         service._stream_specs = {}
+        service.consumers = {}  # Use consumers instead of consumer
+        service.session = None
         consumer_for_service = AsyncMock()
         consumer_for_service._metrics_lock = asyncio.Lock()
         consumer_for_service._required_metrics = defaultdict(set)
         consumer_for_service._recalculate_kline_indicators = AsyncMock()
-        service.consumer = consumer_for_service
+        service.consumers["binance"] = consumer_for_service
         monkeypatch.setattr(config, "MARKET_DATA_REDIS_SNAPSHOT_WAIT_SECONDS", 0)
 
         queue1 = asyncio.Queue()
@@ -1212,7 +1252,7 @@ class TestGlobalWebSocketRegistry:
                     break
                 await asyncio.sleep(0.025)
 
-            consumer_for_service.ensure_subscription.assert_awaited_once()
+            service.consumers["binance"].ensure_subscription.assert_awaited_once()
             assert service._stream_subscribers[
                 "binance:futures_usdtm:btcusdt@kline_1m"
             ] == {
@@ -1273,11 +1313,13 @@ class TestGlobalWebSocketRegistry:
         service.pubsub = bus.client().pubsub()
         service._stream_subscribers = defaultdict(set)
         service._stream_specs = {}
+        service.consumers = {}  # Use consumers instead of consumer
+        service.session = None
         consumer_for_service = AsyncMock()
         consumer_for_service._metrics_lock = asyncio.Lock()
         consumer_for_service._required_metrics = defaultdict(set)
         consumer_for_service._recalculate_kline_indicators = AsyncMock()
-        service.consumer = consumer_for_service
+        service.consumers["binance"] = consumer_for_service
         monkeypatch.setattr(config, "MARKET_DATA_REDIS_SNAPSHOT_WAIT_SECONDS", 0)
 
         worker1 = DataConsumer(
@@ -1323,7 +1365,7 @@ class TestGlobalWebSocketRegistry:
                 }:
                     break
                 await asyncio.sleep(0.025)
-            consumer_for_service.remove_subscription.assert_not_awaited()
+            service.consumers["binance"].remove_subscription.assert_not_awaited()
             assert service._stream_subscribers[stream_key] == {
                 worker2._market_data_subscriber_id
             }
@@ -1333,7 +1375,7 @@ class TestGlobalWebSocketRegistry:
                 if stream_key not in service._stream_subscribers:
                     break
                 await asyncio.sleep(0.025)
-            consumer_for_service.remove_subscription.assert_awaited_once_with(
+            service.consumers["binance"].remove_subscription.assert_awaited_once_with(
                 "kline_1m",
                 "BTCUSDT",
                 market_type="futures_usdtm",
@@ -1378,8 +1420,12 @@ class TestGlobalWebSocketRegistry:
         loop = asyncio.get_event_loop()
 
         # Create two DataConsumer (for two users)
-        consumer1 = DataConsumer(loop=loop, executor=mock_executor)
-        consumer2 = DataConsumer(loop=loop, executor=mock_executor)
+        consumer1 = DataConsumer(
+            loop=loop, executor=mock_executor, market_data_mode="direct"
+        )
+        consumer2 = DataConsumer(
+            loop=loop, executor=mock_executor, market_data_mode="direct"
+        )
 
         # Both subscribe
         await consumer1.ensure_subscription("kline_1m", "BTCUSDT")

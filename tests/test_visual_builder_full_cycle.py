@@ -434,9 +434,9 @@ async def test_e2e_grid_management_on_testnet(e2e_controller: TradingController)
                 "params": {
                     "direction": "LONG",
                     "sl_type": "percent_from_price",
-                    "sl_value": 3,
+                    "sl_value": 8,
                     "tp_type": "percent_from_price",
-                    "tp_value": 3,
+                    "tp_value": 8,
                 },
             },
             "positionManagement": [
@@ -445,8 +445,8 @@ async def test_e2e_grid_management_on_testnet(e2e_controller: TradingController)
                     "type": "grid_management",
                     "params": {
                         "levels": 5,
-                        "upper_bound": current_price * 1.05,
-                        "lower_bound": current_price * 0.95,
+                        "upper_bound": current_price * 1.03,
+                        "lower_bound": current_price * 0.97,
                     },
                 }
             ],

@@ -2,6 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
+import redis.exceptions as redis_exceptions
 
 import json
 import asyncio
@@ -473,7 +474,7 @@ async def emergency_stop(
         )
         # Grant 'pulling_the_plug' achievement
         await grant_achievement(db, current_user.id, "pulling_the_plug")
-    except redis.exceptions.ConnectionError as e:
+    except redis_exceptions.ConnectionError as e:
         logger.error(
             f"Could not send EMERGENCY_STOP command to Redis for user '{current_user.username}' (ID: {current_user.id}): {e}"
         )
@@ -686,7 +687,7 @@ async def close_position(
         # Grant 'the_intervention' achievement
         await grant_achievement(db, current_user.id, "the_intervention")
 
-    except redis.exceptions.ConnectionError as e:
+    except redis_exceptions.ConnectionError as e:
         logger.error(
             f"Could not send CLOSE_POSITION command to Redis for user '{current_user.username}': {e}"
         )
@@ -802,7 +803,7 @@ async def update_position_sl_tp(
         logger.info(
             f"User '{current_user.username}' (ID: {current_user.id}) - SL/TP Update: UPDATE_SL_TP command sent for position {position_id}. Payload: {command_payload}"
         )
-    except redis.exceptions.ConnectionError as e:
+    except redis_exceptions.ConnectionError as e:
         logger.error(
             f"User '{current_user.username}' (ID: {current_user.id}) - SL/TP Update: Failed to publish UPDATE_SL_TP command to Redis for position {position_id}. Error: {e}"
         )
