@@ -12,6 +12,9 @@ from pathlib import Path
 import asyncio
 import aiohttp
 import numpy as np
+
+from bot_module.logger_setup import setup_global_logging
+
 from celery.result import AsyncResult  # noqa: F401
 from .gamification import grant_achievement  # noqa: F401
 
@@ -223,6 +226,9 @@ from .routes.strategies import (  # noqa: F401
     get_strategy_lineage,
     breed_strategies,
 )
+
+# Initialize global logging for the API service
+setup_global_logging("api.log")
 
 _BINANCE_ADAPTER_CLASS = BinanceExecutor
 

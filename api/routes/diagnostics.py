@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
@@ -118,11 +118,13 @@ async def get_system_status_endpoint(
 async def proxy_binance_klines(
     symbol: str,
     interval: str,
+    response: Response,
     startTime: Optional[int] = None,
     endTime: Optional[int] = None,
     limit: int = 500,
     http_session: aiohttp.ClientSession = HttpSessDep,
 ):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     """
     Proxy to fetch klines data from Binance API.
     Tries futures API first, falls back to spot on error.
@@ -245,12 +247,14 @@ async def proxy_bybit_exchange_info(
 async def proxy_bybit_klines(
     symbol: str,
     interval: str,
+    response: Response,
     category: str = "linear",
     start: Optional[int] = None,
     end: Optional[int] = None,
     limit: int = 1000,
     http_session: aiohttp.ClientSession = HttpSessDep,
 ):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     """
     Proxy to fetch klines data from Bybit V5 API.
     """

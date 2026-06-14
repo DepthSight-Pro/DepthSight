@@ -1039,6 +1039,10 @@ class PositionResponseItem(BaseModel):
     take_profit: Optional[float] = None
     market_type: Optional[str] = None
     api_key_id: Optional[int] = None
+    signal_details_json: Optional[Dict[str, Any]] = None
+    executions: Optional[List[TradeExecution]] = None
+    partial_tp_orders: Optional[List[Dict[str, Any]]] = None
+    dca_orders: Optional[List[Dict[str, Any]]] = None
 
 
 # --- Strategy Operation Schemas (moved from depthsight_api.py) ---

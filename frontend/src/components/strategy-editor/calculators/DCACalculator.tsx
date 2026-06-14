@@ -14,7 +14,7 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import { apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import { fetchBinanceKlines } from "@/lib/binanceApi";
 import { useStrategyEditorStore } from "@/stores/strategyEditorStore";
 

@@ -85,7 +85,7 @@ plans:
       celery_task_priority: 9
       max_concurrent_tasks: 1
       allow_free_bybit_trading: true
-      max_free_bybit_live_strategies: 1
+      max_free_bybit_live_strategies: 5
 
   standard:
     name: "Standard"

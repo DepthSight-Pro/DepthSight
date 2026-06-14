@@ -67,7 +67,8 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/context/AuthContext";
-import { apiClient, useMyGenes } from "@/lib/api";
+import { useMyGenes } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 import type { Achievement, UserAchievement } from "@/types/api";
 import { UserProgressCard } from "./UserProgressCard";

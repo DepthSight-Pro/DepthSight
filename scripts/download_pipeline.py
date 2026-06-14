@@ -11,6 +11,10 @@ from typing import Optional
 import gc
 import shutil
 import os
+import sys
+
+# Add project root to sys.path to resolve bot_module imports when running directly as a script
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import pandas as pd
 import numpy as np
@@ -154,11 +158,18 @@ def save_data(df: pd.DataFrame, target_path: Path):
             df = df[~df.index.duplicated(keep="last")]
 
     df = df[~df.index.duplicated(keep="last")].sort_index()  # Final check
+    temp_path = target_path.with_name(f"{target_path.name}.tmp")
     try:
-        df.to_parquet(target_path, engine="pyarrow", compression="snappy")
+        df.to_parquet(temp_path, engine="pyarrow", compression="snappy")
+        os.replace(temp_path, target_path)
         print(f"Successfully saved/updated {len(df)} rows in file {target_path}")
     except Exception as e:
         logging.error(f"Error saving to Parquet file {target_path}: {e}")
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
 
 
 def download_and_process(
@@ -290,14 +301,14 @@ def download_and_process(
                         )
                         save_data(chunk_df, target_path)
                     elif data_type in ["aggTrades", "bookDepth"]:
-                        for group_date, group_df in chunk_df.groupby(
-                            pd.Grouper(freq="D")
+                        for group_month, group_df in chunk_df.groupby(
+                            pd.Grouper(freq="MS")
                         ):
                             if not group_df.empty:
                                 target_path = get_target_path(
                                     symbol,
                                     data_type,
-                                    partition_date=group_date.date(),
+                                    partition_date=group_month.date(),
                                     base_path=base_path,
                                 )
                                 save_data(group_df, target_path)

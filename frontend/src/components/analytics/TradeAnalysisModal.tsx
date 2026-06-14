@@ -44,8 +44,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { apiClient } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { apiClient } from "@/lib/apiClient";
+import { cn, estimateTickSize } from "@/lib/utils";
 import {
 	fetchKlines,
 	fetchSymbolInfo,
@@ -53,7 +53,7 @@ import {
 	type Kline,
 	type KlineInterval,
 } from "@/services/binanceService";
-import { fetchBybitKlines } from "@/services/bybitService";
+import { fetchBybitKlines, fetchBybitSymbolInfo } from "@/services/bybitService";
 import type {
 	StrategyConfigData,
 	TradeData,
@@ -2797,17 +2797,61 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		try {
 			// Fetch tick size if not provided
 			if (!tickSize) {
-				fetchSymbolInfo(trade.symbol).then((info) => {
-					if (info && info.symbols && info.symbols[0]) {
-						const symbolInfo = info.symbols[0];
-						const priceFilter = symbolInfo.filters.find(
-							(f: any) => f.filterType === "PRICE_FILTER",
-						);
-						if (priceFilter && priceFilter.tickSize) {
-							setTickSize(parseFloat(priceFilter.tickSize));
+				const cleanSymbol = trade.symbol.toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
+				const isBybit = String(trade.exchange || "").toLowerCase().includes("bybit");
+				if (isBybit) {
+					fetchBybitSymbolInfo(trade.symbol).then((info) => {
+						if (info && info.result && info.result.list && info.result.list[0]) {
+							const symbolInfo = info.result.list[0];
+							if (symbolInfo.priceFilter && symbolInfo.priceFilter.tickSize) {
+								setTickSize(parseFloat(symbolInfo.priceFilter.tickSize));
+							}
 						}
-					}
-				});
+					}).catch((err) => {
+						console.warn("Failed to fetch Bybit symbol info, falling back to Binance", err);
+						fetchSymbolInfo(trade.symbol).then((binanceInfo) => {
+							if (binanceInfo && binanceInfo.symbols) {
+								const symbolInfo = binanceInfo.symbols.find(
+									(s: any) => s.symbol.toUpperCase() === cleanSymbol,
+								);
+								if (symbolInfo) {
+									const priceFilter = symbolInfo.filters.find(
+										(f: any) => f.filterType === "PRICE_FILTER",
+									);
+									if (priceFilter && priceFilter.tickSize) {
+										setTickSize(parseFloat(priceFilter.tickSize));
+									}
+								}
+							}
+						});
+					});
+				} else {
+					fetchSymbolInfo(trade.symbol).then((info) => {
+						if (info && info.symbols) {
+							const symbolInfo = info.symbols.find(
+								(s: any) => s.symbol.toUpperCase() === cleanSymbol,
+							);
+							if (symbolInfo) {
+								const priceFilter = symbolInfo.filters.find(
+									(f: any) => f.filterType === "PRICE_FILTER",
+								);
+								if (priceFilter && priceFilter.tickSize) {
+									setTickSize(parseFloat(priceFilter.tickSize));
+								}
+							}
+						}
+					}).catch((err) => {
+						console.warn("Failed to fetch Binance symbol info, falling back to Bybit", err);
+						fetchBybitSymbolInfo(trade.symbol).then((bybitInfo) => {
+							if (bybitInfo && bybitInfo.result && bybitInfo.result.list && bybitInfo.result.list[0]) {
+								const symbolInfo = bybitInfo.result.list[0];
+								if (symbolInfo.priceFilter && symbolInfo.priceFilter.tickSize) {
+									setTickSize(parseFloat(symbolInfo.priceFilter.tickSize));
+								}
+							}
+						});
+					});
+				}
 			}
 
 			let data: Kline[];
@@ -3001,6 +3045,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			return res;
 		};
 
+		const effectiveTickSize = tickSize || estimateTickSize(klines);
 		// Series
 		const candlestickSeries = mainChart.addSeries(CandlestickSeries, {
 			upColor: "#22c55e",
@@ -3009,13 +3054,11 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			wickUpColor: "#22c55e",
 			wickDownColor: "#ef4444",
 			autoscaleInfoProvider: autoScaleProvider,
-			priceFormat: tickSize
-				? {
-						type: "price",
-						precision: Math.ceil(Math.max(0, -Math.log10(tickSize))),
-						minMove: tickSize,
-					}
-				: undefined,
+			priceFormat: {
+				type: "price",
+				precision: Math.ceil(Math.max(0, -Math.log10(effectiveTickSize))),
+				minMove: effectiveTickSize,
+			},
 		});
 
 		seriesRef.current = candlestickSeries;
@@ -3616,7 +3659,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 						if (isValidTrace) {
 							return (
-								<div className="flex-1 flex flex-col xl:flex-row gap-6 min-h-0 overflow-hidden relative">
+								<div className="flex-1 flex flex-col xl:flex-row gap-6 min-h-[600px] overflow-hidden relative">
 									{/* Left Column: Decision Tree */}
 									<div
 										className={cn(

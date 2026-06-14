@@ -2,7 +2,7 @@
 
 import { v4 as uuidv4 } from "uuid";
 import { create } from "zustand";
-import { apiClient } from "../lib/api"; // Import apiClient service
+import { apiClient } from "../lib/apiClient"; // Import apiClient service
 
 // As defined in the backend and api.ts
 export interface Message {

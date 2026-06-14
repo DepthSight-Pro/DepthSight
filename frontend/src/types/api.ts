@@ -226,6 +226,25 @@ export interface PositionData {
 	marketType?: "futures_usdtm" | "spot";
 	signal_details_json?: Record<string, unknown>; // Decision trace for foundation analytics
 	api_key_id?: number;
+	executions?: TradeExecution[];
+	partial_tp_orders?: Array<{
+		target_price: number;
+		orig_fraction: number;
+		quantity: number;
+		order_id?: string | number | null;
+		client_order_id?: string | null;
+		status: string;
+		fill_price?: number | null;
+		commission?: number | null;
+	}>;
+	dca_orders?: Array<{
+		target_price: number;
+		quantity: number;
+		order_id?: string | number | null;
+		client_order_id?: string | null;
+		status: string;
+		fill_price?: number | null;
+	}>;
 }
 
 // --- Types for tasks (backtest/optimization) ---

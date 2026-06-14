@@ -370,7 +370,6 @@ async def start_strategy_instance(
     """
     from ..depthsight_api import (
         _enforce_live_strategy_limit,
-        _check_symbol_permissions,
         _check_intracandle_trigger_permission,
         _coerce_strategy_config_dict,
         _enforce_strategy_plan_restrictions,
@@ -447,23 +446,8 @@ async def start_strategy_instance(
     )
     symbols = request.symbols if request.symbols is not None else config_to_run.symbols
 
-    # 3. Perform permission checks
-    if current_user.plan == "free":
-        symbols_to_check = []
-        if symbol_selection_mode == "STATIC" and symbols:
-            symbols_to_check.extend(symbols)
-        elif (
-            config_to_run.config_data
-            and isinstance(config_to_run.config_data, dict)
-            and "symbol" in config_to_run.config_data
-        ):
-            symbols_to_check.append(config_to_run.config_data["symbol"])
-
-        if symbols_to_check:
-            logger.info(
-                f"Free user '{current_user.username}' starting strategy. Checking symbols: {symbols_to_check}"
-            )
-            await _check_symbol_permissions(current_user, symbols_to_check)
+    # 3. Perform permission checks (symbol list restrictions only apply to backtests)
+    pass
 
     _check_intracandle_trigger_permission(current_user, config_to_run.config_data)
 

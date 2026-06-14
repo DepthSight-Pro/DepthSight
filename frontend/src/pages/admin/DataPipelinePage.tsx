@@ -17,7 +17,7 @@ import {
   Search,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import {
   Card,
   CardContent,
@@ -236,6 +236,21 @@ const DataPipelinePage: React.FC = () => {
         </div>
       </div>
 
+      {isRunning && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-4 space-y-2">
+            <div className="flex justify-between items-end">
+              <div className="space-y-1">
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Current Activity</span>
+                <p className="text-sm font-medium">{currentTask || (isRunning ? "Initializing pipeline..." : "Pipeline finished")}</p>
+              </div>
+              <span className="text-2xl font-mono font-bold text-primary">{Math.round(progress)}%</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
           <TabsTrigger value="config" className="flex items-center gap-2">
@@ -435,9 +450,13 @@ const DataPipelinePage: React.FC = () => {
                    />
                    <Label htmlFor="catchUpDelete" className="text-xs font-medium cursor-pointer">Clean AggTrades</Label>
                 </div>
-                <Button onClick={handleCatchUp} className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2">
-                  <Zap className="h-4 w-4 fill-current" /> Catch Up All History
-                </Button>
+                 <Button 
+                   onClick={handleCatchUp} 
+                   disabled={isRunning || isLoading} 
+                   className="bg-amber-600 hover:bg-amber-700 text-white font-bold gap-2 disabled:opacity-50"
+                 >
+                   <Zap className="h-4 w-4 fill-current" /> Catch Up All History
+                 </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -527,19 +546,6 @@ const DataPipelinePage: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="terminal" className="space-y-6">
-          {(isRunning || logs) && (
-            <div className="space-y-2">
-              <div className="flex justify-between items-end">
-                 <div className="space-y-1">
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Current Activity</span>
-                    <p className="text-sm font-medium">{currentTask || (isRunning ? "Initializing pipeline..." : "Pipeline finished")}</p>
-                 </div>
-                 <span className="text-2xl font-mono font-bold text-primary">{Math.round(progress)}%</span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-          )}
-
           <Card className="bg-black border-zinc-800 overflow-hidden shadow-2xl">
              <div className="bg-zinc-900 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">

@@ -46,7 +46,8 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/context/AuthContext";
-import { apiClient, useAccountStatus, useSystemStatus } from "@/lib/api";
+import { useAccountStatus, useSystemStatus } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 
 // Define navigation item structure

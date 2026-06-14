@@ -1,6 +1,5 @@
 import logging
 import json
-import subprocess
 from pathlib import Path
 from typing import Optional, List
 from datetime import timedelta, datetime, date
@@ -18,6 +17,9 @@ from ..dependencies import require_admin_role
 from ..redis_client import get_redis_client
 from ..plans import plans_config
 from ..audit_logger import audit_logger, get_client_ip
+
+from celery.result import AsyncResult
+from tasks import celery_app, run_data_pipeline_task
 
 logger = logging.getLogger(__name__)
 
@@ -453,7 +455,6 @@ async def admin_get_affiliate_referrals(
 
 
 PIPELINE_LOG_FILE = Path("logs") / "download_pipeline.log"
-_pipeline_process = None
 
 
 class PipelineStartRequest(BaseModel):
@@ -472,57 +473,77 @@ class CatchUpRequest(BaseModel):
 
 
 @admin_router.post("/data-pipeline/start")
-async def start_data_pipeline(req: PipelineStartRequest):
-    global _pipeline_process
+async def start_data_pipeline(
+    req: PipelineStartRequest,
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
+    task_id = await redis_client.get("depthsight:data-pipeline:task_id")
+    status_val = await redis_client.get("depthsight:data-pipeline:status")
 
-    if _pipeline_process is not None and _pipeline_process.poll() is None:
+    is_running = status_val == "running"
+    if is_running and task_id:
+        res = AsyncResult(task_id, app=celery_app)
+        if res.state in ["SUCCESS", "FAILURE", "REVOKED"]:
+            is_running = False
+
+    if is_running:
         raise HTTPException(status_code=400, detail="Pipeline is already running.")
 
-    cmd = ["python", "scripts/download_pipeline.py"]
-    cmd.extend(["--symbols", req.symbols])
-    cmd.extend(["--data-types", req.data_types])
-    cmd.extend(["--timeframes", req.timeframes])
+    cmd_args = []
+    cmd_args.extend(["--symbols", req.symbols])
+    cmd_args.extend(["--data-types", req.data_types])
+    cmd_args.extend(["--timeframes", req.timeframes])
 
     if req.update_only:
-        cmd.append("--update")
+        cmd_args.append("--update")
     else:
         if not req.start_date or not req.end_date:
             raise HTTPException(
                 status_code=400,
                 detail="Start and end dates are required unless update_only is true.",
             )
-        cmd.extend(["--start-date", req.start_date])
-        cmd.extend(["--end-date", req.end_date])
+        cmd_args.extend(["--start-date", req.start_date])
+        cmd_args.extend(["--end-date", req.end_date])
 
     if req.enrich_only:
-        cmd.append("--enrich-only")
+        cmd_args.append("--enrich-only")
     if req.delete_aggtrades:
-        cmd.append("--delete-aggtrades")
-
-    # Ensure log directory exists
-    PIPELINE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    log_file = open(PIPELINE_LOG_FILE, "w", encoding="utf-8")
+        cmd_args.append("--delete-aggtrades")
 
     try:
-        _pipeline_process = subprocess.Popen(
-            cmd,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            cwd=str(Path(__file__).parent.parent.parent.resolve()),
-        )
+        # Clear log file before starting
+        PIPELINE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(PIPELINE_LOG_FILE, "w", encoding="utf-8") as f:
+            f.write("Starting pipeline via Celery worker...\n")
+
+        task = run_data_pipeline_task.delay(cmd_args)
+        await redis_client.set("depthsight:data-pipeline:task_id", task.id)
+        await redis_client.set("depthsight:data-pipeline:status", "running")
     except Exception as e:
-        log_file.close()
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"message": "Pipeline started successfully."}
 
 
 @admin_router.get("/data-pipeline/status")
-async def get_data_pipeline_status():
-    global _pipeline_process
+async def get_data_pipeline_status(
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
+    task_id = await redis_client.get("depthsight:data-pipeline:task_id")
+    status_val = await redis_client.get("depthsight:data-pipeline:status")
 
-    is_running = _pipeline_process is not None and _pipeline_process.poll() is None
+    is_running = status_val == "running"
+
+    if is_running and task_id:
+        res = AsyncResult(task_id, app=celery_app)
+        if res.state in ["SUCCESS", "FAILURE", "REVOKED"]:
+            is_running = False
+            new_status = (
+                "completed"
+                if res.state == "SUCCESS"
+                else ("stopped" if res.state == "REVOKED" else "failed")
+            )
+            await redis_client.set("depthsight:data-pipeline:status", new_status)
 
     logs = ""
     progress = 0.0
@@ -555,19 +576,21 @@ async def get_data_pipeline_status():
 
 
 @admin_router.post("/data-pipeline/stop")
-async def stop_data_pipeline():
-    global _pipeline_process
+async def stop_data_pipeline(
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
+    task_id = await redis_client.get("depthsight:data-pipeline:task_id")
+    status_val = await redis_client.get("depthsight:data-pipeline:status")
 
-    if _pipeline_process is None or _pipeline_process.poll() is not None:
+    if status_val != "running" or not task_id:
         raise HTTPException(status_code=400, detail="Pipeline is not running.")
 
-    _pipeline_process.terminate()
     try:
-        _pipeline_process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        _pipeline_process.kill()
+        celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        await redis_client.set("depthsight:data-pipeline:status", "stopped")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    _pipeline_process = None
     return {"message": "Pipeline stopped."}
 
 
@@ -627,7 +650,10 @@ async def get_data_pipeline_storage_info():
 
 
 @admin_router.post("/data-pipeline/catch-up")
-async def catch_up_data_pipeline(req_params: CatchUpRequest):
+async def catch_up_data_pipeline(
+    req_params: CatchUpRequest,
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
     info = await get_data_pipeline_storage_info()
 
     # We'll determine data types based on what's already there
@@ -663,4 +689,4 @@ async def catch_up_data_pipeline(req_params: CatchUpRequest):
         timeframes="1m,5m,15m,1h,4h,1d",
         delete_aggtrades=req_params.delete_aggtrades,
     )
-    return await start_data_pipeline(req)
+    return await start_data_pipeline(req, redis_client=redis_client)

@@ -1,6 +1,6 @@
 // frontend/src/services/binanceService.ts
 
-import { apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 
 export interface Kline {
 	time: number;
@@ -63,6 +63,7 @@ export async function fetchKlines(
 			startTime: paddedStart.toString(),
 			endTime: paddedEnd.toString(),
 			limit: "1500",
+			_t: Date.now().toString(),
 		});
 		const data = await apiClient<[number, string, string, string, string, string, ...unknown[]][]>(
 			`/proxy/binance/klines?${params.toString()}`
@@ -89,15 +90,12 @@ export async function fetchKlines(
 	return [];
 }
 
-/**
- * Fetches symbol info (exchange info) from Binance proxy.
- */
 export async function fetchSymbolInfo(symbol: string): Promise<any> {
 	try {
-		const response = await apiClient.get<ApiResponse<any>>(
+		const response = await apiClient<any>(
 			`/proxy/binance/exchange-info?symbol=${symbol.toUpperCase()}`,
 		);
-		return response.data.data;
+		return response;
 	} catch (error) {
 		console.warn(`Error fetching symbol info for ${symbol}:`, error);
 		return null;

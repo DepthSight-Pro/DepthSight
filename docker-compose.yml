@@ -74,6 +74,11 @@ services:
       redis:
         condition: service_healthy
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   websocket:
     build: .
@@ -103,6 +108,7 @@ services:
     volumes:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
+      - ./logs:/app/logs
     env_file: .env
     environment:
       - MARKET_DATA_FANOUT_MODE=redis
@@ -120,6 +126,11 @@ services:
       redis-market:
         condition: service_started
     restart: on-failure
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   market_data:
     build: .
@@ -128,6 +139,7 @@ services:
     volumes:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
+      - ./logs:/app/logs
     env_file: .env
     environment:
       - MARKET_DATA_FANOUT_MODE=redis
@@ -141,6 +153,11 @@ services:
       redis-market:
         condition: service_started
     restart: on-failure
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   celery_worker:
     build: .
@@ -149,6 +166,7 @@ services:
     volumes:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
+      - ./logs:/app/logs
     env_file: .env
     environment:
       - REDIS_USERNAME=celery
@@ -160,6 +178,11 @@ services:
       redis:
         condition: service_healthy
     restart: on-failure
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   frontend:
     build:

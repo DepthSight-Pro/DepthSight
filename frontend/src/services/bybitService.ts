@@ -1,6 +1,6 @@
 // frontend/src/services/bybitService.ts
 
-import { apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import type { Kline, KlineInterval } from "./binanceService";
 
 export async function fetchBybitKlines(
@@ -49,6 +49,7 @@ export async function fetchBybitKlines(
 				start: paddedStart.toString(),
 				end: paddedEnd.toString(),
 				limit: "1000",
+				_t: Date.now().toString(),
 			});
 
 			const json = await apiClient<{ retCode: number; result?: { list?: string[][] } }>(
@@ -77,5 +78,18 @@ export async function fetchBybitKlines(
 
 	console.error(`Could not fetch data for ${cleanSymbol} from any Bybit proxy endpoint.`);
 	return [];
+}
+
+export async function fetchBybitSymbolInfo(symbol: string): Promise<any> {
+	try {
+		const cleanSymbol = symbol.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+		const response = await apiClient<any>(
+			`/proxy/bybit/exchange-info?symbol=${cleanSymbol}`,
+		);
+		return response;
+	} catch (error) {
+		console.warn(`Error fetching Bybit symbol info for ${symbol}:`, error);
+		return null;
+	}
 }
 

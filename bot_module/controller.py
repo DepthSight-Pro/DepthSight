@@ -244,6 +244,32 @@ class PartialTpOrderInfo:
 
 
 @dataclass
+class DcaOrderInfo:
+    target_price: float
+    quantity: float
+    order_id: Optional[Union[str, int]] = None
+    client_order_id: Optional[str] = None
+    status: str = "PENDING"
+    fill_price: Optional[float] = None
+    commission: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "target_price": self.target_price,
+            "quantity": self.quantity,
+            "order_id": self.order_id,
+            "client_order_id": self.client_order_id,
+            "status": self.status,
+            "fill_price": self.fill_price,
+            "commission": self.commission,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DcaOrderInfo":
+        return cls(**data)
+
+
+@dataclass
 class LivePosition(BasePosition):
     """Extends BasePosition with fields specific to live trading."""
 
@@ -254,6 +280,7 @@ class LivePosition(BasePosition):
     entry_client_order_id: Optional[str] = None
     entry_order_status: str = "PENDING"
     partial_tp_orders: List[PartialTpOrderInfo] = field(default_factory=list)
+    dca_orders: List[DcaOrderInfo] = field(default_factory=list)
     execution_events: List[Dict[str, Any]] = field(default_factory=list)
     original_partial_targets_plan: Optional[List[PartialTarget]] = None
     time_status_open: Optional[float] = None
@@ -320,6 +347,7 @@ class LivePosition(BasePosition):
 
         # Handle nested dataclasses
         data["partial_tp_orders"] = [tp.to_dict() for tp in self.partial_tp_orders]
+        data["dca_orders"] = [dca.to_dict() for dca in getattr(self, "dca_orders", [])]
 
         if self.original_partial_targets_plan:
             data["original_partial_targets_plan"] = [
@@ -346,6 +374,13 @@ class LivePosition(BasePosition):
             data["partial_tp_orders"] = [
                 PartialTpOrderInfo.from_dict(tp) for tp in data["partial_tp_orders"]
             ]
+
+        if "dca_orders" in data:
+            data["dca_orders"] = [
+                DcaOrderInfo.from_dict(dca) for dca in data["dca_orders"]
+            ]
+        else:
+            data["dca_orders"] = []
 
         if data.get("original_partial_targets_plan"):
             data["original_partial_targets_plan"] = [
@@ -3196,6 +3231,15 @@ class TradingController:
                 "market_type": self._market_type_for_position(pos),
                 "is_stop_at_be": getattr(pos, "is_stop_at_be", False),
                 "signal_details_json": pos.signal_details,  # Decision trace for foundation analytics
+                "executions": list(pos.execution_events)
+                if hasattr(pos, "execution_events")
+                else [],
+                "partial_tp_orders": [ptp.to_dict() for ptp in pos.partial_tp_orders]
+                if hasattr(pos, "partial_tp_orders")
+                else [],
+                "dca_orders": [dca.to_dict() for dca in pos.dca_orders]
+                if hasattr(pos, "dca_orders")
+                else [],
             }
 
             positions_to_publish.append(pos_data)
@@ -4705,7 +4749,8 @@ class TradingController:
             ROUND_DOWN if position.direction == SignalDirection.LONG else ROUND_UP
         )
 
-        dca_orders = []
+        dca_order_ids = []
+        dca_order_infos = []
         current_cumulative_deviation = 0.0
         current_step = step_value
 
@@ -4809,10 +4854,20 @@ class TradingController:
 
             resp = await executor.place_order(**order_params)
             if resp and not resp.get("error"):
+                order_id = resp.get("orderId")
                 logger.info(
                     f"{log_prefix} Placed SO #{i + 1} at {rounded_price:.8f} (Qty: {new_quantity})"
                 )
-                dca_orders.append(resp.get("orderId"))
+                dca_order_ids.append(order_id)
+                dca_order_infos.append(
+                    DcaOrderInfo(
+                        target_price=rounded_price,
+                        quantity=new_quantity,
+                        order_id=order_id,
+                        client_order_id=order_params["newClientOrderId"],
+                        status="NEW",
+                    )
+                )
             else:
                 logger.error(f"{log_prefix} Failed to place SO #{i + 1}: {resp}")
 
@@ -4824,11 +4879,14 @@ class TradingController:
             if pos:
                 if not hasattr(pos, "dca_order_ids"):
                     pos.dca_order_ids = []
-                pos.dca_order_ids.extend(dca_orders)
+                pos.dca_order_ids.extend(dca_order_ids)
+                if not hasattr(pos, "dca_orders"):
+                    pos.dca_orders = []
+                pos.dca_orders.extend(dca_order_infos)
                 pos.dca_grid_init_in_progress = False
                 pos.dca_grid_init_triggered = None
                 logger.info(
-                    f"{log_prefix} Successfully placed {len(dca_orders)} out of {max_sos} DCA Safety Orders."
+                    f"{log_prefix} Successfully placed {len(dca_order_ids)} out of {max_sos} DCA Safety Orders."
                 )
 
     async def _execute_grid_ladder(self, position: "LivePosition", grid_params: dict):
@@ -8258,6 +8316,29 @@ class TradingController:
                     orders_to_cancel_after_lock.append(
                         (symbol, ptp.order_id, ptp.client_order_id, False)
                     )  # TP orders are not Algo orders
+
+            if hasattr(position, "dca_orders") and position.dca_orders:
+                for dca in position.dca_orders:
+                    if (
+                        dca.status in {"PENDING", "NEW"}
+                        and dca.order_id is not None
+                        and str(dca.order_id) != str(order_id)
+                    ):
+                        orders_to_cancel_after_lock.append(
+                            (symbol, dca.order_id, dca.client_order_id, False)
+                        )
+
+            if hasattr(position, "dca_order_ids") and position.dca_order_ids:
+                for dca_id in position.dca_order_ids:
+                    if str(dca_id) != str(order_id):
+                        already_in = any(
+                            str(o[1]) == str(dca_id)
+                            for o in orders_to_cancel_after_lock
+                        )
+                        if not already_in:
+                            orders_to_cancel_after_lock.append(
+                                (symbol, dca_id, None, False)
+                            )
 
             # Updating main position information
             position.status = "CLOSED"
@@ -12050,6 +12131,24 @@ class TradingController:
                 logger.info(
                     f"{log_prefix} Matches SCALE-IN/DCA order (ClientOrderID: {client_order_id})."
                 )
+                if hasattr(position, "dca_orders") and position.dca_orders:
+                    for dca_item in position.dca_orders:
+                        if (
+                            dca_item.order_id is not None
+                            and str(dca_item.order_id) == str(order_id)
+                        ) or (
+                            dca_item.client_order_id == client_order_id
+                            and dca_item.client_order_id is not None
+                        ):
+                            dca_item.status = order_status
+                            if order_status == "FILLED":
+                                dca_item.fill_price = (
+                                    avg_price_filled
+                                    if avg_price_filled > 0
+                                    else last_filled_price
+                                )
+                            break
+
                 if order_status == "FILLED":
                     fill_price = (
                         avg_price_filled if avg_price_filled > 0 else last_filled_price
@@ -12901,16 +13000,20 @@ class TradingController:
                         except Exception:
                             pass
                     min_qty_sync = float((lot_params_sync or {}).get("minQty", 0) or 0)
+                    step_size_sync = float(
+                        (lot_params_sync or {}).get("stepSize", 0) or 0
+                    )
 
                     if (
                         total_qty <= 0
                         or (min_qty_sync > 0 and total_qty < min_qty_sync)
+                        or (step_size_sync > 0 and total_qty < step_size_sync)
                         or total_qty < 1e-9
                     ):
                         logger.info(
                             f"{log_prefix} SPOT SYNC: Total {base_asset} balance is {total_qty:.8f} "
                             f"(free={free_base_qty:.8f}, locked={locked_base_qty:.8f}), "
-                            f"which is below minimum tradable quantity ({min_qty_sync}). Closing confirmed."
+                            f"which is below minimum tradable quantity/step size ({min_qty_sync}/{step_size_sync}). Closing confirmed."
                         )
                         symbol_lock_spot_closed = self._get_lock_for_position(
                             symbol, normalized_market_type

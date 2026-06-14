@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useKlines } from "@/lib/api";
 import type { TradeData, TradeExecution } from "@/types/api";
+import { estimateTickSize } from "@/lib/utils";
 
 interface TradeChartProps {
 	trades: TradeData[];
@@ -200,7 +201,7 @@ export const TradeChart = ({
 		container.innerHTML = "";
 		container.style.position = "relative";
 		const initialWidth = container.clientWidth || 800;
-		const priceFormat = getPriceFormat(tickSize);
+		const priceFormat = getPriceFormat(tickSize || estimateTickSize(klines));
 
 		const chart = createChart(container, {
 			width: initialWidth,

@@ -12,6 +12,7 @@ import aiohttp
 import redis.asyncio as redis_asyncio
 
 from bot_module import config
+from bot_module.logger_setup import setup_global_logging
 from bot_module.data_consumer import (
     DataConsumer,
     _global_active_pairs,
@@ -430,10 +431,7 @@ class MarketDataService:
 
 
 async def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s",
-    )
+    setup_global_logging("market_data.log")
     service = MarketDataService()
     loop = asyncio.get_running_loop()
     for signame in ("SIGINT", "SIGTERM"):

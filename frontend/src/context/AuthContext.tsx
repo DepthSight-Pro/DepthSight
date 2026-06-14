@@ -11,7 +11,7 @@ import {
 	useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import { resetUserScopedClientState } from "@/lib/clientState";
 import type { User } from "@/types/api";
 

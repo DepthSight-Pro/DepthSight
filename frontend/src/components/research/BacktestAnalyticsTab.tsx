@@ -229,6 +229,7 @@ export const BacktestAnalyticsTab: React.FC<BacktestAnalyticsTabProps> = ({
 				symbol={run.symbol || ""}
 				runId={run.id}
 				selectedTrade={selectedTradeForChart}
+				tickSize={run.tick_size}
 			/>
 
 			{/* --- Passing runId to the table --- */}

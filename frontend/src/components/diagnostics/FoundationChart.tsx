@@ -18,6 +18,7 @@ import {
 	type WhitespaceData,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
+import { estimateTickSize } from "@/lib/utils";
 
 export interface KlineData {
 	time: number;
@@ -87,6 +88,7 @@ export interface FoundationChartProps {
 		from: number;
 		to: number;
 	};
+	tickSize?: number;
 }
 const levelColors: { [key: string]: string } = {
 	significant_level: "#2962ff",
@@ -208,6 +210,7 @@ export const FoundationChart = ({
 	visualizations,
 	tradeOverlay,
 	initialVisibleRange,
+	tickSize,
 }: FoundationChartProps) => {
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -235,12 +238,18 @@ export const FoundationChart = ({
 			},
 		});
 
+		const effectiveTickSize = tickSize || estimateTickSize(uniqueKlines);
 		const candleSeries = chart.addSeries(CandlestickSeries, {
 			upColor: "#22c55e",
 			downColor: "#ef4444",
 			borderVisible: false,
 			wickUpColor: "#22c55e",
 			wickDownColor: "#ef4444",
+			priceFormat: {
+				type: "price",
+				precision: Math.ceil(Math.max(0, -Math.log10(effectiveTickSize))),
+				minMove: effectiveTickSize,
+			},
 		});
 		const markers = createSeriesMarkers(candleSeries);
 
@@ -754,7 +763,7 @@ export const FoundationChart = ({
 			window.removeEventListener("resize", handleResize);
 			chart.remove();
 		};
-	}, [klines, visualizations, tradeOverlay, initialVisibleRange]);
+	}, [klines, visualizations, tradeOverlay, initialVisibleRange, tickSize]);
 
 	return (
 		<div ref={chartContainerRef} style={{ height: "100%", width: "100%" }} />

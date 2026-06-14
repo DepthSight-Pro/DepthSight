@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/context/AuthContext";
-import { apiClient } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 import type { LeaderboardEntry } from "@/types/api";
 

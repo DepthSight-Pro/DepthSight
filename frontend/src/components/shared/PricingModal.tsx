@@ -38,13 +38,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
 import {
-	apiClient,
 	type BitcartPayment,
 	type CreatePaymentResponse,
 	type Plan,
 	useCreatePayment,
 	usePlans,
 } from "@/lib/api";
+import { apiClient } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 
 interface PricingModalProps {

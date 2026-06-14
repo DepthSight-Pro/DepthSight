@@ -23,7 +23,7 @@ from typing import Dict, Optional
 
 # --- Local Imports ---
 from bot_module import config
-from bot_module.logger_setup import setup_bot_logging
+from bot_module.logger_setup import setup_global_logging
 from bot_module.data_consumer import DataConsumer
 from bot_module.exchanges import create_exchange_executor
 from bot_module.risk_manager import RiskManager
@@ -45,7 +45,7 @@ from api.redis_client import get_redis_client
 from bot_module.paper_executor import PaperTradingExecutor
 
 # --- Logging Setup ---
-setup_bot_logging()
+setup_global_logging("bot_runner.log")
 logger = logging.getLogger("bot_module.runner")
 
 # --- Global Variables for Multi-User Bot ---

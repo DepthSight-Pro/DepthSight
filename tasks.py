@@ -28,13 +28,10 @@ PROJECT_ROOT = Path(
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Setup the root logger. All child loggers (tasks, backtester, utils)
-# will inherit this configuration.
-logging.basicConfig(
-    level=logging.INFO,  # Set the desired level (INFO, DEBUG)
-    format="%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s",
-    stream=sys.stdout,  # Explicitly direct writing to standard output
-)
+# Setup global logging for Celery Worker
+from bot_module.logger_setup import setup_global_logging
+
+setup_global_logging("celery_worker.log")
 logger = logging.getLogger(__name__)
 
 STATS_EXCLUDED_EXIT_REASONS = {"END_OF_DATA"}
@@ -3175,3 +3172,91 @@ async def _async_check_expired_subscriptions():
                 e,
                 exc_info=True,
             )
+
+
+@celery_app.task(bind=True, name="run_data_pipeline_task")
+def run_data_pipeline_task(self, cmd_args: List[str]):
+    """
+    Runs download_pipeline.py as a subprocess on the Celery worker
+    redirecting output to the logs/download_pipeline.log file.
+    """
+    import subprocess
+    from pathlib import Path
+
+    logger.info(
+        f"Starting data pipeline task (ID: {self.request.id}) with args: {cmd_args}"
+    )
+
+    # Ensure log directory exists inside worker
+    log_file_path = Path("logs") / "download_pipeline.log"
+    log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = ["python", "scripts/download_pipeline.py"] + cmd_args
+
+    # Update status to running and store task_id
+    if redis_client_for_tasks:
+        try:
+            redis_client_for_tasks.set("depthsight:data-pipeline:status", "running")
+            redis_client_for_tasks.set(
+                "depthsight:data-pipeline:task_id", self.request.id
+            )
+        except Exception as redis_err:
+            logger.warning(f"Failed to write initial status to Redis: {redis_err}")
+
+    with open(log_file_path, "w", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            cwd=str(Path(__file__).parent.resolve()),
+        )
+
+        try:
+            while True:
+                try:
+                    ret_code = process.wait(timeout=2.0)
+                    logger.info(
+                        f"Data pipeline process finished with return code {ret_code}"
+                    )
+                    if ret_code != 0:
+                        raise subprocess.CalledProcessError(ret_code, cmd)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+
+            # Update status to completed
+            if redis_client_for_tasks:
+                try:
+                    redis_client_for_tasks.set(
+                        "depthsight:data-pipeline:status", "completed"
+                    )
+                except Exception as redis_err:
+                    logger.warning(
+                        f"Failed to write completed status to Redis: {redis_err}"
+                    )
+
+        except BaseException as e:
+            logger.warning(
+                f"Celery task run_data_pipeline_task was interrupted/cancelled/failed. Terminating subprocess... Error: {e}"
+            )
+            process.terminate()
+            try:
+                process.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+            if redis_client_for_tasks:
+                try:
+                    if isinstance(e, subprocess.CalledProcessError):
+                        redis_client_for_tasks.set(
+                            "depthsight:data-pipeline:status", "failed"
+                        )
+                    else:
+                        redis_client_for_tasks.set(
+                            "depthsight:data-pipeline:status", "stopped"
+                        )
+                except Exception as redis_err:
+                    logger.warning(
+                        f"Failed to write failure/stopped status to Redis: {redis_err}"
+                    )
+            raise e

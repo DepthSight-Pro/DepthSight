@@ -169,3 +169,64 @@ def setup_bot_logging():
 
     # Return the configured logger
     return module_logger
+
+
+def setup_global_logging(log_filename: str, log_level: str = "INFO"):
+    """
+    Configures root logger to write logs to both console and a rotating file log.
+    File logs are limited to 10MB each, with a maximum of 5 backup copies.
+    """
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+    log_file_path = os.path.join(log_dir, log_filename)
+
+    log_format = "%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s"
+    level = getattr(logging, log_level.upper(), logging.INFO)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove existing handlers to avoid duplicates on re-initialization
+    for handler in root_logger.handlers[:]:
+        try:
+            handler.close()
+        except Exception:
+            pass
+        root_logger.removeHandler(handler)
+
+    # Create console stream handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_formatter = logging.Formatter(log_format)
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(level)
+    root_logger.addHandler(console_handler)
+
+    # Create rotating file handler
+    try:
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file_path,
+            maxBytes=10 * 1024 * 1024,  # 10 MB
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_formatter = logging.Formatter(log_format)
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(level)
+        root_logger.addHandler(file_handler)
+    except Exception as e:
+        print(
+            f"[logger_setup.py ERROR] Failed to initialize global file logging for {log_filename}: {e}",
+            file=sys.stderr,
+        )
+
+    # Disable spammy debug logs from other libraries
+    logging.getLogger("websockets").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("ccxt").setLevel(logging.WARNING)
+    logging.getLogger("ccxt.base.exchange").setLevel(logging.WARNING)
+
+    root_logger.info(
+        f"Global application logging configured. Target: logs/{log_filename}"
+    )

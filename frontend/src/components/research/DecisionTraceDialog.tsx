@@ -375,6 +375,7 @@ export const DecisionTraceDialog: React.FC<DecisionTraceDialogProps> = ({
 									visualizations={visualizations}
 									tradeOverlay={tradeOverlay}
 									initialVisibleRange={initialVisibleRange}
+									tickSize={run.tick_size}
 								/>
 							)}
 							{!klineData && !isLoading && (
