@@ -98,8 +98,7 @@ DepthSight requires a minimum of 6 modern CPU cores and 16GB RAM. If you need a 
 Deploy a fully configured instance on any Ubuntu 22.04+ server with a single command. The script auto-installs Docker, generates all secrets, configures networking, sets up a firewall, and starts every service.
 
 ```bash
-curl -sL "https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh?$(date +%s)" > deploy.sh
-sudo bash deploy.sh
+curl -sL "https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh" | sudo bash
 ```
 
 The interactive installer will ask for your domain (or default to `<IP>.sslip.io` with auto-SSL via Caddy), and optionally enable Bitcart crypto billing.
