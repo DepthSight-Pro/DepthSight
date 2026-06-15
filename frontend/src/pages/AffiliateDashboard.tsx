@@ -137,6 +137,7 @@ const AffiliateDashboard: React.FC = () => {
 			<Card className="mb-6">
 				<CardHeader>
 					<CardTitle>{t("referralLinkCard.title")}</CardTitle>
+					<CardDescription>{t("referralLinkCard.description")}</CardDescription>
 				</CardHeader>
 				<CardContent className="flex items-center gap-4">
 					<Input value={referralLink} readOnly className="flex-1" />

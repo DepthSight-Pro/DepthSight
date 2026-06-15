@@ -420,10 +420,10 @@ async def admin_get_affiliate_commissions(
     Retrieves a paginated list of commissions for a specific affiliate.
     Admin only.
     """
-    # First, check if the user is actually an affiliate
+    # First, check if the user exists
     user = await crud.admin_get_user_details(db, user_id=user_id)
-    if not user or user.role != "affiliate":
-        raise HTTPException(status_code=404, detail="Affiliate user not found")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     commissions, total = await crud.get_commissions_for_affiliate(
         db, affiliate_user_id=user_id, skip=skip, limit=limit
@@ -443,10 +443,10 @@ async def admin_get_affiliate_referrals(
     Retrieves a paginated list of referred users for a specific affiliate.
     Admin only.
     """
-    # First, check if the user is actually an affiliate
+    # First, check if the user exists
     user = await crud.admin_get_user_details(db, user_id=user_id)
-    if not user or user.role != "affiliate":
-        raise HTTPException(status_code=404, detail="Affiliate user not found")
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     users, total = await crud.get_referrals_for_affiliate(
         db, affiliate_user_id=user_id, skip=skip, limit=limit

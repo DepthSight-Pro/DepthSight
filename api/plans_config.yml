@@ -36,11 +36,11 @@ plans:
     active: true
     description: "Basic capabilities and standard strategy blocks."
     features:
-      - "10 fast backtests per day"
+      - "20 fast backtests per day"
       - "Standard blocks (Logic, Indicators, Proximity)"
       - "Limited history (90 days)"
       - "Limited trading pairs list"
-      - "5 AI Assistant queries per day"
+      - "10 AI Assistant queries per day"
     permissions:
       - view_dashboard
       - run_backtest
@@ -69,9 +69,9 @@ plans:
       - "SOONUSDT"
       - "TRUTHUSDT"
     quotas:
-      run_vector_backtest_per_day: 10
+      run_vector_backtest_per_day: 20
       run_kline_backtest_per_day: 0
-      use_ai_assistant_per_day: 5
+      use_ai_assistant_per_day: 10
       run_portfolio_backtest_per_day: 0
       run_optimization_per_month: 0
       run_genetic_search_per_month: 0
@@ -101,8 +101,8 @@ plans:
     active: true
     description: "For active traders. Live trading and standard blocks."
     features:
-      - "25 backtests per day"
-      - "10 AI Assistant queries per day"
+      - "50 backtests per day"
+      - "20 AI Assistant queries per day"
       - "Live trading enabled"
       - "Paper trading"
       - "Standard strategy blocks"
@@ -118,9 +118,9 @@ plans:
       - allow_real_trading
       - use_ai_assistant
     quotas:
-      run_vector_backtest_per_day: 25
+      run_vector_backtest_per_day: 50
       run_kline_backtest_per_day: 0
-      use_ai_assistant_per_day: 10
+      use_ai_assistant_per_day: 20
       run_portfolio_backtest_per_day: 0
       run_optimization_per_month: 0
       run_genetic_search_per_month: 0
@@ -194,5 +194,5 @@ referral_program:
     quantity: 25
 
 affiliate_program:
-  default_commission_rate: 0.50
+  default_commission_rate: 0.40
   commission_hold_period_days: 10

@@ -288,20 +288,30 @@ async def create_commission_for_payment(db: AsyncSession, payment: models.Paymen
     # 3. Get the affiliate user
     affiliate_user = await db.get(models.User, client_user.referred_by_user_id)
 
-    # 4. Check if the referrer is a valid affiliate
-    if not (
-        affiliate_user
-        and affiliate_user.role == "affiliate"
-        and affiliate_user.affiliate_commission_rate
-        and affiliate_user.affiliate_commission_rate > 0
-    ):
+    # 4. Check if the referrer is a valid user
+    if not affiliate_user:
         logger.info(
-            f"No commission: referrer {client_user.referred_by_user_id} is not a valid affiliate."
+            f"No commission: referrer {client_user.referred_by_user_id} not found."
         )
         return
 
-    # 5. Calculate commission amount
-    commission_amount = payment.amount_usd * affiliate_user.affiliate_commission_rate
+    # 5. Get commission rate: user's custom rate or config's default
+    affiliate_config = plans_config.get_affiliate_config()
+    default_rate = affiliate_config.get("default_commission_rate", 0.40)
+    commission_rate = (
+        affiliate_user.affiliate_commission_rate
+        if affiliate_user.affiliate_commission_rate is not None
+        else default_rate
+    )
+
+    if commission_rate <= 0:
+        logger.info(
+            f"No commission: referrer {client_user.referred_by_user_id} has commission rate <= 0."
+        )
+        return
+
+    # 6. Calculate commission amount
+    commission_amount = payment.amount_usd * commission_rate
 
     # 6. Get hold period from config and calculate availability date
     affiliate_config = plans_config.get_affiliate_config()
@@ -533,7 +543,22 @@ async def get_affiliates_with_stats(
     count_query = (
         select(func.count())
         .select_from(models.User)
-        .filter(models.User.role == "affiliate")
+        .outerjoin(
+            referral_count_sq, models.User.id == referral_count_sq.c.referred_by_user_id
+        )
+        .outerjoin(
+            paying_referral_count_sq,
+            models.User.id == paying_referral_count_sq.c.affiliate_user_id,
+        )
+        .outerjoin(earnings_sq, models.User.id == earnings_sq.c.affiliate_user_id)
+        .filter(
+            or_(
+                models.User.role == "affiliate",
+                referral_count_sq.c.referral_count > 0,
+                earnings_sq.c.total_earnings > 0,
+                earnings_sq.c.pending_earnings > 0,
+            )
+        )
     )
     total_count_result = await db.execute(count_query)
     total_count = total_count_result.scalar_one()
@@ -561,7 +586,14 @@ async def get_affiliates_with_stats(
             models.User.id == paying_referral_count_sq.c.affiliate_user_id,
         )
         .outerjoin(earnings_sq, models.User.id == earnings_sq.c.affiliate_user_id)
-        .filter(models.User.role == "affiliate")
+        .filter(
+            or_(
+                models.User.role == "affiliate",
+                referral_count_sq.c.referral_count > 0,
+                earnings_sq.c.total_earnings > 0,
+                earnings_sq.c.pending_earnings > 0,
+            )
+        )
         .order_by(models.User.id)
         .offset(skip)
         .limit(limit)
@@ -1137,30 +1169,7 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
 async def create_pending_bonuses_for_referral(
     db: AsyncSession, referrer_id: int, referred_id: int
 ):
-    bonus_config = plans_config.get_referral_bonus_config()
-    referrer_bonus_config = bonus_config.get("referrer_bonus")
-    referred_user_bonus_config = bonus_config.get("referred_user_bonus")
-
-    if referrer_bonus_config:
-        db_bonus_referrer = models.Bonus(
-            user_id=referrer_id,
-            feature_name=referrer_bonus_config["feature_name"],
-            quantity=referrer_bonus_config["quantity"],
-            status="pending",
-            source_user_id=referred_id,
-        )
-        db.add(db_bonus_referrer)
-
-    if referred_user_bonus_config:
-        db_bonus_referred = models.Bonus(
-            user_id=referred_id,
-            feature_name=referred_user_bonus_config["feature_name"],
-            quantity=referred_user_bonus_config["quantity"],
-            status="pending",
-            source_user_id=referrer_id,
-        )
-        db.add(db_bonus_referred)
-    await db.flush()
+    pass
 
 
 async def activate_bonuses_for_user(db: AsyncSession, user_id: int):

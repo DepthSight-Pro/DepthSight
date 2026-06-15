@@ -109,7 +109,7 @@ const AccountPage: React.FC = () => {
 	};
 
 	const referralLink = user?.referralCode
-		? `${window.location.origin}/register?ref=${user.referralCode}`
+		? `${window.location.protocol}//${window.location.host}/r/${user.referralCode}`
 		: "";
 
 	const handleResetConfirm = () => {
@@ -276,13 +276,7 @@ const AccountPage: React.FC = () => {
 							<CardHeader>
 								<CardTitle>{t("referralCard.title")}</CardTitle>
 								<CardDescription>
-									{t("referralCard.description", {
-										referrerBonus:
-											accountStatus?.referralProgram?.referrer_bonus?.quantity,
-										referredBonus:
-											accountStatus?.referralProgram?.referred_user_bonus
-												?.quantity,
-									})}
+									{t("referralCard.description")}
 								</CardDescription>
 							</CardHeader>
 							<CardContent className="space-y-4">
@@ -334,70 +328,14 @@ const AccountPage: React.FC = () => {
 										</Button>
 									</div>
 								</div>
-
-								{((activeBonuses && activeBonuses.length > 0) ||
-									(pendingBonuses && pendingBonuses.length > 0)) && (
-									<>
-										<Separator className="my-4" />
-										<div className="space-y-3">
-											<h4 className="flex items-center text-sm font-semibold">
-												<Gift className="mr-2 h-4 w-4" />
-												{t("bonusesCard.title")}
-											</h4>
-											<p className="text-sm text-muted-foreground">
-												{t("bonusesCard.description")}
-											</p>
-
-											{activeBonuses && activeBonuses.length > 0 && (
-												<ul className="space-y-2 pt-2">
-													{activeBonuses.map((bonus) => (
-														<li
-															key={`active-${bonus.featureName}`}
-															className="flex justify-between items-center p-2 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md text-sm"
-														>
-															<span className="font-medium">
-																{t(
-																	`bonusesCard.features.${bonus.featureName}`,
-																	{ defaultValue: bonus.featureName },
-																)}
-															</span>
-															<span className="font-bold text-base text-green-700 dark:text-green-400">
-																{bonus.quantity}
-															</span>
-														</li>
-													))}
-												</ul>
-											)}
-
-											{pendingBonuses && pendingBonuses.length > 0 && (
-												<div className="space-y-2">
-													<p className="text-xs text-muted-foreground italic">
-														{t("bonusesCard.pendingNote")}
-													</p>
-													<ul className="space-y-2">
-														{pendingBonuses.map((bonus) => (
-															<li
-																key={`pending-${bonus.featureName}`}
-																className="flex justify-between items-center p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md text-sm opacity-70"
-															>
-																<span className="font-medium">
-																	{t(
-																		`bonusesCard.features.${bonus.featureName}`,
-																		{ defaultValue: bonus.featureName },
-																	)}{" "}
-																	({t("bonusesCard.pending")})
-																</span>
-																<span className="font-bold text-base text-amber-700 dark:text-amber-400">
-																	{bonus.quantity}
-																</span>
-															</li>
-														))}
-													</ul>
-												</div>
-											)}
-										</div>
-									</>
-								)}
+								<div className="pt-2">
+									<Button
+										className="w-full font-medium"
+										onClick={() => navigate("/affiliate-dashboard")}
+									>
+										{t("referralCard.dashboardButton")}
+									</Button>
+								</div>
 							</CardContent>
 						</Card>
 

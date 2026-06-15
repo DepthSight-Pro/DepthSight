@@ -87,3 +87,51 @@ async def test_affiliate_commission_lifecycle(db_session):
     assert comm_future.status == "pending", (
         "Pending commission should still be pending after payout request"
     )
+
+
+@pytest.mark.asyncio
+async def test_default_user_commission_earning(db_session):
+    # 1. Create a regular user who has referred another user
+    referrer_schema = crud.schemas.UserCreate(
+        username="normal_referrer",
+        email="normal_ref@example.com",
+        password="password123",
+    )
+    referrer = await crud.create_user(db_session, referrer_schema)
+    assert referrer.role == "user"
+    assert referrer.affiliate_commission_rate is None
+
+    # 2. Create a referred user
+    referred_schema = crud.schemas.UserCreate(
+        username="referred_by_normal",
+        email="referred_normal@example.com",
+        password="password123",
+    )
+    referred_user = await crud.create_user(db_session, referred_schema)
+    referred_user.referred_by_user_id = referrer.id
+    db_session.add(referred_user)
+    await db_session.commit()
+
+    # 3. Create a successful payment for the referred user
+    payment = models.Payment(
+        user_id=referred_user.id, plan_name="pro", amount_usd=100.0, status="FINISHED"
+    )
+    db_session.add(payment)
+    await db_session.commit()
+    await db_session.refresh(payment)
+
+    # 4. Trigger commission creation
+    await crud.create_commission_for_payment(db_session, payment)
+    await db_session.commit()
+
+    # 5. Verify that a commission was created with the default rate (40% of $100 = $40)
+    from sqlalchemy import select
+
+    comm_query = select(models.Commission).filter_by(affiliate_user_id=referrer.id)
+    res = await db_session.execute(comm_query)
+    commissions = res.scalars().all()
+
+    assert len(commissions) == 1
+    commission = commissions[0]
+    assert commission.commission_amount_usd == 40.0
+    assert commission.status == "pending"

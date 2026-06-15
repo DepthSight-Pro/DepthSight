@@ -47,6 +47,7 @@ from bot_module.paper_executor import PaperTradingExecutor
 # --- Logging Setup ---
 setup_global_logging("bot_runner.log")
 from bot_module.logger_setup import setup_bot_logging
+
 setup_bot_logging()
 logger = logging.getLogger("bot_module.runner")
 

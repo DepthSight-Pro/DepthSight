@@ -154,14 +154,12 @@ export function UserNav() {
 					)}
 
 					{/* LINK TO AFFILIATE PANEL */}
-					{(user.role === "admin" || user.role === "affiliate") && (
-						<DropdownMenuItem asChild>
-							<Link to="/affiliate-dashboard">
-								<LinkIcon className="mr-2 h-4 w-4" />
-								<span>{t("navigation:affiliateDashboard")}</span>
-							</Link>
-						</DropdownMenuItem>
-					)}
+					<DropdownMenuItem asChild>
+						<Link to="/affiliate-dashboard">
+							<LinkIcon className="mr-2 h-4 w-4" />
+							<span>{t("navigation:affiliateDashboard")}</span>
+						</Link>
+					</DropdownMenuItem>
 
 					<DropdownMenuItem asChild>
 						<Link to="/account">

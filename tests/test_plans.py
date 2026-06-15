@@ -165,12 +165,12 @@ class TestUserPlans:
         self, free_user_client, mock_redis_client, free_user, mock_celery_tasks
     ):
         """
-        Verifies that the quota of 10 backtests per day for a free user works correctly.
+        Verifies that the quota of 20 backtests per day for a free user works correctly.
         """
         client = free_user_client
         redis_concurrent_key = f"concurrent_tasks:user:{free_user.id}"
 
-        for i in range(10):
+        for i in range(20):
             response = await client.post(
                 "/api/v1/backtests", json=self.backtest_payload
             )

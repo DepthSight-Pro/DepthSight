@@ -778,7 +778,9 @@ def run_enrichment_for_1m(
     current_day_index = 0
 
     for (year, month), days in sorted(months_groups.items()):
-        print(f"\n--- Loading aggTrades for month: {year}-{month:02d} (found {len(days)} days to enrich) ---")
+        print(
+            f"\n--- Loading aggTrades for month: {year}-{month:02d} (found {len(days)} days to enrich) ---"
+        )
 
         month_start = date(year, month, 1)
         partition_path = get_target_path(
@@ -786,7 +788,9 @@ def run_enrichment_for_1m(
         )
 
         if not partition_path.exists():
-            logging.warning(f"No aggTrades partition file found: {partition_path}. Skipping this month.")
+            logging.warning(
+                f"No aggTrades partition file found: {partition_path}. Skipping this month."
+            )
             current_day_index += len(days)
             continue
 
@@ -796,7 +800,9 @@ def run_enrichment_for_1m(
             if not month_trades_df.index.is_monotonic_increasing:
                 month_trades_df.sort_index(inplace=True)
             if month_trades_df.index.has_duplicates:
-                month_trades_df = month_trades_df[~month_trades_df.index.duplicated(keep="last")]
+                month_trades_df = month_trades_df[
+                    ~month_trades_df.index.duplicated(keep="last")
+                ]
         except Exception as e:
             logging.error(f"Failed to read partition {partition_path}: {e}")
             current_day_index += len(days)
@@ -805,13 +811,19 @@ def run_enrichment_for_1m(
         for current_day in days:
             current_day_index += 1
             day_str = current_day.strftime("%Y-%m-%d")
-            print(f"\n>>>> Enriching day {day_str} ({current_day_index}/{total_days_to_enrich}) <<<<")
+            print(
+                f"\n>>>> Enriching day {day_str} ({current_day_index}/{total_days_to_enrich}) <<<<"
+            )
 
             day_mask = klines_df.index.date == current_day.date()
 
             # Slice the loaded month trades for the day (+ 5 mins buffer at start)
-            day_start = pd.to_datetime(current_day.date() - timedelta(minutes=5)).tz_localize("UTC")
-            day_end = pd.to_datetime(current_day.date() + timedelta(days=1)).tz_localize("UTC")
+            day_start = pd.to_datetime(
+                current_day.date() - timedelta(minutes=5)
+            ).tz_localize("UTC")
+            day_end = pd.to_datetime(
+                current_day.date() + timedelta(days=1)
+            ).tz_localize("UTC")
 
             agg_trades_day = month_trades_df.loc[day_start:day_end]
 
@@ -845,10 +857,14 @@ def run_enrichment_for_1m(
 
         # Save intermediate progress to disk after completing each month
         if days_processed > 0:
-            print(f"\nSaving intermediate enriched file kline_1m.parquet after month {year}-{month:02d}...")
+            print(
+                f"\nSaving intermediate enriched file kline_1m.parquet after month {year}-{month:02d}..."
+            )
             try:
                 if klines_df.columns.duplicated().any():
-                    klines_df = klines_df.loc[:, ~klines_df.columns.duplicated(keep="first")]
+                    klines_df = klines_df.loc[
+                        :, ~klines_df.columns.duplicated(keep="first")
+                    ]
                 klines_df.to_parquet(kline_path, engine="pyarrow", compression="snappy")
                 print("Intermediate save complete.")
             except Exception as e:

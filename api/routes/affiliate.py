@@ -9,7 +9,6 @@ from sqlalchemy.sql import select
 from .. import crud, models, schemas
 from ..auth import get_current_user
 from ..database import get_db
-from ..dependencies import require_affiliate_role
 from ..redis_client import get_redis_client
 
 
@@ -18,7 +17,6 @@ logger = logging.getLogger(__name__)
 affiliate_router = APIRouter(
     prefix="/api/v1/affiliate",
     tags=["Affiliate"],
-    dependencies=[Depends(require_affiliate_role)],
 )
 
 

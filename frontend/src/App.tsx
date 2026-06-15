@@ -23,7 +23,6 @@ import { SymbolSelectionSettingsProvider } from "@/context/SymbolSelectionSettin
 import { ThemeProvider } from "@/context/ThemeProvider";
 import { WebSocketProvider } from "@/context/WebSocketProvider";
 import AdminRoute from "./components/auth/AdminRoute";
-import AffiliateRoute from "./components/auth/AffiliateRoute";
 import { GeneDiscoveryNotification } from "./components/genome/GeneDiscoveryNotification";
 import OnboardingTutorial from "./components/OnboardingTutorial";
 import { PaperModeBanner } from "./components/shared/PaperModeBanner";
@@ -232,6 +231,10 @@ function App() {
 															element={<LeaderboardPage />}
 														/>
 														<Route path="/lab" element={<LaboratoryPage />} />
+														<Route
+															path="/affiliate-dashboard"
+															element={<AffiliateDashboard />}
+														/>
 														{/* Diagnostic / Admin only separate pages */}
 														<Route element={<AdminRoute />}>
 															<Route
@@ -241,15 +244,6 @@ function App() {
 															<Route
 																path="/hft"
 																element={<HftDashboardPage />}
-															/>
-														</Route>
-													</Route>
-
-													<Route element={<AffiliateRoute />}>
-														<Route element={<ProtectedLayout />}>
-															<Route
-																path="/affiliate-dashboard"
-																element={<AffiliateDashboard />}
 															/>
 														</Route>
 													</Route>

@@ -137,7 +137,7 @@ async def test_free_user_backtest_quota(
     free_user_client: AsyncClient, mock_celery_tasks, mock_redis_client, free_user
 ):
     """
-    Verifies that the 'free' user can run exactly 5 backtests per day.
+    Verifies that the 'free' user can run exactly 20 backtests per day.
     """
     url = "/api/v1/backtests"
     payload = {
@@ -153,7 +153,7 @@ async def test_free_user_backtest_quota(
     # which correctly updates the internal state (mock._data) when calling incr/decr.
     # Therefore, manual patching is not needed here and is even harmful (as it did not update mock._data for get).
 
-    for i in range(10):
+    for i in range(20):
         response = await free_user_client.post(url, json=payload)
         assert response.status_code == 202, (
             f"Backtest #{i + 1} failed unexpectedly with status {response.status_code} {response.text}"
@@ -161,7 +161,7 @@ async def test_free_user_backtest_quota(
         # Simulating that the task has finished and released a concurrency slot
         await mock_redis_client.decr(redis_concurrent_key)
 
-    # The eleventh request will be rejected by the usage quota
+    # The 21st request will be rejected by the usage quota
     response = await free_user_client.post(url, json=payload)
     assert response.status_code == 429
     assert "exceeded the usage limit" in response.text

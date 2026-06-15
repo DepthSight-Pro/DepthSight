@@ -1,7 +1,8 @@
 {
 	"pageTitle": "Affiliate Dashboard",
 	"referralLinkCard": {
-		"title": "Your Referral Link"
+		"title": "Your Referral Link",
+		"description": "Invite friends and earn 40% of all their payments! Simply copy your referral link below and share it."
 	},
 	"financialsSection": {
 		"title": "Financials",
