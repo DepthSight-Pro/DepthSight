@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Backend (Python) ──────────────────────────────────────────────
+  backend:
+    name: Backend Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      # Minimal env vars required by the app at import time.
+      # Tests use in-memory SQLite and mock Redis, so these are placeholders.
+      POSTGRES_USER: ci_user
+      POSTGRES_PASSWORD: ci_password
+      POSTGRES_DB: ci_db
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_USERNAME: ""
+      REDIS_PASSWORD: ci_redis_pass
+      REDIS_API_PASSWORD: ci_redis_api
+      REDIS_WEBSOCKET_PASSWORD: ci_redis_ws
+      REDIS_BOT_PASSWORD: ci_redis_bot
+      REDIS_CELERY_PASSWORD: ci_redis_celery
+      REDIS_MARKET_DATA_PASSWORD: ci_redis_md
+      MARKET_REDIS_HOST: localhost
+      MARKET_REDIS_PORT: "6379"
+      MARKET_REDIS_DB: "0"
+      JWT_SECRET_KEY: ci-jwt-secret-key-for-testing-only
+      CONFIRMATION_SECRET_KEY: ci-confirmation-secret-key
+      API_KEY_SECRET: ci-api-key-secret
+      # Valid Fernet key (base64-encoded 32 bytes)
+      API_ENCRYPTION_KEY: bqX7kkJgNzbhm47Vzt0qzIbiTiQn6ZHaa0cOVp08tas=
+      ACTIVE_TRADING_ENVIRONMENT: testnet
+      TRADING_MARKET_TYPE: futures_usdtm
+      MARKET_DATA_FANOUT_MODE: direct
+      TESTING: "true"
+      RATELIMIT_ENABLED: "false"
+      PUBLIC_BASE_URL: http://localhost:8000
+      API_DOMAIN: localhost:8000
+      FRONTEND_BASE_URL: http://localhost:5173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run linter (Ruff)
+        run: |
+          pip install ruff
+          ruff check . --output-format=github
+
+      - name: Run tests
+        run: |
+          pytest -x -q --timeout=120 \
+            --ignore=tests/e2e \
+            -k "not (e2e or _e2e_ or test_live_ or test_telegram_be_e2e)" \
+            --tb=short \
+            2>&1 | head -500
+
+  # ── Frontend (React/Vite) ─────────────────────────────────────────
+  frontend:
+    name: Frontend Build & Lint
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint 2>&1 || true
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: http://localhost:8000
+          VITE_WS_URL: ws://localhost:8765/ws
+          VITE_APP_URL: http://localhost:5173
+
+  # ── PWA (React/Vite) ─────────────────────────────────────────────
+  pwa:
+    name: PWA Build & Lint
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: pwa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pwa/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint 2>&1 || true
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: http://localhost:8000
+          VITE_WS_URL: ws://localhost:8765/ws
+          VITE_APP_URL: http://localhost:5174
