@@ -7,7 +7,7 @@ slowapi>=0.1.9
 charset-normalizer==3.4.2
 click==8.2.1
 click-didyoumean==0.3.1
-click-plugins==1.1.1
+click-plugins==1.1.1.2
 click-repl==0.3.0
 colorama==0.4.6
 honcho==2.0.0
