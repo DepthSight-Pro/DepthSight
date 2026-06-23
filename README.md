@@ -66,42 +66,21 @@ DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 6
 
 ## ⚔️ DepthSight vs. Alternatives
 
-### 1. Comparison with Open-Source Projects
+How DepthSight compares to leading open-source frameworks and commercial trading platforms:
 
-| Criterion | DepthSight | OpenAlgo (2.1k★) | Vibe-Trading (12.7k★) | AI Hedge Fund (49.6k★) | Freqtrade (34k★) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Product Type** | Production SaaS-in-a-box | API bridge for brokers | AI research workspace | Educational script | Trading framework |
-| **Target Market** | Crypto (Binance, Bybit) | 🇮🇳 India only (30+ Indian brokers) | Stocks (US markets) | Stocks (US markets) | Crypto (CCXT) |
-| **Visual UI** | ✅ Drag-and-drop node editor (40+ blocks) | ⚠️ Simple web interface | ❌ CLI only | ❌ CLI only (+ opt. Streamlit) | ⚠️ Basic WebUI |
-| **AI Assistant** | ✅ From prompts + chart screenshots | ❌ | ✅ NL → strategy (LLM) | ✅ Multi-agent analysis | ⚠️ FreqAI (ML, non-generative) |
-| **Backtesting** | ✅ Dual (vector + candle/tick) | ❌ | ✅ | ⚠️ Basic | ✅ Powerful (+ Hyperopt) |
-| **Multi-tenant** | ✅ JWT + Redis quotas + isolation | ❌ Single-user | ❌ Single-user | ❌ Single-user | ❌ Single-user |
-| **Deployment** | ✅ One-click (`curl \| bash`) | Docker | pip install | pip install | Docker / source |
-| **Monetization** | ✅ Bitcart crypto billing | ❌ | ❌ | ❌ | ❌ |
-| **Federation** | ✅ Discovery Hub + Node Network | ❌ | ❌ | ❌ | ❌ |
-| **Mobile Client** | ✅ PWA | ❌ | ❌ | ❌ | Telegram bot |
-| **Architecture** | FastAPI + Celery + Redis ACL + PgBouncer | Flask + React | Python script | Python script | Python + CCXT |
-| **Risk Management** | ✅ Dynamic (auto-adapts per pair) | ❌ | ❌ | ⚠️ Simple RM agent | ⚠️ Standard SL/TP |
-| **Weighted Entries** | ✅ Weighted probability system | ❌ | ❌ | ❌ | ❌ |
-
-### 2. Comparison with Commercial / Closed-Source Platforms
-
-| Criterion | DepthSight | 3Commas | Veles |
-| :--- | :--- | :--- | :--- |
-| **Pricing** | Free (AGPL + commercial license) | $29 - $79/mo | 20% profit commission (up to $50/mo) |
-| **Codebase** | ✅ Open-source | ❌ Proprietary | ❌ Proprietary |
-| **Self-hosted** | ✅ Yes | ❌ Cloud-only | ❌ Cloud-only |
-| **Visual Builder** | ✅ Node editor (40+ blocks, cross-referencing) | ⚠️ AI Chat → "Strategy Cards" (2026), no visual canvas | ⚠️ Pre-built templates (Simple/Moderate/Aggressive) + manual grids |
-| **AI Assistant** | ✅ Prompts + chart screenshots | ⚠️ Gemini-powered chat (limited to DCA bots) | ❌ |
-| **Strategies** | ✅ Infinite logic configurations via node graph | ⚠️ DCA, Grid, SmartTrade, external signals | ⚠️ DCA/Grid hybrid |
-| **Weighted Entries** | ✅ Weighted conditions system | ❌ Simple Boolean/Signal logic | ❌ Simple Boolean/Signal logic |
-| **Dynamic RM** | ✅ Position sizing adapts per pair | ❌ Fixed SL/TP | ⚠️ Trailing stop, breakeven |
-| **Backtesting** | ✅ Dual backtesting engine | ⚠️ Limited backtesting via AI Chat | ✅ Basic backtests |
-| **Order Book Analysis** | ✅ Native depth & spread blocks | ❌ | ❌ |
-| **Multi-Timeframe** | ✅ Yes | ⚠️ Via TradingView webhook signals | ❌ |
-| **Community Hub** | ✅ Federation Hub + templates + discussions | ✅ Marketplace (paid third-party signals) | ❌ |
-| **Mobile App** | ✅ PWA | ✅ iOS/Android | ✅ iOS |
-| **Supported Exchanges** | Binance, Bybit (stable) + 4 in development | 15+ | 8+ |
+| Criterion | DepthSight | Freqtrade (34k★) | Vibe-Trading (12.7k★) | AI Hedge Fund (49k★) | 3Commas | Veles |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Type** | Production SaaS-in-a-box | Trading framework | AI research workspace | Educational script | Commercial SaaS | Commercial DCA/Grid |
+| **License & Code** | ✅ Open-source (AGPL) | ✅ Open-source (GPL) | ✅ Open-source (MIT) | ✅ Open-source (MIT) | ❌ Proprietary | ❌ Proprietary |
+| **Hosting** | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted | ❌ Cloud-only | ❌ Cloud-only |
+| **Target Market** | Crypto (Binance, Bybit via CCXT) | Crypto (CCXT) | Stocks (US markets) | Stocks (US markets) | Crypto (Global) | Crypto (Global) |
+| **Visual UI** | ✅ Drag-and-drop Node Graph | ⚠️ Basic WebUI | ❌ CLI only | ❌ CLI only | ⚠️ DCA Bot Cards | ⚠️ Pre-built Templates |
+| **AI Assistant** | ✅ Prompts + Chart Screenshots | ⚠️ FreqAI (ML only) | ✅ NL → Strategy | ✅ Multi-agent Analysis | ⚠️ DCA chatbot | ❌ None |
+| **Backtesting** | ✅ Dual (vector + candle/tick) | ✅ Powerful + Hyperopt | ✅ Included | ⚠️ Basic | ⚠️ Limited AI chat | ✅ Basic backtests |
+| **Multi-Tenant SaaS** | ✅ JWT + Redis Quotas | ❌ Single-user | ❌ Single-user | ❌ Single-user | ✅ Yes (Proprietary) | ✅ Yes (Proprietary) |
+| **Risk Management** | ✅ Dynamic (adapts per pair) | ⚠️ Standard SL/TP | ❌ None | ⚠️ Simple agent | ❌ Fixed SL/TP | ⚠️ Trailing / Breakeven |
+| **Weighted Entries** | ✅ Weighted conditions system | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Mobile Client** | ✅ PWA | ⚠️ Telegram bot | ❌ None | ❌ None | ✅ iOS / Android | ✅ iOS App |
 
 ## 🚀 One-Click Deploy
 
@@ -119,6 +98,38 @@ curl -sL "https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deplo
 ```
 
 The interactive installer will ask for your domain (or default to `<IP>.sslip.io` with auto-SSL via Caddy), and optionally enable Bitcart crypto billing.
+
+### Updating
+
+You can update DepthSight in two ways:
+
+#### 1. One-Click UI Update (Recommended)
+DepthSight features a secure container-to-host auto-update mechanism:
+* When you click **Update** in the admin web UI, the container writes a `.update_trigger` file into the shared `data/` volume.
+* A host-side cron job (automatically set up by the installer) polls this directory, detects the trigger file, and executes the update script on the host.
+* This allows seamless, zero-downtime updates directly from the web interface without exposing any host or root privileges to the Docker container itself.
+
+#### 2. Manual Update via CLI
+You can also trigger the update manually by running the host-side script:
+
+```bash
+sudo bash /opt/depthsight/update.sh
+```
+
+### Manual / Local Docker
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Before using this outside a local throwaway setup, replace all `change_me_*` secrets in `.env`, especially the Redis ACL passwords and API/JWT/encryption keys.
+
+After startup:
+
+- API docs: `http://localhost:8000/docs`
+- Frontend: `http://localhost:5173`
+- PWA: `http://localhost:5174`
 
 ## 💖 Support the Project
 
@@ -141,29 +152,6 @@ DepthSight is released under the **GNU AGPLv3** open-source license. You are fre
 
 **Dual Licensing for SaaS / Commercial Use:**
 If you want to build a closed-source fin-tech business or a commercial SaaS offering on top of our infrastructure without open-sourcing your modifications under AGPLv3, you must purchase a commercial license. Please contact `admin@depthsight.pro` for White-Label licensing.
-
-### Updating
-
-Pull the latest release and rebuild without downtime:
-
-```bash
-sudo bash /opt/depthsight/update.sh
-```
-
-### Manual / Local Docker
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
-
-Before using this outside a local throwaway setup, replace all `change_me_*` secrets in `.env`, especially the Redis ACL passwords and API/JWT/encryption keys.
-
-After startup:
-
-- API docs: `http://localhost:8000/docs`
-- Frontend: `http://localhost:5173`
-- PWA: `http://localhost:5174`
 
 ## Repository layout
 
