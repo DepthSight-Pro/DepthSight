@@ -927,7 +927,9 @@ def run_enrichment_for_1m(
                 klines_df_save = klines_df.select_dtypes(include=[np.number, "bool"])
                 for col in klines_df_save.select_dtypes(include=["float64"]).columns:
                     klines_df_save[col] = klines_df_save[col].astype("float32")
-                klines_df_save.to_parquet(kline_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+                temp_kline_path = kline_path.with_name(f"{kline_path.name}.tmp")
+                klines_df_save.to_parquet(temp_kline_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+                os.replace(temp_kline_path, kline_path)
                 print("Intermediate save complete.")
             except Exception as e:
                 logging.error(f"Failed to save intermediate progress: {e}")
@@ -948,7 +950,9 @@ def run_enrichment_for_1m(
     klines_df_save = klines_df.select_dtypes(include=[np.number, "bool"])
     for col in klines_df_save.select_dtypes(include=["float64"]).columns:
         klines_df_save[col] = klines_df_save[col].astype("float32")
-    klines_df_save.to_parquet(kline_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+    temp_kline_path = kline_path.with_name(f"{kline_path.name}.tmp")
+    klines_df_save.to_parquet(temp_kline_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+    os.replace(temp_kline_path, kline_path)
     print("Saving complete.")
 
 
@@ -1007,7 +1011,9 @@ def run_generation_for_1s(
         final_month_df_save = final_month_df.select_dtypes(include=[np.number, "bool"])
         for col in final_month_df_save.select_dtypes(include=["float64"]).columns:
             final_month_df_save[col] = final_month_df_save[col].astype("float32")
-        final_month_df_save.to_parquet(target_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+        temp_target_path = target_path.with_name(f"{target_path.name}.tmp")
+        final_month_df_save.to_parquet(temp_target_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+        os.replace(temp_target_path, target_path)
         del month_trades_df, klines_1s_df, enriched_1s_df, final_month_df
         gc.collect()
         print_memory_usage(f"After memory cleanup for {month_key.strftime('%Y-%m')}")

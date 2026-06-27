@@ -35,8 +35,18 @@ Built to democratize the fin-tech industry, it provides a complete infrastructur
 <p align="center">
   <img src="docs/strategy-editor.gif" alt="Visual Strategy Builder Demo" width="800">
   <br>
-  <em>Describe your idea in plain language → AI builds a complete multi-stage strategy.</em>
+  <em>Describe your idea in plain language -> AI builds a complete multi-stage strategy.</em>
 </p>
+
+<div align="center">
+  <details>
+    <summary><b>🎬 Video Demonstration (Click to expand)</b></summary>
+    <br>
+    <a href="https://www.youtube.com/watch?v=FBo0Iomos4A" target="_blank">
+      <img src="https://img.youtube.com/vi/FBo0Iomos4A/maxresdefault.jpg" alt="DepthSight Video Demo" width="800">
+    </a>
+  </details>
+</div>
 
 ## Core Features
 
