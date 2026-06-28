@@ -8,10 +8,11 @@ import { useTranslation } from "react-i18next";
 import { Input } from "../components/ui/Input";
 import { useAuth } from "../contexts/AuthContext";
 import ForgotPasswordScreen from "./ForgotPasswordScreen";
+import { GoogleLogin } from "@react-oauth/google";
 
 const AuthScreen: React.FC = () => {
 	const [isLogin, setIsLogin] = useState(true);
-	const { login } = useAuth();
+	const { login, loginWithTokenAndUser } = useAuth();
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [registrationSuccess, setRegistrationSuccess] = useState(false);
@@ -122,6 +123,35 @@ const AuthScreen: React.FC = () => {
 							? t("auth.invalidCredentials")
 							: t("auth.registrationError"));
 			setError(errorMessage);
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleGoogleSuccess = async (credentialResponse: any) => {
+		if (!credentialResponse.credential) return;
+
+		setLoading(true);
+		setError("");
+
+		try {
+			const response = await fetch("/api/v1/auth/google", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token: credentialResponse.credential }),
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.detail || "Google login failed");
+			}
+
+			const data = await response.json();
+			loginWithTokenAndUser(data.token, data.user);
+			toast.success("Logged in successfully");
+		} catch (err) {
+			console.error("Google login error:", err);
+			setError(err instanceof Error ? err.message : "Google login failed");
 		} finally {
 			setLoading(false);
 		}
@@ -345,6 +375,27 @@ const AuthScreen: React.FC = () => {
 						)}
 					</button>
 				</form>
+
+				<div className="relative my-4">
+					<div className="absolute inset-0 flex items-center">
+						<span className="w-full border-t border-[hsl(var(--border))]" />
+					</div>
+					<div className="relative flex justify-center text-xs uppercase">
+						<span className="bg-[hsl(var(--card))] px-2 text-[hsl(var(--muted-foreground))]">
+							{t("auth.or") || "Or"}
+						</span>
+					</div>
+				</div>
+
+				<div className="flex justify-center w-full my-2">
+					<GoogleLogin
+						onSuccess={handleGoogleSuccess}
+						onError={() => {
+							toast.error("Google Login Failed");
+						}}
+					/>
+				</div>
+
 				<p className="text-center text-sm text-[hsl(var(--muted-foreground))]">
 					{isLogin ? t("auth.noAccount") : t("auth.alreadyHaveAccount")}
 					<button

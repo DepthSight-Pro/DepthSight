@@ -26,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/context/AuthContext";
+import { GoogleLogin } from "@react-oauth/google";
 
 // Validation schema for the login form
 const loginSchema = (t: (key: string) => string) =>
@@ -70,14 +71,51 @@ const useLoginMutation = () => {
 	});
 };
 
+
+const useGoogleLoginMutation = () => {
+	const { login } = useAuth();
+	const { toast } = useToast();
+	const { t } = useTranslation("login");
+
+	return useMutation({
+		mutationFn: async (googleToken: string) => {
+			const response = await fetch("/api/v1/auth/google", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token: googleToken }),
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.detail || t("toastFailureTitle"));
+			}
+			return response.json();
+		},
+		onSuccess: async (data) => {
+			await login(data);
+			toast({ title: t("cardTitle"), description: t("toastSuccess") });
+		},
+		onError: (error: Error) => {
+			toast({
+				variant: "destructive",
+				title: t("toastFailureTitle"),
+				description: error.message,
+			});
+		},
+	});
+};
+
+
 export default function LoginPage() {
 	const { t } = useTranslation(["login", "common"]);
+	const { toast } = useToast();
 
 	const form = useForm<LoginFormValues>({
 		resolver: zodResolver(loginSchema(t)),
 		defaultValues: { username: "", password: "" },
 	});
 	const loginMutation = useLoginMutation();
+	const googleLoginMutation = useGoogleLoginMutation();
 
 	const onSubmit = (data: LoginFormValues) => {
 		const formData = new URLSearchParams();
@@ -150,6 +188,35 @@ export default function LoginPage() {
 							</div>
 						</form>
 					</Form>
+
+					<div className="relative my-4">
+						<div className="absolute inset-0 flex items-center">
+							<span className="w-full border-t" />
+						</div>
+						<div className="relative flex justify-center text-xs uppercase">
+							<span className="bg-background px-2 text-muted-foreground">
+								{t("common:or") || "Or"}
+							</span>
+						</div>
+					</div>
+
+					<div className="flex justify-center w-full my-2">
+						<GoogleLogin
+							onSuccess={(credentialResponse) => {
+								if (credentialResponse.credential) {
+									googleLoginMutation.mutate(credentialResponse.credential);
+								}
+							}}
+							onError={() => {
+								toast({
+									variant: "destructive",
+									title: t("toastFailureTitle"),
+									description: "Google Login Failed",
+								});
+							}}
+						/>
+					</div>
+
 					<div className="mt-4 text-center text-sm">
 						{t("noAccount")}{" "}
 						<Link to="/register" className="underline">

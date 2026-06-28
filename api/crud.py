@@ -86,6 +86,33 @@ async def get_user_by_email(db: AsyncSession, email: str) -> Optional[models.Use
     return db_result.scalars().first()
 
 
+async def create_oauth_user(
+    db: AsyncSession,
+    email: str,
+    username: str,
+    referred_by_user_id: Optional[int] = None,
+) -> models.User:
+    import secrets
+    random_password = secrets.token_urlsafe(24)
+    hashed_password = security.get_password_hash(random_password)
+    ref_code = uuid.uuid4().hex[:8]
+    
+    db_user = models.User(
+        username=username,
+        email=email,
+        hashed_password=hashed_password,
+        is_active=True,
+        plan="free",
+        role="user",
+        referral_code=ref_code,
+        tradingview_webhook_token=_generate_tradingview_webhook_token(),
+        referred_by_user_id=referred_by_user_id,
+    )
+    db.add(db_user)
+    await db.flush()
+    return db_user
+
+
 async def get_user_by_referral_code(
     db: AsyncSession, referral_code: str
 ) -> Optional[models.User]:

@@ -1445,8 +1445,13 @@ async def add_security_headers(request: Request, call_next):
 
     response.headers["Content-Security-Policy"] = (
         f"default-src 'self'; "
-        f"connect-src 'self' {ws_url} {public_base_url} "
+        f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
+        f"frame-src 'self' https://accounts.google.com; "
+        f"connect-src 'self' {ws_url} {public_base_url} https://accounts.google.com "
         f"https://api.binance.com https://fapi.binance.com https://api.bybit.com; "
+        f"style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; "
+        f"font-src 'self' data: https://fonts.gstatic.com; "
+        f"img-src 'self' data: https://lh3.googleusercontent.com; "
         f"frame-ancestors 'none';"
     )
     return response

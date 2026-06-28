@@ -6,6 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
 from .. import crud, schemas, security
 from ..database import get_db
 from ..audit_logger import audit_logger, get_client_ip, get_user_agent
@@ -99,6 +102,104 @@ async def login_for_access_token(
     user_data = schemas.User.model_validate(user_db)
 
     # 5. Log successful login
+    audit_logger.login_success(
+        user_id=user_db.id,
+        username=user_db.username,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
+    )
+
+    return schemas.LoginResponse(token=token_data, user=user_data)
+
+
+@auth_router.post("/google", response_model=schemas.LoginResponse)
+@limiter.limit(get_limit_value("10/minute"))
+async def google_login(
+    request: Request,
+    payload: schemas.GoogleLoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not google_client_id:
+        logger.error("GOOGLE_CLIENT_ID is not configured on the backend.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Google Authentication is not configured on the server."
+        )
+
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            payload.token,
+            google_requests.Request(),
+            google_client_id
+        )
+
+        if idinfo["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
+            raise ValueError("Wrong issuer.")
+
+        email = idinfo.get("email")
+        if not email:
+            raise ValueError("Email not found in Google token.")
+
+    except Exception as e:
+        logger.warning(f"Failed to verify Google token: {e}")
+        audit_logger.login_failed(
+            username=f"google_{payload.token[:10]}...",
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+            reason="Invalid Google token",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google token",
+        )
+
+    user_db = await crud.get_user_by_email(db, email=email)
+    if not user_db:
+        username = email.split("@")[0]
+        base_username = username
+        counter = 1
+        while await crud.get_user_by_username(db, username=username):
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        user_db = await crud.create_oauth_user(db, email=email, username=username)
+        logger.info(f"Created new Google OAuth user: {username} ({email})")
+
+    if not user_db.is_active:
+        audit_logger.login_failed(
+            username=user_db.username,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
+            reason="Account inactive",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user account.",
+        )
+
+    access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = security.create_access_token(
+        data={"sub": user_db.username}, expires_delta=access_token_expires
+    )
+
+    refresh_token_expires = timedelta(minutes=security.REFRESH_TOKEN_EXPIRE_MINUTES)
+    refresh_token = security.create_refresh_token(
+        data={"sub": user_db.username}, expires_delta=refresh_token_expires
+    )
+
+    token_data = schemas.Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+    )
+
+    await check_and_grant_retroactive_achievements(db, user_db.id)
+    await db.commit()
+    await db.refresh(user_db)
+
+    user_data = schemas.User.model_validate(user_db)
+
     audit_logger.login_success(
         user_id=user_db.id,
         username=user_db.username,

@@ -123,6 +123,10 @@ class LoginResponse(BaseModel):
     user: User
 
 
+class GoogleLoginRequest(BaseModel):
+    token: str
+
+
 class TokenData(BaseModel):
     username: Optional[str] = None
 

@@ -769,7 +769,12 @@ const MainAppLayout = () => {
 			case Screen.AIChat:
 				return <AIChatScreen onStrategyGenerated={handleStrategyGenerated} />;
 			case Screen.Editor:
-				return <EditorHybridScreen strategyToEdit={strategyToEdit} />;
+				return (
+					<EditorHybridScreen
+						strategyToEdit={strategyToEdit}
+						onNavigate={handleNavigate}
+					/>
+				);
 			case Screen.BacktestResult:
 				return (
 					<BacktestResultScreen

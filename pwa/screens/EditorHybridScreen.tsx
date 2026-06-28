@@ -9,6 +9,7 @@ import { Logo } from "../components/ui/logo";
 import { useAIChat } from "../contexts/AIChatContext";
 import { api } from "../services/api";
 import { useStrategyEditorStore } from "../stores/strategyEditorStore";
+import { Screen } from "../types";
 import type {
 	BacktestRequest,
 	StrategyConfigData,
@@ -20,11 +21,13 @@ import EditorScreen from "./EditorScreen";
 interface EditorHybridScreenProps {
 	strategyToEdit: Partial<StrategyConfigDB> | null;
 	onSaveSuccess?: (savedStrategyId: string) => void;
+	onNavigate?: (screen: Screen) => void;
 }
 
 const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 	strategyToEdit,
 	onSaveSuccess,
+	onNavigate,
 }) => {
 	const [activeTab, setActiveTab] = useState<"constructor" | "ai">(
 		"constructor",
@@ -74,13 +77,25 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 				// New strategy from scratch
 				reset();
 			}
-			setMessages([
-				{
-					id: "editor-chat-greeting",
-					role: "ai",
-					content: t("editor.aiAssistantGreeting"),
-				},
-			]);
+			setMessages((prev) => {
+				// If we already have a conversation history, preserve it
+				if (
+					prev.length > 1 ||
+					(prev.length === 1 &&
+						prev[0].id !== "initial-greeting" &&
+						prev[0].id !== "editor-chat-greeting")
+				) {
+					return prev;
+				}
+				// Otherwise, set the editor-specific greeting
+				return [
+					{
+						id: "editor-chat-greeting",
+						role: "ai",
+						content: t("editor.aiAssistantGreeting"),
+					},
+				];
+			});
 			setIsLoading(false);
 		};
 
@@ -89,6 +104,7 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 
 	const handleStrategyGenerated = (generatedJson: Partial<StrategyConfigData>) => {
 		loadStrategy(generatedJson as Record<string, unknown>);
+		setActiveTab("constructor");
 		toast.success(t("editor.strategyGenerated"));
 	};
 
@@ -116,12 +132,13 @@ const EditorHybridScreen: React.FC<EditorHybridScreenProps> = ({
 				};
 				await api.runBacktest(request);
 				toast.success(t("editor.backtestStarted"));
+				onNavigate?.(Screen.Research);
 			} catch (error) {
 				console.error("Backtest error:", error);
 				toast.error(t("editor.errorStartingBacktest"));
 			}
 		},
-		[toJson, t],
+		[toJson, t, onNavigate],
 	);
 
 	const handleSaveStrategy = useCallback(async () => {
