@@ -34,7 +34,7 @@ fastapi>=0.115.0  # Needs starlette>=0.47 for security patches
 redis>=4.0.0,<6.0.0
 SQLAlchemy
 alembic
-python-jose[cryptography]>=3.3.0,<4.0.0
+python-jose[cryptography]>=3.5.0,<4.0.0
 passlib[bcrypt]
 bcrypt==3.2.0
 nest-asyncio>=1.5.0,<2.0.0
