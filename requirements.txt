@@ -2,7 +2,7 @@ amqp==5.3.1
 asyncpg==0.30.0
 billiard==4.2.1
 celery==5.5.3
-certifi==2025.6.15
+certifi==2026.6.17
 slowapi>=0.1.9
 charset-normalizer==3.4.2
 click==8.2.1
