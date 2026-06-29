@@ -42,8 +42,8 @@ Built to democratize the fin-tech industry, it provides a complete infrastructur
   <details>
     <summary><b>🎬 Video Demonstration (Click to expand)</b></summary>
     <br>
-    <a href="https://www.youtube.com/watch?v=FBo0Iomos4A" target="_blank">
-      <img src="https://img.youtube.com/vi/FBo0Iomos4A/maxresdefault.jpg" alt="DepthSight Video Demo" width="800">
+    <a href="https://youtu.be/-Fxp-3VSODM" target="_blank">
+      <img src="https://img.youtube.com/vi/-Fxp-3VSODM/maxresdefault.jpg" alt="DepthSight Video Demo" width="800">
     </a>
   </details>
 </div>
