@@ -23,6 +23,8 @@ os.environ["POSTGRES_HOST"] = "localhost"
 os.environ["POSTGRES_PORT"] = "5432"
 os.environ["TESTING"] = "true"
 os.environ["RATELIMIT_ENABLED"] = "false"
+os.environ["JWT_SECRET_KEY"] = "test_secret_key_1234567890_test_secret_key"
+os.environ["API_ENCRYPTION_KEY"] = "fFEvqTGV-LGkN0ASdZrlOUhEpllCyi1Dj-PmKY3eh6Y="
 
 
 # Now the import will pass without errors
