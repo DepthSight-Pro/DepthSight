@@ -1,5 +1,12 @@
 # tests/test_oracle_integration.py
 import pytest
+from pathlib import Path
+from bot_module import config as bot_config
+
+oracle_path = Path(getattr(bot_config, "ORACLE_MODEL_PATH", "data/oracle_model.joblib"))
+if not oracle_path.exists():
+    pytest.skip("Oracle model file not found, skipping oracle integration tests.", allow_module_level=True)
+
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 import pandas as pd
@@ -96,16 +103,8 @@ def create_backtester_for_oracle_test(
     strategy_params, historical_data, mock_oracle_instance
 ):
     """Helper for creating a backtester instance."""
-    from pathlib import Path
-    real_exists = Path.exists
-    def mock_exists(self_path):
-        if "oracle_model.joblib" in str(self_path):
-            return True
-        return real_exists(self_path)
-
-    with (
-        patch("bot_module.depthsight_backtester.Oracle", return_value=mock_oracle_instance),
-        patch("pathlib.Path.exists", side_effect=mock_exists),
+    with patch(
+        "bot_module.depthsight_backtester.Oracle", return_value=mock_oracle_instance
     ):
         bt = DepthSightBacktester(
             strategy_name="TestStrategy",

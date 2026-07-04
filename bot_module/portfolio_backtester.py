@@ -168,7 +168,7 @@ class PortfolioBacktester:
                 atr_period = params.get("atr_period", 14)
                 data_df["atr"] = calculate_atr(data_df, period=atr_period)
                 data_df["atr"] = data_df["atr"].bfill().ffill()
-                data_df["atr"].fillna(0.000001, inplace=True)
+                data_df["atr"] = data_df["atr"].fillna(0.000001)
 
                 specific_rules = contract_config.get("exchange_rules", {})
                 if not specific_rules:
