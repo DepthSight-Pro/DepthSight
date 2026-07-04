@@ -124,7 +124,7 @@ async def test_full_backtest_workflow(
     mock_celery_result.state = "SUCCESS"
     mock_celery_result.result = {"run_id": run_id}
 
-    with patch("api.depthsight_api.AsyncResult", return_value=mock_celery_result):
+    with patch("api.routes.tasks.AsyncResult", return_value=mock_celery_result):
         # 4. WHEN: User periodically checks the task status
         found_run_id = None
         timeout = 5  # seconds

@@ -6,13 +6,10 @@ from datetime import datetime, timezone
 
 import api.gamification
 from api import crud, models, schemas
-from api.depthsight_api import (
-    reset_paper_wallet,
-    preview_foundation,
-    create_shareable_backtest_link,
-    close_position,
-    emergency_stop,
-)
+from api.routes.account import reset_paper_wallet
+from api.routes.diagnostics import preview_foundation
+from api.routes.backtests import create_shareable_backtest_link
+from api.routes.portfolio import close_position, emergency_stop
 from tasks import (
     _async_backtest_logic,
     train_model_task,
@@ -25,7 +22,12 @@ pytestmark = pytest.mark.asyncio
 def auto_mock_grant_achievement():
     mock = AsyncMock()
     with (
-        patch("api.depthsight_api.grant_achievement", mock),
+        patch("api.routes.strategies.grant_achievement", mock),
+        patch("api.routes.portfolio.grant_achievement", mock),
+        patch("api.routes.diagnostics.grant_achievement", mock),
+        patch("api.routes.backtests.grant_achievement", mock),
+        patch("api.routes.api_keys.grant_achievement", mock),
+        patch("api.routes.account.grant_achievement", mock),
         patch("api.gamification.grant_achievement", mock),
         patch("tasks.grant_achievement", mock),
     ):
@@ -84,10 +86,10 @@ async def test_first_api_key_achievement(
 
     with (
         patch(
-            "api.depthsight_api.crud.create_api_key_for_user", new_callable=AsyncMock
+            "api.routes.api_keys.crud.create_api_key_for_user", new_callable=AsyncMock
         ) as mock_create_key,
         patch(
-            "api.depthsight_api.crud.get_config", new_callable=AsyncMock
+            "api.routes.api_keys.crud.get_config", new_callable=AsyncMock
         ) as mock_get_config,
     ):
         mock_create_key.return_value = models.ApiKey(
@@ -116,7 +118,7 @@ async def test_reset_paper_wallet_achievement(
 ):
     """Tests that 'reset_paper' is granted when a user resets their paper wallet."""
     with patch(
-        "api.depthsight_api.crud.init_or_reset_paper_wallet", new_callable=AsyncMock
+        "api.routes.account.crud.init_or_reset_paper_wallet", new_callable=AsyncMock
     ) as mock_reset:
         mock_reset.return_value = [
             models.PaperWallet(user_id=test_user.id, asset="USDT", balance=10000)
@@ -141,7 +143,7 @@ async def test_clairvoyant_achievement(
 ):
     """Tests that 'clairvoyant' is granted when a user uses the foundation visualizer."""
     with patch(
-        "api.depthsight_api.data_loader.download_klines", new_callable=AsyncMock
+        "api.routes.diagnostics.data_loader.download_klines", new_callable=AsyncMock
     ) as mock_download:
         # Mocking the data loading part with some dummy data to avoid 404
         # IMPORTANT: Set a DatetimeIndex so time-based slicing works
@@ -152,7 +154,7 @@ async def test_clairvoyant_achievement(
 
         # Mocking the response generation to isolate the achievement logic
         with patch(
-            "api.depthsight_api.schemas.FoundationPreviewResponse"
+            "api.routes.diagnostics.schemas.FoundationPreviewResponse"
         ) as mock_response:
             mock_response.return_value = {}
             # This endpoint has a complex logic, we focus on mocking dependencies to reach the achievement grant
@@ -191,7 +193,7 @@ async def test_show_off_and_contender_achievements(
     )
 
     with (
-        patch("api.depthsight_api.crud") as mock_crud_module,
+        patch("api.routes.backtests.crud") as mock_crud_module,
         patch(
             "api.depthsight_api._validate_backtest_for_leaderboard",
             new_callable=AsyncMock,
@@ -228,7 +230,7 @@ async def test_show_off_and_contender_achievements(
 
     # Re-apply mocks for the second call if needed, or reuse the same context if valid
     with (
-        patch("api.depthsight_api.crud") as mock_crud_module_2,
+        patch("api.routes.backtests.crud") as mock_crud_module_2,
         patch(
             "api.depthsight_api._validate_backtest_for_leaderboard",
             new_callable=AsyncMock,
@@ -279,13 +281,12 @@ async def test_pulling_the_plug_achievement(
     auto_mock_grant_achievement: AsyncMock,
 ):
     """Tests that 'pulling_the_plug' is granted on emergency stop."""
-    with patch("api.depthsight_api.redis.Redis") as mock_redis:
-        mock_redis_instance = mock_redis.return_value
-        mock_redis_instance.publish = AsyncMock()
+    mock_redis_instance = MagicMock()
+    mock_redis_instance.publish = AsyncMock()
 
-        await emergency_stop(
-            redis_client=mock_redis_instance, current_user=test_user, db=db_session
-        )
+    await emergency_stop(
+        redis_client=mock_redis_instance, current_user=test_user, db=db_session
+    )
 
     # The achievement is granted inside the endpoint
     auto_mock_grant_achievement.assert_called_once_with(

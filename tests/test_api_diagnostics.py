@@ -16,7 +16,7 @@ client = TestClient(app)
 
 @pytest.fixture
 def mock_data_loader():
-    with patch("api.depthsight_api.data_loader") as mock:
+    with patch("api.routes.diagnostics.data_loader") as mock:
         yield mock
 
 

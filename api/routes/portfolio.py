@@ -7,14 +7,14 @@ import redis.exceptions as redis_exceptions
 import json
 import asyncio
 import aiohttp
-import api.depthsight_api as depthsight_api
 from typing import List, Tuple, Optional, Literal
 from datetime import datetime, timezone, timedelta, date
 from sqlalchemy import select, func
 
-from .. import models, schemas, security
+from .. import crud, models, schemas, security
 from ..auth import get_current_user
 from ..database import get_db
+from ..gamification import grant_achievement
 from ..redis_client import get_redis_client
 from ..session_manager import HttpSessDep
 from ..plans import plans_config
@@ -24,18 +24,7 @@ from ..dependencies import (
     check_concurrent_task_limit,
     increment_concurrent_task_counter,
 )
-from tasks import run_portfolio_backtest_task
-
-
-class ModuleProxy:
-    def __init__(self, getattr_fn):
-        self._getattr_fn = getattr_fn
-
-    def __getattr__(self, name):
-        return getattr(self._getattr_fn(), name)
-
-
-crud = ModuleProxy(lambda: depthsight_api.crud)
+from api.celery_app import celery_app
 
 
 MARKET_TYPE_ALL = "all"
@@ -454,8 +443,6 @@ async def emergency_stop(
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from ..depthsight_api import grant_achievement
-
     logger.info(
         f"User '{current_user.username}' (ID: {current_user.id}) initiated EMERGENCY STOP."
     )
@@ -523,7 +510,8 @@ async def run_portfolio_backtest_endpoint(
     priority = limits.get("celery_task_priority", 9)
 
     try:
-        celery_task = run_portfolio_backtest_task.apply_async(
+        celery_task = celery_app.send_task(
+            "run_portfolio_backtest_task",
             args=[request.model_dump(exclude_none=True), current_user.id],
             priority=priority,
         )
@@ -663,8 +651,6 @@ async def close_position(
     """
     Closes an active futures position by sending a CLOSE_POSITION command to the bot controller via Redis.
     """
-    from ..depthsight_api import grant_achievement
-
     logger.info(
         f"User '{current_user.username}' requested to close position for {symbol} (api_key_id={api_key_id})."
     )

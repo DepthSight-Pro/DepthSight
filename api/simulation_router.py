@@ -1145,7 +1145,10 @@ async def get_available_assets():
 
 def _read_simulation_inspector_state(task_id: str) -> Optional[Dict[str, Any]]:
     try:
-        from tasks import _simulation_inspector_state_key, redis_client_for_tasks
+        from api.celery_app import (
+            _simulation_inspector_state_key,
+            redis_client_for_tasks,
+        )
 
         if redis_client_for_tasks is None:
             return None
@@ -1162,7 +1165,10 @@ def _read_simulation_inspector_events(
     task_id: str, start_index: int
 ) -> List[Dict[str, Any]]:
     try:
-        from tasks import _simulation_inspector_events_key, redis_client_for_tasks
+        from api.celery_app import (
+            _simulation_inspector_events_key,
+            redis_client_for_tasks,
+        )
 
         if redis_client_for_tasks is None:
             return []
@@ -1189,10 +1195,11 @@ def _read_simulation_inspector_events(
 async def start_inspector_task(request: InspectorRequest):
     """Queue Inspector Matrix in Celery and return the task id."""
     try:
-        from tasks import run_simulation_inspector_task
+        from api.celery_app import celery_app
 
-        celery_task = run_simulation_inspector_task.apply_async(
-            args=[request.model_dump()]
+        celery_task = celery_app.send_task(
+            "run_simulation_inspector_task",
+            args=[request.model_dump()],
         )
         return {
             "task_id": celery_task.id,
@@ -1209,7 +1216,7 @@ async def get_inspector_task_status(task_id: str):
     """Return current Celery/Redis state for an Inspector Matrix task."""
     try:
         from celery.result import AsyncResult
-        from tasks import celery_app
+        from api.celery_app import celery_app
 
         celery_result = AsyncResult(task_id, app=celery_app)
         state = await asyncio.to_thread(_read_simulation_inspector_state, task_id)
@@ -1232,7 +1239,7 @@ def _simulation_inspector_stream_response(
     async def generate_task_events() -> AsyncGenerator[str, None]:
         try:
             from celery.result import AsyncResult
-            from tasks import celery_app
+            from api.celery_app import celery_app
         except Exception as e:
             yield f"data: {_json_dumps({'type': 'error', 'task_id': task_id, 'message': f'Celery unavailable: {e}'})}\n\n"
             return
@@ -1308,12 +1315,15 @@ async def run_inspector_celery_stream(request: InspectorRequest):
     Keeps the frontend SSE contract compatible with /inspector/stream.
     """
     try:
-        from tasks import run_simulation_inspector_task
+        from api.celery_app import celery_app
     except Exception as e:
         logger.error(f"Simulation inspector Celery imports failed: {e}", exc_info=True)
         raise HTTPException(status_code=503, detail=f"Celery unavailable: {e}")
 
-    celery_task = run_simulation_inspector_task.apply_async(args=[request.model_dump()])
+    celery_task = celery_app.send_task(
+        "run_simulation_inspector_task",
+        args=[request.model_dump()],
+    )
     task_id = celery_task.id
     total_tasks = len(request.assets) * len(request.variants)
     logger.info(f"[SSE/Celery] Inspector task queued: {task_id}")

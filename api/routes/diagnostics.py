@@ -8,7 +8,6 @@ import json
 import aiohttp
 import pandas as pd
 import pandas_ta as ta
-import api.depthsight_api as depthsight_api
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -17,8 +16,10 @@ from sqlalchemy import text
 from .. import models, schemas
 from ..auth import get_current_user
 from ..database import get_db
+from ..gamification import grant_achievement
 from ..redis_client import get_redis_client
 from ..session_manager import HttpSessDep
+from bot_module import data_loader
 from bot_module.strategy import (
     find_trend_zones,
     find_consolidation_zones,
@@ -31,17 +32,6 @@ from bot_module.strategy import (
     _check_foundation_volume_confirmation,
     _generate_round_levels,
 )
-
-
-class ModuleProxy:
-    def __init__(self, getattr_fn):
-        self._getattr_fn = getattr_fn
-
-    def __getattr__(self, name):
-        return getattr(self._getattr_fn(), name)
-
-
-data_loader = ModuleProxy(lambda: depthsight_api.data_loader)
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 LOCAL_DATA_STORAGE_PATH = PROJECT_ROOT / "data_storage"
@@ -972,8 +962,6 @@ async def preview_foundation(
     )
 
     # Grant 'clairvoyant' achievement
-    from ..depthsight_api import grant_achievement
-
     await grant_achievement(db, current_user.id, "clairvoyant")
 
     return {"data": response_data}

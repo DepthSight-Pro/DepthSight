@@ -19,7 +19,7 @@ from typing import Dict, Any
 from . import models, schemas, security
 from .plans import plans_config  # Import plans_config
 from bot_module.config import PAPER_TRADING_INITIAL_BALANCE
-from bot_module.exchanges import exchange_settings_key
+from bot_module.exchanges.common import exchange_settings_key
 
 
 logger = logging.getLogger(__name__)
@@ -93,10 +93,11 @@ async def create_oauth_user(
     referred_by_user_id: Optional[int] = None,
 ) -> models.User:
     import secrets
+
     random_password = secrets.token_urlsafe(24)
     hashed_password = security.get_password_hash(random_password)
     ref_code = uuid.uuid4().hex[:8]
-    
+
     db_user = models.User(
         username=username,
         email=email,

@@ -9,7 +9,7 @@ import os
 from .auth import get_current_user
 from .redis_client import get_redis_client
 from .models import User
-from bot_module.exchanges import is_binance_exchange
+from bot_module.exchanges.common import is_binance_exchange
 import redis.asyncio as redis
 from pydantic import BaseModel
 

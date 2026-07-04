@@ -1,13 +1,14 @@
 """Exchange adapters and factory helpers."""
 
 from .base import ExchangeExecutor
-from .factory import (
-    create_exchange_executor,
+from .common import (
     exchange_settings_key,
     is_binance_exchange,
     normalize_exchange_id,
     supported_exchange_ids,
 )
+
+
 from .models import (
     BalanceSnapshot,
     OrderBookSnapshot,
@@ -16,6 +17,13 @@ from .models import (
     PositionSnapshot,
     SymbolFilters,
 )
+
+
+def create_exchange_executor(*args, **kwargs):
+    from .factory import create_exchange_executor as _create_executor
+
+    return _create_executor(*args, **kwargs)
+
 
 __all__ = [
     "ExchangeExecutor",

@@ -33,7 +33,9 @@ def load_real_data(symbol="RIVERUSDT", rows=1000) -> pd.DataFrame:
 
     try:
         df = pd.read_parquet(data_path)
-        if df.empty or not all(c in df.columns for c in ["open", "high", "low", "close"]):
+        if df.empty or not all(
+            c in df.columns for c in ["open", "high", "low", "close"]
+        ):
             pytest.skip(f"Data for {symbol} is empty or missing required OHLC columns")
         # Take a slice to speed up tests
         return df.iloc[:rows].copy()

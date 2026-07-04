@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
-from api import crud
+from bot_module.runtime_dependencies import crud
 from .data_consumer import DataConsumer
 from .execution_simulator import (
     OrderExecutionResult,

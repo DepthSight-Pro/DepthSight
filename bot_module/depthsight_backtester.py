@@ -182,9 +182,17 @@ FIELDNAMES_ML_CONFIRMATION = (
 
 
 def count_funding_periods(dt_start: datetime, dt_end: datetime) -> int:
-    t_start = dt_start.astimezone(timezone.utc) if dt_start.tzinfo else dt_start.replace(tzinfo=timezone.utc)
-    t_end = dt_end.astimezone(timezone.utc) if dt_end.tzinfo else dt_end.replace(tzinfo=timezone.utc)
-    
+    t_start = (
+        dt_start.astimezone(timezone.utc)
+        if dt_start.tzinfo
+        else dt_start.replace(tzinfo=timezone.utc)
+    )
+    t_end = (
+        dt_end.astimezone(timezone.utc)
+        if dt_end.tzinfo
+        else dt_end.replace(tzinfo=timezone.utc)
+    )
+
     periods = 0
     t_curr = t_start.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     while t_curr <= t_end:
@@ -195,48 +203,52 @@ def count_funding_periods(dt_start: datetime, dt_end: datetime) -> int:
     return periods
 
 
-def calculate_position_funding_pnl(executions: List[Dict[str, Any]], is_short: bool, funding_rate: float) -> float:
+def calculate_position_funding_pnl(
+    executions: List[Dict[str, Any]], is_short: bool, funding_rate: float
+) -> float:
     if len(executions) < 2 or funding_rate == 0.0:
         return 0.0
-        
+
     sorted_execs = sorted(executions, key=lambda x: x["timestamp"])
     total_funding_pnl_usd = 0.0
     current_qty = 0.0
-    
+
     for idx in range(len(sorted_execs) - 1):
         exec_prev = sorted_execs[idx]
         exec_curr = sorted_execs[idx + 1]
-        
+
         qty_change = float(exec_prev["quantity"])
         if exec_prev["type"] == "ENTRY":
             current_qty += qty_change
         elif exec_prev["type"] == "EXIT":
             current_qty -= qty_change
-            
+
         if current_qty <= 1e-12:
             continue
-            
+
         t_prev = exec_prev["timestamp"]
         t_curr = exec_curr["timestamp"]
-        
+
         if isinstance(t_prev, str):
             t_prev_dt = pd.to_datetime(t_prev)
         else:
             t_prev_dt = t_prev
-            
+
         if isinstance(t_curr, str):
             t_curr_dt = pd.to_datetime(t_curr)
         else:
             t_curr_dt = t_curr
-            
+
         n_periods = count_funding_periods(t_prev_dt, t_curr_dt)
         if n_periods > 0:
             price = float(exec_prev["price"])
             position_value_usd = current_qty * price
             funding_multiplier = 1.0 if is_short else -1.0
-            funding_pnl_usd = funding_multiplier * n_periods * position_value_usd * funding_rate
+            funding_pnl_usd = (
+                funding_multiplier * n_periods * position_value_usd * funding_rate
+            )
             total_funding_pnl_usd += funding_pnl_usd
-            
+
     return total_funding_pnl_usd
 
 
@@ -4244,8 +4256,10 @@ class DepthSightBacktester:
                         total_commission = (
                             pos_to_close.entry_commission_paid + commission_exit
                         )
-                        
-                        funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+
+                        funding_rate = float(
+                            getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001)
+                        )
                         temp_final_executions = [
                             exec_item
                             for exec_item in pos_to_close.executions
@@ -4262,11 +4276,13 @@ class DepthSightBacktester:
                         funding_pnl = calculate_position_funding_pnl(
                             executions=temp_final_executions,
                             is_short=(pos_to_close.direction == SignalDirection.SHORT),
-                            funding_rate=funding_rate
+                            funding_rate=funding_rate,
                         )
-                        
+
                         net_pnl = total_pnl_gross - total_commission + funding_pnl
-                        pnl_for_balance_update = total_pnl_gross - commission_exit + funding_pnl
+                        pnl_for_balance_update = (
+                            total_pnl_gross - commission_exit + funding_pnl
+                        )
 
                         self.current_balance += pnl_for_balance_update
 
@@ -4417,8 +4433,10 @@ class DepthSightBacktester:
                                 pos_to_close_mgmt.entry_commission_paid
                                 + commission_exit_mgmt
                             )
-                            
-                            funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+
+                            funding_rate = float(
+                                getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001)
+                            )
                             temp_final_executions_mgmt = [
                                 exec_item
                                 for exec_item in pos_to_close_mgmt.executions
@@ -4434,13 +4452,21 @@ class DepthSightBacktester:
                             )
                             funding_pnl_mgmt = calculate_position_funding_pnl(
                                 executions=temp_final_executions_mgmt,
-                                is_short=(pos_to_close_mgmt.direction == SignalDirection.SHORT),
-                                funding_rate=funding_rate
+                                is_short=(
+                                    pos_to_close_mgmt.direction == SignalDirection.SHORT
+                                ),
+                                funding_rate=funding_rate,
                             )
-                            
-                            net_pnl_mgmt = total_pnl_gross_mgmt - total_commission_mgmt + funding_pnl_mgmt
+
+                            net_pnl_mgmt = (
+                                total_pnl_gross_mgmt
+                                - total_commission_mgmt
+                                + funding_pnl_mgmt
+                            )
                             pnl_for_balance_update_mgmt = (
-                                total_pnl_gross_mgmt - commission_exit_mgmt + funding_pnl_mgmt
+                                total_pnl_gross_mgmt
+                                - commission_exit_mgmt
+                                + funding_pnl_mgmt
                             )
 
                             self.current_balance += pnl_for_balance_update_mgmt
@@ -5116,8 +5142,10 @@ class DepthSightBacktester:
                 total_commission_eod = (
                     pos_end.entry_commission_paid + total_comm_exit_eod
                 )
-                
-                funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+
+                funding_rate = float(
+                    getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001)
+                )
                 temp_final_executions_eod = [
                     exec_item
                     for exec_item in pos_end.executions
@@ -5134,11 +5162,15 @@ class DepthSightBacktester:
                 funding_pnl_eod = calculate_position_funding_pnl(
                     executions=temp_final_executions_eod,
                     is_short=(pos_end.direction == SignalDirection.SHORT),
-                    funding_rate=funding_rate
+                    funding_rate=funding_rate,
                 )
-                
-                net_pnl_for_log_eod = total_pnl_gross_eod - total_commission_eod + funding_pnl_eod
-                pnl_for_balance_stats_eod = total_pnl_gross_eod - total_comm_exit_eod + funding_pnl_eod
+
+                net_pnl_for_log_eod = (
+                    total_pnl_gross_eod - total_commission_eod + funding_pnl_eod
+                )
+                pnl_for_balance_stats_eod = (
+                    total_pnl_gross_eod - total_comm_exit_eod + funding_pnl_eod
+                )
 
                 self.current_balance += pnl_for_balance_stats_eod
                 self.equity_curve.append((last_ts_dt, self.current_balance))

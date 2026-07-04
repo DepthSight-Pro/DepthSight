@@ -3,25 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
-import api.depthsight_api as depthsight_api
 from typing import List
 from datetime import datetime, timezone, timedelta
-from .. import models, schemas
+from .. import crud, models, schemas
 from ..auth import get_current_user
 from ..database import get_db
+from ..gamification import grant_achievement
 from ..redis_client import get_redis_client
 from ..plans import plans_config
 
-
-class ModuleProxy:
-    def __init__(self, getattr_fn):
-        self._getattr_fn = getattr_fn
-
-    def __getattr__(self, name):
-        return getattr(self._getattr_fn(), name)
-
-
-crud = ModuleProxy(lambda: depthsight_api.crud)
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +129,6 @@ async def reset_paper_wallet(
     """
     Resets the paper trading account for the current user to the default initial balance.
     """
-    from ..depthsight_api import grant_achievement
-
     logger.info(f"User '{current_user.username}' resetting paper trading account.")
 
     updated_wallet = await crud.init_or_reset_paper_wallet(db, user_id=current_user.id)

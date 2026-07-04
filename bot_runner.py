@@ -40,9 +40,17 @@ from api.database import get_db
 from bot_module.redis_handler import user_id_context
 from api import crud, models, security
 from api.plans import plans_config
+from api.push_sender import send_push_notification
 from api.redis_client import get_redis_client
+from bot_module.runtime_dependencies import configure_runtime_dependencies
 
 from bot_module.paper_executor import PaperTradingExecutor
+
+configure_runtime_dependencies(
+    crud_module=crud,
+    get_db_factory=get_db,
+    push_sender=send_push_notification,
+)
 
 # --- Logging Setup ---
 setup_global_logging("bot_runner.log")

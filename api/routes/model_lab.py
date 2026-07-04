@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, List
+from typing import List
 
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,16 +16,14 @@ from ..dependencies import (
     increment_concurrent_task_counter,
     require_permission,
 )
-from ..plans import plans_config
 from ..redis_client import get_redis_client
-
+from ..plans import plans_config
+from api.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 
-def create_model_lab_router(
-    generate_dataset_task: Any, train_model_task: Any
-) -> APIRouter:
+def create_model_lab_router() -> APIRouter:
     router = APIRouter(
         prefix="/api/v1/model-lab",
         tags=["Model Lab"],
@@ -61,8 +59,10 @@ def create_model_lab_router(
             )
             await db.flush()
 
-            task = generate_dataset_task.apply_async(
-                args=[db_run.id, current_user.id], priority=priority
+            task = celery_app.send_task(
+                "tasks.generate_dataset",
+                args=[db_run.id, current_user.id],
+                priority=priority,
             )
             await increment_concurrent_task_counter(current_user.id, redis_client)
 
@@ -164,8 +164,10 @@ def create_model_lab_router(
             )
             await db.flush()
 
-            task = train_model_task.apply_async(
-                args=[db_run.id, current_user.id], priority=priority
+            task = celery_app.send_task(
+                "tasks.train_model",
+                args=[db_run.id, current_user.id],
+                priority=priority,
             )
             await increment_concurrent_task_counter(current_user.id, redis_client)
 

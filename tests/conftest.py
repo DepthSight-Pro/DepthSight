@@ -184,6 +184,14 @@ except Exception:
     pass
 
 from api import crud, schemas
+from api.push_sender import send_push_notification
+from bot_module.runtime_dependencies import configure_runtime_dependencies
+
+configure_runtime_dependencies(
+    crud_module=crud,
+    get_db_factory=get_db,
+    push_sender=send_push_notification,
+)
 
 try:
     from bot_module.controller import TradingController
@@ -401,25 +409,14 @@ async def test_user(db_session):
 @pytest.fixture(scope="function")
 def mock_celery_tasks(mocker):
     """
-    Mocks .apply_async for all Celery tasks so they don't run,
+    Mocks celery_app.send_task so tasks don't run,
     and returns an object mimicking AsyncResult with an .id attribute.
-    This fixes the 'co_qualname' error.
     """
     mock_result_obj = MagicMock(spec=AsyncResult)
     mock_result_obj.id = f"mock-celery-task-{uuid.uuid4().hex[:6]}"
+    mock_result_obj.state = "SUCCESS"
 
-    # Patch .apply_async instead of .delay
-    paths_to_patch = [
-        "api.depthsight_api.run_backtest_task.apply_async",
-        "api.depthsight_api.run_portfolio_backtest_task.apply_async",
-        "api.depthsight_api.run_optimization_task.apply_async",
-        "api.depthsight_api.run_genetic_search_task.apply_async",
-        "api.depthsight_api.generate_dataset_task.apply_async",
-        "api.depthsight_api.train_model_task.apply_async",
-    ]
-
-    for path in paths_to_patch:
-        mocker.patch(path, return_value=mock_result_obj)
+    mocker.patch("api.celery_app.celery_app.send_task", return_value=mock_result_obj)
 
     yield mock_result_obj
 

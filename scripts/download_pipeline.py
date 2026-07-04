@@ -155,7 +155,7 @@ def save_data(df: pd.DataFrame, target_path: Path):
         print(f"Detected existing file: {target_path}. Merging...")
         try:
             existing_df = pd.read_parquet(target_path)
-            
+
             # Filter out non-numeric/non-boolean columns from existing DataFrame
             existing_df = existing_df.select_dtypes(include=[np.number, "bool"])
 
@@ -172,7 +172,7 @@ def save_data(df: pd.DataFrame, target_path: Path):
                 existing_df.index = existing_df.index.tz_convert("UTC")
             if str(df.index.tz) != "UTC":
                 df.index = df.index.tz_convert("UTC")
-                
+
             df = pd.concat([existing_df, df])
             df.sort_index(inplace=True)
             df = df[~df.index.duplicated(keep="last")]
@@ -186,7 +186,9 @@ def save_data(df: pd.DataFrame, target_path: Path):
     df = df[~df.index.duplicated(keep="last")].sort_index()  # Final check
     temp_path = target_path.with_name(f"{target_path.name}.tmp")
     try:
-        df.to_parquet(temp_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+        df.to_parquet(
+            temp_path, engine="pyarrow", compression="snappy", use_dictionary=False
+        )
         os.replace(temp_path, target_path)
         print(f"Successfully saved/updated {len(df)} rows in file {target_path}")
     except Exception as e:
@@ -928,7 +930,12 @@ def run_enrichment_for_1m(
                 for col in klines_df_save.select_dtypes(include=["float64"]).columns:
                     klines_df_save[col] = klines_df_save[col].astype("float32")
                 temp_kline_path = kline_path.with_name(f"{kline_path.name}.tmp")
-                klines_df_save.to_parquet(temp_kline_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+                klines_df_save.to_parquet(
+                    temp_kline_path,
+                    engine="pyarrow",
+                    compression="snappy",
+                    use_dictionary=False,
+                )
                 os.replace(temp_kline_path, kline_path)
                 print("Intermediate save complete.")
             except Exception as e:
@@ -951,7 +958,9 @@ def run_enrichment_for_1m(
     for col in klines_df_save.select_dtypes(include=["float64"]).columns:
         klines_df_save[col] = klines_df_save[col].astype("float32")
     temp_kline_path = kline_path.with_name(f"{kline_path.name}.tmp")
-    klines_df_save.to_parquet(temp_kline_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+    klines_df_save.to_parquet(
+        temp_kline_path, engine="pyarrow", compression="snappy", use_dictionary=False
+    )
     os.replace(temp_kline_path, kline_path)
     print("Saving complete.")
 
@@ -1012,7 +1021,12 @@ def run_generation_for_1s(
         for col in final_month_df_save.select_dtypes(include=["float64"]).columns:
             final_month_df_save[col] = final_month_df_save[col].astype("float32")
         temp_target_path = target_path.with_name(f"{target_path.name}.tmp")
-        final_month_df_save.to_parquet(temp_target_path, engine="pyarrow", compression="snappy", use_dictionary=False)
+        final_month_df_save.to_parquet(
+            temp_target_path,
+            engine="pyarrow",
+            compression="snappy",
+            use_dictionary=False,
+        )
         os.replace(temp_target_path, target_path)
         del month_trades_df, klines_1s_df, enriched_1s_df, final_month_df
         gc.collect()
@@ -1178,8 +1192,12 @@ def run_pipeline(
                     existing_dates_agg = get_existing_partitioned_dates(
                         symbol, "aggTrades", base_path=base_path
                     )
-                    existing_months_1s = get_existing_dates(symbol, "klines_1s", base_path=base_path)
-                    kline_path = get_target_path(symbol, "klines", "1m", base_path=base_path)
+                    existing_months_1s = get_existing_dates(
+                        symbol, "klines_1s", base_path=base_path
+                    )
+                    kline_path = get_target_path(
+                        symbol, "klines", "1m", base_path=base_path
+                    )
 
                     # 2. Collect all months in the specified range
                     months_to_process = set()
@@ -1201,7 +1219,9 @@ def run_pipeline(
                         needs_daily_check = True
 
                         # Check if the entire month is already enriched and 1s data exists
-                        month_fully_processed = is_month_enriched(kline_path, month_start.year, month_start.month) and (month_start in existing_months_1s)
+                        month_fully_processed = is_month_enriched(
+                            kline_path, month_start.year, month_start.month
+                        ) and (month_start in existing_months_1s)
 
                         if month_fully_processed:
                             print(
@@ -1249,7 +1269,9 @@ def run_pipeline(
                             while d_inner <= end_loop:
                                 day_is_enriched = is_day_enriched(kline_path, d_inner)
                                 month_start_date = date(d_inner.year, d_inner.month, 1)
-                                klines_1s_exists = month_start_date in existing_months_1s
+                                klines_1s_exists = (
+                                    month_start_date in existing_months_1s
+                                )
 
                                 if day_is_enriched and klines_1s_exists:
                                     print(
@@ -1303,14 +1325,18 @@ def run_pipeline(
                             target_path = get_target_path(
                                 symbol, data_type, timeframe, base_path=base_path
                             )
-                            existing_dates = get_existing_dates_from_parquet(target_path)
+                            existing_dates = get_existing_dates_from_parquet(
+                                target_path
+                            )
 
                             # Collect all months in the specified range
                             months_to_process = set()
                             d = start_date_obj
                             while d <= end_date_obj:
                                 months_to_process.add(date(d.year, d.month, 1))
-                                d = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+                                d = (d.replace(day=28) + timedelta(days=4)).replace(
+                                    day=1
+                                )
 
                             print(
                                 f"Planned processing of {len(months_to_process)} months for klines {timeframe}..."
@@ -1382,7 +1408,9 @@ def run_pipeline(
                             target_path = get_target_path(
                                 symbol, data_type, timeframe, base_path=base_path
                             )
-                            existing_dates = get_existing_dates_from_parquet(target_path)
+                            existing_dates = get_existing_dates_from_parquet(
+                                target_path
+                            )
 
                             current_date = start_date_obj
                             while current_date <= end_date_obj:

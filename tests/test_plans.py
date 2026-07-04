@@ -285,7 +285,7 @@ class TestUserPlans:
         mock_celery_tasks,
     ):
         """Verifies that Celery tasks are assigned the correct priority."""
-        from api.depthsight_api import run_backtest_task
+        from unittest.mock import patch, ANY
 
         clients = {
             "free_user": free_user_client,
@@ -294,14 +294,14 @@ class TestUserPlans:
         }
         client = clients[user_fixture]
 
-        # Resetting the mock state before the call
-        run_backtest_task.apply_async.reset_mock()
+        with patch("api.celery_app.celery_app.send_task") as mock_send:
+            await client.post("/api/v1/backtests", json=self.backtest_payload)
 
-        await client.post("/api/v1/backtests", json=self.backtest_payload)
-
-        run_backtest_task.apply_async.assert_called_once()
-        _, kwargs = run_backtest_task.apply_async.call_args
-        assert kwargs.get("priority") == expected_priority
+            mock_send.assert_called_once_with(
+                "run_backtest_task",
+                args=ANY,
+                priority=expected_priority,
+            )
 
     async def test_free_user_bybit_trading(
         self,

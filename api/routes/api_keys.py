@@ -13,7 +13,7 @@ from ..redis_client import get_redis_client
 from ..audit_logger import audit_logger, get_client_ip
 from ..gamification import grant_achievement
 from .. import security
-from bot_module.exchanges import exchange_settings_key
+from bot_module.exchanges.common import exchange_settings_key
 from ..live_runtime import (
     build_activate_api_key_command,
     build_deactivate_api_key_command,

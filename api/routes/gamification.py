@@ -1,25 +1,14 @@
 import logging
-import api.depthsight_api as depthsight_api
 from typing import List
 from fastapi import APIRouter, Depends, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import models, schemas
+from .. import crud, models, schemas
 from ..auth import get_current_user
 from ..database import get_db
 from ..dependencies import require_admin_role
 
-
-class ModuleProxy:
-    def __init__(self, getattr_fn):
-        self._getattr_fn = getattr_fn
-
-    def __getattr__(self, name):
-        return getattr(self._getattr_fn(), name)
-
-
-crud = ModuleProxy(lambda: depthsight_api.crud)
 
 logger = logging.getLogger(__name__)
 

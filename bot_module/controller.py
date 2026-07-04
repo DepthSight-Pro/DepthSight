@@ -17,11 +17,6 @@ import pandas_ta as ta
 import redis.asyncio as redis
 import copy
 
-from api import crud
-from api.database import get_db as _default_get_db
-from api.push_sender import send_push_notification  # New import
-from api.schemas import SymbolSelectionConfig  # Import the new schema
-
 # Importing module components
 from bot_module import config
 from bot_module.feature_extractor import FeatureExtractor
@@ -34,6 +29,12 @@ from bot_module.risk_manager import RiskManager
 from bot_module.trade_logger import TradeLogger
 from bot_module.telegram_notifier import TelegramNotifier
 from bot_module.strategy import SignalDirection
+from bot_module.runtime_dependencies import (
+    crud,
+    get_db as _default_get_db,
+    send_push_notification,
+)
+from bot_module.symbol_selection import SymbolSelectionConfig
 from bot_module.strategy import (
     StrategySignal,
     get_strategy_instance,

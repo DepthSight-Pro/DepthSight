@@ -38,7 +38,6 @@ STATS_EXCLUDED_EXIT_REASONS = {"END_OF_DATA"}
 
 # --- 2. Main imports from the project ---
 # Now that the path is set up, imports should work without problems.
-from celery import Celery
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.future import select
 from datetime import timedelta
@@ -58,6 +57,7 @@ from bot_module.dataset_generator import DatasetGenerator
 from api.database import (
     get_isolated_worker_session,
     AsyncSession,
+    get_db,
     get_session_for_worker,
 )
 from api import crud, schemas, models
@@ -66,67 +66,27 @@ from api.gamification import grant_achievement
 from api.genome_analyzer import GenomeAnalyzer
 from api.live_runtime import build_deactivate_api_key_command, get_active_api_key_ids
 from api.push_sender import send_push_notification  # New import
+from bot_module.runtime_dependencies import configure_runtime_dependencies
+
+configure_runtime_dependencies(
+    crud_module=crud,
+    get_db_factory=get_db,
+    push_sender=send_push_notification,
+)
 
 # logger = logging.getLogger('bot_module.tasks')
 # If the logger is not set up, Celery may intercept output.
 # It is best to set up logging when starting the worker.
 
 # --- 3. Setup Celery application ---
-# Use Redis as message broker and results backend.
-_redis_auth_str = ""
-if config.REDIS_PASSWORD:
-    _redis_auth_str = (
-        f"{config.REDIS_USERNAME}:{config.REDIS_PASSWORD}@"
-        if config.REDIS_USERNAME
-        else f":{config.REDIS_PASSWORD}@"
-    )
-REDIS_URL_BASE = f"redis://{_redis_auth_str}{config.REDIS_HOST}:{config.REDIS_PORT}"
-celery_app = Celery(
-    "tasks",
-    broker=f"{REDIS_URL_BASE}/1",  # Separate Redis DB for broker
-    backend=f"{REDIS_URL_BASE}/2",  # Separate Redis DB for results
-    include=["tasks"],  # Explicitly specify where to find tasks
+# --- 3. Setup Celery application ---
+from api.celery_app import (
+    celery_app,
+    redis_client_for_tasks,
+    SIMULATION_INSPECTOR_STATE_TTL_SECONDS,
+    _simulation_inspector_state_key,
+    _simulation_inspector_events_key,
 )
-
-celery_app.conf.update(
-    task_track_started=True,  # Celery will report task start
-    result_expires=3600 * 24,  # Keep task results for 24 hours
-    task_serializer="json",  # Use JSON for serialization
-    result_serializer="json",
-    accept_content=["json"],
-    # Multi-user queue settings from config
-    worker_concurrency=config.CELERY_WORKER_CONCURRENCY,
-    worker_prefetch_multiplier=config.CELERY_WORKER_PREFETCH_MULTIPLIER,
-    task_acks_late=True,  # Acknowledge task only after completion (prevents task loss on worker crash)
-    # Memory management: restart worker after N tasks to release accumulated memory
-    worker_max_tasks_per_child=5,
-)
-
-try:
-    redis_client_for_tasks = redis.Redis(
-        host=config.REDIS_HOST,
-        port=config.REDIS_PORT,
-        db=0,
-        username=config.REDIS_USERNAME,
-        password=config.REDIS_PASSWORD,
-        decode_responses=True,
-    )
-    redis_client_for_tasks.ping()
-    logger.info("Successfully connected to Redis for Celery task counters.")
-except redis.exceptions.ConnectionError as e:
-    logger.error(f"FATAL: Could not connect to Redis for Celery task counters: {e}")
-    redis_client_for_tasks = None
-
-
-SIMULATION_INSPECTOR_STATE_TTL_SECONDS = 3600 * 6
-
-
-def _simulation_inspector_state_key(task_id: str) -> str:
-    return f"simulation-inspector:{task_id}"
-
-
-def _simulation_inspector_events_key(task_id: str) -> str:
-    return f"simulation-inspector-events:{task_id}"
 
 
 def _simulation_inspector_update_state(

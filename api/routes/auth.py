@@ -124,14 +124,12 @@ async def google_login(
         logger.error("GOOGLE_CLIENT_ID is not configured on the backend.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Google Authentication is not configured on the server."
+            detail="Google Authentication is not configured on the server.",
         )
 
     try:
         idinfo = id_token.verify_oauth2_token(
-            payload.token,
-            google_requests.Request(),
-            google_client_id
+            payload.token, google_requests.Request(), google_client_id
         )
 
         if idinfo["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:

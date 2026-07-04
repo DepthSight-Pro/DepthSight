@@ -9,22 +9,13 @@ from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from collections import defaultdict, deque
-
-try:
-    from api import crud
-    from sqlalchemy.ext.asyncio import AsyncSession
-except ImportError:
-    # Stubs if the module is run in an environment where there is no api
-    crud = None
-    AsyncSession = None
-    logging.getLogger("bot_module.risk_manager").warning(
-        "Could not import 'api.crud' or 'AsyncSession'. DB operations will fail."
-    )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot_module import config
 from bot_module.strategy import StrategySignal, SignalDirection
 from bot_module.exchanges import ExchangeExecutor
 from bot_module.paper_executor import PaperTradingExecutor
+from bot_module.runtime_dependencies import crud
 import redis.asyncio as redis_asyncio
 
 logger = logging.getLogger("bot_module.risk_manager")

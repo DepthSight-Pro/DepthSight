@@ -14,7 +14,7 @@ import backoff  # type: ignore
 
 from bot_module import config
 from bot_module.strategy import SignalDirection  # Assume SignalDirection is here
-from api import crud
+from bot_module.runtime_dependencies import crud
 
 logger = logging.getLogger("bot_module.telegram_notifier")
 

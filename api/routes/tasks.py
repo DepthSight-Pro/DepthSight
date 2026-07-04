@@ -3,11 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
-import api.depthsight_api as depthsight_api
 from datetime import datetime, timezone
-from tasks import celery_app, run_optimization_task
+from api.celery_app import celery_app
+from celery.result import AsyncResult
 
-from .. import models, schemas
+from .. import crud, models, schemas
 from ..auth import get_current_user
 from ..database import get_db
 from ..redis_client import get_redis_client
@@ -18,20 +18,6 @@ from ..dependencies import (
     increment_concurrent_task_counter,
 )
 
-
-class ModuleProxy:
-    def __init__(self, getattr_fn):
-        self._getattr_fn = getattr_fn
-
-    def __getattr__(self, name):
-        return getattr(self._getattr_fn(), name)
-
-    def __call__(self, *args, **kwargs):
-        return self._getattr_fn()(*args, **kwargs)
-
-
-crud = ModuleProxy(lambda: depthsight_api.crud)
-AsyncResult = ModuleProxy(lambda: depthsight_api.AsyncResult)
 
 logger = logging.getLogger(__name__)
 
@@ -238,8 +224,10 @@ async def run_optimization(
     priority = limits.get("celery_task_priority", 9)
 
     try:
-        celery_task = run_optimization_task.apply_async(
-            args=[request.model_dump(), current_user.id], priority=priority
+        celery_task = celery_app.send_task(
+            "run_optimization_task",
+            args=[request.model_dump(), current_user.id],
+            priority=priority,
         )
         await increment_concurrent_task_counter(current_user.id, redis_client)
         logger.info(

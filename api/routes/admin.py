@@ -19,7 +19,7 @@ from ..plans import plans_config
 from ..audit_logger import audit_logger, get_client_ip
 
 from celery.result import AsyncResult
-from tasks import celery_app, run_data_pipeline_task
+from api.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -516,7 +516,7 @@ async def start_data_pipeline(
         with open(PIPELINE_LOG_FILE, "w", encoding="utf-8") as f:
             f.write("Starting pipeline via Celery worker...\n")
 
-        task = run_data_pipeline_task.delay(cmd_args)
+        task = celery_app.send_task("run_data_pipeline_task", args=[cmd_args])
         await redis_client.set("depthsight:data-pipeline:task_id", task.id)
         await redis_client.set("depthsight:data-pipeline:status", "running")
     except Exception as e:

@@ -18,14 +18,7 @@ from bot_module.logger_setup import setup_global_logging
 from celery.result import AsyncResult  # noqa: F401
 from .gamification import grant_achievement  # noqa: F401
 
-from tasks import (  # noqa: F401
-    generate_dataset_task,
-    train_model_task,
-    run_backtest_task,
-    run_portfolio_backtest_task,
-    run_optimization_task,
-    run_genetic_search_task,
-)
+# Tasks imports removed to decouple layers
 from .live_runtime import (
     build_deactivate_api_key_command,
     build_initialize_user_controller_command,
@@ -106,9 +99,9 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import crud, schemas, models
 
+from bot_module.exchanges.common import is_binance_exchange
 from bot_module.exchanges import (
     create_exchange_executor as _create_exchange_executor,
-    is_binance_exchange,
 )
 from bot_module.exchanges.binance import BinanceExchangeExecutor as BinanceExecutor
 
@@ -2187,7 +2180,7 @@ async def validation_exception_handler(request, exc):
     )
 
 
-model_lab_router = create_model_lab_router(generate_dataset_task, train_model_task)
+model_lab_router = create_model_lab_router()
 
 include_application_routers(
     app,

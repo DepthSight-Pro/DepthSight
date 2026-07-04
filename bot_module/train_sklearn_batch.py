@@ -13,7 +13,6 @@ from datetime import datetime
 
 # Scikit-learn imports
 from sklearn.model_selection import (
-    train_test_split,
     StratifiedKFold,
     GridSearchCV,
     RandomizedSearchCV,
@@ -122,9 +121,17 @@ def load_training_data(
 
         # Sort chronologically by timestamp_signal to prevent look-ahead bias
         if "timestamp_signal" in df.columns:
-            df["timestamp_signal_dt"] = pd.to_datetime(df["timestamp_signal"], errors="coerce")
-            df = df.sort_values(by="timestamp_signal_dt").drop(columns=["timestamp_signal_dt"]).reset_index(drop=True)
-            logger.info(f"{log_prefix} Sorted training data chronologically by timestamp_signal.")
+            df["timestamp_signal_dt"] = pd.to_datetime(
+                df["timestamp_signal"], errors="coerce"
+            )
+            df = (
+                df.sort_values(by="timestamp_signal_dt")
+                .drop(columns=["timestamp_signal_dt"])
+                .reset_index(drop=True)
+            )
+            logger.info(
+                f"{log_prefix} Sorted training data chronologically by timestamp_signal."
+            )
 
         if target_col not in df.columns:
             logger.error(
@@ -303,8 +310,16 @@ def load_training_data(
         X_output = X_final_features.reset_index(drop=True)
         y_output = y_series.reset_index(drop=True)
 
-        t0_series = df["timestamp_signal"].copy() if "timestamp_signal" in df.columns else pd.Series([pd.Timestamp.now()] * len(df))
-        t1_series = df["timestamp_close"].copy() if "timestamp_close" in df.columns else t0_series.copy()
+        t0_series = (
+            df["timestamp_signal"].copy()
+            if "timestamp_signal" in df.columns
+            else pd.Series([pd.Timestamp.now()] * len(df))
+        )
+        t1_series = (
+            df["timestamp_close"].copy()
+            if "timestamp_close" in df.columns
+            else t0_series.copy()
+        )
 
         t0_series = t0_series.fillna(pd.Timestamp.now())
         t1_series = t1_series.fillna(t0_series)
@@ -315,7 +330,13 @@ def load_training_data(
         logger.info(
             f"{log_prefix} Data loaded. Features: {X_output.shape}, Target: {y_output.shape}"
         )
-        return X_output, y_output, t0_series.reset_index(drop=True), t1_series.reset_index(drop=True), all_feature_names_selected
+        return (
+            X_output,
+            y_output,
+            t0_series.reset_index(drop=True),
+            t1_series.reset_index(drop=True),
+            all_feature_names_selected,
+        )
     except Exception as e:
         logger.error(f"{log_prefix} Error loading data: {e}", exc_info=True)
         return None
@@ -401,12 +422,12 @@ def train_evaluate_sklearn_model(
     # Setup Purged & Embargo CV if timestamps are available
     if t0_train is not None and t1_train is not None:
         cv_splitter = PurgedEmbargoCV(t0_train, t1_train, n_splits=cv_folds)
-        logger.info(f"Using PurgedEmbargoCV for time-series cross-validation.")
+        logger.info("Using PurgedEmbargoCV for time-series cross-validation.")
     else:
         cv_splitter = StratifiedKFold(
             n_splits=cv_folds, shuffle=True, random_state=random_state
         )
-        logger.info(f"Using default StratifiedKFold for cross-validation.")
+        logger.info("Using default StratifiedKFold for cross-validation.")
 
     if use_randomized_search:
         logger.info(
@@ -527,7 +548,10 @@ class PurgedEmbargoCV:
     """
     Purged and Embargo Cross-Validation for Time Series (Lopez de Prado).
     """
-    def __init__(self, t0: pd.Series, t1: pd.Series, n_splits: int = 5, embargo_pct: float = 0.01):
+
+    def __init__(
+        self, t0: pd.Series, t1: pd.Series, n_splits: int = 5, embargo_pct: float = 0.01
+    ):
         self.t0 = pd.to_datetime(t0).reset_index(drop=True)
         self.t1 = pd.to_datetime(t1).reset_index(drop=True)
         self.n_splits = n_splits
@@ -536,37 +560,37 @@ class PurgedEmbargoCV:
     def split(self, X, y=None, groups=None):
         n_samples = len(X)
         indices = np.arange(n_samples)
-        
+
         test_size = n_samples // (self.n_splits + 1)
-        
+
         total_duration = self.t0.max() - self.t0.min()
         embargo_duration = total_duration * self.embargo_pct
-        
+
         for i in range(self.n_splits):
             test_start = (i + 1) * test_size
             test_end = (i + 2) * test_size if i < self.n_splits - 1 else n_samples
-            
+
             test_indices = indices[test_start:test_end]
-            
+
             test_t0_min = self.t0.iloc[test_start]
             test_t1_max = self.t1.iloc[test_indices].max()
-            
+
             embargo_boundary = test_t1_max + embargo_duration
-            
+
             train_indices = []
             for idx in indices:
                 if idx >= test_start and idx < test_end:
                     continue
-                    
+
                 t0_val = self.t0.iloc[idx]
                 t1_val = self.t1.iloc[idx]
-                
+
                 is_overlap = (t0_val <= test_t1_max) and (t1_val >= test_t0_min)
                 is_embargoed = (t0_val > test_t1_max) and (t0_val <= embargo_boundary)
-                
+
                 if not is_overlap and not is_embargoed:
                     train_indices.append(idx)
-                    
+
             yield np.array(train_indices), np.array(test_indices)
 
     def get_n_splits(self, X=None, y=None, groups=None):
@@ -739,7 +763,9 @@ def run_sklearn_training_from_config(config: Dict[str, Any]):
     t0_train = t0.iloc[:split_idx]
     t1_train = t1.iloc[:split_idx]
 
-    logger.info(f"Train data: {X_train.shape}, Test data: {X_test.shape} (Sequential time series split)")
+    logger.info(
+        f"Train data: {X_train.shape}, Test data: {X_test.shape} (Sequential time series split)"
+    )
 
     scaler = StandardScaler()
     X_train_scaled_np = scaler.fit_transform(X_train)

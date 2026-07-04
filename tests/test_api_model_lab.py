@@ -30,15 +30,15 @@ async def test_model_lab_full_workflow(
     mock_celery_task.id = "celery-task-id-dataset-123"
 
     with patch(
-        "api.depthsight_api.generate_dataset_task.apply_async",
+        "api.celery_app.celery_app.send_task",
         return_value=mock_celery_task,
-    ) as mock_apply_async:
+    ) as mock_send_task:
         response = await pro_user_client.post(
             "/api/v1/model-lab/datasets", json=dataset_payload
         )
 
     assert response.status_code == 202
-    mock_apply_async.assert_called_once()
+    mock_send_task.assert_called_once()
 
     dataset_run_data = response.json()
     assert dataset_run_data["name"] == "My First Dataset"
@@ -92,14 +92,14 @@ async def test_model_lab_full_workflow(
 
     mock_celery_task.id = "celery-task-id-train-456"
     with patch(
-        "api.depthsight_api.train_model_task.apply_async", return_value=mock_celery_task
-    ) as mock_train_apply_async:
+        "api.celery_app.celery_app.send_task", return_value=mock_celery_task
+    ) as mock_train_send_task:
         response = await pro_user_client.post(
             "/api/v1/model-lab/train", json=train_payload_success
         )
 
     assert response.status_code == 202
-    mock_train_apply_async.assert_called_once()
+    mock_train_send_task.assert_called_once()
 
     training_run_data = response.json()
     assert training_run_data["dataset_id"] == dataset_run_id

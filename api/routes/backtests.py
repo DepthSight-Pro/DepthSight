@@ -1,7 +1,6 @@
 import logging
 import os
 from datetime import datetime, timezone
-import api.depthsight_api as depthsight_api
 from typing import List, Optional, Any
 
 import redis.asyncio as redis
@@ -9,9 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from celery.result import AsyncResult
 
-from .. import models, schemas
+from .. import crud, models, schemas
 from ..auth import get_current_user
 from ..database import get_db
+from ..gamification import grant_achievement
 from ..redis_client import get_redis_client
 from ..plans import plans_config
 from ..dependencies import (
@@ -22,23 +22,8 @@ from ..dependencies import (
     increment_usage_quota,
     is_strategy_kline_only,
 )
-from tasks import celery_app, run_backtest_task
-
-
-class ModuleProxy:
-    def __init__(self, getattr_fn):
-        self._getattr_fn = getattr_fn
-
-    def __getattr__(self, name):
-        return getattr(self._getattr_fn(), name)
-
-    def __call__(self, *args, **kwargs):
-        return self._getattr_fn()(*args, **kwargs)
-
-
-crud = ModuleProxy(lambda: depthsight_api.crud)
-data_loader = ModuleProxy(lambda: depthsight_api.data_loader)
-grant_achievement = ModuleProxy(lambda: depthsight_api.grant_achievement)
+from api.celery_app import celery_app
+from bot_module import data_loader
 
 
 # Rate limiting fallback
@@ -248,8 +233,10 @@ async def run_backtest(
     await usage_dep(current_user, redis_client)
 
     try:
-        celery_task = run_backtest_task.apply_async(
-            args=[backtest_request.model_dump(), current_user.id], priority=priority
+        celery_task = celery_app.send_task(
+            "run_backtest_task",
+            args=[backtest_request.model_dump(), current_user.id],
+            priority=priority,
         )
         # Increment counter ONLY after successful task launch
         await increment_concurrent_task_counter(current_user.id, redis_client)

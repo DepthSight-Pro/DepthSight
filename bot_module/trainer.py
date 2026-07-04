@@ -20,7 +20,6 @@ import sys
 import argparse
 import multiprocessing  # Added multiprocessing
 import operator
-import random
 
 try:
     from bot_module import config
@@ -3327,6 +3326,7 @@ class Trainer:
         if global_ml_agent and all_training_data_collected:
             # Sort chronologically to prevent look-ahead bias
             try:
+
                 def get_timestamp_key(x):
                     ts = x.get("timestamp_signal") or x.get("timestamp") or 0
                     if isinstance(ts, str):
@@ -3339,9 +3339,13 @@ class Trainer:
                     return float(ts)
 
                 all_training_data_collected.sort(key=get_timestamp_key)
-                logger.info("Sorted training data chronologically by timestamp_signal to prevent look-ahead bias.")
+                logger.info(
+                    "Sorted training data chronologically by timestamp_signal to prevent look-ahead bias."
+                )
             except Exception as e_sort:
-                logger.warning(f"Could not sort training data chronologically: {e_sort}. Preserving default order.")
+                logger.warning(
+                    f"Could not sort training data chronologically: {e_sort}. Preserving default order."
+                )
 
             train_start_time = time.time()
             # Using the "global" agent instance for training on all data

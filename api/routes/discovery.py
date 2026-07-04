@@ -20,7 +20,7 @@ from ..dependencies import (
 )
 from ..plans import plans_config
 from bot_module import config as bot_config
-from tasks import celery_app, run_genetic_search_task
+from api.celery_app import celery_app
 from celery.result import AsyncResult
 
 logger = logging.getLogger(__name__)
@@ -143,8 +143,10 @@ async def create_genetic_run_endpoint(
         await db.refresh(db_run)
 
         # Now dispatch the Celery task (record is guaranteed to exist)
-        celery_task_handle = run_genetic_search_task.apply_async(
-            args=[str(db_run.id), current_user.id], priority=priority
+        celery_task_handle = celery_app.send_task(
+            "run_genetic_search_task",
+            args=[str(db_run.id), current_user.id],
+            priority=priority,
         )
         await increment_concurrent_task_counter(current_user.id, redis_client)
         await increment_usage_quota(current_user.id, "run_genetic_search", redis_client)

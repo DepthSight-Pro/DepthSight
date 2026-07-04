@@ -508,7 +508,7 @@ class TestBacktestEndpoints:
         self, authenticated_client: AsyncClient, mocker
     ):
         mocker.patch(
-            "celery.app.task.Task.apply_async",
+            "api.celery_app.celery_app.send_task",
             return_value=MagicMock(id="mock-task-id"),
         )
         mocker.patch(
@@ -571,7 +571,7 @@ class TestBacktestEndpoints:
         # Mock Celery so it doesn't actually execute the task, but just returns an ID
         mock_celery_task = MagicMock(id=f"mock-task-{uuid.uuid4()}")
         mocker.patch(
-            "api.depthsight_api.run_backtest_task.apply_async",
+            "api.celery_app.celery_app.send_task",
             return_value=mock_celery_task,
         )
 

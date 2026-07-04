@@ -673,7 +673,7 @@ async def test_get_backtest_klines_without_time_range(
     mock_get_run = mocker.patch(
         "api.depthsight_api.crud.get_backtest_run_by_any_id", new_callable=AsyncMock
     )
-    mock_data_loader = mocker.patch("api.depthsight_api.data_loader")
+    mock_data_loader = mocker.patch("api.routes.backtests.data_loader")
 
     mock_run = MagicMock()
     mock_run.symbol = "BTCUSDT"
