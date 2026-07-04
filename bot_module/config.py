@@ -1164,9 +1164,11 @@ BACKTEST_INITIAL_BALANCE = 10000.0
 # Initial balance for Paper Trading
 PAPER_TRADING_INITIAL_BALANCE = 10000.0
 # Exchange commission in % (0.00075 for 0.075%)
-BACKTEST_COMMISSION_PCT = 0.0004
+BACKTEST_COMMISSION_PCT = 0.0006
 # Slippage in % (0.0003 for 0.03%)
-BACKTEST_SLIPPAGE_PCT = 0.0001
+BACKTEST_SLIPPAGE_PCT = 0.0005
+# Funding rate per 8 hours (0.0001 for 0.01%)
+BACKTEST_FUNDING_RATE_8H = 0.0001
 # Whether to save backtest trade details to a CSV file
 BACKTEST_SAVE_TRADES = False  # Was False
 # Path template for saving backtest trade logs (if BACKTEST_SAVE_TRADES = True)

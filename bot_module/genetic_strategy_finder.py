@@ -861,6 +861,45 @@ def split_data_into_windows(
     return windows
 
 
+def split_data_is_oos(
+    assets: Dict[str, Dict[str, pd.DataFrame]], oos_ratio: float = 0.3
+) -> Tuple[Dict[str, Dict[str, pd.DataFrame]], Dict[str, Dict[str, pd.DataFrame]]]:
+    """
+    Splits multi-timeframe asset data into In-Sample (IS) and Out-of-Sample (OOS) chronologically.
+    """
+    is_assets = {}
+    oos_assets = {}
+
+    for asset_name, mtf_data in assets.items():
+        df_1m = mtf_data.get("1m")
+        if df_1m is None or df_1m.empty:
+            is_assets[asset_name] = {tf: df.copy() for tf, df in mtf_data.items()}
+            oos_assets[asset_name] = {tf: df.iloc[0:0].copy() for tf, df in mtf_data.items()}
+            continue
+
+        n_rows = len(df_1m)
+        is_rows = int(n_rows * (1.0 - oos_ratio))
+
+        if is_rows <= 0:
+            is_assets[asset_name] = {tf: df.iloc[0:0].copy() for tf, df in mtf_data.items()}
+            oos_assets[asset_name] = {tf: df.copy() for tf, df in mtf_data.items()}
+            continue
+
+        split_time = df_1m.index[is_rows - 1]
+
+        is_mtf = {}
+        oos_mtf = {}
+        for tf, df_tf in mtf_data.items():
+            mask_is = df_tf.index <= split_time
+            is_mtf[tf] = df_tf[mask_is].copy()
+            oos_mtf[tf] = df_tf[~mask_is].copy()
+
+        is_assets[asset_name] = is_mtf
+        oos_assets[asset_name] = oos_mtf
+
+    return is_assets, oos_assets
+
+
 class GeneticStrategyFinder:
     def __init__(
         self,
@@ -873,8 +912,25 @@ class GeneticStrategyFinder:
         ] = None,  # NEW: Seed strategies for continuation
         keep_structure: bool = False,  # NEW: If True, only mutate params, keep block structure
     ):
-        self.training_data = training_data
         self.config = run_config
+        self.oos_ratio = self.config.get("walk_forward_oos_ratio", 0.30)
+        self.full_training_data = training_data
+
+        if self.oos_ratio > 0:
+            self.is_data, self.oos_data = split_data_is_oos(training_data, self.oos_ratio)
+            self.training_data = self.is_data
+            logger.info(
+                f"Split data into In-Sample ({(1 - self.oos_ratio)*100:.0f}%) and Out-of-Sample ({self.oos_ratio*100:.0f}%)"
+            )
+        else:
+            self.is_data = training_data
+            self.oos_data = {
+                asset_name: {tf: df.iloc[0:0].copy() for tf, df in mtf_data.items()}
+                for asset_name, mtf_data in training_data.items()
+            }
+            self.training_data = training_data
+            logger.info("Using full training data for In-Sample (OOS split disabled)")
+
         self.run_id = run_id
         self.seed_population = seed_population or []
         self.keep_structure = keep_structure
@@ -1376,57 +1432,107 @@ class GeneticStrategyFinder:
 
         # FINALIZATION: FORMING RESULTS
         final_results = []
+        fallback_rank_1 = None
+
         if self.hall_of_fame:
             for rank, ind in enumerate(self.hall_of_fame, 1):
                 try:
-                    # Aggregating KPIs across all assets
-                    total_pnl = 0.0
-                    total_trades = 0
-                    total_pf = 0.0
-                    total_max_dd = 0.0
-                    total_sharpe = 0.0
-                    total_win_rate = 0.0
-                    count = 0
+                    # 1. Evaluate on In-Sample (IS)
+                    total_is_pnl = 0.0
+                    total_is_trades = 0
+                    total_is_pf = 0.0
+                    total_is_max_dd = 0.0
+                    total_is_sharpe = 0.0
+                    total_is_win_rate = 0.0
+                    is_count = 0
 
-                    for mtf_data in self.training_data.values():
+                    for mtf_data in self.is_data.values():
                         bt = FastVectorBacktester(mtf_data, ind, use_oracle=False)
                         kpis = bt.run()
-                        total_pnl += kpis.get("total_pnl_pct", 0)
-                        total_trades += kpis.get("total_trades", 0)
-                        total_pf += kpis.get("profit_factor", 0)
-                        total_max_dd += kpis.get("max_dd", 0)
-                        total_sharpe += kpis.get("sharpe_ratio", 0)
-                        total_win_rate += kpis.get("win_rate", 0)
-                        count += 1
+                        total_is_pnl += kpis.get("total_pnl_pct", 0)
+                        total_is_trades += kpis.get("total_trades", 0)
+                        total_is_pf += kpis.get("profit_factor", 0)
+                        total_is_max_dd += kpis.get("max_dd", 0)
+                        total_is_sharpe += kpis.get("sharpe_ratio", 0)
+                        total_is_win_rate += kpis.get("win_rate", 0)
+                        is_count += 1
 
-                    # Calculate averages across all assets
-                    avg_pnl = total_pnl / count if count > 0 else 0
-                    avg_pf = total_pf / count if count > 0 else 0
-                    avg_max_dd = total_max_dd / count if count > 0 else 0
-                    avg_sharpe = total_sharpe / count if count > 0 else 0
-                    avg_win_rate = total_win_rate / count if count > 0 else 0
+                    avg_is_pnl = total_is_pnl / is_count if is_count > 0 else 0
+                    avg_is_pf = total_is_pf / is_count if is_count > 0 else 0
+                    avg_is_max_dd = total_is_max_dd / is_count if is_count > 0 else 0
+                    avg_is_sharpe = total_is_sharpe / is_count if is_count > 0 else 0
+                    avg_is_win_rate = total_is_win_rate / is_count if is_count > 0 else 0
 
-                    final_results.append(
-                        {
-                            "rank": rank,
-                            "fitness_score": ind.fitness.values[0]
-                            if ind.fitness.valid
-                            else 0.0,
-                            "strategy_json": dict(ind),
-                            "kpis_json": {
-                                "total_pnl_pct": avg_pnl,
-                                "total_trades": total_trades,
-                                "profit_factor": avg_pf,
-                                "max_drawdown_pct": avg_max_dd,
-                                "sharpe_ratio": avg_sharpe,
-                                "win_rate": avg_win_rate,
-                            },
-                        }
-                    )
+                    # 2. Evaluate on Out-of-Sample (OOS)
+                    total_oos_pnl = 0.0
+                    total_oos_trades = 0
+                    total_oos_pf = 0.0
+                    total_oos_max_dd = 0.0
+                    total_oos_sharpe = 0.0
+                    total_oos_win_rate = 0.0
+                    oos_count = 0
+
+                    if self.oos_ratio > 0:
+                        for mtf_data in self.oos_data.values():
+                            bt = FastVectorBacktester(mtf_data, ind, use_oracle=False)
+                            kpis = bt.run()
+                            total_oos_pnl += kpis.get("total_pnl_pct", 0)
+                            total_oos_trades += kpis.get("total_trades", 0)
+                            total_oos_pf += kpis.get("profit_factor", 0)
+                            total_oos_max_dd += kpis.get("max_dd", 0)
+                            total_oos_sharpe += kpis.get("sharpe_ratio", 0)
+                            total_oos_win_rate += kpis.get("win_rate", 0)
+                            oos_count += 1
+
+                    avg_oos_pnl = total_oos_pnl / oos_count if oos_count > 0 else 0
+                    avg_oos_pf = total_oos_pf / oos_count if oos_count > 0 else 0
+                    avg_oos_max_dd = total_oos_max_dd / oos_count if oos_count > 0 else 0
+                    avg_oos_sharpe = total_oos_sharpe / oos_count if oos_count > 0 else 0
+                    avg_oos_win_rate = total_oos_win_rate / oos_count if oos_count > 0 else 0
+
+                    # OOS Validation checks
+                    is_oos_valid = True
+                    if self.oos_ratio > 0:
+                        if avg_oos_pnl <= 0.0 or avg_oos_max_dd > 25.0:
+                            is_oos_valid = False
+
+                    result_entry = {
+                        "rank": rank,
+                        "fitness_score": ind.fitness.values[0] if ind.fitness.valid else 0.0,
+                        "strategy_json": dict(ind),
+                        "kpis_json": {
+                            "total_pnl_pct": avg_is_pnl,
+                            "total_trades": total_is_trades,
+                            "profit_factor": avg_is_pf,
+                            "max_drawdown_pct": avg_is_max_dd,
+                            "sharpe_ratio": avg_is_sharpe,
+                            "win_rate": avg_is_win_rate,
+                            "oos_total_pnl_pct": avg_oos_pnl,
+                            "oos_total_trades": total_oos_trades,
+                            "oos_max_drawdown_pct": avg_oos_max_dd,
+                            "oos_valid": is_oos_valid,
+                        },
+                    }
+
+                    if rank == 1:
+                        fallback_rank_1 = result_entry
+
+                    if self.oos_ratio > 0 and not is_oos_valid:
+                        logger.warning(
+                            f"⚠️ Candidate rank {rank} failed OOS validation: OOS PnL = {avg_oos_pnl:.2f}%, OOS DD = {avg_oos_max_dd:.2f}%. Filtering out."
+                        )
+                        continue
+
+                    final_results.append(result_entry)
                 except Exception as e:
                     logger.warning(f"Error finalizing result for rank {rank}: {e}")
 
-        tqdm.write(f"\\n✅ EVOLUTION COMPLETE. Found {len(final_results)} strategies.")
+        # Fallback to rank 1 candidate if all were filtered out by OOS checks
+        if not final_results and fallback_rank_1:
+            logger.warning("⚠️ All candidates failed OOS validation! Falling back to rank 1 candidate.")
+            final_results.append(fallback_rank_1)
+
+        tqdm.write(f"\n✅ EVOLUTION COMPLETE. Found {len(final_results)} strategies.")
         return final_results
 
     def _get_default_kpis(self) -> Dict[str, float]:

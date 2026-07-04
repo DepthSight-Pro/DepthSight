@@ -40,7 +40,68 @@ from .utils import (
     round_price_by_tick,
 )
 
+from datetime import timezone, timedelta
+
 logger = logging.getLogger("bot_module.fast_vector_backtester")
+
+
+def count_funding_periods(dt_start: datetime, dt_end: datetime) -> int:
+    t_start = dt_start.astimezone(timezone.utc) if dt_start.tzinfo else dt_start.replace(tzinfo=timezone.utc)
+    t_end = dt_end.astimezone(timezone.utc) if dt_end.tzinfo else dt_end.replace(tzinfo=timezone.utc)
+    
+    periods = 0
+    t_curr = t_start.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    while t_curr <= t_end:
+        if t_curr.hour % 8 == 0:
+            if t_curr > t_start:
+                periods += 1
+        t_curr += timedelta(hours=1)
+    return periods
+
+
+def calculate_position_funding_pnl(executions: List[Dict[str, Any]], is_short: bool, funding_rate: float) -> float:
+    if len(executions) < 2 or funding_rate == 0.0:
+        return 0.0
+        
+    sorted_execs = sorted(executions, key=lambda x: x["timestamp"])
+    total_funding_pnl_usd = 0.0
+    current_qty = 0.0
+    
+    for idx in range(len(sorted_execs) - 1):
+        exec_prev = sorted_execs[idx]
+        exec_curr = sorted_execs[idx + 1]
+        
+        qty_change = float(exec_prev["quantity"])
+        if exec_prev["type"] == "ENTRY":
+            current_qty += qty_change
+        elif exec_prev["type"] == "EXIT":
+            current_qty -= qty_change
+            
+        if current_qty <= 1e-12:
+            continue
+            
+        t_prev = exec_prev["timestamp"]
+        t_curr = exec_curr["timestamp"]
+        
+        if isinstance(t_prev, str):
+            t_prev_dt = pd.to_datetime(t_prev)
+        else:
+            t_prev_dt = t_prev
+            
+        if isinstance(t_curr, str):
+            t_curr_dt = pd.to_datetime(t_curr)
+        else:
+            t_curr_dt = t_curr
+            
+        n_periods = count_funding_periods(t_prev_dt, t_curr_dt)
+        if n_periods > 0:
+            price = float(exec_prev["price"])
+            position_value_usd = current_qty * price
+            funding_multiplier = 1.0 if is_short else -1.0
+            funding_pnl_usd = funding_multiplier * n_periods * position_value_usd * funding_rate
+            total_funding_pnl_usd += funding_pnl_usd
+            
+    return total_funding_pnl_usd
 
 
 class FastVectorBacktester:
@@ -6384,8 +6445,17 @@ class FastVectorBacktester:
             commission_val = self.commission_pct * (
                 total_entered_qty_rel + total_closed_qty_rel
             )
-            net_pnl = realized_pnl_rel - commission_val
-            net_pnl_usd = realized_pnl_usd - total_commission_usd
+            
+            funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+            funding_pnl_usd = calculate_position_funding_pnl(
+                executions=execution_events,
+                is_short=is_short,
+                funding_rate=funding_rate
+            )
+            relative_funding_pnl = funding_pnl_usd / entry_balance_usd if entry_balance_usd > 1e-12 else 0.0
+            
+            net_pnl_usd = realized_pnl_usd - total_commission_usd + funding_pnl_usd
+            net_pnl = realized_pnl_rel - commission_val + relative_funding_pnl
             balance_return_pct = (
                 (net_pnl_usd / entry_balance_usd) if entry_balance_usd > 1e-12 else 0.0
             )
@@ -6433,6 +6503,7 @@ class FastVectorBacktester:
                     "pnl_pct": net_pnl,
                     "balance_return_pct": balance_return_pct,
                     "pnl_usd": net_pnl_usd,
+                    "funding_pnl": funding_pnl_usd,
                     "entry_price": avg_entry_price,
                     "initial_entry_price": initial_reference_price,
                     "avg_entry_price": avg_entry_price,

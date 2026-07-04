@@ -106,7 +106,7 @@ def load_training_data(
     create_interactions: bool = False,
     interaction_set_to_use: Optional[str] = None,
     use_all_numeric_features: bool = False,
-) -> Optional[Tuple[pd.DataFrame, pd.Series, List[str]]]:
+) -> Optional[Tuple[pd.DataFrame, pd.Series, pd.Series, pd.Series, List[str]]]:
     log_prefix = "[LoadData]"
     if not file_path.exists():
         logger.error(f"{log_prefix} Training data file not found: {file_path}")
@@ -119,6 +119,13 @@ def load_training_data(
         if df.empty:
             logger.error(f"{log_prefix} Training data file is empty: {file_path}")
             return None
+
+        # Sort chronologically by timestamp_signal to prevent look-ahead bias
+        if "timestamp_signal" in df.columns:
+            df["timestamp_signal_dt"] = pd.to_datetime(df["timestamp_signal"], errors="coerce")
+            df = df.sort_values(by="timestamp_signal_dt").drop(columns=["timestamp_signal_dt"]).reset_index(drop=True)
+            logger.info(f"{log_prefix} Sorted training data chronologically by timestamp_signal.")
+
         if target_col not in df.columns:
             logger.error(
                 f"{log_prefix} Target column '{target_col}' not found in CSV. Cannot train."
@@ -296,13 +303,19 @@ def load_training_data(
         X_output = X_final_features.reset_index(drop=True)
         y_output = y_series.reset_index(drop=True)
 
+        t0_series = df["timestamp_signal"].copy() if "timestamp_signal" in df.columns else pd.Series([pd.Timestamp.now()] * len(df))
+        t1_series = df["timestamp_close"].copy() if "timestamp_close" in df.columns else t0_series.copy()
+
+        t0_series = t0_series.fillna(pd.Timestamp.now())
+        t1_series = t1_series.fillna(t0_series)
+
         logger.info(
             f"{log_prefix} Target distribution: {y_output.value_counts(normalize=True).to_dict() if not y_output.empty else 'empty'}"
         )
         logger.info(
             f"{log_prefix} Data loaded. Features: {X_output.shape}, Target: {y_output.shape}"
         )
-        return X_output, y_output, all_feature_names_selected
+        return X_output, y_output, t0_series.reset_index(drop=True), t1_series.reset_index(drop=True), all_feature_names_selected
     except Exception as e:
         logger.error(f"{log_prefix} Error loading data: {e}", exc_info=True)
         return None
@@ -335,6 +348,8 @@ def train_evaluate_sklearn_model(
     scale_pos_weight_val: Optional[float] = None,
     use_randomized_search: bool = False,
     random_search_iterations: int = 10,
+    t0_train: Optional[pd.Series] = None,
+    t1_train: Optional[pd.Series] = None,
 ):
     logger.info(f"--- Training {model_name} with {len(feature_names)} features ---")
     start_time = time.time()
@@ -383,6 +398,16 @@ def train_evaluate_sklearn_model(
         "recall_c1": make_scorer(recall_score, pos_label=1, zero_division=0),
     }
 
+    # Setup Purged & Embargo CV if timestamps are available
+    if t0_train is not None and t1_train is not None:
+        cv_splitter = PurgedEmbargoCV(t0_train, t1_train, n_splits=cv_folds)
+        logger.info(f"Using PurgedEmbargoCV for time-series cross-validation.")
+    else:
+        cv_splitter = StratifiedKFold(
+            n_splits=cv_folds, shuffle=True, random_state=random_state
+        )
+        logger.info(f"Using default StratifiedKFold for cross-validation.")
+
     if use_randomized_search:
         logger.info(
             f"Performing RandomizedSearchCV for {model_name}. Iterations: {random_search_iterations}. Optimizing for Precision (Class 1). CV Folds: {cv_folds}."
@@ -393,9 +418,7 @@ def train_evaluate_sklearn_model(
             n_iter=random_search_iterations,
             scoring=scorers,
             refit="precision_c1",
-            cv=StratifiedKFold(
-                n_splits=cv_folds, shuffle=True, random_state=random_state
-            ),
+            cv=cv_splitter,
             verbose=1,
             n_jobs=-1,
             random_state=random_state,
@@ -409,9 +432,7 @@ def train_evaluate_sklearn_model(
             param_grid=param_grid,
             scoring=scorers,
             refit="precision_c1",
-            cv=StratifiedKFold(
-                n_splits=cv_folds, shuffle=True, random_state=random_state
-            ),
+            cv=cv_splitter,
             verbose=1,
             n_jobs=-1,
         )
@@ -500,6 +521,56 @@ def train_evaluate_sklearn_model(
         "training_time_seconds": training_time,
     }
     return results
+
+
+class PurgedEmbargoCV:
+    """
+    Purged and Embargo Cross-Validation for Time Series (Lopez de Prado).
+    """
+    def __init__(self, t0: pd.Series, t1: pd.Series, n_splits: int = 5, embargo_pct: float = 0.01):
+        self.t0 = pd.to_datetime(t0).reset_index(drop=True)
+        self.t1 = pd.to_datetime(t1).reset_index(drop=True)
+        self.n_splits = n_splits
+        self.embargo_pct = embargo_pct
+
+    def split(self, X, y=None, groups=None):
+        n_samples = len(X)
+        indices = np.arange(n_samples)
+        
+        test_size = n_samples // (self.n_splits + 1)
+        
+        total_duration = self.t0.max() - self.t0.min()
+        embargo_duration = total_duration * self.embargo_pct
+        
+        for i in range(self.n_splits):
+            test_start = (i + 1) * test_size
+            test_end = (i + 2) * test_size if i < self.n_splits - 1 else n_samples
+            
+            test_indices = indices[test_start:test_end]
+            
+            test_t0_min = self.t0.iloc[test_start]
+            test_t1_max = self.t1.iloc[test_indices].max()
+            
+            embargo_boundary = test_t1_max + embargo_duration
+            
+            train_indices = []
+            for idx in indices:
+                if idx >= test_start and idx < test_end:
+                    continue
+                    
+                t0_val = self.t0.iloc[idx]
+                t1_val = self.t1.iloc[idx]
+                
+                is_overlap = (t0_val <= test_t1_max) and (t1_val >= test_t0_min)
+                is_embargoed = (t0_val > test_t1_max) and (t0_val <= embargo_boundary)
+                
+                if not is_overlap and not is_embargoed:
+                    train_indices.append(idx)
+                    
+            yield np.array(train_indices), np.array(test_indices)
+
+    def get_n_splits(self, X=None, y=None, groups=None):
+        return self.n_splits
 
 
 def run_sklearn_training_from_config(config: Dict[str, Any]):
@@ -643,7 +714,7 @@ def run_sklearn_training_from_config(config: Dict[str, Any]):
         )
         raise FileNotFoundError("Failed to load training data.")
 
-    X, y, actual_features_used = load_result
+    X, y, t0, t1, actual_features_used = load_result
     if X.empty or y.empty or not actual_features_used:
         logger.error(
             f"Data is empty or no features after loading for set {fs_name_from_config}. Exiting."
@@ -657,10 +728,18 @@ def run_sklearn_training_from_config(config: Dict[str, Any]):
     # Step 6: Data splitting and scaling
     test_size_val = config.get("test_size", 0.20)
     random_state_val = config.get("random_state", 42)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size_val, random_state=random_state_val, stratify=y
-    )
-    logger.info(f"Train data: {X_train.shape}, Test data: {X_test.shape}")
+
+    # Sequential split for time series to prevent look-ahead bias
+    split_idx = int(len(X) * (1.0 - test_size_val))
+    X_train = X.iloc[:split_idx]
+    X_test = X.iloc[split_idx:]
+    y_train = y.iloc[:split_idx]
+    y_test = y.iloc[split_idx:]
+
+    t0_train = t0.iloc[:split_idx]
+    t1_train = t1.iloc[:split_idx]
+
+    logger.info(f"Train data: {X_train.shape}, Test data: {X_test.shape} (Sequential time series split)")
 
     scaler = StandardScaler()
     X_train_scaled_np = scaler.fit_transform(X_train)
@@ -699,6 +778,8 @@ def run_sklearn_training_from_config(config: Dict[str, Any]):
                 scale_pos_weight_val=spw,
                 use_randomized_search=current_use_randomized_search,
                 random_search_iterations=config.get("random_search_iters", 20),
+                t0_train=t0_train,
+                t1_train=t1_train,
             )
             model_results["feature_set_name_key"] = fs_name_from_config
             all_results.append(model_results)

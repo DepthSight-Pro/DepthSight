@@ -3325,7 +3325,24 @@ class Trainer:
             f"--- Starting FINAL Sequential Training on Collected Data ({len(all_training_data_collected)} examples) ---"
         )
         if global_ml_agent and all_training_data_collected:
-            random.shuffle(all_training_data_collected)
+            # Sort chronologically to prevent look-ahead bias
+            try:
+                def get_timestamp_key(x):
+                    ts = x.get("timestamp_signal") or x.get("timestamp") or 0
+                    if isinstance(ts, str):
+                        try:
+                            return pd.to_datetime(ts).timestamp()
+                        except Exception:
+                            return 0.0
+                    elif hasattr(ts, "timestamp"):
+                        return ts.timestamp()
+                    return float(ts)
+
+                all_training_data_collected.sort(key=get_timestamp_key)
+                logger.info("Sorted training data chronologically by timestamp_signal to prevent look-ahead bias.")
+            except Exception as e_sort:
+                logger.warning(f"Could not sort training data chronologically: {e_sort}. Preserving default order.")
+
             train_start_time = time.time()
             # Using the "global" agent instance for training on all data
             for i, example in enumerate(all_training_data_collected):

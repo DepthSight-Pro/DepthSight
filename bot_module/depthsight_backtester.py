@@ -181,6 +181,65 @@ FIELDNAMES_ML_CONFIRMATION = (
 )
 
 
+def count_funding_periods(dt_start: datetime, dt_end: datetime) -> int:
+    t_start = dt_start.astimezone(timezone.utc) if dt_start.tzinfo else dt_start.replace(tzinfo=timezone.utc)
+    t_end = dt_end.astimezone(timezone.utc) if dt_end.tzinfo else dt_end.replace(tzinfo=timezone.utc)
+    
+    periods = 0
+    t_curr = t_start.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    while t_curr <= t_end:
+        if t_curr.hour % 8 == 0:
+            if t_curr > t_start:
+                periods += 1
+        t_curr += timedelta(hours=1)
+    return periods
+
+
+def calculate_position_funding_pnl(executions: List[Dict[str, Any]], is_short: bool, funding_rate: float) -> float:
+    if len(executions) < 2 or funding_rate == 0.0:
+        return 0.0
+        
+    sorted_execs = sorted(executions, key=lambda x: x["timestamp"])
+    total_funding_pnl_usd = 0.0
+    current_qty = 0.0
+    
+    for idx in range(len(sorted_execs) - 1):
+        exec_prev = sorted_execs[idx]
+        exec_curr = sorted_execs[idx + 1]
+        
+        qty_change = float(exec_prev["quantity"])
+        if exec_prev["type"] == "ENTRY":
+            current_qty += qty_change
+        elif exec_prev["type"] == "EXIT":
+            current_qty -= qty_change
+            
+        if current_qty <= 1e-12:
+            continue
+            
+        t_prev = exec_prev["timestamp"]
+        t_curr = exec_curr["timestamp"]
+        
+        if isinstance(t_prev, str):
+            t_prev_dt = pd.to_datetime(t_prev)
+        else:
+            t_prev_dt = t_prev
+            
+        if isinstance(t_curr, str):
+            t_curr_dt = pd.to_datetime(t_curr)
+        else:
+            t_curr_dt = t_curr
+            
+        n_periods = count_funding_periods(t_prev_dt, t_curr_dt)
+        if n_periods > 0:
+            price = float(exec_prev["price"])
+            position_value_usd = current_qty * price
+            funding_multiplier = 1.0 if is_short else -1.0
+            funding_pnl_usd = funding_multiplier * n_periods * position_value_usd * funding_rate
+            total_funding_pnl_usd += funding_pnl_usd
+            
+    return total_funding_pnl_usd
+
+
 class L2HistoricalDataReader:
     """
     Provides efficient access to historical L2 order book data.
@@ -4185,8 +4244,29 @@ class DepthSightBacktester:
                         total_commission = (
                             pos_to_close.entry_commission_paid + commission_exit
                         )
-                        net_pnl = total_pnl_gross - total_commission
-                        pnl_for_balance_update = total_pnl_gross - commission_exit
+                        
+                        funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+                        temp_final_executions = [
+                            exec_item
+                            for exec_item in pos_to_close.executions
+                            if exec_item.get("type") == "ENTRY"
+                        ]
+                        temp_final_executions.append(
+                            {
+                                "timestamp": timestamp_exit,
+                                "price": final_exit_price,
+                                "quantity": qty_closed,
+                                "type": "EXIT",
+                            }
+                        )
+                        funding_pnl = calculate_position_funding_pnl(
+                            executions=temp_final_executions,
+                            is_short=(pos_to_close.direction == SignalDirection.SHORT),
+                            funding_rate=funding_rate
+                        )
+                        
+                        net_pnl = total_pnl_gross - total_commission + funding_pnl
+                        pnl_for_balance_update = total_pnl_gross - commission_exit + funding_pnl
 
                         self.current_balance += pnl_for_balance_update
 
@@ -4211,19 +4291,7 @@ class DepthSightBacktester:
                             current_event_ts_float
                         )
 
-                        final_executions = [
-                            exec_item
-                            for exec_item in pos_to_close.executions
-                            if exec_item.get("type") == "ENTRY"
-                        ]
-                        final_executions.append(
-                            {
-                                "timestamp": timestamp_exit,
-                                "price": final_exit_price,
-                                "quantity": qty_closed,
-                                "type": "EXIT",
-                            }
-                        )
+                        final_executions = temp_final_executions
 
                         trade_log_entry = {
                             "timestamp": timestamp_exit,
@@ -4239,6 +4307,7 @@ class DepthSightBacktester:
                             ),
                             "quantity": float(pos_to_close.initial_quantity),
                             "pnl": float(net_pnl),
+                            "funding_pnl": float(funding_pnl),
                             "exit_reason": exit_reason,
                             "commission": float(total_commission),
                             "sl_level": float(pos_to_close.initial_stop_loss)
@@ -4348,9 +4417,30 @@ class DepthSightBacktester:
                                 pos_to_close_mgmt.entry_commission_paid
                                 + commission_exit_mgmt
                             )
-                            net_pnl_mgmt = total_pnl_gross_mgmt - total_commission_mgmt
+                            
+                            funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+                            temp_final_executions_mgmt = [
+                                exec_item
+                                for exec_item in pos_to_close_mgmt.executions
+                                if exec_item.get("type") == "ENTRY"
+                            ]
+                            temp_final_executions_mgmt.append(
+                                {
+                                    "timestamp": timestamp_exit_mgmt,
+                                    "price": final_exit_price_mgmt,
+                                    "quantity": qty_closed_mgmt,
+                                    "type": "EXIT",
+                                }
+                            )
+                            funding_pnl_mgmt = calculate_position_funding_pnl(
+                                executions=temp_final_executions_mgmt,
+                                is_short=(pos_to_close_mgmt.direction == SignalDirection.SHORT),
+                                funding_rate=funding_rate
+                            )
+                            
+                            net_pnl_mgmt = total_pnl_gross_mgmt - total_commission_mgmt + funding_pnl_mgmt
                             pnl_for_balance_update_mgmt = (
-                                total_pnl_gross_mgmt - commission_exit_mgmt
+                                total_pnl_gross_mgmt - commission_exit_mgmt + funding_pnl_mgmt
                             )
 
                             self.current_balance += pnl_for_balance_update_mgmt
@@ -4373,19 +4463,7 @@ class DepthSightBacktester:
                                 self.symbol
                             ] = current_event_ts_float
 
-                            final_executions_mgmt = [
-                                exec_item
-                                for exec_item in pos_to_close_mgmt.executions
-                                if exec_item.get("type") == "ENTRY"
-                            ]
-                            final_executions_mgmt.append(
-                                {
-                                    "timestamp": timestamp_exit_mgmt,
-                                    "price": final_exit_price_mgmt,
-                                    "quantity": qty_closed_mgmt,
-                                    "type": "EXIT",
-                                }
-                            )
+                            final_executions_mgmt = temp_final_executions_mgmt
 
                             trade_log_entry_mgmt = {
                                 "timestamp": timestamp_exit_mgmt,
@@ -4401,6 +4479,7 @@ class DepthSightBacktester:
                                 ),
                                 "quantity": float(pos_to_close_mgmt.initial_quantity),
                                 "pnl": float(net_pnl_mgmt),
+                                "funding_pnl": float(funding_pnl_mgmt),
                                 "exit_reason": reason_mgmt,
                                 "commission": float(total_commission_mgmt),
                                 "sl_level": float(pos_to_close_mgmt.initial_stop_loss)
@@ -5037,8 +5116,29 @@ class DepthSightBacktester:
                 total_commission_eod = (
                     pos_end.entry_commission_paid + total_comm_exit_eod
                 )
-                net_pnl_for_log_eod = total_pnl_gross_eod - total_commission_eod
-                pnl_for_balance_stats_eod = total_pnl_gross_eod - total_comm_exit_eod
+                
+                funding_rate = float(getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001))
+                temp_final_executions_eod = [
+                    exec_item
+                    for exec_item in pos_end.executions
+                    if exec_item.get("type") == "ENTRY"
+                ]
+                temp_final_executions_eod.append(
+                    {
+                        "timestamp": last_ts_dt,
+                        "price": exit_price_eod,
+                        "quantity": qty_closed_final_eod,
+                        "type": "EXIT",
+                    }
+                )
+                funding_pnl_eod = calculate_position_funding_pnl(
+                    executions=temp_final_executions_eod,
+                    is_short=(pos_end.direction == SignalDirection.SHORT),
+                    funding_rate=funding_rate
+                )
+                
+                net_pnl_for_log_eod = total_pnl_gross_eod - total_commission_eod + funding_pnl_eod
+                pnl_for_balance_stats_eod = total_pnl_gross_eod - total_comm_exit_eod + funding_pnl_eod
 
                 self.current_balance += pnl_for_balance_stats_eod
                 self.equity_curve.append((last_ts_dt, self.current_balance))
@@ -5081,6 +5181,7 @@ class DepthSightBacktester:
                         ),
                         "quantity": float(pos_end.initial_quantity),
                         "pnl": float(net_pnl_for_log_eod),
+                        "funding_pnl": float(funding_pnl_eod),
                         "exit_reason": "END_OF_DATA",
                         "commission": float(total_commission_eod),
                         "sl_level": float(pos_end.initial_stop_loss)

@@ -11,6 +11,7 @@ if not hasattr(np, "NaN"):
 from bot_module.datatypes import BasePosition
 from bot_module.fast_vector_backtester import FastVectorBacktester
 from bot_module.strategy import SignalDirection, VisualBuilderStrategy
+from bot_module import config
 
 FAST_SLIPPAGE_PCT = 0.0
 FAST_COMMISSION_PCT = 0.0
@@ -30,9 +31,14 @@ def load_real_data(symbol="RIVERUSDT", rows=1000) -> pd.DataFrame:
     if not data_path.exists():
         pytest.skip(f"Data for {symbol} not found at {data_path}")
 
-    df = pd.read_parquet(data_path)
-    # Take a slice to speed up tests
-    return df.iloc[:rows].copy()
+    try:
+        df = pd.read_parquet(data_path)
+        if df.empty or not all(c in df.columns for c in ["open", "high", "low", "close"]):
+            pytest.skip(f"Data for {symbol} is empty or missing required OHLC columns")
+        # Take a slice to speed up tests
+        return df.iloc[:rows].copy()
+    except Exception as e:
+        pytest.skip(f"Failed to load/read parquet data for {symbol}: {e}")
 
 
 def _to_utc_ts(value) -> pd.Timestamp:
@@ -272,7 +278,12 @@ async def test_real_data_parity(direction):
         execution_config=execution_config,
         initial_balance=1000000.0,
     )
-    fast_bt.run()
+    orig_funding = getattr(config, "BACKTEST_FUNDING_RATE_8H", 0.0001)
+    config.BACKTEST_FUNDING_RATE_8H = 0.0
+    try:
+        fast_bt.run()
+    finally:
+        config.BACKTEST_FUNDING_RATE_8H = orig_funding
 
     strategy_trades = await _run_strategy_replay(df_raw, strategy_json)
 

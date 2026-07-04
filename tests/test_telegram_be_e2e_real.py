@@ -25,7 +25,10 @@ async def test_real_telegram_be_notification():
     4. Sends a REAL message to Telegram
     """
     # Checking that credentials are configured
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+    if (not config.TELEGRAM_BOT_TOKEN 
+        or "YOUR_TELEGRAM_BOT_TOKEN" in config.TELEGRAM_BOT_TOKEN 
+        or not config.TELEGRAM_CHAT_ID 
+        or "YOUR_TELEGRAM_CHAT_ID" in str(config.TELEGRAM_CHAT_ID)):
         pytest.skip("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID are not configured in .env")
 
     print("\n=== TELEGRAM E2E TEST ===")
@@ -76,7 +79,10 @@ async def test_full_chain_strategy_to_telegram():
     """
     Full E2E: strategy._handle_move_to_breakeven -> controller -> telegram
     """
-    if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+    if (not config.TELEGRAM_BOT_TOKEN 
+        or "YOUR_TELEGRAM_BOT_TOKEN" in config.TELEGRAM_BOT_TOKEN 
+        or not config.TELEGRAM_CHAT_ID 
+        or "YOUR_TELEGRAM_CHAT_ID" in str(config.TELEGRAM_CHAT_ID)):
         pytest.skip("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID are not configured in .env")
 
     print("\n=== FULL CHAIN E2E TEST ===")
