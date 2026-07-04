@@ -25,6 +25,7 @@ os.environ["TESTING"] = "true"
 os.environ["RATELIMIT_ENABLED"] = "false"
 os.environ["JWT_SECRET_KEY"] = "test_secret_key_1234567890_test_secret_key"
 os.environ["API_ENCRYPTION_KEY"] = "fFEvqTGV-LGkN0ASdZrlOUhEpllCyi1Dj-PmKY3eh6Y="
+os.environ["API_KEY_SECRET"] = "test_api_key_secret_1234567890"
 
 
 # Now the import will pass without errors
