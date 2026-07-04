@@ -96,8 +96,16 @@ def create_backtester_for_oracle_test(
     strategy_params, historical_data, mock_oracle_instance
 ):
     """Helper for creating a backtester instance."""
-    with patch(
-        "bot_module.depthsight_backtester.Oracle", return_value=mock_oracle_instance
+    from pathlib import Path
+    real_exists = Path.exists
+    def mock_exists(self_path):
+        if "oracle_model.joblib" in str(self_path):
+            return True
+        return real_exists(self_path)
+
+    with (
+        patch("bot_module.depthsight_backtester.Oracle", return_value=mock_oracle_instance),
+        patch("pathlib.Path.exists", side_effect=mock_exists),
     ):
         bt = DepthSightBacktester(
             strategy_name="TestStrategy",

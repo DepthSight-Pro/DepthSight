@@ -328,6 +328,12 @@ async def test_limit_retest_order(visual_strategy_instance):
         104.9,
         105.5,
     ]
+    klines.loc[klines.index[62], ["open", "high", "low", "close"]] = [
+        105.5,
+        105.5,
+        99.0,
+        100.0,
+    ]
 
     backtester = DepthSightBacktester(
         strategy_name="VisualBuilderStrategy",
@@ -413,13 +419,14 @@ def test_limit_break_signal_mode_and_entry_price(visual_strategy_instance):
 
     strat = visual_strategy_instance(test_json_config)
     market_data = get_default_market_data()
-    high_idx = market_data["kline_1m"].columns.get_loc("high")
-    close_idx = market_data["kline_1m"].columns.get_loc("close")
+    # Reset lookback window to 100.0 to prevent random walk from going above 105.0 or causing failures
     for i in range(1, 6):
-        market_data["kline_1m"].iloc[-i, high_idx] = (
-            market_data["kline_1m"].iloc[-i, close_idx] + 0.01
-        )
-    market_data["kline_1m"].iloc[-3, high_idx] = 105.0
+        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("open")] = 100.0
+        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("high")] = 100.1
+        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("low")] = 99.9
+        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("close")] = 100.0
+
+    market_data["kline_1m"].iloc[-3, market_data["kline_1m"].columns.get_loc("high")] = 105.0
     pair_info = get_default_pair_info(last_price=105.1, atr_val=0.5)
 
     signal, _, _ = strat.check_signal_sync(pair_info, market_data, None)
