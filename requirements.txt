@@ -45,7 +45,7 @@ fakeredis==2.30.0
 zstandard>=0.15.0,<0.23.0
 httpx>=0.20
 psycopg2-binary>=2.9,<3.0
-google-auth>=2.0.0
+google-auth>=2.55.1
 # Added/updated based on manual installations:
 numpy
 river
