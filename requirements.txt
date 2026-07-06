@@ -91,6 +91,6 @@ fonttools>=4.60.2
 authlib>=1.6.12
 cryptography>=46.0.7
 ecdsa>=0.19.2
-orjson>=3.11.6
+orjson>=3.11.9
 protobuf>=4.25.2,<5.0.0dev
 python-dotenv>=1.2.2
