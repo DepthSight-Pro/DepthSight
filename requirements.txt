@@ -22,7 +22,7 @@ pytz==2025.2
 requests>=2.33.0
 setuptools==80.9.0
 six==1.17.0
-tzdata==2025.2
+tzdata==2026.2
 urllib3>=2.7.0
 vine==5.1.0
 wcwidth==0.2.13
