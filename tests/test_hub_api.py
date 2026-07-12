@@ -17,7 +17,9 @@ def ensure_hub_router_registered():
     Dynamically registers the hub router on the app if it was not loaded on startup
     due to IS_CENTRAL_HUB being False by default.
     """
-    has_hub = any(getattr(route, "path", "").startswith("/api/v1/hub") for route in app.routes)
+    has_hub = any(
+        getattr(route, "path", "").startswith("/api/v1/hub") for route in app.routes
+    )
     if not has_hub:
         app.include_router(hub_router)
 

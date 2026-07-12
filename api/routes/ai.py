@@ -84,6 +84,40 @@ def create_ai_routers(
         )
         return {"data": history}
 
+    @ai_meta_router.get(
+        "/memories",
+        response_model=schemas.ApiResponseData[List[schemas.AgentMemory]],
+    )
+    async def get_agent_memories(
+        tag: Optional[str] = None,
+        symbol: Optional[str] = None,
+        strategy_type: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        if tag or symbol or strategy_type or memory_type:
+            memories = await crud.search_agent_memories(
+                db,
+                user_id=current_user.id,
+                tags=[tag] if tag else None,
+                symbol=symbol,
+                strategy_type=strategy_type,
+                memory_type=memory_type,
+            )
+        else:
+            memories = await crud.get_agent_memories(db, user_id=current_user.id)
+        return {"data": memories}
+
+    @ai_meta_router.delete("/memories", status_code=status.HTTP_204_NO_CONTENT)
+    async def delete_agent_memories(
+        current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        await crud.delete_agent_memories(db, user_id=current_user.id)
+        await db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @ai_meta_router.delete(
         "/chat/history/{session_id}", status_code=status.HTTP_204_NO_CONTENT
     )

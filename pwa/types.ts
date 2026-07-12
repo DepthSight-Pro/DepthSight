@@ -45,6 +45,16 @@ export interface AIChatMessage {
 	image_mime_type?: string;
 }
 
+export interface AgentMemory {
+	id: string;
+	user_id: number;
+	memory_type: string;
+	content: string;
+	relevance_score: number;
+	created_at: string;
+	expires_at?: string;
+}
+
 export interface AIChatRequest {
 	text_prompt: string;
 	session_id: string;

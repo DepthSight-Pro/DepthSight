@@ -22,6 +22,7 @@ from api.database import async_session_factory
 from api import crud
 import os
 from dotenv import load_dotenv
+from api.agent_autopilot import run_autopilot_loop
 
 import logging
 
@@ -264,7 +265,10 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(
             action = data.get("action")
             channel = data.get("channel")
 
-            if not action or not channel:
+            if not action:
+                continue
+
+            if action in ("subscribe", "unsubscribe") and not channel:
                 continue
 
             if action == "subscribe":
@@ -330,6 +334,28 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(
                 else:
                     logger.warning(
                         f"User {username} attempted to unsubscribe from inactive channel: {channel}"
+                    )
+
+            elif action == "autopilot_run":
+                symbol = data.get("symbol")
+                prompt = data.get("prompt")
+                max_iterations = data.get("max_iterations", 5)
+                image_base64 = data.get("image_base64")
+                image_mime_type = data.get("image_mime_type")
+                if prompt:
+                    logger.info(
+                        f"User {username} (ID: {user_id}) requested autopilot run (symbol: {symbol}, max_iterations: {max_iterations}, has_image: {bool(image_base64)})."
+                    )
+                    asyncio.create_task(
+                        run_autopilot_loop(
+                            websocket,
+                            user_id,
+                            symbol,
+                            prompt,
+                            max_iterations=max_iterations,
+                            image_base64=image_base64,
+                            image_mime_type=image_mime_type,
+                        )
                     )
 
     except WebSocketDisconnect:

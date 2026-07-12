@@ -38,6 +38,7 @@ import {
 import { cn } from "@/lib/utils";
 import { type Message, useAiCopilotStore } from "@/stores/aiCopilotStore";
 import { useStrategyEditorStore } from "@/stores/strategyEditorStore";
+import { AgentWorkspace } from "../agent/AgentWorkspace";
 
 export type { Message } from "@/stores/aiCopilotStore";
 
@@ -142,6 +143,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 }) => {
 	const { t } = useTranslation(["navigation", "strategy-editor"]);
 	const [input, setInput] = useState("");
+	const [isAutopilotMode, setIsAutopilotMode] = useState(false);
 	const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(
 		null,
 	);
@@ -431,10 +433,11 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 	};
 
 	const handleLoadStrategy = (
-		strategyJson: Record<string, unknown> | null | undefined,
+		strategyJson: any,
 	) => {
 		if (!strategyJson) return;
-		useStrategyEditorStore.getState().loadStrategy(strategyJson);
+		const finalConfig = strategyJson.config_data || strategyJson;
+		useStrategyEditorStore.getState().loadStrategy(finalConfig);
 		navigate("/editor");
 		onClose();
 	};
@@ -481,221 +484,248 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 					title={t("ai_assistant.resizeHandleTitle")}
 				/>
 				<SheetHeader className="p-4 border-b shrink-0 pl-6">
-					<div className="flex justify-between items-center">
+					<div className="flex justify-between items-center mr-6">
 						<SheetTitle className="flex items-center">
-							<WandSparkles className="mr-2" />
+							<WandSparkles className="mr-2 animate-pulse text-indigo-400" />
 							{t("ai_assistant.title")}
 						</SheetTitle>
+						<Button
+							variant={isAutopilotMode ? "default" : "secondary"}
+							size="sm"
+							onClick={() => {
+								const nextMode = !isAutopilotMode;
+								setIsAutopilotMode(nextMode);
+								if (nextMode) {
+									setWidth(Math.max(540, Math.round(window.innerWidth / 2)));
+								} else {
+									setWidth(540);
+								}
+							}}
+							className={cn(
+								"rounded-full text-xs font-bold flex items-center gap-1.5 transition-all duration-300",
+								isAutopilotMode && "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20 shadow-lg"
+							)}
+						>
+							🚀 Autopilot (Pro)
+						</Button>
 						<SheetDescription className="sr-only">
 							{t("ai_assistant.srDescription")}
 						</SheetDescription>
 					</div>
 				</SheetHeader>
-				<div
-					ref={chatContainerRef}
-					className="flex-1 overflow-y-auto p-4 space-y-6"
-				>
-					{messages.map((msg, index) => {
-						const hasGenerationTrigger =
-							typeof msg.content === "string" &&
-							containsGenerationTrigger(msg.content);
-
-						// Check if content is a strategy JSON
-						let strategyJson = msg.strategy_json;
-						let isStrategyContent = false;
-						if (
-							!strategyJson &&
-							msg.role === "assistant" &&
-							typeof msg.content === "string" &&
-							msg.content.trim().startsWith("{")
-						) {
-							try {
-								const parsed = JSON.parse(msg.content);
-								if (parsed.name || parsed.symbol || parsed.entryConditions) {
-									strategyJson = parsed;
-									isStrategyContent = true;
-								}
-							} catch {
-								/* empty */
-							}
-						}
-
-						const hasStrategyJson =
-							(msg.role === "assistant" && msg.strategy_json) ||
-							isStrategyContent;
-
-						return (
-							<div key={index}>
-								{/* Don't show content if it's a strategy JSON response */}
-								{!hasStrategyJson && (
-									<div
-										className={cn(
-											"flex items-start gap-3",
-											msg.role === "user" ? "justify-end" : "justify-start",
-										)}
-									>
-										{msg.role === "assistant" && (
-											<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground font-bold text-sm translate-y-px">
-												DS
-											</div>
-										)}
-										<div
-											className={cn(
-												"rounded-lg px-4 py-2 max-w-[90%]",
-												msg.role === "user"
-													? "bg-primary text-primary-foreground"
-													: "bg-muted",
-											)}
-										>
-											{msg.image_base64 && (
-												<div className="mb-2 overflow-hidden rounded-md border border-border/50 bg-background/50">
-													<button
-														type="button"
-														aria-label={t(
-															"ai_assistant.openImage",
-															"Open image",
-														)}
-														className="w-full h-full p-0 border-none bg-transparent cursor-zoom-in block"
-														onClick={() =>
-															window.open(
-																getImageSrc(
-																	msg.image_base64,
-																	msg.image_mime_type,
-																),
-																"_blank",
-															)
-														}
-													>
-														<img
-															src={getImageSrc(
-																msg.image_base64,
-																msg.image_mime_type,
-															)}
-															alt="Uploaded chart"
-															className="max-h-60 w-full object-contain"
-														/>
-													</button>
-												</div>
-											)}
-											<div className="prose prose-sm dark:prose-invert prose-p:my-0 prose-headings:my-2">
-												<Markdown remarkPlugins={[remarkGfm]}>
-													{typeof msg.content === "string" ? msg.content : ""}
-												</Markdown>
-											</div>
-										</div>
-									</div>
-								)}
-
-								{/* Show generation button if trigger phrase is present */}
-								{hasGenerationTrigger && (
-									<div className="mt-2 flex justify-start">
-										<Button onClick={handleGenerateStrategy}>
-											<WandSparkles className="w-4 h-4 mr-2" />
-											{t("ai_assistant.generateStrategyAction")}
-										</Button>
-									</div>
-								)}
-
-								{/* Show 'Open in Editor' button instead of JSON */}
-								{hasStrategyJson && (
-									<div className="flex justify-start">
-										<div className="rounded-lg px-4 py-2 bg-muted">
-											<p className="text-sm mb-2">
-												{t(
-													"ai_assistant.strategyGenerated",
-													"Strategy configuration generated successfully!",
-												)}
-											</p>
-											<Button onClick={() => handleLoadStrategy(strategyJson)}>
-												<Rocket className="w-4 h-4 mr-2" />
-												{t("ai_assistant.openInEditor")}
-											</Button>
-										</div>
-									</div>
-								)}
-							</div>
-						);
-					})}
-					{isTyping && (
-						<div className="flex items-start gap-3">
-							<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground font-bold text-sm translate-y-px">
-								DS
-							</div>
-							<div className="rounded-lg px-4 py-2 bg-muted flex items-center space-x-2">
-								<Loader2 className="h-5 w-5 animate-spin" />
-								<span>{t("ai_assistant.analyzing")}</span>
-							</div>
-						</div>
-					)}
-				</div>
-				<div className="p-4 border-t flex flex-col space-y-2 shrink-0 bg-background">
-					{selectedImage && (
-						<div className="flex items-center gap-2 mb-2 p-2 bg-muted/50 rounded-md relative group max-w-fit">
-							<img
-								src={getImageSrc(selectedImage.base64, selectedImage.type)}
-								className="h-16 w-24 object-cover rounded border border-border shadow-sm"
-								alt="Preview"
-							/>
-							<Button
-								variant="destructive"
-								size="icon"
-								className="absolute -top-2 -right-2 h-5 w-5 rounded-full shadow-md"
-								onClick={removeSelectedImage}
-							>
-								<X className="h-3 w-3" />
-							</Button>
-						</div>
-					)}
-					<p className="text-[10px] text-muted-foreground/60 text-center leading-tight mb-1 px-2">
-						{t("ai.disclaimer", { ns: "strategy-editor" })}
-					</p>
-					<div className="flex w-full items-center space-x-2">
-						<input
-							type="file"
-							accept="image/*"
-							className="hidden"
-							ref={fileInputRef}
-							onChange={handleFileChange}
-						/>
-						<Button
-							variant="ghost"
-							size="icon"
-							onClick={handleClear}
-							title={t("ai_assistant.newChat")}
-							disabled={isTyping}
-						>
-							<Trash2 className="h-4 w-4" />
-						</Button>
-						<Button
-							variant="ghost"
-							size="icon"
-							onClick={() => fileInputRef.current?.click()}
-							title={t("ai_assistant.uploadImage", "Upload chart screenshot")}
-							disabled={isTyping}
-						>
-							<Paperclip className="h-4 w-4" />
-						</Button>
-						<Textarea
-							value={input}
-							onChange={(e) => setInput(e.target.value)}
-							placeholder={t("ai_assistant.placeholder")}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && !e.shiftKey) {
-									e.preventDefault();
-									handleSend();
-								}
-							}}
-							disabled={isTyping}
-							rows={1}
-						/>
-						<Button
-							onClick={() => handleSend()}
-							disabled={isTyping || (!input.trim() && !selectedImage)}
-						>
-							<Send className="h-4" />
-						</Button>
+				{isAutopilotMode ? (
+					<div className="flex-1 overflow-hidden p-4 bg-background">
+						<AgentWorkspace onStrategyGenerated={handleLoadStrategy} />
 					</div>
-				</div>
+				) : (
+					<>
+						<div
+							ref={chatContainerRef}
+							className="flex-1 overflow-y-auto p-4 space-y-6"
+						>
+							{messages.map((msg, index) => {
+								const hasGenerationTrigger =
+									typeof msg.content === "string" &&
+									containsGenerationTrigger(msg.content);
+
+								// Check if content is a strategy JSON
+								let strategyJson = msg.strategy_json;
+								let isStrategyContent = false;
+								if (
+									!strategyJson &&
+									msg.role === "assistant" &&
+									typeof msg.content === "string" &&
+									msg.content.trim().startsWith("{")
+								) {
+									try {
+										const parsed = JSON.parse(msg.content);
+										if (parsed.name || parsed.symbol || parsed.entryConditions) {
+											strategyJson = parsed;
+											isStrategyContent = true;
+										}
+									} catch {
+										/* empty */
+									}
+								}
+
+								const hasStrategyJson =
+									(msg.role === "assistant" && msg.strategy_json) ||
+									isStrategyContent;
+
+								return (
+									<div key={index}>
+										{/* Don't show content if it's a strategy JSON response */}
+										{!hasStrategyJson && (
+											<div
+												className={cn(
+													"flex items-start gap-3",
+													msg.role === "user" ? "justify-end" : "justify-start",
+												)}
+											>
+												{msg.role === "assistant" && (
+													<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground font-bold text-sm translate-y-px">
+														DS
+													</div>
+												)}
+												<div
+													className={cn(
+														"rounded-lg px-4 py-2 max-w-[90%]",
+														msg.role === "user"
+															? "bg-primary text-primary-foreground"
+															: "bg-muted",
+													)}
+												>
+													{msg.image_base64 && (
+														<div className="mb-2 overflow-hidden rounded-md border border-border/50 bg-background/50">
+															<button
+																type="button"
+																aria-label={t(
+																	"ai_assistant.openImage",
+																	"Open image",
+																)}
+																className="w-full h-full p-0 border-none bg-transparent cursor-zoom-in block"
+																onClick={() =>
+																	window.open(
+																		getImageSrc(
+																			msg.image_base64,
+																			msg.image_mime_type,
+																		),
+																		"_blank",
+																	)
+																}
+															>
+																<img
+																	src={getImageSrc(
+																		msg.image_base64,
+																		msg.image_mime_type,
+																	)}
+																	alt="Uploaded chart"
+																	className="max-h-60 w-full object-contain"
+																/>
+															</button>
+														</div>
+													)}
+													<div className="prose prose-sm dark:prose-invert prose-p:my-0 prose-headings:my-2">
+														<Markdown remarkPlugins={[remarkGfm]}>
+															{typeof msg.content === "string" ? msg.content : ""}
+														</Markdown>
+													</div>
+												</div>
+											</div>
+										)}
+
+										{/* Show generation button if trigger phrase is present */}
+										{hasGenerationTrigger && (
+											<div className="mt-2 flex justify-start">
+												<Button onClick={handleGenerateStrategy}>
+													<WandSparkles className="w-4 h-4 mr-2" />
+													{t("ai_assistant.generateStrategyAction")}
+												</Button>
+											</div>
+										)}
+
+										{/* Show 'Open in Editor' button instead of JSON */}
+										{hasStrategyJson && (
+											<div className="flex justify-start">
+												<div className="rounded-lg px-4 py-2 bg-muted">
+													<p className="text-sm mb-2">
+														{t(
+															"ai_assistant.strategyGenerated",
+															"Strategy configuration generated successfully!",
+												)	}
+													</p>
+													<Button onClick={() => handleLoadStrategy(strategyJson)}>
+														<Rocket className="w-4 h-4 mr-2" />
+														{t("ai_assistant.openInEditor")}
+													</Button>
+												</div>
+											</div>
+										)}
+									</div>
+								);
+							})}
+							{isTyping && (
+								<div className="flex items-start gap-3">
+									<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground font-bold text-sm translate-y-px">
+										DS
+									</div>
+									<div className="rounded-lg px-4 py-2 bg-muted flex items-center space-x-2">
+										<Loader2 className="h-5 w-5 animate-spin" />
+										<span>{t("ai_assistant.analyzing")}</span>
+									</div>
+								</div>
+							)}
+						</div>
+						<div className="p-4 border-t flex flex-col space-y-2 shrink-0 bg-background">
+							{selectedImage && (
+								<div className="flex items-center gap-2 mb-2 p-2 bg-muted/50 rounded-md relative group max-w-fit">
+									<img
+										src={getImageSrc(selectedImage.base64, selectedImage.type)}
+										className="h-16 w-24 object-cover rounded border border-border shadow-sm"
+										alt="Preview"
+									/>
+									<Button
+										variant="destructive"
+										size="icon"
+										className="absolute -top-2 -right-2 h-5 w-5 rounded-full shadow-md"
+										onClick={removeSelectedImage}
+									>
+										<X className="h-3 w-3" />
+									</Button>
+								</div>
+							)}
+							<p className="text-[10px] text-muted-foreground/60 text-center leading-tight mb-1 px-2">
+								{t("ai.disclaimer", { ns: "strategy-editor" })}
+							</p>
+							<div className="flex w-full items-center space-x-2">
+								<input
+									type="file"
+									accept="image/*"
+									className="hidden"
+									ref={fileInputRef}
+									onChange={handleFileChange}
+								/>
+								<Button
+									variant="ghost"
+									size="icon"
+									onClick={handleClear}
+									title={t("ai_assistant.newChat")}
+									disabled={isTyping}
+								>
+									<Trash2 className="h-4 w-4" />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									onClick={() => fileInputRef.current?.click()}
+									title={t("ai_assistant.uploadImage", "Upload chart screenshot")}
+									disabled={isTyping}
+								>
+									<Paperclip className="h-4 w-4" />
+								</Button>
+								<Textarea
+									value={input}
+									onChange={(e) => setInput(e.target.value)}
+									placeholder={t("ai_assistant.placeholder")}
+									onKeyDown={(e) => {
+										if (e.key === "Enter" && !e.shiftKey) {
+											e.preventDefault();
+											handleSend();
+										}
+									}}
+									disabled={isTyping}
+									rows={1}
+								/>
+								<Button
+									onClick={() => handleSend()}
+									disabled={isTyping || (!input.trim() && !selectedImage)}
+								>
+									<Send className="h-4" />
+								</Button>
+							</div>
+						</div>
+					</>
+				)}
 			</SheetContent>
 		</Sheet>
 	);

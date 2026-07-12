@@ -55,6 +55,25 @@ services:
       '
     restart: always
 
+  mcp-memory:
+    build: .
+    container_name: depthsight_mcp_memory
+    command: python -c "import asyncio; from api.mcp_memory_server import MCPMemoryServer; asyncio.run(MCPMemoryServer().start())"
+    env_file: .env
+    environment:
+      - MCP_MEMORY_PORT=8100
+      - MCP_MEMORY_HOST=0.0.0.0
+      - POSTGRES_HOST=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   api:
     build: .
     container_name: depthsight_api
@@ -68,11 +87,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_USERNAME=api
       - REDIS_PASSWORD=${REDIS_API_PASSWORD:-${REDIS_PASSWORD}}
+      - MCP_MEMORY_HOST=mcp-memory
+      - MCP_MEMORY_PORT=8100
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp-memory:
+        condition: service_started
     restart: always
     logging:
       driver: "json-file"
@@ -94,11 +117,15 @@ services:
       - REDIS_HOST=redis
       - REDIS_USERNAME=websocket
       - REDIS_PASSWORD=${REDIS_WEBSOCKET_PASSWORD:-${REDIS_PASSWORD}}
+      - MCP_MEMORY_HOST=mcp-memory
+      - MCP_MEMORY_PORT=8100
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      mcp-memory:
+        condition: service_started
     restart: on-failure
 
   bot:
@@ -116,6 +143,8 @@ services:
       - MARKET_REDIS_HOST=redis-market
       - REDIS_USERNAME=bot
       - REDIS_PASSWORD=${REDIS_BOT_PASSWORD:-${REDIS_PASSWORD}}
+      - MCP_MEMORY_HOST=mcp-memory
+      - MCP_MEMORY_PORT=8100
     depends_on:
       api:
         condition: service_started
@@ -124,6 +153,8 @@ services:
       market_data:
         condition: service_started
       redis-market:
+        condition: service_started
+      mcp-memory:
         condition: service_started
     restart: on-failure
     logging:
@@ -172,11 +203,15 @@ services:
       - REDIS_USERNAME=celery
       - REDIS_PASSWORD=${REDIS_CELERY_PASSWORD:-${REDIS_PASSWORD}}
       - REDIS_HOST=redis
+      - MCP_MEMORY_HOST=mcp-memory
+      - MCP_MEMORY_PORT=8100
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp-memory:
+        condition: service_started
     restart: on-failure
     logging:
       driver: "json-file"

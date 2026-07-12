@@ -7,6 +7,33 @@ import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { toast } from "react-hot-toast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { GoogleOAuthProvider } from "@react-oauth/google";
+
+declare global {
+	interface Window {
+		Telegram?: {
+			WebApp: {
+				ready: () => void;
+				expand: () => void;
+				requestFullscreen?: () => void;
+				isFullscreen?: boolean;
+			};
+		};
+	}
+}
+
+if (typeof window !== "undefined" && window.Telegram && window.Telegram.WebApp) {
+	try {
+		const webApp = window.Telegram.WebApp;
+		webApp.ready();
+		webApp.expand();
+		if (webApp.requestFullscreen) {
+			webApp.requestFullscreen();
+		}
+	} catch (e) {
+		console.error("Failed to initialize Telegram WebApp:", e);
+	}
+}
 
 const queryClient = new QueryClient();
 
@@ -14,8 +41,6 @@ const rootElement = document.getElementById("root");
 if (!rootElement) {
 	throw new Error("Could not find root element to mount to");
 }
-
-import { GoogleOAuthProvider } from "@react-oauth/google";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 

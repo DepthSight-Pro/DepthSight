@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,8 +33,23 @@ async def get_api_key(api_key_header: str = Depends(api_key_header_auth)):
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
+    request: Request,
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
 ) -> models.User:
+    # Check for trusted Slack Bot bypass header
+    slack_secret = request.headers.get("X-Slack-Secret")
+    user_email = request.headers.get("X-User-Email")
+    if slack_secret and slack_secret == VALID_API_KEY and user_email:
+        user = await crud.get_user_by_email(db, email=user_email)
+        if user:
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is inactive",
+                )
+            return user
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

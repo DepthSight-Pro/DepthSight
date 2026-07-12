@@ -3070,6 +3070,142 @@ async def create_chat_message(
     return db_message
 
 
+# --- Agent Memory CRUD ---
+
+
+async def get_agent_memories(
+    db: AsyncSession, user_id: int
+) -> List[models.AgentMemory]:
+    """
+    Fetches active (non-expired) memories for a user.
+    """
+    now = datetime.now(timezone.utc)
+    # Return memories that either don't have an expiration or are in the future
+    stmt = (
+        select(models.AgentMemory)
+        .where(models.AgentMemory.user_id == user_id)
+        .where(
+            (models.AgentMemory.expires_at.is_(None))
+            | (models.AgentMemory.expires_at > now)
+        )
+        .order_by(models.AgentMemory.relevance_score.desc())
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def create_agent_memory(
+    db: AsyncSession, user_id: int, memory_data: schemas.AgentMemoryCreate
+) -> models.AgentMemory:
+    """
+    Creates a new agent memory entry.
+    """
+    db_memory = models.AgentMemory(
+        user_id=user_id,
+        memory_type=memory_data.memory_type,
+        content=memory_data.content,
+        relevance_score=memory_data.relevance_score,
+        expires_at=memory_data.expires_at,
+        tags=memory_data.tags or [],
+        symbol=memory_data.symbol,
+        strategy_type=memory_data.strategy_type,
+        outcome=memory_data.outcome,
+        confidence=memory_data.confidence,
+        validated_count=memory_data.validated_count,
+        config_hash=memory_data.config_hash,
+    )
+    db.add(db_memory)
+    await db.flush()
+    await db.refresh(db_memory)
+    return db_memory
+
+
+async def search_agent_memories(
+    db: AsyncSession,
+    user_id: int,
+    tags: Optional[List[str]] = None,
+    symbol: Optional[str] = None,
+    strategy_type: Optional[str] = None,
+    memory_type: Optional[str] = None,
+    outcome: Optional[str] = None,
+    limit: int = 10,
+) -> List[models.AgentMemory]:
+    """
+    Advanced memory bank searching for tag overlap, symbol priorities, and global rules.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(models.AgentMemory)
+        .where(models.AgentMemory.user_id == user_id)
+        .where(
+            (models.AgentMemory.expires_at.is_(None))
+            | (models.AgentMemory.expires_at > now)
+        )
+    )
+
+    if symbol:
+        # Match exact symbol, global memories (symbol is null), or global rules
+        stmt = stmt.where(
+            (models.AgentMemory.symbol == symbol)
+            | (models.AgentMemory.symbol.is_(None))
+            | (models.AgentMemory.memory_type == "rule")
+        )
+
+    if strategy_type:
+        stmt = stmt.where(
+            (models.AgentMemory.strategy_type == strategy_type)
+            | (models.AgentMemory.strategy_type.is_(None))
+        )
+
+    if memory_type:
+        stmt = stmt.where(models.AgentMemory.memory_type == memory_type)
+
+    if outcome:
+        stmt = stmt.where(models.AgentMemory.outcome == outcome)
+
+    stmt = stmt.order_by(
+        models.AgentMemory.relevance_score.desc(), models.AgentMemory.created_at.desc()
+    )
+    result = await db.execute(stmt)
+    memories = list(result.scalars().all())
+
+    # Tag overlap filtering in Python (highly compatible across PG/SQLite)
+    if tags:
+        filtered = []
+        target_tags = set(t.lower() for t in tags)
+        for m in memories:
+            m_tags = set(t.lower() for t in (m.tags or []))
+            # Rules are always relevant; others match if they overlap with query tags
+            if (
+                m.memory_type == "rule"
+                or not m_tags
+                or target_tags.intersection(m_tags)
+            ):
+                filtered.append(m)
+        return filtered[:limit]
+
+    return memories[:limit]
+
+
+async def delete_expired_memories(db: AsyncSession) -> int:
+    """
+    Deletes all expired memories from the database.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = delete(models.AgentMemory).where(models.AgentMemory.expires_at < now)
+    result = await db.execute(stmt, execution_options={"synchronize_session": False})
+    return result.rowcount
+
+
+async def delete_agent_memories(db: AsyncSession, user_id: int) -> int:
+    """
+    Deletes all agent memories for a user.
+    """
+    stmt = delete(models.AgentMemory).where(models.AgentMemory.user_id == user_id)
+    result = await db.execute(stmt, execution_options={"synchronize_session": False})
+    return result.rowcount
+
+
 async def get_chat_history(
     db: AsyncSession, user_id: int, session_id: str, limit: int = 50
 ) -> List[models.AIChatMessage]:

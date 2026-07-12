@@ -75,6 +75,7 @@ import type {
 	TrainingRunResponse,
 	UserAchievement,
 	UserGenesResponse,
+	AgentMemory,
 } from "@/types/api";
 import type {
 	AdminSupportTicket,
@@ -188,6 +189,26 @@ export const useGetChatHistory = (sessionId: string | null) => {
 		queryKey: authScopedQueryKey("chatHistory", sessionId),
 		queryFn: () => apiClient<AIChatMessage[]>(`/ai/chat/history/${sessionId}`),
 		enabled: !!sessionId,
+	});
+};
+
+export const useGetAgentMemories = () => {
+	return useQuery<AgentMemory[], Error>({
+		queryKey: authScopedQueryKey("agentMemories"),
+		queryFn: () => apiClient<AgentMemory[]>("/ai/memories"),
+	});
+};
+
+export const useDeleteAgentMemories = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, Error, void>({
+		mutationFn: () =>
+			apiClient<void>("/ai/memories", {
+				method: "DELETE",
+			}),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: authScopedQueryKey("agentMemories") });
+		},
 	});
 };
 

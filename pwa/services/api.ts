@@ -5,6 +5,7 @@ import type {
 	AccountStatusData,
 	Achievement,
 	AIChatMessage,
+	AgentMemory,
 	AddApiKeyPayload,
 	ApiKey,
 	AppConfig,
@@ -201,6 +202,12 @@ export const api = {
 			body: JSON.stringify(userData),
 		}),
 	getMe: (): Promise<User> => apiFetch<User>("/users/me"),
+	getAgentMemories: (): Promise<AgentMemory[]> =>
+		apiFetch<AgentMemory[]>("/ai/memories"),
+	deleteAgentMemories: (): Promise<void> =>
+		apiFetch<void>("/ai/memories", {
+			method: "DELETE",
+		}),
 
 	// --- Dashboard ---
 	getPortfolio: (mode: "live" | "paper"): Promise<PortfolioStatus> =>

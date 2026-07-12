@@ -421,12 +421,22 @@ def test_limit_break_signal_mode_and_entry_price(visual_strategy_instance):
     market_data = get_default_market_data()
     # Reset lookback window to 100.0 to prevent random walk from going above 105.0 or causing failures
     for i in range(1, 11):
-        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("open")] = 100.0
-        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("high")] = 100.1
-        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("low")] = 99.9
-        market_data["kline_1m"].iloc[-i, market_data["kline_1m"].columns.get_loc("close")] = 100.0
+        market_data["kline_1m"].iloc[
+            -i, market_data["kline_1m"].columns.get_loc("open")
+        ] = 100.0
+        market_data["kline_1m"].iloc[
+            -i, market_data["kline_1m"].columns.get_loc("high")
+        ] = 100.1
+        market_data["kline_1m"].iloc[
+            -i, market_data["kline_1m"].columns.get_loc("low")
+        ] = 99.9
+        market_data["kline_1m"].iloc[
+            -i, market_data["kline_1m"].columns.get_loc("close")
+        ] = 100.0
 
-    market_data["kline_1m"].iloc[-3, market_data["kline_1m"].columns.get_loc("high")] = 105.0
+    market_data["kline_1m"].iloc[
+        -3, market_data["kline_1m"].columns.get_loc("high")
+    ] = 105.0
     pair_info = get_default_pair_info(last_price=105.1, atr_val=0.5)
     pair_info["timestamp_dt"] = market_data["kline_1m"].index[-1]
 

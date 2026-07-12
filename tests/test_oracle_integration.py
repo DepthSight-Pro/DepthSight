@@ -1,25 +1,28 @@
 # tests/test_oracle_integration.py
-import pytest
+import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock, AsyncMock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
+
 from bot_module import config as bot_config
+from bot_module.depthsight_backtester import DepthSightBacktester
+from bot_module.oracle import Oracle
+from bot_module.strategy import (
+    OrderMode,
+    SignalDirection,
+    StrategySignal,
+)
 
 oracle_path = Path(getattr(bot_config, "ORACLE_MODEL_PATH", "data/oracle_model.joblib"))
 if not oracle_path.exists():
-    pytest.skip("Oracle model file not found, skipping oracle integration tests.", allow_module_level=True)
-
-import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
-import pandas as pd
-from datetime import datetime, timezone
-import numpy as np
-
-from bot_module.depthsight_backtester import DepthSightBacktester
-from bot_module.strategy import (
-    StrategySignal,
-    SignalDirection,
-    OrderMode,
-)
-from bot_module.oracle import Oracle
+    pytest.skip(
+        "Oracle model file not found, skipping oracle integration tests.",
+        allow_module_level=True,
+    )
 
 # --- Fixtures and mocks adapted from test_controller.py and test_depthsight_backtester.py ---
 

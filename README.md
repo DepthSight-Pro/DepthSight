@@ -75,6 +75,76 @@ DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 6
 - **Crypto Billing & Payments:** Native integration with Bitcart for processing cryptocurrency subscriptions and payments.
 - **Modern Clients:** Full-featured React web dashboard and a mobile-optimized PWA.
 
+## 🧠 AI Co-Pilot & Hierarchical Memory System
+
+DepthSight features an advanced **Three-Tier Hierarchical Memory System** that enables the AI Co-Pilot to learn from past backtest runs, generalize concepts into persistent rules, and transfer trading knowledge across different asset pairs.
+
+### Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Memory Hierarchy"
+        R["🔴 RULES<br/>Permanent • Cross-Asset<br/>'Volume > 2x filters fakeouts'"]
+        I["🟡 INSIGHTS<br/>90 days • Per-Symbol<br/>'ETH breakout works best on 1m with ADX'"]
+        O["🟢 OBSERVATIONS<br/>7 days • Ephemeral<br/>'Last run: PnL=-5%, too tight SL'"]
+    end
+    
+    R --> I --> O
+    
+    subgraph "Retrieval Pipeline"
+        Q["Current Task Query"] --> S["Smart Retriever"]
+        S --> |"1. Exact match"| EM["Same symbol + strategy type"]
+        S --> |"2. Transfer"| TL["Other symbols, same type"]  
+        S --> |"3. Universal"| UL["Cross-asset rules"]
+    end
+```
+
+### The Three Memory Tiers
+
+1. **🔴 RULES (Permanent & Global):**
+   * **Purpose:** High-level, cross-asset trading principles extracted by the AI from repeated observations.
+   * **Trigger:** When the agent detects the same outcome patterns across 3 or more insights of the same strategy type, it runs an automated consolidation prompt: *"Analyze these 3 insights and formulate a single concrete rule"* to synthesize a new universal trading guideline.
+   * **Retention:** Lives permanently until explicitly deprecated or contradicted by 3+ consecutive negative outcomes.
+
+2. **🟡 INSIGHTS (90 Days, Asset-Specific):**
+   * **Purpose:** Medium-term structured summaries of backtest runs containing KPIs, strategy configurations, and reasoning notes.
+   * **Optimization:** The system does not pollute the LLM context window with raw JSON config strings. Large configs are hashed, and only the core KPIs and textual context are loaded, fetching the config separately via Gemini tool calls only if required.
+
+3. **🟢 OBSERVATIONS / OPTIMIZATIONS (7 Days, Ephemeral):**
+   * **Purpose:** Short-term raw metrics and parameter adjustments from sequential optimization runs. Automatically garbage-collected after 7 days.
+
+### Taxonomy and Tagging
+Every memory block is automatically tagged by the LLM upon creation to enable precise indexing. The metadata classification includes:
+* **Symbol:** `BTCUSDT`, `ETHUSDT`, or `all_symbols`
+* **Strategy Type:** `breakout`, `mean_reversion`, `trend_following`, etc.
+* **Outcome:** `success` or `failure`
+* **Confidence & Validations:** Statistical strength of the rule based on how many times it was confirmed.
+
+### Smart Retrieval Pipeline
+
+When a user requests a new strategy (e.g., *"Create a breakout strategy for BTCUSDT on 1m"*), the backend does not just pull the last few memories. It performs a **prioritized cascading search**:
+
+```mermaid
+flowchart LR
+    Q["Query: Breakout on BTCUSDT 1m"] 
+    
+    Q --> P1["🔴 Step 1: Universal Rules<br/>tags ∩ {breakout, all_symbols}<br/>→ 'Volume > 2x for breakout'"]
+    Q --> P2["🟡 Step 2: Exact Insights<br/>tags ∩ {BTCUSDT, breakout}<br/>→ BTC-specific notes"]
+    Q --> P3["🟡 Step 3: Cross-Asset Transfer<br/>tags ∩ {breakout} NOT {BTCUSDT}<br/>→ ETH breakout insights (marked with ⚡)"]
+    
+    P1 --> B["Budget: 7 items max"]
+    P2 --> B
+    P3 --> B
+    
+    B --> F["Final Context for AI Assistant"]
+```
+
+1. **Universal Rules:** Up to 2 active rules relevant to the strategy type.
+2. **Exact Match Insights:** Up to 3 symbol + strategy-type matches.
+3. **Cross-Asset Knowledge Transfer:** If context budget allows, it pulls insights from other symbols of the same strategy type (marked with a `⚡` flag in the LLM prompt) to apply findings from, say, ETHUSDT to SOLUSDT.
+
+This ensures the AI is always building upon validated setups and completely avoids repeating known failure conditions.
+
 ## ⚔️ DepthSight vs. Alternatives
 
 How DepthSight compares to leading open-source frameworks and commercial trading platforms:

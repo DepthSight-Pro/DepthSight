@@ -260,6 +260,9 @@ const traverseAndMigrate = (node: ConditionBlock): ConditionBlock => {
 	if (!node) return node;
 
 	const migratedNode = { ...node };
+	if (!migratedNode.id) {
+		migratedNode.id = uuidv4();
+	}
 	const typeMapping: Record<string, ComponentType> = {
 		trend_strength_filter: "trend_filter",
 		adx_filter: "trend_filter",
@@ -387,6 +390,9 @@ const migrateManagementBlock = (
 	}
 
 	const migratedBlock = { ...block };
+	if (!migratedBlock.id) {
+		migratedBlock.id = uuidv4();
+	}
 	const defaults = getDefaultBlockParams(migratedBlock.type as ComponentType);
 
 	if (defaults && Object.keys(defaults).length > 0) {
@@ -495,5 +501,12 @@ export const migrateStrategy = (
 		newStrategy.positionManagement = [];
 	}
 
+	if (newStrategy.initialization && typeof newStrategy.initialization === "object") {
+		const init = { ...(newStrategy.initialization as Record<string, unknown>) };
+		if (!init.id) {
+			init.id = uuidv4();
+		}
+		newStrategy.initialization = init;
+	}
 	return newStrategy;
 };

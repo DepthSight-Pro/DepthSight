@@ -87,6 +87,9 @@ class User(Base):
     support_tickets = relationship(
         "SupportTicket", back_populates="user", cascade="all, delete-orphan"
     )
+    agent_memories = relationship(
+        "AgentMemory", back_populates="user", cascade="all, delete-orphan"
+    )
 
     # Relationship to track who invited whom
     referrer = relationship(
@@ -123,6 +126,31 @@ class AIChatMessage(Base):
     image_mime_type = Column(String(50), nullable=True)
 
     user = relationship("User", back_populates="ai_chat_messages")
+
+
+class AgentMemory(Base):
+    __tablename__ = "agent_memories"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    memory_type = Column(
+        String(50), nullable=False
+    )  # 'preference', 'strategy_insight', 'market_context', 'rule', 'observation'
+    content = Column(Text, nullable=False)
+    relevance_score = Column(Float, default=1.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Extended Memory Fields
+    tags = Column(JSON, nullable=True, server_default="[]")
+    symbol = Column(String(20), nullable=True)
+    strategy_type = Column(String(50), nullable=True)
+    outcome = Column(String(20), nullable=True)  # 'success', 'failure'
+    confidence = Column(Float, default=1.0)
+    validated_count = Column(Integer, default=1)
+    config_hash = Column(String(64), nullable=True)
+
+    user = relationship("User", back_populates="agent_memories")
 
 
 class Payment(Base):

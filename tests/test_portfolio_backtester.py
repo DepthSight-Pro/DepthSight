@@ -6,7 +6,15 @@ from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock, AsyncMock
 
 from bot_module.portfolio_backtester import PortfolioBacktester
-from bot_module.strategy import StrategySignal, SignalDirection, OrderMode, BaseStrategy, STRATEGIES, VolumeBreakoutStrategy, FakeBreakoutStrategy
+from bot_module.strategy import (
+    StrategySignal,
+    SignalDirection,
+    OrderMode,
+    BaseStrategy,
+    STRATEGIES,
+    VolumeBreakoutStrategy,
+    FakeBreakoutStrategy,
+)
 
 # Register strategies for testing since they are not default allowed strategies in production config
 STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy

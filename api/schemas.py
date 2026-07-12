@@ -1616,7 +1616,20 @@ class StrategyV2ConfigData(BaseModel):
         default="VisualBuilderStrategy", description="System name of the strategy"
     )
     symbol: str
+    timeframe: Optional[str] = Field(
+        None, description="Timeframe for the strategy (e.g. 1m, 5m, 15m, 1h)"
+    )
+    start_date: Optional[str] = Field(
+        None, description="Start date for backtesting (YYYY-MM-DD)"
+    )
+    end_date: Optional[str] = Field(
+        None, description="End date for backtesting (YYYY-MM-DD)"
+    )
     marketType: Literal["FUTURES", "SPOT"]
+    reasoning: Optional[str] = Field(
+        None,
+        description="Detailed explanation of why these parameters/changes were chosen, based on the previous iteration's feedback.",
+    )
     signal_source: Literal["internal", "tradingview_webhook"] = "internal"
     min_foundation_weight_threshold: Optional[float] = 0.0
     foundation_weights: Optional[Dict[str, float]] = None
@@ -1645,6 +1658,16 @@ class GenerateStrategyRequest(BaseModel):
     )
     context: Optional[Dict[str, Any]] = Field(
         None, description="Additional context for future improvements."
+    )
+    image_base64: Optional[str] = Field(
+        None,
+        description="Chart image in raw base64 format (JPEG/PNG/WebP). Data URL is also accepted.",
+    )
+    image_mime_type: Optional[str] = Field(
+        None, description="MIME type of the image, e.g. 'image/jpeg'"
+    )
+    memory_summary: Optional[str] = Field(
+        None, description="Pre-synthesized memory summary to bypass agent memory tool."
     )
 
 
@@ -1749,6 +1772,32 @@ class AIChatInitSessionRequest(BaseModel):
 
 
 # --- END: NEW SCHEMAS FOR AI ASSISTANT ---
+
+
+class AgentMemoryBase(BaseModel):
+    memory_type: str
+    content: str
+    relevance_score: float = 1.0
+    expires_at: Optional[datetime] = None
+    tags: Optional[List[str]] = None
+    symbol: Optional[str] = None
+    strategy_type: Optional[str] = None
+    outcome: Optional[str] = None
+    confidence: float = 1.0
+    validated_count: int = 1
+    config_hash: Optional[str] = None
+
+
+class AgentMemoryCreate(AgentMemoryBase):
+    pass
+
+
+class AgentMemory(AgentMemoryBase):
+    id: str
+    user_id: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # AI_CONTEXT_START: StrategyConfigBlock

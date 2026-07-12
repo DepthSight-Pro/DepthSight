@@ -546,7 +546,7 @@
 	"aiChat": {
 		"initialGreeting": "Hello! I'm your AI assistant. Describe the strategy you want to create, or select a backtest to analyze.",
 		"errorMessage": "An error occurred. Please try again.",
-		"loadToEditor": "Load into Editor",
+		"loadToEditor": "HITL Checkpoint: Approve & Load to Editor",
 		"askPlaceholder": "Ask me anything...",
 		"generateStrategy": "Yes, generate this strategy",
 		"strategyGenerated": "Strategy configuration generated successfully!",

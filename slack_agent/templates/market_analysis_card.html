@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@300;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1c1917, #111827);
+            color: #e5e7eb;
+            width: 800px;
+            height: 420px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .container {
+            width: 740px;
+            height: 380px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .header-left { display: flex; flex-direction: column; }
+        .section-tag {
+            font-size: 11px;
+            font-weight: 600;
+            color: #00D4FF;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 4px;
+        }
+        .pair-name {
+            font-size: 36px;
+            font-weight: 700;
+            color: white;
+            line-height: 1;
+        }
+        .price-row {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-top: 6px;
+        }
+        .current-price {
+            font-size: 28px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .price-change {
+            font-size: 16px;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 6px;
+        }
+        .price-change.up {
+            color: #22c55e;
+            background: rgba(34, 197, 94, 0.12);
+        }
+        .price-change.down {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.12);
+        }
+
+        /* Content */
+        .content {
+            display: flex;
+            gap: 24px;
+            flex: 1;
+            padding-top: 12px;
+        }
+
+        /* Chart section */
+        .chart-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .chart-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .sparkline-area {
+            flex: 1;
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        /* Indicators */
+        .indicators {
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .indicator-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+        }
+        .indicator-label {
+            font-size: 12px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .indicator-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .indicator-value.bullish { color: #22c55e; }
+        .indicator-value.bearish { color: #ef4444; }
+        .indicator-value.neutral { color: #f59e0b; }
+
+        .trend-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .trend-dot.bullish { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
+        .trend-dot.bearish { background: #ef4444; box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
+
+        /* AI Insight */
+        .ai-insight {
+            background: rgba(0, 212, 255, 0.06);
+            border: 1px solid rgba(0, 212, 255, 0.15);
+            border-radius: 10px;
+            padding: 12px 16px;
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .ai-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+        .ai-text {
+            font-size: 13px;
+            color: #d1d5db;
+            line-height: 1.5;
+        }
+        .ai-text strong { color: #00D4FF; font-weight: 600; }
+
+        /* Footer */
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 8px;
+        }
+        .timestamp { font-size: 12px; color: #4b5563; }
+        .footer-brand { font-size: 13px; color: #4b5563; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-left">
+                <div class="section-tag">Market Analysis</div>
+                <div class="pair-name">{{ SYMBOL }}</div>
+                <div class="price-row">
+                    <span class="current-price">{{ CURRENT_PRICE }}</span>
+                    <span class="price-change {{ PRICE_CHANGE_CLASS }}">{{ PRICE_CHANGE }}</span>
+                </div>
+            </div>
+            <svg viewBox="0 0 280 80" xmlns="http://www.w3.org/2000/svg" height="50">
+                <defs>
+                    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#00D4FF"/>
+                        <stop offset="100%" stop-color="#0066FF"/>
+                    </linearGradient>
+                    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#00D4FF" stop-opacity="0"/>
+                        <stop offset="50%" stop-color="#00D4FF" stop-opacity="0.8"/>
+                        <stop offset="100%" stop-color="#00D4FF" stop-opacity="0"/>
+                    </linearGradient>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                </defs>
+                <g transform="translate(5, 15)">
+                    <circle cx="25" cy="25" r="24" fill="none" stroke="url(#g1)" stroke-width="2" opacity="0.8"/>
+                    <circle cx="25" cy="25" r="18" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"/>
+                    <circle cx="25" cy="25" r="12" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.4"/>
+                    <path d="M 25 25 L 40 15 M 25 25 L 40 35 M 25 25 L 10 15 M 25 25 L 10 35" stroke="#0066FF" stroke-width="1" opacity="0.4"/>
+                    <circle cx="25" cy="25" r="8" fill="url(#g1)" filter="url(#glow)"/>
+                    <circle cx="25" cy="25" r="4" fill="#FFFFFF" opacity="0.9"/>
+                    <path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M 25 25 L 45 5" stroke="url(#g2)" stroke-width="2" opacity="0.7">
+                        <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="4s" repeatCount="indefinite"/>
+                    </path>
+                </g>
+                <text x="70" y="44" dominant-baseline="middle" font-family="Montserrat, Helvetica, Arial, sans-serif" font-size="30">
+                    <tspan font-weight="700" fill="#FFFFFF">Depth</tspan><tspan fill="url(#g1)" font-weight="300">Sight</tspan>
+                </text>
+            </svg>
+        </div>
+
+        <div class="content">
+            <div class="chart-section">
+                <div class="chart-label">Price · 24h</div>
+                <div class="sparkline-area">
+                    {{ SPARKLINE_SVG }}
+                </div>
+            </div>
+            <div class="indicators">
+                <div class="indicator-item">
+                    <span class="indicator-label">RSI (14)</span>
+                    <span class="indicator-value {{ RSI_CLASS }}">{{ RSI_VALUE }}</span>
+                </div>
+                <div class="indicator-item">
+                    <span class="indicator-label">Volume</span>
+                    <span class="indicator-value {{ VOLUME_CLASS }}">{{ VOLUME_VALUE }}</span>
+                </div>
+                <div class="indicator-item">
+                    <span class="indicator-label">Trend</span>
+                    <span class="indicator-value {{ TREND_CLASS }}">
+                        <span class="trend-dot {{ TREND_CLASS }}"></span>{{ TREND_VALUE }}
+                    </span>
+                </div>
+                <div class="indicator-item">
+                    <span class="indicator-label">Volatility</span>
+                    <span class="indicator-value {{ VOLATILITY_CLASS }}">{{ VOLATILITY_VALUE }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="ai-insight">
+            <span class="ai-icon">🤖</span>
+            <span class="ai-text">
+                <strong>AI Insight:</strong> {{ AI_INSIGHT }}
+            </span>
+        </div>
+
+        <div class="footer">
+            <span class="timestamp">{{ TIMESTAMP }}</span>
+            <span class="footer-brand">depthsight.pro</span>
+        </div>
+    </div>
+</body>
+</html>

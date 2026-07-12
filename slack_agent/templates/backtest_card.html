@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@300;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1c1917, #111827);
+            color: #e5e7eb;
+            width: 800px;
+            height: 480px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .container {
+            width: 740px;
+            height: 440px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .title-block { display: flex; flex-direction: column; }
+        .strategy-name {
+            font-size: 36px;
+            font-weight: 700;
+            color: white;
+            line-height: 1.2;
+        }
+        .subtitle {
+            font-size: 18px;
+            font-weight: 500;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+        .content {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            flex: 1;
+            padding-top: 16px;
+            gap: 20px;
+        }
+        .chart-area {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            width: 300px;
+            align-content: stretch;
+        }
+        .kpi-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .kpi-name {
+            font-size: 11px;
+            font-weight: 500;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .kpi-value {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .kpi-value.profit { color: #22c55e; }
+        .kpi-value.loss { color: #ef4444; }
+        .kpi-value.neutral { color: #ffffff; }
+        .kpi-value.warning { color: #ef4444; }
+        .kpi-value.accent { color: #00D4FF; }
+        .footer {
+            font-size: 13px;
+            color: #4b5563;
+            text-align: right;
+            padding-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title-block">
+                <h1 class="strategy-name">{{ STRATEGY_NAME }}</h1>
+                <div class="subtitle">{{ SUBTITLE }}</div>
+            </div>
+            <div style="flex-shrink: 0; margin-top: 4px;">
+                <svg viewBox="0 0 280 80" xmlns="http://www.w3.org/2000/svg" height="60">
+                    <defs>
+                        <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#00D4FF"/>
+                            <stop offset="100%" stop-color="#0066FF"/>
+                        </linearGradient>
+                        <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#00D4FF" stop-opacity="0"/>
+                            <stop offset="50%" stop-color="#00D4FF" stop-opacity="0.8"/>
+                            <stop offset="100%" stop-color="#00D4FF" stop-opacity="0"/>
+                        </linearGradient>
+                        <filter id="glow">
+                            <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                    </defs>
+                    <g transform="translate(5, 15)">
+                        <circle cx="25" cy="25" r="24" fill="none" stroke="url(#g1)" stroke-width="2" opacity="0.8"/>
+                        <circle cx="25" cy="25" r="18" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"/>
+                        <circle cx="25" cy="25" r="12" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.4"/>
+                        <path d="M 25 25 L 40 15 M 25 25 L 40 35 M 25 25 L 10 15 M 25 25 L 10 35" stroke="#0066FF" stroke-width="1" opacity="0.4"/>
+                        <circle cx="25" cy="25" r="8" fill="url(#g1)" filter="url(#glow)"/>
+                        <circle cx="25" cy="25" r="4" fill="#FFFFFF" opacity="0.9"/>
+                        <path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M 25 25 L 45 5" stroke="url(#g2)" stroke-width="2" opacity="0.7">
+                            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="4s" repeatCount="indefinite"/>
+                        </path>
+                    </g>
+                    <text x="70" y="44" dominant-baseline="middle" font-family="Montserrat, Helvetica, Arial, sans-serif" font-size="30">
+                        <tspan font-weight="700" fill="#FFFFFF">Depth</tspan><tspan fill="url(#g1)" font-weight="300">Sight</tspan>
+                    </text>
+                </svg>
+            </div>
+        </div>
+        <div class="content">
+            <div class="chart-area">
+                <!-- Equity curve SVG injected here by Playwright renderer -->
+                {{ CHART_SVG }}
+            </div>
+            <div class="kpi-grid">
+                <div class="kpi-item">
+                    <div class="kpi-name">Net Profit</div>
+                    <div class="kpi-value {{ NET_PROFIT_CLASS }}">{{ NET_PROFIT }}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-name">Win Rate</div>
+                    <div class="kpi-value neutral">{{ WIN_RATE }}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-name">Max Drawdown</div>
+                    <div class="kpi-value warning">{{ MAX_DRAWDOWN }}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-name">Total Trades</div>
+                    <div class="kpi-value neutral">{{ TOTAL_TRADES }}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-name">Profit Factor</div>
+                    <div class="kpi-value accent">{{ PROFIT_FACTOR }}</div>
+                </div>
+                <div class="kpi-item">
+                    <div class="kpi-name">Sharpe Ratio</div>
+                    <div class="kpi-value accent">{{ SHARPE_RATIO }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="footer">depthsight.pro</div>
+    </div>
+</body>
+</html>
