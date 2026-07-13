@@ -77,126 +77,125 @@ DO NOT use objects where simple values are expected.
 
 ### trend_filter
 ```json
-{{
-  "indicator": "ADX",  // MUST be "ADX", not "adx"
-  "threshold": number  // e.g., 25.0
-}}
+{
+  "indicator": "ADX",
+  "threshold": 25.0
+}
 ```
 
 ### rel_vol_filter
 ```json
-{{
-  "rel_vol_threshold": number,  // e.g., 1.5
-  "lookback_period": number     // e.g., 20
-}}
+{
+  "rel_vol_threshold": 1.5,
+  "lookback_period": 20
+}
 ```
 
 ### volatility_filter
 ```json
-{{
-  "natr_threshold": number  // e.g., 1.0
-}}
+{
+  "natr_threshold": 1.0
+}
 ```
 
 ### trading_session
 ```json
-{{
-  "sessions": ["london", "new_york", "asia"],  // one or more
+{
+  "sessions": ["london", "new_york"],
   "timezone": "UTC"
-}}
+}
 ```
 
 ## FOUNDATION PARAMETERS:
 
 ### trend_direction
 ```json
-{{
-  "timeframe": "1m" | "5m" | "15m" | "1h" | "4h" | "1d",
-  "required_trend": "LONG" | "SHORT" | "ANY_TREND" | "FLAT",
-  "fast_period": number,       // e.g., 10
-  "slow_period": number,       // e.g., 50
-  "rsi_period": number,        // e.g., 14
-  "rsi_lower_bound": number,   // e.g., 40
-  "rsi_upper_bound": number    // e.g., 60
-}}
+{
+  "timeframe": "15m",
+  "required_trend": "LONG",
+  "fast_period": 10,
+  "slow_period": 50,
+  "rsi_period": 14,
+  "rsi_lower_bound": 40,
+  "rsi_upper_bound": 60
+}
 ```
 
 ### volume_confirmation
 ```json
-{{
-  "multiplier": number,       // e.g., 1.5
-  "lookback_period": number   // e.g., 20
-}}
+{
+  "multiplier": 1.5,
+  "lookback_period": 20
+}
 ```
 
 ### level_touch_analyzer
 ```json
-{{
-  "level_source": DynamicParam,
-  "lookback_candles": number,       // e.g., 50
-  "touch_tolerance_pct": number,    // e.g., 0.1 means 0.1% of the level price
-  "invalidate_on_pierce": boolean,
-  "min_touches": number             // optional helper, e.g., 3 for triangle tops
-}}
+{
+  "level_source": {
+    "source": "block_result",
+    "block_id": "resistance_level_1",
+    "key": "detected_level"
+  },
+  "lookback_candles": 50,
+  "touch_tolerance_pct": 0.1,
+  "invalidate_on_pierce": true,
+  "min_touches": 3
+}
 ```
 
 ### volatility_squeeze
 ```json
-{{
-  "lookback_candles": number,       // e.g., 20
-  "squeeze_ratio": number           // e.g., 0.6 means current half range <= 60% of past half range
-}}
+{
+  "lookback_candles": 20,
+  "squeeze_ratio": 0.6
+}
 ```
 
 ### price_action_analyzer
 ```json
-{{
-  "structure_type": "higher_lows" | "lower_highs",
-  "lookback_candles": number,     // e.g., 30
-  "min_points": number,           // e.g., 2
-  "order": number                 // optional fractal window, e.g., 3
-}}
+{
+  "structure_type": "higher_lows",
+  "lookback_candles": 30,
+  "min_points": 2,
+  "order": 3
+}
 ```
 
 ### price_consolidation
 ```json
-{{
-  "lookback_period": number,    // e.g., 20
-  "max_range_atr": number       // e.g., 0.5 means range <= 50% of ATR
-}}
+{
+  "lookback_period": 20,
+  "max_range_atr": 0.5
+}
 ```
 
 ### return_to_level
 ```json
-{{
-  "level_source": DynamicParam, // optional if level_block_id is used
-  "level_block_id": string,      // id of the level provider block
-  "retest_type": "touch" | "breakout_retest",
-  "approach_direction": "any" | "from_above" | "from_below",
-  "confirmation_time_sec": number,
-  "cooldown_sec": number,        // e.g., 300
-  "proximity_type": "atr_multiplier" | "percentage",
-  "proximity_value": number,       // multiplier if atr, % if percentage
-  "departure_type": "atr_multiplier" | "percentage",
-  "departure_value": number,       // multiplier if atr, % if percentage
-  "confirmation_time_sec": number,
-  "cooldown_sec": number         // e.g., 300
-}}
+{
+  "level_block_id": "resistance_level_1",
+  "retest_type": "breakout_retest",
+  "approach_direction": "from_below",
+  "proximity_type": "atr_multiplier",
+  "proximity_value": 1.5,
+  "departure_type": "atr_multiplier",
+  "departure_value": 3.0,
+  "confirmation_time_sec": 60,
+  "cooldown_sec": 300
+}
 ```
 
 ### local_level (DATA PROVIDER)
 ```json
-{{
-  "timeframe": string,              // e.g., "15m"
-  "lookback_period": number,        // e.g., 20
-  "level_type": "high" | "low" | "all",
-  "is_data_provider": boolean,      // optional, default false
-  "proximity_type": "percentage" | "atr_multiplier",
-  "proximity_value": number
-}}
+{
+  "timeframe": "15m",
+  "lookback_period": 20,
+  "level_type": "high",
+  "is_data_provider": true,
+  "proximity_type": "atr_multiplier",
+  "proximity_value": 1.5
+}
 ```
-- `level_type`: use `"high"` for local resistance / upside breakouts, `"low"` for local support, `"all"` only when either side is acceptable.
-- **CRITICAL**: For false breakout, breakout/retest, or any `value_comparison` consuming `detected_level`, set `"is_data_provider": true`.
 
 ### significant_level (DATA PROVIDER)
 ```json
@@ -206,61 +205,61 @@ DO NOT use objects where simple values are expected.
 
 ### round_level
 ```json
-{{
-  "proximity_pct": number  // e.g., 0.1 means within 0.1% of a round number
-}}
+{
+  "proximity_pct": 0.1
+}
 ```
 
 ## MANAGEMENT PARAMETERS:
 
 ### move_to_breakeven
 ```json
-{{
-  "target_type": "rr_multiplier" | "atr_multiplier" | "percent_from_price",
-  "target_value": number,  // e.g., 1.0
-  "offset_pips": number    // e.g., 2
-}}
+{
+  "target_type": "rr_multiplier",
+  "target_value": 1.0,
+  "offset_pips": 2
+}
 ```
 
 ### dca_management
 ```json
-{{
-  "max_safety_orders": number,        // e.g. 5
-  "volume_multiplier": number,        // e.g. 2.0 (martingale)
-  "step_type": "percentage" | "custom_condition" | "atr",
-  "step_value": number | DynamicParam, // e.g. 1.0 (for percentage)
-  "step_multiplier": number           // e.g. 1.0 (multiplier for the step distance)
-}}
+{
+  "max_safety_orders": 5,
+  "volume_multiplier": 2.0,
+  "step_type": "percentage",
+  "step_value": 1.0,
+  "step_multiplier": 1.0
+}
 ```
 
 ### grid_management
 ```json
-{{
-  "grid_levels": number,               // e.g. 10
-  "range_type": "percentage" | "atr" | "fixed_prices",
-  "upper_bound": number | DynamicParam,
-  "lower_bound": number | DynamicParam
-}}
+{
+  "grid_levels": 10,
+  "range_type": "percentage",
+  "upper_bound": 1.0,
+  "lower_bound": 1.0
+}
 ```
 
 ### modify_stop_loss
 ```json
-{{
-  "new_sl_price": {{
+{
+  "new_sl_price": {
     "source": "value",
-    "value": number
-  }}
-}}
+    "value": 1850.5
+  }
+}
 ```
 
 ### modify_take_profit
 ```json
-{{
-  "new_tp_price": {{
+{
+  "new_tp_price": {
     "source": "value",
-    "value": number
-  }}
-}}
+    "value": 1950.0
+  }
+}
 ```
 
 ### close_position
@@ -270,22 +269,22 @@ DO NOT use objects where simple values are expected.
 
 ### scale_in
 ```json
-{{
-  "add_size_pct_of_initial_risk": number,  // e.g., 100
-  "max_entries": number                     // e.g., 3
-}}
+{
+  "add_size_pct_of_initial_risk": 100.0,
+  "max_entries": 3
+}
 ```
 
 ### conditional_management
 ```json
-{{
+{
   "type": "conditional_management",
-  "if_conditions": {{
+  "if_conditions": {
     "type": "AND",
-    "children": [/* your position checks */]
-  }},
-  "then_actions": [ /* management actions like modify_stop_loss */ ]
-}}
+    "children": []
+  },
+  "then_actions": []
+}
 ```
 
 ## ==================================================
