@@ -26,7 +26,7 @@
 		"react": "^19.2.5",
 		"react-dom": "^19.2.5",
 		"react-hot-toast": "^2.6.0",
-		"react-i18next": "17.0.2",
+		"react-i18next": "17.0.9",
 		"react-is": "^19.0.0",
 		"react-markdown": "^10.1.0",
 		"react-swipeable": "^7.0.2",
@@ -56,6 +56,6 @@
 	},
 	"overrides": {
 		"i18next": "26.0.4",
-		"react-i18next": "17.0.2"
+		"react-i18next": "17.0.9"
 	}
 }
