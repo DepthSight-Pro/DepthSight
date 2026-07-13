@@ -282,6 +282,89 @@ def _ensure_default_params(node: Any):
             _ensure_default_params(value)
 
 
+def _sanitize_strategy_nulls(node: Any) -> Any:
+    """
+    Recursively sanitize a strategy JSON dict to fix common LLM issues
+    (especially from Qwen models) where required fields are set to null
+    instead of empty containers.
+
+    Fixes:
+      - children: null  ->  children: []
+      - params: null    ->  params: {}
+      - positionManagement: null  ->  positionManagement: []
+      - Ensures filters/entryConditions have type + children structure
+      - Ensures initialization has type + params structure
+      - Ensures entryTrigger has type
+    """
+    if not isinstance(node, dict):
+        return node
+
+    # Fix null children -> empty list (ConditionNode requires List, not None)
+    if "children" in node and node["children"] is None:
+        node["children"] = []
+
+    # Fix null params -> empty dict (InitializationBlock, EntryTrigger require Dict)
+    if "params" in node and node["params"] is None:
+        node["params"] = {}
+
+    # Fix null positionManagement -> empty list
+    if "positionManagement" in node and node["positionManagement"] is None:
+        node["positionManagement"] = []
+
+    # Fix null foundation_weights -> empty dict
+    if "foundation_weights" in node and node["foundation_weights"] is None:
+        node["foundation_weights"] = {}
+
+    # Ensure filters is a proper ConditionNode dict, not a scalar or None
+    if "filters" in node:
+        f = node["filters"]
+        if f is None:
+            node["filters"] = {"type": "AND", "children": []}
+        elif isinstance(f, dict) and "children" not in f:
+            f["children"] = []
+        elif isinstance(f, dict) and f.get("children") is None:
+            f["children"] = []
+
+    # Ensure entryConditions is a proper ConditionNode dict
+    if "entryConditions" in node:
+        ec = node["entryConditions"]
+        if ec is None:
+            node["entryConditions"] = {"type": "OR", "children": []}
+        elif isinstance(ec, dict) and "children" not in ec:
+            ec["children"] = []
+        elif isinstance(ec, dict) and ec.get("children") is None:
+            ec["children"] = []
+
+    # Ensure initialization has required structure
+    if "initialization" in node:
+        init = node["initialization"]
+        if init is None:
+            node["initialization"] = {"type": "open_position", "params": {}}
+        elif isinstance(init, dict):
+            if "type" not in init:
+                init["type"] = "open_position"
+            if "params" not in init or init["params"] is None:
+                init["params"] = {}
+
+    # Ensure entryTrigger has required structure
+    if "entryTrigger" in node:
+        et = node["entryTrigger"]
+        if et is None:
+            node["entryTrigger"] = {"type": "on_candle_close", "timeframe": "1m"}
+        elif isinstance(et, dict) and "type" not in et:
+            et["type"] = "on_candle_close"
+
+    # Recurse into all nested dicts and lists
+    for key, value in node.items():
+        if isinstance(value, list):
+            for item in value:
+                _sanitize_strategy_nulls(item)
+        elif isinstance(value, dict):
+            _sanitize_strategy_nulls(value)
+
+    return node
+
+
 from .plans import plans_config
 
 
@@ -1190,7 +1273,7 @@ async def _generate_json_response(
         f"Generating AI JSON via provider '{provider}' using model '{actual_model}'"
     )
     if provider == "google":
-        return await _generate_google_json_response(
+        raw = await _generate_google_json_response(
             system_prompt,
             user_prompt,
             image_base64=image_base64,
@@ -1199,7 +1282,7 @@ async def _generate_json_response(
             model_name=model_name,
         )
     elif provider == "qwen":
-        return await _generate_qwen_json_response(
+        raw = await _generate_qwen_json_response(
             system_prompt,
             user_prompt,
             image_base64=image_base64,
@@ -1207,14 +1290,25 @@ async def _generate_json_response(
             max_output_tokens=max_output_tokens,
             model_name=model_name,
         )
-    return await _generate_openrouter_json_response(
-        system_prompt,
-        user_prompt,
-        image_base64=image_base64,
-        image_mime_type=image_mime_type,
-        max_output_tokens=max_output_tokens,
-        model_name=model_name,
-    )
+    else:
+        raw = await _generate_openrouter_json_response(
+            system_prompt,
+            user_prompt,
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+            max_output_tokens=max_output_tokens,
+            model_name=model_name,
+        )
+        
+    return _extract_json_block(raw)
+
+def _extract_json_block(text: str) -> str:
+    """Safely extracts a JSON object from text, stripping markdown blocks if present."""
+    start_idx = text.find("{")
+    end_idx = text.rfind("}")
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        return text[start_idx:end_idx + 1]
+    return text
 
 
 async def _generate_text_response(
@@ -1398,6 +1492,8 @@ async def get_chat_response(
             )
             strategy_dict = json.loads(raw_json_text)
 
+            # Apply sanitization for common LLM structure issues (especially Qwen)
+            _sanitize_strategy_nulls(strategy_dict)
             # Apply migrations and default parameters
             _ensure_default_params(strategy_dict)
 
@@ -2146,6 +2242,7 @@ You MUST strictly adhere to these guidelines and avoid the specified negative pa
                     f"The AI returned a malformed JSON object. Details: {e}. Content: {clean_json_text}"
                 )
 
+            _sanitize_strategy_nulls(strategy_dict)
             _ensure_default_params(strategy_dict)
 
             if "config_data" in strategy_dict and isinstance(
@@ -2530,6 +2627,7 @@ You MUST strictly adhere to these guidelines and avoid the specified negative pa
                 f"The AI returned a malformed JSON object. Details: {e}. Content: {clean_json_text}"
             )
 
+        _sanitize_strategy_nulls(strategy_dict)
         _ensure_default_params(strategy_dict)
 
         # Flexible parsing: support with or without config_data wrapper

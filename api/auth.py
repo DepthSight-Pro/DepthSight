@@ -2,11 +2,13 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import models, crud  # Assuming these exist or will be created
+from . import models, crud, schemas  # Assuming these exist or will be created
 from .database import get_db  # Assuming this exists
 from .security import validate_token, oauth2_scheme
 
 import os
+import random
+import string
 from dotenv import load_dotenv
 
 # Load variables from .env file (good practice)
@@ -48,6 +50,38 @@ async def get_current_user(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="User account is inactive",
                 )
+            return user
+        else:
+            # Auto-register Slack User (for Devpost Judges & seamless onboarding)
+            username = (
+                user_email.split("@")[0]
+                + "_"
+                + "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+            )
+            random_password = "".join(
+                random.choices(string.ascii_letters + string.digits, k=16)
+            )
+
+            user_create = schemas.UserCreate(
+                username=username, email=user_email, password=random_password
+            )
+            # Create user and automatically activate them
+            user = await crud.create_user(db=db, user=user_create, is_active=True)
+
+            # Commit the new user to the database (flush alone is not enough)
+            await db.commit()
+            await db.refresh(user)
+
+            # Automatically grant 'pro' plan to judges so they can test Autopilot features
+            if (
+                "devpost.com" in user_email.lower()
+                or "salesforce.com" in user_email.lower()
+            ):
+                user.plan = "pro"
+                db.add(user)
+                await db.commit()
+                await db.refresh(user)
+
             return user
 
     credentials_exception = HTTPException(

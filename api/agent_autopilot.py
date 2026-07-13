@@ -16,6 +16,18 @@ from api.ai_assistant import _generate_json_response
 logger = logging.getLogger(__name__)
 
 
+def clean_double_newlines(text: str) -> str:
+    """Helper to clean up excessive spacing (3+ newlines) from LLM output,
+    ensuring neat markdown presentation on the frontend."""
+    if not text:
+        return ""
+    # Standardize all double newlines to single \n\n, removing 3+ sequences
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Also standardize CRLF if any
+    text = re.sub(r"(\r\n){3,}", "\r\n\r\n", text)
+    return text
+
+
 def guess_symbol_from_prompt(prompt: str, default: str = "BTCUSDT") -> str:
     """Fast regex check to extract symbols if they are explicitly mentioned (e.g. 'BTC', 'ETHUSDT').
     Returns empty string if not explicitly matched, signaling that LLM resolution is needed."""
@@ -483,6 +495,8 @@ async def run_memory_researcher_agent(
             messages=[{"role": "user", "content": user_content}],
         )
 
+        summary_text = clean_double_newlines(summary_text)
+
         await websocket.send_json(
             {
                 "event": "autopilot_status",
@@ -755,6 +769,8 @@ async def run_strategy_advisor_agent(
             system_instruction=system_prompt_with_tags,
             messages=messages,
         )
+
+        advice_text = clean_double_newlines(advice_text)
 
         await websocket.send_json(
             {
