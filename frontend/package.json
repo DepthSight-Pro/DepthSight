@@ -98,7 +98,7 @@
 		"@types/uuid": "^11.0.0",
 		"@vitejs/plugin-react": "^4.3.4",
 		"@vitejs/plugin-react-swc": "^4.3.0",
-		"autoprefixer": "^10.4.27",
+		"autoprefixer": "^10.5.2",
 		"baseline-browser-mapping": "^2.10.17",
 		"eslint": "^10.2.0",
 		"eslint-plugin-react-hooks": "^7.0.1",
