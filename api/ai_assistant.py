@@ -1,6 +1,7 @@
 # ruff: noqa: E402
 # api/ai_assistant.py
 import os
+import asyncio
 import json
 import logging
 import re
@@ -42,7 +43,7 @@ CACHED_GENERATOR_PROMPT: Optional[str] = None
 CACHED_ADVISOR_TEMPLATE: Optional[str] = None
 
 SUPPORTED_AI_PROVIDERS = {"google", "openrouter", "qwen"}
-DEFAULT_AI_PROVIDER = "google"
+DEFAULT_AI_PROVIDER = "qwen"
 DEFAULT_GOOGLE_MODEL = "gemini-3-flash-preview"
 DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_OPENROUTER_TIMEOUT_SECONDS = 120.0
@@ -244,6 +245,7 @@ def _ensure_default_params(node: Any):
         # Ensure a unique ID is present for every block
         if "id" not in node or not node["id"]:
             import uuid
+
             node["id"] = str(uuid.uuid4())
         # Correct the type name if necessary
         type_mapping = {
@@ -1039,28 +1041,60 @@ async def _call_qwen_api(
         "Authorization": f"Bearer {qwen_api_key}",
         "Content-Type": "application/json",
     }
-    try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            response = await client.post(
-                qwen_url,
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        response_body = e.response.text
-        logger.error(
-            f"Qwen request failed with status {e.response.status_code}: {response_body}"
-        )
-        raise ConnectionError(
-            f"Qwen request failed with status {e.response.status_code}: {response_body}"
-        ) from e
-    except httpx.RequestError as e:
-        logger.error(f"Qwen request error: {e}")
-        raise ConnectionError(f"Qwen request failed: {e}") from e
 
-    return _extract_qwen_response_text(
-        response.json(), require_complete=require_complete
+    # Retry with exponential backoff for transient errors (429, 5xx, timeouts)
+    max_retries = 3
+    last_exception: Optional[Exception] = None
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+                response = await client.post(
+                    qwen_url,
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+
+            return _extract_qwen_response_text(
+                response.json(), require_complete=require_complete
+            )
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            response_body = e.response.text
+            is_retryable = status_code == 429 or status_code >= 500
+            if is_retryable and attempt < max_retries - 1:
+                backoff = 2**attempt  # 1s, 2s, 4s
+                logger.warning(
+                    f"Qwen request failed with status {status_code} (attempt {attempt + 1}/{max_retries}). "
+                    f"Retrying in {backoff}s..."
+                )
+                await asyncio.sleep(backoff)
+                last_exception = e
+                continue
+            logger.error(
+                f"Qwen request failed with status {status_code}: {response_body}"
+            )
+            raise ConnectionError(
+                f"Qwen request failed with status {status_code}: {response_body}"
+            ) from e
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            if attempt < max_retries - 1:
+                backoff = 2**attempt
+                logger.warning(
+                    f"Qwen request error (attempt {attempt + 1}/{max_retries}): {e}. "
+                    f"Retrying in {backoff}s..."
+                )
+                await asyncio.sleep(backoff)
+                last_exception = e
+                continue
+            logger.error(f"Qwen request error after {max_retries} attempts: {e}")
+            raise ConnectionError(
+                f"Qwen request failed after {max_retries} attempts: {e}"
+            ) from e
+
+    # Should not reach here, but safety fallback
+    raise ConnectionError(
+        f"Qwen request failed after {max_retries} attempts: {last_exception}"
     )
 
 

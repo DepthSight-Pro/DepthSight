@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@300;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1c1917, #111827);
+            color: #e5e7eb;
+            width: 800px;
+            height: 420px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .container {
+            width: 740px;
+            height: 380px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+        .signal-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .signal-badge.long {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #22c55e;
+        }
+        .signal-badge.short {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+        .signal-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .signal-dot.long { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+        .signal-dot.short { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .pair-name {
+            font-size: 42px;
+            font-weight: 700;
+            color: white;
+            margin-top: 8px;
+            line-height: 1;
+        }
+        .strategy-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            font-size: 14px;
+            color: #9ca3af;
+        }
+        .strategy-tag .name { color: #00D4FF; font-weight: 500; }
+
+        /* Main content */
+        .content {
+            display: flex;
+            gap: 24px;
+            flex: 1;
+            padding-top: 16px;
+        }
+        .trade-details {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+        }
+        .detail-label {
+            font-size: 13px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .detail-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        .detail-value.green { color: #22c55e; }
+        .detail-value.red { color: #ef4444; }
+
+        /* Right panel */
+        .right-panel {
+            width: 260px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .confidence-block {
+            background: rgba(0, 212, 255, 0.08);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+        .confidence-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .confidence-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #00D4FF;
+        }
+        .confidence-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0066FF, #00D4FF);
+            border-radius: 2px;
+            width: 87%; /* dynamic */
+        }
+        .pnl-block {
+            background: rgba(34, 197, 94, 0.08);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .pnl-block.negative {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        .pnl-label {
+            font-size: 11px;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .pnl-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #22c55e;
+        }
+        .pnl-value.negative { color: #ef4444; }
+        .pnl-roe {
+            font-size: 14px;
+            color: #22c55e;
+            margin-top: 2px;
+        }
+        .pnl-roe.negative { color: #ef4444; }
+
+        /* Footer */
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 8px;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #4b5563;
+        }
+        .footer-brand {
+            font-size: 13px;
+            color: #4b5563;
+        }
+
+        .logo { position: absolute; top: 20px; right: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <div class="signal-badge {{ SIGNAL_TYPE_CLASS }}">
+                    <span class="signal-dot {{ SIGNAL_TYPE_CLASS }}"></span>
+                    {{ SIGNAL_TITLE }}
+                </div>
+                <div class="pair-name">{{ SYMBOL }}</div>
+                <div class="strategy-tag">
+                    Strategy: <span class="name">{{ STRATEGY_NAME }}</span>
+                </div>
+            </div>
+            <div style="margin-top: 4px;">
+                <svg viewBox="0 0 280 80" xmlns="http://www.w3.org/2000/svg" height="50">
+                    <defs>
+                        <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#00D4FF"/>
+                            <stop offset="100%" stop-color="#0066FF"/>
+                        </linearGradient>
+                        <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#00D4FF" stop-opacity="0"/>
+                            <stop offset="50%" stop-color="#00D4FF" stop-opacity="0.8"/>
+                            <stop offset="100%" stop-color="#00D4FF" stop-opacity="0"/>
+                        </linearGradient>
+                        <filter id="glow">
+                            <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                    </defs>
+                    <g transform="translate(5, 15)">
+                        <circle cx="25" cy="25" r="24" fill="none" stroke="url(#g1)" stroke-width="2" opacity="0.8"/>
+                        <circle cx="25" cy="25" r="18" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"/>
+                        <circle cx="25" cy="25" r="12" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.4"/>
+                        <path d="M 25 25 L 40 15 M 25 25 L 40 35 M 25 25 L 10 15 M 25 25 L 10 35" stroke="#0066FF" stroke-width="1" opacity="0.4"/>
+                        <circle cx="25" cy="25" r="8" fill="url(#g1)" filter="url(#glow)"/>
+                        <circle cx="25" cy="25" r="4" fill="#FFFFFF" opacity="0.9"/>
+                        <path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#g1)" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M 25 25 L 45 5" stroke="url(#g2)" stroke-width="2" opacity="0.7">
+                            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="4s" repeatCount="indefinite"/>
+                        </path>
+                    </g>
+                    <text x="70" y="44" dominant-baseline="middle" font-family="Montserrat, Helvetica, Arial, sans-serif" font-size="30">
+                        <tspan font-weight="700" fill="#FFFFFF">Depth</tspan><tspan fill="url(#g1)" font-weight="300">Sight</tspan>
+                    </text>
+                </svg>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="trade-details">
+                <div class="detail-row">
+                    <span class="detail-label">Entry Price</span>
+                    <span class="detail-value">{{ ENTRY_PRICE }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Position Size</span>
+                    <span class="detail-value">{{ POSITION_SIZE }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Stop Loss</span>
+                    <span class="detail-value red">{{ STOP_LOSS }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Take Profit</span>
+                    <span class="detail-value green">{{ TAKE_PROFIT }}</span>
+                </div>
+            </div>
+            <div class="right-panel">
+                <div class="confidence-block">
+                    <div class="confidence-label">Confidence Score</div>
+                    <div class="confidence-value">{{ CONFIDENCE_SCORE }}</div>
+                    <div class="confidence-bar"><div class="confidence-fill" style="width: {{ CONFIDENCE_BAR_WIDTH }};"></div></div>
+                </div>
+                <div class="pnl-block {{ PNL_CLASS }}">
+                    <div class="pnl-label">Unrealized PnL</div>
+                    <div class="pnl-value {{ PNL_CLASS }}">{{ PNL_VALUE }}</div>
+                    <div class="pnl-roe {{ PNL_CLASS }}">{{ ROE_VALUE }} ROE</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <span class="timestamp">{{ TIMESTAMP }}</span>
+            <span class="footer-brand">depthsight.pro</span>
+        </div>
+    </div>
+</body>
+</html>

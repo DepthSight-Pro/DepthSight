@@ -316,21 +316,26 @@ api_client = DepthSightAPIClient()
 MCP_MEMORY_HOST = os.environ.get("MCP_MEMORY_HOST", "127.0.0.1")
 MCP_MEMORY_PORT = int(os.environ.get("MCP_MEMORY_PORT", "8100"))
 
-async def query_mcp_strategy_memories(email: str, symbol: str = None, strategy_type: str = None, tags: list = None) -> str:
+
+async def query_mcp_strategy_memories(
+    email: str, symbol: str = None, strategy_type: str = None, tags: list = None
+) -> str:
     """Connects to the local MCP Memory Server and calls search_agent_memory tool."""
     user = await api_client.get_user_profile(email)
     if not user:
         return "⚠️ Error: Unable to fetch user profile via API."
-        
+
     user_id = user.get("id")
     if not user_id:
         return "⚠️ Error: User ID not found in profile."
 
     client = MCPClient(host=MCP_MEMORY_HOST, port=MCP_MEMORY_PORT)
     try:
-        logger.info(f"Connecting to MCP server at {MCP_MEMORY_HOST}:{MCP_MEMORY_PORT}...")
+        logger.info(
+            f"Connecting to MCP server at {MCP_MEMORY_HOST}:{MCP_MEMORY_PORT}..."
+        )
         await client.connect()
-        
+
         args = {"user_id": user_id}
         if symbol:
             args["symbol"] = symbol
@@ -338,15 +343,17 @@ async def query_mcp_strategy_memories(email: str, symbol: str = None, strategy_t
             args["strategy_type"] = strategy_type
         if tags:
             args["tags"] = tags
-            
+
         logger.info(f"Calling MCP tool 'search_agent_memory' with args: {args}")
         result = await client.call_tool("search_agent_memory", args)
-        
+
         # Clean up the JSON configuration block from each memory line for Slack readability
         cleaned_lines = []
         for line in result.splitlines():
             if "Config:" in line:
-                cleaned_lines.append(line.split("Config:")[0].strip().rstrip(".").strip())
+                cleaned_lines.append(
+                    line.split("Config:")[0].strip().rstrip(".").strip()
+                )
             else:
                 cleaned_lines.append(line)
         return "\n".join(cleaned_lines)
@@ -356,19 +363,23 @@ async def query_mcp_strategy_memories(email: str, symbol: str = None, strategy_t
     finally:
         await client.close()
 
+
 def convert_markdown_to_slack(text: str) -> str:
     """Converts standard markdown headers and bold markers to Slack mrkdwn format."""
     import re
+
     if not text:
         return ""
     # Convert headings like ### Heading to *Heading*
-    text = re.sub(r'^(?:#{1,6})\s*(.+)$', r'*\1*', text, flags=re.MULTILINE)
+    text = re.sub(r"^(?:#{1,6})\s*(.+)$", r"*\1*", text, flags=re.MULTILINE)
     # Convert standard double-asterisk bold (**text**) to Slack's single asterisk bold (*text*)
-    text = re.sub(r'\*\*(.*?)\*\*', r'*\1*', text)
+    text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
     return text
+
 
 class SlackWebSocketWrapper:
     """Mock WebSocket class to redirect Autopilot events to a Slack thread."""
+
     def __init__(self, client, channel_id, thread_ts, user_email):
         self.client = client
         self.channel_id = channel_id
@@ -382,13 +393,20 @@ class SlackWebSocketWrapper:
 
         status = data.get("status")
         message = data.get("message", "")
-        
+
         # Format message markdown for Slack
         if message:
             message = convert_markdown_to_slack(message)
 
         # 1. Status notifications
-        if status in ("loading_data", "thinking", "generating", "validating", "backtesting", "failed_iteration"):
+        if status in (
+            "loading_data",
+            "thinking",
+            "generating",
+            "validating",
+            "backtesting",
+            "failed_iteration",
+        ):
             icon = "⏳"
             if status == "generating":
                 icon = "⚙️"
@@ -398,13 +416,13 @@ class SlackWebSocketWrapper:
                 icon = "📊"
             elif status == "failed_iteration":
                 icon = "⚠️"
-                
+
             await self.client.chat_postMessage(
                 channel=self.channel_id,
                 text=f"{icon} *[Autopilot]* {message}",
-                thread_ts=self.thread_ts
+                thread_ts=self.thread_ts,
             )
-            
+
         # 2. Iteration Result
         elif status == "iteration_result":
             iter_num = data.get("iteration")
@@ -413,38 +431,40 @@ class SlackWebSocketWrapper:
             trades = data.get("trades", 0)
             dd = data.get("max_dd", 0.0)
             strat_name = data.get("strategy_name", "VisualBuilderStrategy")
-            
+
             pnl_icon = "📈" if pnl >= 0 else "📉"
-            msg = f"{pnl_icon} *[Autopilot]* Variant *{chr(64 + iter_num)}* ({strat_name}) evaluated:\n" \
-                  f"• PnL: `{pnl:+.2f}%` | Win Rate: `{wr:.1f}%` | Drawdown: `{dd:.1f}%` | Trades: `{trades}`"
-            await self.client.chat_postMessage(
-                channel=self.channel_id,
-                text=msg,
-                thread_ts=self.thread_ts
+            msg = (
+                f"{pnl_icon} *[Autopilot]* Variant *{chr(64 + iter_num)}* ({strat_name}) evaluated:\n"
+                f"• PnL: `{pnl:+.2f}%` | Win Rate: `{wr:.1f}%` | Drawdown: `{dd:.1f}%` | Trades: `{trades}`"
             )
-            
+            await self.client.chat_postMessage(
+                channel=self.channel_id, text=msg, thread_ts=self.thread_ts
+            )
+
         # 3. Intermediate success
         elif status == "candidate_success":
             await self.client.chat_postMessage(
                 channel=self.channel_id,
                 text=f"⭐ *[Autopilot]* {message}",
-                thread_ts=self.thread_ts
+                thread_ts=self.thread_ts,
             )
-            
+
         # 4. Completion or final success
         elif status in ("success", "partial_success"):
             strategy_json = data.get("strategy_json")
-            
+
             await self.client.chat_postMessage(
                 channel=self.channel_id,
                 text=f"✅ *[Autopilot]* Optimization complete! {message}",
-                thread_ts=self.thread_ts
+                thread_ts=self.thread_ts,
             )
-            
+
             if strategy_json:
                 symbol = strategy_json.get("symbol", "BTCUSDT")
-                strategy_name = f"Autopilot_{datetime.now(timezone.utc).strftime('%H%M')}"
-                
+                strategy_name = (
+                    f"Autopilot_{datetime.now(timezone.utc).strftime('%H%M')}"
+                )
+
                 config_id = await api_client.save_strategy(
                     strategy_name, strategy_json, symbol, self.email
                 )
@@ -454,7 +474,7 @@ class SlackWebSocketWrapper:
                             "type": "section",
                             "text": {
                                 "type": "mrkdwn",
-                                "text": f"💾 *[Autopilot]* Strategy successfully saved as *\"{strategy_name}\"* to your account.",
+                                "text": f'💾 *[Autopilot]* Strategy successfully saved as *"{strategy_name}"* to your account.',
                             },
                         },
                         {
@@ -487,16 +507,16 @@ class SlackWebSocketWrapper:
                     await self.client.chat_postMessage(
                         channel=self.channel_id,
                         blocks=blocks,
-                        text=f"💾 [Autopilot] Strategy successfully saved as \"{strategy_name}\" to your account.",
-                        thread_ts=self.thread_ts
+                        text=f'💾 [Autopilot] Strategy successfully saved as "{strategy_name}" to your account.',
+                        thread_ts=self.thread_ts,
                     )
-                
+
                 # Render and send final visual report card
                 try:
                     await self.client.chat_postMessage(
                         channel=self.channel_id,
                         text="🎨 *[Autopilot]* Rendering final report card...",
-                        thread_ts=self.thread_ts
+                        thread_ts=self.thread_ts,
                     )
                     # Trigger backtest to fetch full metrics & equity curve
                     backtest_id = await api_client.trigger_backtest(
@@ -505,7 +525,7 @@ class SlackWebSocketWrapper:
                         symbol=symbol,
                         email=self.email,
                         start_date="2025-01-01",
-                        end_date="2025-12-31"
+                        end_date="2025-12-31",
                     )
                     if backtest_id:
                         await poll_and_render_backtest(
@@ -516,31 +536,35 @@ class SlackWebSocketWrapper:
                             strategy_name=strategy_name,
                             email=self.email,
                             thread_ts=self.thread_ts,
-                            days_back=365
+                            days_back=365,
                         )
                 except Exception as e:
-                    logger.error(f"Error rendering final autopilot card: {e}", exc_info=True)
+                    logger.error(
+                        f"Error rendering final autopilot card: {e}", exc_info=True
+                    )
 
 
-async def run_autopilot_and_send(client, channel_id, symbol, prompt, email, max_iterations=5, thread_ts=None):
+async def run_autopilot_and_send(
+    client, channel_id, symbol, prompt, email, max_iterations=5, thread_ts=None
+):
     from api.agent_autopilot import run_autopilot_loop, guess_symbol_from_prompt
-    
+
     # Resolve user ID
     user = await api_client.get_user_profile(email)
     if not user:
         await client.chat_postMessage(
             channel=channel_id,
             text="❌ [Autopilot] Error: Unable to fetch user profile via API.",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
         return
-        
+
     user_id = user.get("id")
     if not user_id:
         await client.chat_postMessage(
             channel=channel_id,
             text="❌ [Autopilot] Error: User ID not found in profile.",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
         return
 
@@ -549,8 +573,8 @@ async def run_autopilot_and_send(client, channel_id, symbol, prompt, email, max_
     # Post optimization start banner
     await client.chat_postMessage(
         channel=channel_id,
-        text=f"🧬 *[Autopilot]* Starting self-correcting strategy optimizer for *{resolved_symbol}* (Iterations limit: {max_iterations})...\nPrompt: *\"{prompt}\"*",
-        thread_ts=thread_ts
+        text=f'🧬 *[Autopilot]* Starting self-correcting strategy optimizer for *{resolved_symbol}* (Iterations limit: {max_iterations})...\nPrompt: *"{prompt}"*',
+        thread_ts=thread_ts,
     )
 
     ws_mock = SlackWebSocketWrapper(client, channel_id, thread_ts, email)
@@ -560,15 +584,17 @@ async def run_autopilot_and_send(client, channel_id, symbol, prompt, email, max_
             user_id=user_id,
             symbol=resolved_symbol,
             user_prompt=prompt,
-            max_iterations=max_iterations
+            max_iterations=max_iterations,
         )
     except Exception as e:
         logger.error(f"Autopilot thread run error: {e}", exc_info=True)
         await client.chat_postMessage(
             channel=channel_id,
             text=f"❌ *[Autopilot]* Fatal error during optimization loop: {e}",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
+
+
 # Helper: Fetch user's email from Slack profile
 async def get_slack_user_email(client, user_id: str) -> str:
     try:
@@ -791,8 +817,12 @@ async def handle_slash_command(ack, respond, command, client):
                 symbol = parts[0].upper()
             else:
                 tags = parts
-        await respond(f"⏳ Connecting to MCP Server to search memory bank for `{arg or 'all'}`...")
-        asyncio.create_task(run_mcp_query_and_send(client, channel_id, email, symbol, tags))
+        await respond(
+            f"⏳ Connecting to MCP Server to search memory bank for `{arg or 'all'}`..."
+        )
+        asyncio.create_task(
+            run_mcp_query_and_send(client, channel_id, email, symbol, tags)
+        )
 
     elif subcommand == "optimize":
         symbol = None
@@ -804,10 +834,18 @@ async def handle_slash_command(ack, respond, command, client):
                 symbol = first_word
                 prompt = sub_parts[1] if len(sub_parts) > 1 else ""
         if not prompt:
-            await respond("⚠️ Please specify an optimization prompt. Example: `/depthsight optimize ETHUSDT breakout strategy`")
+            await respond(
+                "⚠️ Please specify an optimization prompt. Example: `/depthsight optimize ETHUSDT breakout strategy`"
+            )
             return
-        await respond(f"🚀 Triggering Autopilot optimization loop for {symbol or 'auto'}...")
-        asyncio.create_task(run_autopilot_and_send(client, channel_id, symbol, prompt, email, max_iterations=5))
+        await respond(
+            f"🚀 Triggering Autopilot optimization loop for {symbol or 'auto'}..."
+        )
+        asyncio.create_task(
+            run_autopilot_and_send(
+                client, channel_id, symbol, prompt, email, max_iterations=5
+            )
+        )
 
     elif subcommand in ["clear", "reset"]:
         session_id = f"slack_session_{channel_id}"
@@ -822,34 +860,36 @@ async def handle_slash_command(ack, respond, command, client):
         asyncio.create_task(handle_chat_message(client, channel_id, text, email=email))
 
 
-async def run_mcp_query_and_send(client, channel_id, email, symbol=None, tags=None, thread_ts=None):
+async def run_mcp_query_and_send(
+    client, channel_id, email, symbol=None, tags=None, thread_ts=None
+):
     try:
         # Posting step-by-step MCP log for hackathon judges visibility
         await client.chat_postMessage(
             channel=channel_id,
             text="🔍 *[MCP Client]* Establishing JSON-RPC connection to heightsight_mcp_memory server on port 8100...",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
         await client.chat_postMessage(
             channel=channel_id,
             text=f"⚙️ *[MCP Client]* Invoking `search_agent_memory` with params: user_id=auto, symbol={symbol or 'None'}, tags={tags or 'None'}",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
-        
+
         result = await query_mcp_strategy_memories(email, symbol=symbol, tags=tags)
         formatted_result = convert_markdown_to_slack(result)
-        
+
         await client.chat_postMessage(
             channel=channel_id,
             text=f"🧠 *[MCP Client]* Retrieved memories from Model Context Protocol server:\n\n{formatted_result}",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
     except Exception as e:
         logger.error(f"Error executing MCP query in slack bot: {e}", exc_info=True)
         await client.chat_postMessage(
             channel=channel_id,
             text=f"❌ *[MCP Client]* Failed to complete MCP query: {e}",
-            thread_ts=thread_ts
+            thread_ts=thread_ts,
         )
 
 
@@ -895,14 +935,15 @@ async def button_portfolio(ack, body, client):
 assistant = AsyncAssistant()
 app.use(assistant)
 
+
 @assistant.thread_started
 async def handle_assistant_thread_started(event, client, context):
     thread_ts = event["assistant_thread"]["thread_ts"]
     channel_id = event["assistant_thread"]["channel_id"]
     logger.info(f"Assistant thread started: {thread_ts} in channel {channel_id}")
-    
+
     active_threads.add(thread_ts)
-    
+
     try:
         await client.assistant_threads_setSuggestedPrompts(
             channel_id=channel_id,
@@ -912,7 +953,7 @@ async def handle_assistant_thread_started(event, client, context):
                 {"title": "Run backtest for ETHUSDT"},
                 {"title": "View active trading portfolio"},
                 {"title": "Query memory for breakout"},
-            ]
+            ],
         )
     except Exception as e:
         logger.error(f"Error setting suggested prompts: {e}", exc_info=True)
@@ -965,10 +1006,14 @@ async def handle_assistant_user_message(event, client, context):
                 tags = parts
 
         try:
-            await run_mcp_query_and_send(client, channel_id, email, symbol=symbol, tags=tags, thread_ts=thread_ts)
+            await run_mcp_query_and_send(
+                client, channel_id, email, symbol=symbol, tags=tags, thread_ts=thread_ts
+            )
         except Exception as e:
-            logger.error(f"Error executing MCP query in Assistant thread: {e}", exc_info=True)
-        
+            logger.error(
+                f"Error executing MCP query in Assistant thread: {e}", exc_info=True
+            )
+
         try:
             await client.assistant_threads_setStatus(
                 channel_id=channel_id, thread_ts=thread_ts, status=""
@@ -985,10 +1030,20 @@ async def handle_assistant_user_message(event, client, context):
                 symbol = f"{s}USDT"
                 break
         try:
-            await run_autopilot_and_send(client, channel_id, symbol, text, email, max_iterations=5, thread_ts=thread_ts)
+            await run_autopilot_and_send(
+                client,
+                channel_id,
+                symbol,
+                text,
+                email,
+                max_iterations=5,
+                thread_ts=thread_ts,
+            )
         except Exception as e:
-            logger.error(f"Error executing Autopilot in Assistant thread: {e}", exc_info=True)
-            
+            logger.error(
+                f"Error executing Autopilot in Assistant thread: {e}", exc_info=True
+            )
+
         try:
             await client.assistant_threads_setStatus(
                 channel_id=channel_id, thread_ts=thread_ts, status=""

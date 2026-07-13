@@ -145,6 +145,47 @@ flowchart LR
 
 This ensures the AI is always building upon validated setups and completely avoids repeating known failure conditions.
 
+### 🤖 AI Autopilot & Self-Correcting Loop
+
+DepthSight features an autonomous, self-correcting **Autopilot Loop** that automates the trading system design process from natural language prompts (or chart screenshots) to production-ready configurations:
+
+```mermaid
+graph TD
+    User["Prompt or Chart Screenshot"] --> Resolve["1. Resolve Symbol & Intent (LLM)"]
+    Resolve --> MemorySearch["2. Retrieve Memories (Researcher Agent)"]
+    MemorySearch --> Advisor["3. Strategic Advice (Advisor Agent)"]
+    Advisor --> Generate["4. Generate Strategy JSON (Generator Agent)"]
+    Generate --> Critic["5. Risk Verification (Critic Agent)"]
+    Critic --> Backtest["6. Queue Celery Backtest"]
+    Backtest --> Evaluator["7. Evaluate KPIs & Learn (Tagger & Evaluator)"]
+    
+    Evaluator -->|PnL Decreased| Backtrack["Backtrack to Best Candidate + Mutate Params"]
+    Backtrack --> Advisor
+    
+    Evaluator -->|Profitable & Target Met| HITL["Human-in-the-Loop Review"]
+    HITL -->|Approve & Deploy| Live["Deploy to Exchange Executor"]
+```
+
+1. **Intelligent Intent & Asset Resolution (LLM-based):** 
+   Instead of using simple hardcoded lookup tables, the Autopilot uses an LLM to resolve ambiguous, multilingual slang or contextual references (e.g. *"биток"*, *"эфир"*, *"dogecoin strategy"*, or *"find something on solana"*) and standardizes them into valid tradeable asset pairs on the fly.
+   
+2. **Multimodal Vision Analysis:** 
+   Users can upload screenshots of price charts. The Autopilot uses multimodal models (like `qwen-vl-max` or `gemini-1.5-flash`) to identify geometric chart patterns (e.g. Ascending Triangles, Bull Flags, Volatility Squeezes), detect key resistance/support levels, and inject this spatial metadata into the initial strategy generation.
+   
+3. **Multi-Agent Optimization Loop:**
+   * **Memory Researcher Agent:** Queries the database using semantic tags to compile relevant past successes and failures.
+   * **Strategy Advisor Agent:** Compares performance metrics of the current candidate with historical results and provides step-by-step optimization notes.
+   * **Critic Agent (Risk Manager):** Checks generated configurations for logical flaws (like inverted SL/TP prices, contradictory filters, or zero foundation weights) before executing code.
+   
+4. **Backtracking & Automated Learning:**
+   If a new parameter variation leads to a lower PnL than the best candidate found during the session, the loop automatically **backtracks** to the best configuration, records a "failure lesson" to memory, and prompts the model to mutate parameters in a different direction (e.g. modifying lookback periods, adjusting stop loss multipliers, or testing alternative entry filters).
+   
+5. **Qwen Cloud & Alibaba Cloud Ready:**
+   The AI Co-Pilot features a production-ready integration with the **Qwen Cloud (DashScope API)**. It supports native JSON formatting, function calling (MCP tools), reasoning text extraction, and incorporates robust resilience mechanisms like exponential backoff retries for transient HTTP errors (e.g., rate limits, timeout, or server outages).
+   
+6. **Human-in-the-Loop Checkpoints:**
+   For enterprise safety, the final optimized strategy is sent back to the visual editor interface. The user retains complete control, reviewing the exact rules, indicators, and backtest performance, before manually approving the deploy-to-live command.
+
 ## ⚔️ DepthSight vs. Alternatives
 
 How DepthSight compares to leading open-source frameworks and commercial trading platforms:

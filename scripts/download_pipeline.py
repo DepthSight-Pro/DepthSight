@@ -139,6 +139,46 @@ def get_target_path(
         raise ValueError(f"Unknown data type: {data_type}")
 
 
+def handle_corrupted_parquet(path: Path) -> bool:
+    """
+    Checks if the parquet file is corrupted. If it is, renames it to a backup and returns True.
+    Otherwise returns False.
+    """
+    if not path.exists():
+        return False
+    if path.stat().st_size == 0:
+        print(f"File {path} is empty. Removing...")
+        try:
+            path.unlink()
+        except Exception:
+            pass
+        return True
+    try:
+        import pyarrow.parquet as pq
+
+        pf = pq.ParquetFile(str(path))
+        if pf.num_row_groups > 0 and len(pf.schema.names) > 0:
+            pf.read_row_group(0, columns=[pf.schema.names[0]])
+        return False
+    except Exception as e:
+        import time
+
+        corrupted_backup = path.with_name(f"{path.name}.corrupted_{int(time.time())}")
+        logging.error(
+            f"CRITICAL ERROR: Parquet file {path} is corrupted ({e}). "
+            f"Renaming corrupted file to {corrupted_backup.name} to allow recovery/redownload."
+        )
+        try:
+            os.rename(path, corrupted_backup)
+        except Exception as rename_err:
+            logging.error(f"Failed to rename corrupted file: {rename_err}")
+            try:
+                path.unlink()
+            except Exception as unlink_err:
+                logging.error(f"Failed to delete corrupted file: {unlink_err}")
+        return True
+
+
 def save_data(df: pd.DataFrame, target_path: Path):
     if df.empty:
         logging.warning(f"Received empty DataFrame. Saving to {target_path} canceled.")
@@ -150,6 +190,8 @@ def save_data(df: pd.DataFrame, target_path: Path):
     # Cast float64 columns to float32 to save memory/space and prevent mixed types
     for col in df.select_dtypes(include=["float64"]).columns:
         df[col] = df[col].astype("float32")
+
+    handle_corrupted_parquet(target_path)
 
     if target_path.exists():
         print(f"Detected existing file: {target_path}. Merging...")
@@ -179,9 +221,9 @@ def save_data(df: pd.DataFrame, target_path: Path):
         except Exception as e:
             logging.error(
                 f"CRITICAL: Failed to read/merge {target_path}: {e}. "
-                f"To prevent data corruption and truncation, the file will NOT be overwritten!"
+                f"Attempting recovery by renaming/removing the corrupted file."
             )
-            raise e
+            handle_corrupted_parquet(target_path)
 
     df = df[~df.index.duplicated(keep="last")].sort_index()  # Final check
     temp_path = target_path.with_name(f"{target_path.name}.tmp")
@@ -373,6 +415,8 @@ def get_existing_dates(
         return set()
     existing_dates = set()
     for parquet_file in target_base.glob("**/data.parquet"):
+        if handle_corrupted_parquet(parquet_file):
+            continue
         try:
             year = int(parquet_file.parent.parent.name.split("=")[1])
             month = int(parquet_file.parent.name.split("=")[1])
@@ -415,6 +459,8 @@ def get_existing_partitioned_dates(
         f"Checking existing dates in {len(partition_files)} partition files for {data_type}..."
     )
     for i, parquet_file in enumerate(partition_files):
+        if handle_corrupted_parquet(parquet_file):
+            continue
         try:
             df = pd.read_parquet(parquet_file, columns=[])  # Read index only
             all_dates.update(set(df.index.date))
@@ -429,6 +475,8 @@ def get_existing_partitioned_dates(
 
 def get_existing_dates_from_parquet(target_path: Path) -> set[date]:
     if not target_path.exists():
+        return set()
+    if handle_corrupted_parquet(target_path):
         return set()
     try:
         df = pd.read_parquet(target_path, columns=[])
@@ -496,6 +544,8 @@ def load_aggtrades_for_range(
             symbol, "aggTrades", partition_date=month_key, base_path=base_path
         )
         if partition_path.exists():
+            if handle_corrupted_parquet(partition_path):
+                continue
             try:
                 month_df = pd.read_parquet(partition_path)
                 filtered_df = month_df[
@@ -703,6 +753,9 @@ def run_enrichment_for_1m(
 ):
     print(f"--- 1M KLINES ENRICHMENT for {symbol} ---")
     kline_path = get_target_path(symbol, "klines", "1m", base_path=base_path)
+
+    handle_corrupted_parquet(kline_path)
+
     if not kline_path.exists():
         logging.error(
             f"File kline_1m.parquet not found for {symbol}. Enrichment is impossible."
@@ -847,6 +900,8 @@ def run_enrichment_for_1m(
         partition_path = get_target_path(
             symbol, "aggTrades", partition_date=month_start, base_path=base_path
         )
+
+        handle_corrupted_parquet(partition_path)
 
         if not partition_path.exists():
             logging.warning(
@@ -1047,6 +1102,9 @@ def delete_aggtrades_for_range(
 
     # --- Start of verification block ---
     kline_path = get_target_path(symbol, "klines", "1m", base_path=base_path)
+
+    handle_corrupted_parquet(kline_path)
+
     if not kline_path.exists():
         logging.error(
             f"File kline_1m.parquet not found for {symbol}. Cannot verify enrichment. DELETION CANCELED."
@@ -1466,6 +1524,8 @@ def run_pipeline(
 def get_parquet_range(target_path: Path) -> tuple[Optional[date], Optional[date]]:
     """Quickly gets first and last dates from file without loading all data."""
     if not target_path.exists():
+        return None, None
+    if handle_corrupted_parquet(target_path):
         return None, None
     try:
         # The fastest way for pandas parquet:

@@ -5,6 +5,7 @@ import logging
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from fastapi import WebSocket
 
@@ -16,11 +17,72 @@ logger = logging.getLogger(__name__)
 
 
 def guess_symbol_from_prompt(prompt: str, default: str = "BTCUSDT") -> str:
-    """Guesses the asset symbol from the prompt text."""
+    """Fast regex check to extract symbols if they are explicitly mentioned (e.g. 'BTC', 'ETHUSDT').
+    Returns empty string if not explicitly matched, signaling that LLM resolution is needed."""
     prompt_upper = prompt.upper()
-    for s in ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "LTC"]:
-        if s in prompt_upper:
-            return f"{s}USDT"
+
+    # Match exact patterns like BTCUSDT, ETH-USDT, etc.
+    pair_match = re.search(r"\b([A-Z]{2,10})(?:/|-)?USDT\b", prompt_upper)
+    if pair_match:
+        return f"{pair_match.group(1)}USDT"
+
+    # Match common base tickers directly as a fallback (if they stand as separate words)
+    common_tickers = [
+        "BTC",
+        "ETH",
+        "SOL",
+        "BNB",
+        "XRP",
+        "ADA",
+        "DOGE",
+        "LTC",
+        "LINK",
+        "DOT",
+        "AVAX",
+        "SUI",
+        "APT",
+        "PEPE",
+        "TON",
+    ]
+    for ticker in common_tickers:
+        if re.search(r"\b" + ticker + r"\b", prompt_upper):
+            return f"{ticker}USDT"
+
+    return ""
+
+
+async def resolve_symbol_with_llm(user_prompt: str, default: str = "BTCUSDT") -> str:
+    """Resolves target trading asset from prompt. Fast-tracks explicit tickers,
+    and delegates any ambiguous, slang, or translated names (like 'биток', 'эфир') to the LLM."""
+    # 1. Fast regex lookup for explicit tickers
+    fast_match = guess_symbol_from_prompt(user_prompt, default="")
+    if fast_match:
+        return fast_match
+
+    # 2. LLM resolution for translation / slang / context matching
+    try:
+        raw = await _generate_json_response(
+            system_prompt=(
+                "You are an expert crypto trading assistant. "
+                "Identify the target cryptocurrency from the user prompt and return ONLY a JSON object: "
+                '{"symbol": "<BASE>USDT"} where <BASE> is the standard Binance ticker symbol. '
+                "Examples: 'биток' -> BTCUSDT, 'эфир' -> ETHUSDT, 'солана' -> SOLUSDT, 'dogecoin' -> DOGEUSDT. "
+                "If the asset is completely ambiguous or not specified, default to BTCUSDT."
+            ),
+            user_prompt=f"Identify the symbol from this prompt: '{user_prompt}'",
+            max_output_tokens=60,
+        )
+        data = json.loads(raw)
+        symbol = data.get("symbol", default).upper().strip()
+
+        # Basic validation of the resolved symbol format
+        if symbol and len(symbol) >= 4 and symbol.endswith("USDT"):
+            return symbol
+    except Exception as e:
+        logger.warning(
+            f"LLM symbol resolution failed: {e}. Falling back to default '{default}'."
+        )
+
     return default
 
 
@@ -138,8 +200,9 @@ async def run_rule_synthesis(user_id: int, strategy_type: str):
         unique_tags = set()
         try:
             result = await db.execute(
-                select(models.AgentMemory.tags)
-                .where(models.AgentMemory.user_id == user_id)
+                select(models.AgentMemory.tags).where(
+                    models.AgentMemory.user_id == user_id
+                )
             )
             all_tags_list = result.scalars().all()
             for tags_row in all_tags_list:
@@ -300,8 +363,9 @@ async def run_memory_researcher_agent(
             db_tags = set()
             try:
                 result = await db.execute(
-                    select(models.AgentMemory.tags)
-                    .where(models.AgentMemory.user_id == user_id)
+                    select(models.AgentMemory.tags).where(
+                        models.AgentMemory.user_id == user_id
+                    )
                 )
                 all_tags_rows = result.scalars().all()
                 for tags_row in all_tags_rows:
@@ -321,7 +385,9 @@ async def run_memory_researcher_agent(
         if prompt_tags:
             status_message = f"🤖 Memory Researcher Agent: Querying past trading sessions with tags: {prompt_tags}..."
         else:
-            status_message = "🤖 Memory Researcher Agent: Querying past trading sessions..."
+            status_message = (
+                "🤖 Memory Researcher Agent: Querying past trading sessions..."
+            )
 
         await websocket.send_json(
             {
@@ -351,7 +417,11 @@ async def run_memory_researcher_agent(
             transfer_insights = []
             if len(exact_insights) < 10:
                 all_insights = await crud.search_agent_memories(
-                    db, user_id=user_id, memory_type="strategy_insight", tags=search_tags, limit=15
+                    db,
+                    user_id=user_id,
+                    memory_type="strategy_insight",
+                    tags=search_tags,
+                    limit=15,
                 )
                 transfer_insights = [m for m in all_insights if m.symbol != symbol]
 
@@ -446,7 +516,11 @@ async def run_strategy_advisor_agent(
     websocket: WebSocket,
 ) -> str:
     """Compares the last run's configuration and results with the best configuration and historical rules, then writes concrete recommendations."""
-    from api.ai_assistant import _get_active_ai_provider, _generate_json_response, _generate_text_response
+    from api.ai_assistant import (
+        _get_active_ai_provider,
+        _generate_json_response,
+        _generate_text_response,
+    )
     from api import crud, models
     from api.database import async_session_factory
     from sqlalchemy import select
@@ -456,8 +530,9 @@ async def run_strategy_advisor_agent(
     try:
         async with async_session_factory() as db:
             result = await db.execute(
-                select(models.AgentMemory.tags)
-                .where(models.AgentMemory.user_id == user_id)
+                select(models.AgentMemory.tags).where(
+                    models.AgentMemory.user_id == user_id
+                )
             )
             all_tags_rows = result.scalars().all()
             for tags_row in all_tags_rows:
@@ -470,9 +545,18 @@ async def run_strategy_advisor_agent(
     # Standard default tags in case database is empty or error occurs
     if not db_tags:
         db_tags = {
-            'breakout', 'reversion', 'trend', 'scalping', 'volatility_squeeze', 
-            'rel_vol_filter', 'classic_pattern', 'price_action_analyzer', 
-            'price_consolidation', 'EMA', 'ADX', 'RSI'
+            "breakout",
+            "reversion",
+            "trend",
+            "scalping",
+            "volatility_squeeze",
+            "rel_vol_filter",
+            "classic_pattern",
+            "price_action_analyzer",
+            "price_consolidation",
+            "EMA",
+            "ADX",
+            "RSI",
         }
 
     # Render prompt with dynamic tag list
@@ -519,10 +603,18 @@ async def run_strategy_advisor_agent(
     def extract_fallback_tags(curr, best) -> list[str]:
         tags = set()
         blocks_to_detect = {
-            "volatility_squeeze", "rel_vol_filter", "trend_filter", 
-            "price_action_analyzer", "price_consolidation", "classic_pattern",
-            "return_to_level", "level_touch_analyzer", "move_to_breakeven", "conditional_management"
+            "volatility_squeeze",
+            "rel_vol_filter",
+            "trend_filter",
+            "price_action_analyzer",
+            "price_consolidation",
+            "classic_pattern",
+            "return_to_level",
+            "level_touch_analyzer",
+            "move_to_breakeven",
+            "conditional_management",
         }
+
         def walk(node):
             if isinstance(node, dict):
                 node_type = node.get("type")
@@ -535,6 +627,7 @@ async def run_strategy_advisor_agent(
             elif isinstance(node, list):
                 for item in node:
                     walk(item)
+
         walk(curr)
         walk(best)
         # Only keep fallback tags that actually exist in DB (if database has tags)
@@ -563,8 +656,9 @@ async def run_strategy_advisor_agent(
             max_output_tokens=500,
             model_name=advisor_model,
         )
-        
+
         import re
+
         match = re.search(r"\{.*\}", raw_tool_json, re.DOTALL)
         if match:
             call_data = json.loads(match.group())
@@ -577,7 +671,9 @@ async def run_strategy_advisor_agent(
         else:
             raise ValueError("No valid JSON found in response")
     except Exception as e:
-        logger.warning(f"Strategy Advisor tool call failed ({e}). Running fallback tag extraction.")
+        logger.warning(
+            f"Strategy Advisor tool call failed ({e}). Running fallback tag extraction."
+        )
         tags = extract_fallback_tags(clean_curr, clean_best)
         fallback_used = True
 
@@ -622,19 +718,23 @@ async def run_strategy_advisor_agent(
         retrieved_lines = ["No matching memories retrieved due to internal error."]
 
     # Turn 1: Advisor generates the final text advice using multi-turn conversation context
-    retrieved_context = "\n".join(retrieved_lines) if retrieved_lines else "No matching historical memories found."
-    
+    retrieved_context = (
+        "\n".join(retrieved_lines)
+        if retrieved_lines
+        else "No matching historical memories found."
+    )
+
     # Construct assistant response representation of Turn 0
     if not fallback_used and raw_tool_json:
         assistant_turn_0 = raw_tool_json
     else:
-        assistant_turn_0 = json.dumps({
-            "function": "search_advisor_memory",
-            "arguments": {
-                "tags": tags,
-                "symbol": symbol
-            }
-        }, indent=2)
+        assistant_turn_0 = json.dumps(
+            {
+                "function": "search_advisor_memory",
+                "arguments": {"tags": tags, "symbol": symbol},
+            },
+            indent=2,
+        )
 
     advisor_turn_1_prompt = (
         f"Historical Memory Rules:\n"
@@ -647,7 +747,7 @@ async def run_strategy_advisor_agent(
     messages = [
         {"role": "user", "content": advisor_user_prompt},
         {"role": "assistant", "content": assistant_turn_0},
-        {"role": "user", "content": advisor_turn_1_prompt}
+        {"role": "user", "content": advisor_turn_1_prompt},
     ]
 
     try:
@@ -655,7 +755,7 @@ async def run_strategy_advisor_agent(
             system_instruction=system_prompt_with_tags,
             messages=messages,
         )
-        
+
         await websocket.send_json(
             {
                 "event": "autopilot_status",
@@ -766,8 +866,11 @@ async def run_autopilot_loop(
         f"Starting Autopilot Loop for user {user_id}. Prompt: '{user_prompt}', limit: {iterations_limit}, until_profitable: {until_profitable}"
     )
 
-    # Initial guess for the symbol to build system instructions
-    resolved_symbol = (symbol or guess_symbol_from_prompt(user_prompt)).upper()
+    # Initial guess for the symbol — uses alias map first, LLM fallback for ambiguous inputs
+    if symbol:
+        resolved_symbol = symbol.upper()
+    else:
+        resolved_symbol = (await resolve_symbol_with_llm(user_prompt)).upper()
 
     # Screenshot analysis step
     if image_base64:
