@@ -82,6 +82,7 @@ services:
       - ./data_storage:/app/data_storage
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./gcp_key.json:/app/gcp_key.json:ro
     environment:
       - POSTGRES_HOST=postgres
       - REDIS_HOST=redis
@@ -136,6 +137,7 @@ services:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./gcp_key.json:/app/gcp_key.json:ro
     env_file: .env
     environment:
       - MARKET_DATA_FANOUT_MODE=redis
@@ -198,6 +200,7 @@ services:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./gcp_key.json:/app/gcp_key.json:ro
     env_file: .env
     environment:
       - REDIS_USERNAME=celery

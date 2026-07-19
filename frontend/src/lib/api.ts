@@ -212,6 +212,32 @@ export const useDeleteAgentMemories = () => {
 	});
 };
 
+export const useDeleteAgentMemory = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, Error, string>({
+		mutationFn: (memoryId: string) =>
+			apiClient<void>(`/ai/memories/${memoryId}`, {
+				method: "DELETE",
+			}),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: authScopedQueryKey("agentMemories") });
+		},
+	});
+};
+
+export const useDeduplicateAgentMemories = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ deleted_count: number }, Error, void>({
+		mutationFn: () =>
+			apiClient<{ deleted_count: number }>("/ai/memories/deduplicate", {
+				method: "POST",
+			}),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: authScopedQueryKey("agentMemories") });
+		},
+	});
+};
+
 export const usePostChatMessage = () => {
 	return useMutation<AIChatResponse, Error, AIChatRequest>({
 		mutationFn: (payload: AIChatRequest) =>

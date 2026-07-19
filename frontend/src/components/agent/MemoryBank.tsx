@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
-import { Brain, RefreshCw, Eye, EyeOff, Trash2 } from "lucide-react";
-import { useGetAgentMemories, useDeleteAgentMemories } from "@/lib/api";
+import { Brain, RefreshCw, Eye, EyeOff, Trash2, Sparkles } from "lucide-react";
+import { useGetAgentMemories, useDeleteAgentMemories, useDeleteAgentMemory, useDeduplicateAgentMemories } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 
 interface MemoryBankProps {
@@ -12,6 +12,8 @@ interface MemoryBankProps {
 export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, activeIteration }) => {
 	const { data: memories = [], isLoading, refetch } = useGetAgentMemories();
 	const deleteMemories = useDeleteAgentMemories();
+	const deleteMemory = useDeleteAgentMemory();
+	const deduplicateMemories = useDeduplicateAgentMemories();
 	const [showMemories, setShowMemories] = useState(true);
 	const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
@@ -70,6 +72,23 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, acti
 						type="button"
 					>
 						<RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+					</button>
+					<button
+						onClick={() => {
+							if (confirm("Are you sure you want to reorganize and deduplicate the memory bank? This will merge highly similar insights.")) {
+								deduplicateMemories.mutate(undefined, {
+									onSuccess: (data) => {
+										alert(`Successfully reorganized memories! Merged ${data.deleted_count} duplicate insights.`);
+									}
+								});
+							}
+						}}
+						disabled={deduplicateMemories.isPending}
+						className="p-1 hover:bg-slate-800 hover:text-amber-450 rounded text-slate-400 transition disabled:opacity-50"
+						title="Reorganize Memory Bank"
+						type="button"
+					>
+						<Sparkles className={`w-4 h-4 ${deduplicateMemories.isPending ? "animate-pulse" : ""}`} />
 					</button>
 					<button
 						onClick={() => {
@@ -248,8 +267,24 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, acti
 									)}
 								</div>
 								
-								<div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition text-[9px] text-slate-500 font-mono bg-slate-900/80 px-1 py-0.5 rounded">
-									Rel: {(memory.relevance_score * 100).toFixed(0)}%
+								<div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex items-center gap-1.5 bg-slate-900/90 px-2 py-0.5 rounded border border-slate-850 shadow-md">
+									<span className="text-[9px] text-slate-400 font-mono">
+										Rel: {(memory.relevance_score * 100).toFixed(0)}%
+									</span>
+									<button
+										onClick={(e) => {
+											e.stopPropagation();
+											if (confirm("Are you sure you want to delete this memory?")) {
+												deleteMemory.mutate(memory.id);
+											}
+										}}
+										disabled={deleteMemory.isPending}
+										className="text-slate-500 hover:text-rose-400 p-0.5 rounded hover:bg-slate-800 transition disabled:opacity-50"
+										title="Delete memory"
+										type="button"
+									>
+										<Trash2 className="w-3.5 h-3.5" />
+									</button>
 								</div>
 							</div>
 						);

@@ -210,6 +210,38 @@ DO NOT use objects where simple values are expected.
 }
 ```
 
+## ACTION PARAMETERS:
+
+### open_position
+```json
+{
+  "direction": "LONG",
+  "risk_type": "percent_balance",
+  "risk_value": 1.0,
+  "sl_type": "atr_multiplier",
+  "sl_value": 4.0,
+  "tp_type": "rr_multiplier",
+  "tp_value": 6.0,
+  "partial_exits": [
+    {
+      "tp_type": "rr_multiplier",
+      "tp_value": 1.5,
+      "size_pct": 25.0
+    },
+    {
+      "tp_type": "rr_multiplier",
+      "tp_value": 2.5,
+      "size_pct": 25.0
+    },
+    {
+      "tp_type": "rr_multiplier",
+      "tp_value": 5.0,
+      "size_pct": 50.0
+    }
+  ]
+}
+```
+
 ## MANAGEMENT PARAMETERS:
 
 ### move_to_breakeven

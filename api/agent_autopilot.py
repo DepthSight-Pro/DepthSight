@@ -1208,7 +1208,7 @@ async def run_autopilot_loop(
             }
 
         # Check if it meets success criteria
-        if total_pnl > 0.0 and trades_count >= 5:
+        if total_pnl > 5.0 and trades_count >= 20:
             # We found a winning strategy! Save memory of success
             reasoning = strategy_json.get("reasoning", "")
             filters_list = [

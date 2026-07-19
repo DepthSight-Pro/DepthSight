@@ -354,7 +354,34 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`), you M
 
 ## Initialization & Management
 - `type: "open_position"` // In `initialization`. Always use `rr_multiplier` for TP and include partial exits with correct param names.
-  - `params`: `{{ "direction": "LONG" | "SHORT", "order_type": "MARKET" | "LIMIT_BREAK" | "LIMIT_RETEST", "entry_price": {{ "source": "value", "value": 100.0 }}, "risk_type": "percent_balance", "risk_value": 1.0, "sl_type": "atr_multiplier", "sl_value": 1.5, "tp_type": "rr_multiplier", "tp_value": 3.0, "partial_exits": [{{ "id": "uuid", "size_pct": 25, "tp_type": "rr_multiplier", "tp_value": 1.0 }}] }}`
+```json
+{{
+  "direction": "LONG",
+  "risk_type": "percent_balance",
+  "risk_value": 1.0,
+  "sl_type": "atr_multiplier",
+  "sl_value": 4.0,
+  "tp_type": "rr_multiplier",
+  "tp_value": 6.0,
+  "partial_exits": [
+    {{
+      "tp_type": "rr_multiplier",
+      "tp_value": 1.5,
+      "size_pct": 25.0
+    }},
+    {{
+      "tp_type": "rr_multiplier",
+      "tp_value": 2.5,
+      "size_pct": 25.0
+    }},
+    {{
+      "tp_type": "rr_multiplier",
+      "tp_value": 5.0,
+      "size_pct": 50.0
+    }}
+  ]
+}}
+```
 - `type: "on_candle_close"` // In `entryTrigger`.
   - `timeframe": "5m"`
 - `type: "on_tick"` // In `entryTrigger`.

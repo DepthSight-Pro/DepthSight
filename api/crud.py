@@ -1033,6 +1033,7 @@ async def create_user(
         emailEnabled=security.EMAIL_CONFIRMATION_ENABLED,  # Set based on global config
         telegramEnabled=False,
         telegramChatId=None,
+        shareTelemetry=False,
     )
     default_exchange_settings = schemas.ExchangeSettings(
         binance=schemas.ExchangePlatformSettings(enabled=False, api_key_name=""),
@@ -3098,8 +3099,79 @@ async def create_agent_memory(
     db: AsyncSession, user_id: int, memory_data: schemas.AgentMemoryCreate
 ) -> models.AgentMemory:
     """
-    Creates a new agent memory entry.
+    Creates a new agent memory entry, semantic deduplication included for strategy insights.
     """
+    import difflib
+    import re
+
+    def clean_content_for_compare(text: str) -> str:
+        # Remove the config JSON block to only compare text context & reasoning
+        config_idx = text.find(". Config: ")
+        if config_idx != -1:
+            text = text[:config_idx]
+        # Remove PnL, Win Rate, and Drawdown values to match runs of same strategy layout
+        text = re.sub(r"PnL=[-\d.]+%", "", text)
+        text = re.sub(r"WR=[\d.]+%", "", text)
+        text = re.sub(r"DD=[\d.]+%", "", text)
+        return text
+
+    if memory_data.memory_type == "strategy_insight" and memory_data.symbol:
+        # Fetch current memories of this type and symbol
+        stmt = select(models.AgentMemory).where(
+            models.AgentMemory.user_id == user_id,
+            models.AgentMemory.memory_type == "strategy_insight",
+            models.AgentMemory.symbol == memory_data.symbol,
+        )
+        result = await db.execute(stmt)
+        existing_memories = result.scalars().all()
+
+        new_clean = clean_content_for_compare(memory_data.content)
+
+        for ext in existing_memories:
+
+            def extract_metrics(content_str: str):
+                pnl = re.search(r"PnL=([-\d.]+)%", content_str)
+                wr = re.search(r"WR=([\d.]+)%", content_str)
+                dd = re.search(r"DD=([\d.]+)%", content_str)
+                return (
+                    float(pnl.group(1)) if pnl else -999.0,
+                    float(wr.group(1)) if wr else -999.0,
+                    float(dd.group(1)) if dd else -999.0,
+                )
+
+            ext_pnl, ext_wr, ext_dd = extract_metrics(ext.content)
+            new_pnl, new_wr, new_dd = extract_metrics(memory_data.content)
+
+            metrics_match = (
+                ext_pnl == new_pnl
+                and ext_wr == new_wr
+                and ext_dd == new_dd
+                and ext_pnl != -999.0
+            )
+
+            ext_clean = clean_content_for_compare(ext.content)
+            similarity = difflib.SequenceMatcher(None, ext_clean, new_clean).ratio()
+
+            if similarity > 0.75 or metrics_match:
+                # Match found! We update the existing record
+                # Keep the more profitable setup config/content
+                if new_pnl > ext_pnl:
+                    ext.content = memory_data.content
+                    ext.config_hash = memory_data.config_hash
+                    ext.confidence = memory_data.confidence
+                    ext.relevance_score = max(
+                        ext.relevance_score, memory_data.relevance_score
+                    )
+
+                # Increment verification strength
+                ext.validated_count = (ext.validated_count or 1) + 1
+                ext.expires_at = memory_data.expires_at
+                ext.tags = list(set((ext.tags or []) + (memory_data.tags or [])))
+
+                await db.flush()
+                return ext
+
+    # No similar memory found, create a new one
     db_memory = models.AgentMemory(
         user_id=user_id,
         memory_type=memory_data.memory_type,
@@ -3204,6 +3276,134 @@ async def delete_agent_memories(db: AsyncSession, user_id: int) -> int:
     stmt = delete(models.AgentMemory).where(models.AgentMemory.user_id == user_id)
     result = await db.execute(stmt, execution_options={"synchronize_session": False})
     return result.rowcount
+
+
+async def delete_agent_memory(db: AsyncSession, memory_id: str, user_id: int) -> bool:
+    """
+    Deletes a specific agent memory for a user.
+    """
+    stmt = delete(models.AgentMemory).where(
+        models.AgentMemory.id == memory_id, models.AgentMemory.user_id == user_id
+    )
+    result = await db.execute(stmt, execution_options={"synchronize_session": False})
+    return result.rowcount > 0
+
+
+async def deduplicate_user_memories(db: AsyncSession, user_id: int) -> int:
+    """
+    Scans existing strategy_insight memories for a user, merges duplicates, and deletes redundant ones.
+    """
+    import difflib
+    import re
+
+    def clean_content_for_compare(text: str) -> str:
+        config_idx = text.find(". Config: ")
+        if config_idx != -1:
+            text = text[:config_idx]
+        text = re.sub(r"PnL=[-\d.]+%", "", text)
+        text = re.sub(r"WR=[\d.]+%", "", text)
+        text = re.sub(r"DD=[\d.]+%", "", text)
+        return text
+
+    # Fetch all strategy_insight memories for this user
+    stmt = select(models.AgentMemory).where(
+        models.AgentMemory.user_id == user_id,
+        models.AgentMemory.memory_type == "strategy_insight",
+    )
+    result = await db.execute(stmt)
+    memories = result.scalars().all()
+
+    # Group by symbol
+    from collections import defaultdict
+
+    by_symbol = defaultdict(list)
+    for m in memories:
+        by_symbol[m.symbol or "GLOBAL"].append(m)
+
+    deleted_count = 0
+    duplicate_ids_to_delete = set()
+
+    for symbol, sym_memories in by_symbol.items():
+        # Keep track of records we've already merged into something else
+        merged_ids = set()
+
+        for idx, m_primary in enumerate(sym_memories):
+            if m_primary.id in merged_ids:
+                continue
+
+            clean_primary = clean_content_for_compare(m_primary.content)
+
+            # Compare with subsequent memories in the list
+            for m_secondary in sym_memories[idx + 1 :]:
+                if m_secondary.id in merged_ids:
+                    continue
+
+                clean_secondary = clean_content_for_compare(m_secondary.content)
+
+                def extract_metrics(content_str: str):
+                    pnl = re.search(r"PnL=([-\d.]+)%", content_str)
+                    wr = re.search(r"WR=([\d.]+)%", content_str)
+                    dd = re.search(r"DD=([\d.]+)%", content_str)
+                    return (
+                        float(pnl.group(1)) if pnl else -999.0,
+                        float(wr.group(1)) if wr else -999.0,
+                        float(dd.group(1)) if dd else -999.0,
+                    )
+
+                primary_pnl, primary_wr, primary_dd = extract_metrics(m_primary.content)
+                secondary_pnl, secondary_wr, secondary_dd = extract_metrics(
+                    m_secondary.content
+                )
+
+                metrics_match = (
+                    primary_pnl == secondary_pnl
+                    and primary_wr == secondary_wr
+                    and primary_dd == secondary_dd
+                    and primary_pnl != -999.0
+                )
+
+                similarity = difflib.SequenceMatcher(
+                    None, clean_primary, clean_secondary
+                ).ratio()
+
+                if similarity > 0.75 or metrics_match:
+                    # Match found! We decide who to keep based on PnL
+                    # Determine keeper and duplicate
+                    if secondary_pnl > primary_pnl:
+                        keeper = m_secondary
+                        duplicate = m_primary
+                        # Update clean_primary since the keeper changed
+                        clean_primary = clean_secondary
+                        # Swap primary references so we keep tracking from the new keeper
+                        m_primary = m_secondary
+                    else:
+                        keeper = m_primary
+                        duplicate = m_secondary
+
+                    # Merge attributes
+                    keeper.validated_count = (keeper.validated_count or 1) + (
+                        duplicate.validated_count or 1
+                    )
+                    keeper.relevance_score = max(
+                        keeper.relevance_score or 1.0, duplicate.relevance_score or 1.0
+                    )
+                    keeper.tags = list(
+                        set((keeper.tags or []) + (duplicate.tags or []))
+                    )
+
+                    # Mark duplicate for deletion and flag it as merged
+                    duplicate_ids_to_delete.add(duplicate.id)
+                    merged_ids.add(duplicate.id)
+                    deleted_count += 1
+
+    if duplicate_ids_to_delete:
+        del_stmt = delete(models.AgentMemory).where(
+            models.AgentMemory.id.in_(list(duplicate_ids_to_delete))
+        )
+        await db.execute(del_stmt, execution_options={"synchronize_session": False})
+        await db.flush()
+
+    return deleted_count
 
 
 async def get_chat_history(

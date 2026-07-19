@@ -2,7 +2,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import { api } from "../../services/api";
 import type { AgentMemory } from "../../types";
-import { Brain, RefreshCw, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Brain, RefreshCw, Eye, EyeOff, Trash2, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 interface MemoryBankProps {
@@ -14,6 +14,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, acti
 	const [memories, setMemories] = useState<AgentMemory[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [isClearing, setIsClearing] = useState(false);
+	const [isDeduplicating, setIsDeduplicating] = useState(false);
 	const [showMemories, setShowMemories] = useState(true);
 
 	const fetchMemories = async () => {
@@ -38,6 +39,30 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, acti
 			console.error("Failed to clear agent memories", e);
 		} finally {
 			setIsClearing(false);
+		}
+	};
+
+	const handleDeduplicateMemories = async () => {
+		if (!confirm("Are you sure you want to reorganize and deduplicate the memory bank? This will merge highly similar insights.")) return;
+		setIsDeduplicating(true);
+		try {
+			const res = await api.deduplicateAgentMemories();
+			alert(`Successfully reorganized memories! Merged ${res.deleted_count} duplicate insights.`);
+			void fetchMemories();
+		} catch (e) {
+			console.error("Failed to deduplicate agent memories", e);
+		} finally {
+			setIsDeduplicating(false);
+		}
+	};
+
+	const handleDeleteMemory = async (memoryId: string) => {
+		if (!confirm("Are you sure you want to delete this memory?")) return;
+		try {
+			await api.deleteAgentMemory(memoryId);
+			setMemories((prev) => prev.filter((m) => m.id !== memoryId));
+		} catch (e) {
+			console.error("Failed to delete agent memory", e);
 		}
 	};
 
@@ -120,6 +145,15 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, acti
 						type="button"
 					>
 						<RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+					</button>
+					<button
+						onClick={handleDeduplicateMemories}
+						disabled={isLoading || isDeduplicating}
+						className="p-1 hover:bg-slate-800 hover:text-amber-455 rounded text-slate-400 transition disabled:opacity-50"
+						title="Reorganize Memory Bank"
+						type="button"
+					>
+						<Sparkles className={`w-4 h-4 ${isDeduplicating ? "animate-pulse" : ""}`} />
 					</button>
 					<button
 						onClick={handleClearMemories}
@@ -294,8 +328,21 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ isAutopilotRunning, acti
 									)}
 								</div>
 
-								<div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition text-[9px] text-slate-500 font-mono bg-slate-900/80 px-1 py-0.5 rounded">
-									Rel: {(memory.relevance_score * 100).toFixed(0)}%
+								<div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex items-center gap-1.5 bg-slate-900/90 px-2 py-0.5 rounded border border-slate-850 shadow-md">
+									<span className="text-[9px] text-slate-400 font-mono">
+										Rel: {(memory.relevance_score * 100).toFixed(0)}%
+									</span>
+									<button
+										onClick={(e) => {
+											e.stopPropagation();
+											void handleDeleteMemory(memory.id);
+										}}
+										className="text-slate-500 hover:text-rose-400 p-0.5 rounded hover:bg-slate-800 transition"
+										title="Delete memory"
+										type="button"
+									>
+										<Trash2 className="w-3.5 h-3.5" />
+									</button>
 								</div>
 							</div>
 						);

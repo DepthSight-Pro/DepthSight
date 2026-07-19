@@ -444,7 +444,7 @@ const MainAppLayout = () => {
 
 		let isCleaningUp = false;
 		const connectWebSocket = () => {
-			const wsProtocol = window.location.protocol === "https" ? "wss:" : "ws:";
+			const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 			const WS_URL =
 				wsProtocol === "wss:" && import.meta.env.VITE_WS_URL
 					? import.meta.env.VITE_WS_URL.replace("ws:", "wss:")

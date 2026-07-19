@@ -119,6 +119,36 @@ def create_ai_routers(
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @ai_meta_router.delete(
+        "/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT
+    )
+    async def delete_agent_memory(
+        memory_id: str,
+        current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        deleted = await crud.delete_agent_memory(
+            db, memory_id=memory_id, user_id=current_user.id
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Memory not found or not owned by user",
+            )
+        await db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @ai_meta_router.post("/memories/deduplicate")
+    async def deduplicate_agent_memories(
+        current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        deleted_count = await crud.deduplicate_user_memories(
+            db, user_id=current_user.id
+        )
+        await db.commit()
+        return {"data": {"deleted_count": deleted_count}}
+
+    @ai_meta_router.delete(
         "/chat/history/{session_id}", status_code=status.HTTP_204_NO_CONTENT
     )
     async def delete_chat_history(

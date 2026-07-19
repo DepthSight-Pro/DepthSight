@@ -1299,15 +1299,16 @@ async def _generate_json_response(
             max_output_tokens=max_output_tokens,
             model_name=model_name,
         )
-        
+
     return _extract_json_block(raw)
+
 
 def _extract_json_block(text: str) -> str:
     """Safely extracts a JSON object from text, stripping markdown blocks if present."""
     start_idx = text.find("{")
     end_idx = text.rfind("}")
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-        return text[start_idx:end_idx + 1]
+        return text[start_idx : end_idx + 1]
     return text
 
 
@@ -2207,7 +2208,14 @@ You MUST strictly adhere to these guidelines and avoid the specified negative pa
                         }
                     )
 
-            if model_thinking and websocket:
+            # If Qwen model is used, we do NOT send the raw CoT/thinking steps to the websocket
+            # to avoid cluttering the terminal logs with parsing logic/internal plan outlines.
+            is_qwen = (active_provider == "qwen") or (
+                active_provider == "openrouter"
+                and "qwen" in _get_openrouter_model_name().lower()
+            )
+
+            if model_thinking and websocket and not is_qwen:
                 try:
                     await websocket.send_json(
                         {

@@ -208,6 +208,14 @@ export const api = {
 		apiFetch<void>("/ai/memories", {
 			method: "DELETE",
 		}),
+	deleteAgentMemory: (memoryId: string): Promise<void> =>
+		apiFetch<void>(`/ai/memories/${memoryId}`, {
+			method: "DELETE",
+		}),
+	deduplicateAgentMemories: (): Promise<{ deleted_count: number }> =>
+		apiFetch<{ deleted_count: number }>("/ai/memories/deduplicate", {
+			method: "POST",
+		}),
 
 	// --- Dashboard ---
 	getPortfolio: (mode: "live" | "paper"): Promise<PortfolioStatus> =>
