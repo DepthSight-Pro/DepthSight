@@ -57,11 +57,11 @@ def get_default_market_data() -> Dict[str, Any]:
 
     return {
         "kline_1m": df_1m.copy(),
-        "kline_5m": df_1m.resample("5T").agg(resample_agg).dropna(),
-        "kline_15m": df_1m.resample("15T").agg(resample_agg).dropna(),
-        "kline_1h": df_1m.resample("1H").agg(resample_agg).dropna(),
-        "kline_4h": df_1m.resample("4H").agg(resample_agg).dropna(),
-        "kline_1d": df_1m.resample("1D").agg(resample_agg).dropna(),
+        "kline_5m": df_1m.resample("5min").agg(resample_agg).dropna(),
+        "kline_15m": df_1m.resample("15min").agg(resample_agg).dropna(),
+        "kline_1h": df_1m.resample("1h").agg(resample_agg).dropna(),
+        "kline_4h": df_1m.resample("4h").agg(resample_agg).dropna(),
+        "kline_1d": df_1m.resample("1d").agg(resample_agg).dropna(),
         "depth_trading": {"bids": [], "asks": []},
         "aggTrade": agg_trades_df,
     }

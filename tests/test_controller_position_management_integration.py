@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 def create_mock_kline_df(num_rows=100, base_price=100.0):
     """Creates DataFrame with candles with DatetimeIndex."""
     now = datetime.now(timezone.utc)
-    timestamps = pd.date_range(end=now, periods=num_rows, freq="1T", tz="UTC")
+    timestamps = pd.date_range(end=now, periods=num_rows, freq="1min", tz="UTC")
 
     return pd.DataFrame(
         {

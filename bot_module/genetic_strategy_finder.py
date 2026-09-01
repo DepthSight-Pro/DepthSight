@@ -506,7 +506,7 @@ def resample_to_timeframes(
     result = {"1m": df_1m}  # Always include the base 1m
 
     # Resampling rules for pandas
-    tf_rules = {"5m": "5T", "15m": "15T", "1h": "1H", "4h": "4H"}
+    tf_rules = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h"}
 
     for tf in timeframes:
         if tf == "1m":
