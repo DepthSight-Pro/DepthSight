@@ -179,6 +179,7 @@ async def test_full_mining_lifecycle_e2e(
             "X-Node-UUID": "node-a-uuid",
             "X-Node-Secret": sec_a,
             "X-Node-Signature": sig_a,
+            "Content-Type": "application/json",
         },
     )
     assert resp_a.status_code == 201
@@ -210,6 +211,7 @@ async def test_full_mining_lifecycle_e2e(
             "X-Node-UUID": "node-b-uuid",
             "X-Node-Secret": sec_b,
             "X-Node-Signature": sig_b,
+            "Content-Type": "application/json",
         },
     )
     assert resp_b.status_code == 201

@@ -180,6 +180,7 @@ async def test_duplicate_broker_trade_id_rejected_on_submission(
             "X-Node-UUID": "dup-node-1",
             "X-Node-Secret": secret,
             "X-Node-Signature": sig,
+            "Content-Type": "application/json",
         },
     )
     assert resp1.status_code == 201
@@ -192,6 +193,7 @@ async def test_duplicate_broker_trade_id_rejected_on_submission(
             "X-Node-UUID": "dup-node-2",
             "X-Node-Secret": secret,
             "X-Node-Signature": sig,
+            "Content-Type": "application/json",
         },
     )
     assert resp2.status_code == 409  # Conflict: duplicate trade ID for another node

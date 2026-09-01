@@ -115,6 +115,7 @@ async def test_telemetry_report_hmac_gate(
             "X-Node-UUID": "hmac-node",
             "X-Node-Secret": secret,
             "X-Node-Signature": "deadbeef",
+            "Content-Type": "application/json",
         },
     )
     assert resp.status_code == 403
@@ -128,6 +129,7 @@ async def test_telemetry_report_hmac_gate(
             "X-Node-UUID": "hmac-node",
             "X-Node-Secret": secret,
             "X-Node-Signature": signature,
+            "Content-Type": "application/json",
         },
     )
     assert resp.status_code == 201

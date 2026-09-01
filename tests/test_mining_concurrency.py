@@ -184,6 +184,7 @@ async def test_concurrent_telemetry_submission(
             "X-Node-UUID": "conc-tele-node",
             "X-Node-Secret": secret,
             "X-Node-Signature": sig,
+            "Content-Type": "application/json",
         }
         return await test_client.post(
             "/api/v1/hub/telemetry/report", content=body, headers=headers

@@ -20,6 +20,15 @@ from bot_module.strategy import (
 STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
 STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
 
+
+@pytest.fixture(autouse=True)
+def register_test_strategies():
+    STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
+    STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
+    yield
+    STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
+    STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
+
 # --- Fixtures ---
 
 

@@ -3510,7 +3510,16 @@ class FastVectorBacktester:
         dept_np = departure_threshold.to_numpy()
 
         # Use main_df index as basis for timestamps (seconds)
-        ts_np = self.main_df.index.view(np.int64) // 10**9
+        idx = self.main_df.index
+        unit = getattr(idx, "unit", "ns")
+        if unit == "s":
+            ts_np = idx.asi8
+        elif unit == "ms":
+            ts_np = idx.asi8 // 10**3
+        elif unit == "us":
+            ts_np = idx.asi8 // 10**6
+        else:
+            ts_np = idx.asi8 // 10**9
 
         results = np.zeros(len(price_np), dtype=bool)
 
