@@ -82,7 +82,7 @@ def trading_controller(
     )  # Return (position, no exit signal)
     controller.running_strategy_instances["mock_config_id"] = (
         mock_strategy_instance,
-        {},
+        {"config_id": "mock_config_id", "symbol_selection_mode": "DYNAMIC"},
     )
 
     # Leave executors as a dictionary, but put a mock in it.

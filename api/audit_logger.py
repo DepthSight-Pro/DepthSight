@@ -299,11 +299,15 @@ audit_logger = AuditLogger()
 
 
 def get_client_ip(request) -> str:
-    """Extracts the real client IP from the request (accounts for proxies)."""
+    """Extracts the real client IP from the request (accounts for proxies).
+
+    Uses the LAST entry of ``X-Forwarded-For``: our reverse proxy appends the
+    actual peer address, while client-supplied entries can be spoofed.
+    """
     # X-Forwarded-For can contain multiple IPs separated by a comma
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        return forwarded.split(",")[-1].strip()
 
     # X-Real-IP from Nginx
     real_ip = request.headers.get("X-Real-IP")

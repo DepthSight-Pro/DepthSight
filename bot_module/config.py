@@ -66,6 +66,8 @@ ACTIVE_TRADING_ENVIRONMENT = (
 # Choose wisely, and happy trading! <3
 # ==============================================================================
 BYBIT_BROKER_ID = "Gt001094"
+WEEX_BROKER_ID = "b-WEEX111159"
+OKX_BROKER_ID = "bb39c7c267cfBCDE"
 
 # --- NEW BLOCK: Loading ALL keys from .env ---
 # Mainnet Keys
@@ -427,7 +429,15 @@ logger.info("Genetic Algorithm default parameters and GENE_POOL defined.")
 # "MAIN_APP" - via WebSocket from the main application (ws://localhost:8765)
 # "STATIC_LIST" - from the static list below (SYMBOL_SOURCE_STATIC_LIST)
 # "JSON_FILE" - from file (SYMBOL_SOURCE_JSON_FILE_PATH)
-SYMBOL_SOURCE_MODE = "MAIN_APP"  # Default is 'MAIN_APP'
+SYMBOL_SOURCE_MODE = os.environ.get("SYMBOL_SOURCE_MODE", "MAIN_APP").strip()
+
+# Option to enable/disable auto-connecting to screener/main application WebSocket (Disabled by default)
+_enable_screener_env = os.environ.get(
+    "ENABLE_SCREENER_AUTO_CONNECT",
+    os.environ.get("ENABLE_SCREENER_WS", os.environ.get("ENABLE_MAIN_APP_WS", "false")),
+)
+ENABLE_MAIN_APP_WS = str(_enable_screener_env).strip().lower() in ("true", "1", "yes")
+ENABLE_SCREENER_AUTO_CONNECT = ENABLE_MAIN_APP_WS
 
 # Static list of symbols for "STATIC_LIST" mode
 # Format: list of strings, e.g., ["BTCUSDT", "ETHUSDT"]
@@ -445,7 +455,9 @@ SYMBOL_SOURCE_JSON_FILE_PATH = "data/static_symbols.json"
 # Path to the file with filtered pairs (if a static list is used) - OLD, CAN BE KEPT OR REMOVED
 FILTERED_PAIRS_FILE = "data/filtered_pairs.json"
 # WebSocket URL of the main application that provides market data and the list of active pairs
-MAIN_APP_WS_URL = "wss://screener.depthsight.pro/ws/bot/"
+MAIN_APP_WS_URL = os.environ.get(
+    "MAIN_APP_WS_URL", "wss://screener.depthsight.pro/ws/bot/"
+).strip()
 # Name of the topic/message in WebSocket from the main app signaling an update to the active pairs list
 MAIN_APP_SYMBOL_UPDATE_TOPIC = "filtered_pairs:update"  # Example, may differ
 

@@ -226,6 +226,117 @@ class TestRequiredDataTypes:
             "Genetic strategy without tape should not require aggTrade"
         )
 
+    def test_btc_state_and_correlation_requires_btc_stream(self):
+        """Strategies with btc_state_filter or correlation must require kline_1m_BTCUSDT."""
+        btc_config = {
+            "entryTrigger": {"type": "on_candle_close"},
+            "conditions": {
+                "type": "AND",
+                "children": [
+                    {"type": "btc_state_filter", "params": {"trend": "bullish"}},
+                    {
+                        "type": "correlation",
+                        "params": {"symbol": "BTCUSDT", "min_corr": 0.8},
+                    },
+                ],
+            },
+        }
+        strategy = VisualBuilderStrategy(
+            params={"config": btc_config, "candle_timeframe": "5m"}
+        )
+        required = strategy.required_data_types
+
+        assert "kline_5m" in required
+        assert "kline_1m_BTCUSDT" in required
+        assert "depth" not in required
+        assert "aggTrade" not in required
+
+    def test_orderbook_imbalance_requires_depth(self):
+        """Strategy with orderbook_imbalance block must require depth."""
+        ob_config = {
+            "entryTrigger": {"type": "on_candle_close"},
+            "conditions": {
+                "type": "AND",
+                "children": [
+                    {"type": "orderbook_imbalance", "params": {"imbalance_ratio": 2.5}},
+                ],
+            },
+        }
+        strategy = VisualBuilderStrategy(
+            params={"config": ob_config, "candle_timeframe": "1m"}
+        )
+        required = strategy.required_data_types
+
+        assert "depth" in required
+        assert "aggTrade" not in required
+
+    def test_senior_tf_confluence_custom_timeframes(self):
+        """Strategy with senior_tf_confluence must require the specified HTF."""
+        htf_config = {
+            "entryTrigger": {"type": "on_candle_close"},
+            "conditions": {
+                "type": "AND",
+                "children": [
+                    {
+                        "type": "senior_tf_confluence",
+                        "params": {"timeframe": "15m"},
+                        "children": [
+                            {
+                                "type": "trend_direction",
+                                "params": {"sma_fast_period": 10},
+                            }
+                        ],
+                    },
+                ],
+            },
+        }
+        strategy = VisualBuilderStrategy(
+            params={"config": htf_config, "candle_timeframe": "1m"}
+        )
+        required = strategy.required_data_types
+
+        assert "kline_1m" in required
+        assert "kline_15m" in required
+        assert "depth" not in required
+
+    def test_required_indicators_extraction(self):
+        """Verifies that strategy.required_indicators only extracts specified indicators."""
+        ind_config = {
+            "entryTrigger": {"type": "on_candle_close"},
+            "conditions": {
+                "type": "AND",
+                "children": [
+                    {
+                        "type": "trend_direction",
+                        "params": {
+                            "sma_fast_period": 9,
+                            "sma_slow_period": 21,
+                            "rsi_period": 14,
+                        },
+                    },
+                    {
+                        "type": "price_vs_level",
+                        "params": {
+                            "price_source": {"source": "indicator", "key": "EMA_200"},
+                            "operator": "gt",
+                            "level_source": {"source": "indicator", "key": "ATR_14"},
+                        },
+                    },
+                ],
+            },
+        }
+        strategy = VisualBuilderStrategy(
+            params={"config": ind_config, "candle_timeframe": "5m"}
+        )
+        indicators = strategy.required_indicators
+
+        assert "SMA_9" in indicators
+        assert "SMA_21" in indicators
+        assert "RSI_14" in indicators
+        assert "EMA_200" in indicators
+        assert "ATR_14" in indicators
+        assert "MACD_12_26_9" not in indicators
+
 
 # ==============================================================================
 # TESTS FOR requires_spot_orderbook
@@ -1526,3 +1637,105 @@ class TestSubscriptionIntegration:
 
         # Should not require spot orderbook
         assert not strategy.requires_spot_orderbook
+
+    @pytest.mark.asyncio
+    async def test_controller_subscribes_only_to_strategy_requirements(self):
+        """
+        Verifies that TradingController analyzes active strategy instances
+        and calls consumer.ensure_subscription only for data_types that are actually needed.
+        """
+        from bot_module.controller import TradingController
+        from bot_module.risk_manager import RiskManager
+        from bot_module.trade_logger import TradeLogger
+
+        mock_consumer = AsyncMock()
+        mock_consumer.ensure_subscription = AsyncMock()
+        mock_consumer.remove_subscription = AsyncMock()
+        mock_consumer.clear_all_subscriptions = AsyncMock()
+        mock_consumer.get_active_symbols.return_value = {"BTCUSDT"}
+        mock_consumer.set_market_executors = MagicMock()
+
+        mock_executor = AsyncMock()
+        mock_rm = MagicMock(spec=RiskManager)
+        mock_trade_logger = MagicMock(spec=TradeLogger)
+
+        ctrl = TradingController(
+            loop=asyncio.get_running_loop(),
+            data_consumer=lambda **kwargs: mock_consumer,
+            live_executor=mock_executor,
+            paper_executor=MagicMock(),
+            risk_manager=mock_rm,
+            user_id=1,
+            market_executors={"futures_usdtm": mock_executor},
+        )
+        ctrl.trade_logger = mock_trade_logger
+
+        # 1. Strategy with only 5m trend_direction (pure indicators)
+        minimal_config = {
+            "entryTrigger": {"type": "on_candle_close"},
+            "conditions": {
+                "type": "AND",
+                "children": [
+                    {"type": "trend_direction", "params": {"sma_fast_period": 10}}
+                ],
+            },
+        }
+        strat_instance = VisualBuilderStrategy(
+            params={"config": minimal_config, "candle_timeframe": "5m"}
+        )
+        config_payload = {
+            "id": "strat-1",
+            "symbols": ["BTCUSDT"],
+            "symbol_selection_mode": "STATIC",
+            "config_data": {"marketType": "futures_usdtm"},
+        }
+        ctrl.running_strategy_instances["strat-1"] = (strat_instance, config_payload)
+
+        # Call subscription update
+        await ctrl._update_monitored_symbols()
+
+        # Check subscriptions requested
+        subscribed_types = {
+            call.args[0] for call in mock_consumer.ensure_subscription.await_args_list
+        }
+        assert "kline_5m" in subscribed_types
+        assert "depth" not in subscribed_types
+        assert "aggTrade" not in subscribed_types
+        assert "open_interest" not in subscribed_types
+
+        # 2. Add an orderbook & tape strategy
+        mock_consumer.ensure_subscription.reset_mock()
+        ob_tape_config = {
+            "entryTrigger": {"type": "on_candle_close"},
+            "conditions": {
+                "type": "AND",
+                "children": [
+                    {"type": "order_book_zone", "params": {"side": "bids"}},
+                    {"type": "tape_analysis", "params": {"time_window_sec": 5}},
+                ],
+            },
+        }
+        strat_instance_2 = VisualBuilderStrategy(
+            params={"config": ob_tape_config, "candle_timeframe": "1m"}
+        )
+        config_payload_2 = {
+            "id": "strat-2",
+            "symbols": ["BTCUSDT"],
+            "symbol_selection_mode": "STATIC",
+            "config_data": {"marketType": "futures_usdtm"},
+        }
+        ctrl.running_strategy_instances["strat-2"] = (
+            strat_instance_2,
+            config_payload_2,
+        )
+
+        # Update subscriptions again
+        await ctrl._update_monitored_symbols()
+
+        subscribed_types_2 = {
+            call.args[0] for call in mock_consumer.ensure_subscription.await_args_list
+        }
+        assert "kline_5m" in subscribed_types_2
+        assert "kline_1m" in subscribed_types_2
+        assert "depth" in subscribed_types_2
+        assert "aggTrade" in subscribed_types_2

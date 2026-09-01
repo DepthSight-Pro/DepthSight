@@ -13,6 +13,7 @@ import type React from "react";
 import { useTranslation } from "react-i18next"; // Import useTranslation
 import { useParams } from "react-router-dom";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { AppLoader } from "@/components/shared/AppLoader";
 import { EquityCurveChart } from "@/components/research/EquityCurveChart";
 import GenericPieChart from "@/components/research/GenericPieChart";
 import PortfolioTradeHistoryTable from "@/components/research/PortfolioTradeHistoryTable";
@@ -75,33 +76,8 @@ export default function PortfolioBacktestViewer() {
 	if (isLoading) {
 		return (
 			<PageLayout title={t("portfolioViewer.loading")} icon={Briefcase}>
-				<div className="space-y-4">
-					<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-						{[...Array(4)].map((_, i) => (
-							<PortfolioKpiCard
-								key={i}
-								title={t("common:loading")}
-								value="..."
-								isLoading
-							/>
-						))}
-					</div>
-					<Card>
-						<CardHeader>
-							<Skeleton className="h-6 w-1/4" />
-						</CardHeader>
-						<CardContent>
-							<Skeleton className="h-64 w-full" />
-						</CardContent>
-					</Card>
-					<Card>
-						<CardHeader>
-							<Skeleton className="h-6 w-1/4" />
-						</CardHeader>
-						<CardContent>
-							<Skeleton className="h-48 w-full" />
-						</CardContent>
-					</Card>
+				<div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] h-full w-full">
+					<AppLoader size="xl" fullLogo text={t("portfolioViewer.loading")} />
 				</div>
 			</PageLayout>
 		);

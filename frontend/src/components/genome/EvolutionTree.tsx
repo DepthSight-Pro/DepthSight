@@ -314,3 +314,5 @@ export const EvolutionTree: React.FC = () => {
 		</div>
 	);
 };
+
+export default EvolutionTree;

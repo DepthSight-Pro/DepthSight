@@ -213,21 +213,16 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		setActiveIteration(0);
 		addLog("Initializing Autopilot Agent...", "info");
 
-		const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-		const VITE_WS_URL = import.meta.env.VITE_WS_URL;
-		const isDevPort = window.location.port === "3000" || window.location.port === "5173" || window.location.port === "8000";
-		
-		let baseWsUrl = VITE_WS_URL
-			? (window.location.protocol === "https:" ? VITE_WS_URL.replace("ws:", "wss:") : VITE_WS_URL)
-			: (isDevPort ? `${wsProtocol}//${window.location.hostname}:8765` : `${wsProtocol}//${window.location.host}`);
-
-		// If it's a relative path starting with /, convert to absolute ws URL
-		if (baseWsUrl.startsWith("/")) {
-			baseWsUrl = `${wsProtocol}//${window.location.host}${baseWsUrl}`;
+		let WS_URL = "";
+		if (import.meta.env.DEV) {
+			const wsDev = import.meta.env.VITE_WS_URL;
+			const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+			WS_URL = wsDev || `${wsProtocol}//${window.location.hostname}:8765/ws`;
+		} else {
+			const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+			const host = window.location.host;
+			WS_URL = `${protocol}//${host}/ws`;
 		}
-
-		// Ensure it ends with /ws exactly without duplicating /ws/ws
-		const WS_URL = baseWsUrl.endsWith("/ws") ? baseWsUrl : `${baseWsUrl}/ws`;
 
 		const authTokenString = localStorage.getItem("authToken");
 		let accessToken = "";

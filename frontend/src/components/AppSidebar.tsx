@@ -1,10 +1,9 @@
-// src/components/AppSidebar.tsx
-
 import {
 	BarChart3,
 	BrainCircuit,
 	Briefcase,
 	Cog,
+	Coins,
 	Crown,
 	Dna,
 	FlaskConical,
@@ -46,7 +45,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/context/AuthContext";
-import { useAccountStatus, useSystemStatus } from "@/lib/api";
+import { useAccountStatus, useSystemStatus, useGetMiningStatus } from "@/lib/api";
 import { apiClient } from "@/lib/apiClient";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +75,7 @@ const navigationItemConfigs: NavItemConfig[] = [
 		url: "/diagnostics/foundation-visualizer",
 		icon: TestTube2,
 	},
-	{ key: "hftDashboard", url: "/hft", icon: Zap, adminOnly: true },
+	{ key: "mining", url: "/mining", icon: Coins },
 	{ key: "eventLog", url: "/logs", icon: Terminal },
 ];
 
@@ -122,13 +121,14 @@ export function AppSidebar() {
 	const { data: accountStatus } = useAccountStatus();
 	const { data: systemStatus } = useSystemStatus();
 
+	const { data: miningStatus } = useGetMiningStatus();
+
 	const localVersion = systemStatus?.version || "1.0.1";
 	const [masterVersion, setMasterVersion] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
 		const hubApiUrl =
-			import.meta.env.VITE_HUB_API_URL ||
-			"https://app.depthsight.pro/api/v1/hub";
+			import.meta.env.VITE_HUB_API_URL || "/api/v1/hub";
 		fetch(`${hubApiUrl}/nodes`)
 			.then((res) => {
 				if (!res.ok) throw new Error();
@@ -183,9 +183,17 @@ export function AppSidebar() {
 		return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 	}, [accountStatus]);
 
-	// Map configs to items with translated titles and filter by role
+	// Map configs to items with translated titles and filter by role & global flags
 	const navigationItems = navigationItemConfigs
-		.filter((config) => !config.adminOnly || (user && user.role === "admin"))
+		.filter((config) => {
+			if (config.adminOnly && (!user || user.role !== "admin")) {
+				return false;
+			}
+			if (config.key === "mining" && miningStatus?.isGlobalMiningEnabled === false) {
+				return false;
+			}
+			return true;
+		})
 		.map((config) => ({
 			...config,
 			title: t(config.key),

@@ -22,22 +22,9 @@ from ..plans import plans_config
 from bot_module import config as bot_config
 from api.celery_app import celery_app
 from celery.result import AsyncResult
+from ..rate_limiter import limiter, get_limit_value
 
 logger = logging.getLogger(__name__)
-
-
-# Rate limiting fallback
-def get_limit_value(val: str) -> str:
-    return val
-
-
-# Mock limiter if not available in context
-class MockLimiter:
-    def limit(self, *args, **kwargs):
-        return lambda func: func
-
-
-limiter = MockLimiter()
 
 discovery_router = APIRouter(
     prefix="/api/v1/discovery",

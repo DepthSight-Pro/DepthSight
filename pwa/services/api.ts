@@ -450,4 +450,38 @@ export const api = {
 
 		return apiFetch<{ trades: TradeData[]; total: number }>(`/trades?${queryParams.toString()}`);
 	},
+
+	getMiningStatus: (): Promise<any> => apiFetch<any>("/mining/status"),
+	getMiningReferrals: (): Promise<any> => apiFetch<any>("/hub/mining/referrals"),
+	activateMining: (referrerCode?: string): Promise<any> =>
+		apiFetch<any>("/mining/activate", {
+			method: "POST",
+			body: JSON.stringify({ referrer_code: referrerCode }),
+		}),
+	deactivateMining: (): Promise<any> =>
+		apiFetch<any>("/mining/deactivate", {
+			method: "POST",
+		}),
+	getWalletNonce: (address: string): Promise<{ nonce: string; message: string }> =>
+		apiFetch<{ nonce: string; message: string }>("/node/wallet/nonce", {
+			method: "POST",
+			body: JSON.stringify({ address }),
+		}),
+	verifyWalletSignature: (
+		address: string,
+		signature: string,
+		nonce: string,
+		message?: string
+	): Promise<{ walletAddress: string; nodeUuid: string; status: string }> =>
+		apiFetch<{ walletAddress: string; nodeUuid: string; status: string }>("/node/wallet/verify", {
+			method: "POST",
+			body: JSON.stringify({ address, signature, nonce, message }),
+		}),
+	getWalletStatus: (): Promise<{ walletAddress?: string; nodeUuid?: string; walletConfigured: boolean }> =>
+		apiFetch<{ walletAddress?: string; nodeUuid?: string; walletConfigured: boolean }>("/node/wallet/status"),
+	disconnectWallet: (): Promise<{ success: boolean }> =>
+		apiFetch<{ success: boolean }>("/node/wallet/disconnect", {
+			method: "POST",
+		}),
 };
+

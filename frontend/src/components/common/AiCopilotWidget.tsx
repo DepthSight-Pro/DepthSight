@@ -587,8 +587,8 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 																onClick={() =>
 																	window.open(
 																		getImageSrc(
-																			msg.image_base64,
-																			msg.image_mime_type,
+																			msg.image_base64 ?? "",
+																			msg.image_mime_type ?? "image/jpeg",
 																		),
 																		"_blank",
 																	)
@@ -596,8 +596,8 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 															>
 																<img
 																	src={getImageSrc(
-																		msg.image_base64,
-																		msg.image_mime_type,
+																		msg.image_base64 ?? "",
+																		msg.image_mime_type ?? "image/jpeg",
 																	)}
 																	alt="Uploaded chart"
 																	className="max-h-60 w-full object-contain"

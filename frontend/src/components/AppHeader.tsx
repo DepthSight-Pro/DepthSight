@@ -38,7 +38,7 @@ export const AppHeader = () => {
 	// Filter only active and valid API keys for the selector
 	const activeApiKeys = useMemo(() => {
 		if (!apiKeys) return [];
-		return apiKeys.filter((key) => key.isActive && key.status === "valid");
+		return apiKeys.filter((key) => key.isActive && key.status !== "invalid");
 	}, [apiKeys]);
 
 	// Transform balances array to Record<number, AccountBalance>

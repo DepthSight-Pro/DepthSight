@@ -17,6 +17,7 @@ export enum Screen {
 	BacktestResult = "BacktestResult",
 	Profile = "Profile",
 	Settings = "Settings",
+	Mining = "Mining",
 	ForgotPassword = "ForgotPassword",
 	ResetPassword = "ResetPassword",
 }
@@ -53,6 +54,11 @@ export interface AgentMemory {
 	relevance_score: number;
 	created_at: string;
 	expires_at?: string;
+	tags?: string[];
+	symbol?: string;
+	strategy_type?: string;
+	outcome?: string;
+	confidence?: number;
 }
 
 export interface AIChatRequest {
@@ -87,6 +93,7 @@ export interface EditableBlock {
 export interface DisplayStrategy extends StrategyConfigDB {
 	isRunning: boolean;
 	runningInstance?: RunningStrategy;
+	runningInstances?: RunningStrategy[];
 }
 
 export * from "./types/strategyEditor";
@@ -486,6 +493,7 @@ export interface NotificationSettings {
 	emailEnabled: boolean;
 	telegramEnabled: boolean;
 	telegramChatId?: string;
+	shareTelemetry?: boolean;
 }
 
 export interface DataSourceStatus {
@@ -1061,6 +1069,7 @@ export interface StrategyConfigDB {
 
 export interface RunningStrategy {
 	id: string;
+	config_id?: string;
 	strategy_name: string;
 	symbol: string;
 	market_type: string;
@@ -1069,6 +1078,9 @@ export interface RunningStrategy {
 	open_positions: number;
 	started_at: string;
 	params: Record<string, unknown>;
+	mode?: "live" | "paper";
+	symbol_selection_mode?: "STATIC" | "DYNAMIC";
+	symbols?: string[];
 }
 
 export interface BacktestRun {

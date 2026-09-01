@@ -20,9 +20,17 @@ def include_application_routers(
             from ..hub_router import router as hub_router
 
             app.include_router(hub_router)
-            logger.info("Federation Hub router loaded successfully.")
+            logger.info("Federation Hub router loaded successfully (Master Mode).")
         except ImportError as e:
             logger.error(f"Federation Hub router could not be loaded: {e}")
+    else:
+        try:
+            from ..hub_proxy_router import router as hub_proxy_router
+
+            app.include_router(hub_proxy_router)
+            logger.info("Federation Hub Proxy router loaded successfully (Node Mode).")
+        except ImportError as e:
+            logger.error(f"Federation Hub Proxy router could not be loaded: {e}")
 
     try:
         from ..simulation_router import simulation_router

@@ -94,13 +94,24 @@ async def get_affiliate_payouts(
 async def update_payout_details(
     payload: schemas.PayoutDetailsPayload,
     current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    address = payload.usdt_trc20_address.strip()
+    if not address:
+        raise HTTPException(status_code=400, detail="Payout address cannot be empty.")
+    current_user.payout_address = address
+    db.add(current_user)
+    await db.commit()
     logger.info(
         "User %s updated payout address to: %s",
         current_user.id,
-        payload.usdt_trc20_address,
+        address,
     )
-    return {"status": "ok", "message": "Payout details updated successfully."}
+    return {
+        "status": "ok",
+        "message": "Payout details updated successfully.",
+        "payout_address": address,
+    }
 
 
 @affiliate_router.post("/request-payout")

@@ -11,17 +11,25 @@
   <a href="#-one-click-deploy"><img src="https://img.shields.io/badge/deploy-one--click-00C853.svg?logo=gnubash&logoColor=white" alt="One-Click Deploy"></a>
   <a href="https://depthsight.pro"><img src="https://img.shields.io/badge/website-depthsight.pro-lightgrey.svg" alt="Website"></a>
   <a href="https://depthsight.pro/docs/overview"><img src="https://img.shields.io/badge/docs-depthsight.pro-00b0aa?style=flat&logo=googledocs&logoColor=white" alt="Documentation"></a>
-  <a href="https://github.com/DepthSight-Pro/DepthSight/actions"><img src="https://img.shields.io/badge/tests-1100%2B%20passed-brightgreen" alt="Tests"></a>
+  <a href="https://github.com/DepthSight-Pro/DepthSight/actions"><img src="https://img.shields.io/badge/tests-1500%2B%20passed-brightgreen" alt="Tests"></a>
 </p>
 
 <p align="center">
-  <strong>Enterprise-Grade, Multi-Tenant SaaS-in-a-Box for Algorithmic Trading.</strong>
+  <strong>The First Algorithmic Trading DePIN: Trade-to-Mine & Swarm AI 🐝</strong>
 </p>
 
-Built to democratize the fin-tech industry, it provides a complete infrastructure to launch your own crypto trading platform (like 3Commas or Veles) out of the box. It features a drag-and-drop strategy builder, an AI-powered assistant, a federated community hub for sharing strategies, isolated multi-user environments, and native Bitcart crypto billing.
+DepthSight is a first-of-its-kind **Web3 Trading DePIN** (Decentralized Physical Infrastructure Network) that completely flips the algorithmic trading industry on its head. Instead of paying expensive monthly subscriptions to platforms like 3Commas or Veles, **DepthSight pays you to trade.**
+
+By utilizing our **Proof-of-Trade Mining** ($DEPTH), your daily trading volume generates utility tokens backed by actual fiat broker rebates, mathematically shifting your trading to a Positive Expected Value (Positive EV). 
+
+**Beyond the tokenomics, DepthSight is an engineering powerhouse.** Under the hood, it is a fully open-source, Enterprise-Grade SaaS-in-a-Box featuring:
+- 🧩 **Visual Strategy Builder:** A clean drag-and-drop block editor for building complex trading logic without coding (no messy spaghetti wires).
+- 🤖 **AI Autopilot:** Multi-agent LLM system that generates strategies from text prompts and chart screenshots.
+- ⚡ **High-Performance Core:** Python 3.11+ backend powered by FastAPI, Redis (Pub/Sub & State), Celery workers, and PostgreSQL.
+- 🌐 **Federated Swarm:** The foundation for an upcoming collective intelligence network where nodes share profitable setups.
 
 <p align="center">
-  <em>You bring the traffic. DepthSight handles the execution.</em>
+  <em>Stop fighting the market alone. Join the Swarm. Get paid to trade.</em>
 </p>
 
 > ⭐ **If you find this project useful, please consider giving it a star! It helps the community grow and reach more developers.**
@@ -51,6 +59,7 @@ Built to democratize the fin-tech industry, it provides a complete infrastructur
 
 ## Core Features
 
+- **Trade-to-Mine Economy (DePIN):** A built-in Positive-EV economic model where your daily trading volume generates $DEPTH utility tokens backed by broker rebates, subsidizing fees and rewarding active participants.
 - **Visual Strategy Builder:** A drag-and-drop interface with 40+ logic blocks. Build complex strategies with cross-referencing nodes (e.g., dynamically place a stop loss behind order book density, a breakout candle, or a key level).
 - **AI-Powered Assistant:** Generate complete strategy logic from text prompts or **even screenshots of chart setups**. The AI also analyzes your live trades and backtest results to provide actionable trading recommendations.
 - **Weighted Foundations System:** Assign weights to different market conditions. A trade executes only if a target confidence threshold is met, allowing for flexible, probability-based entries rather than strict "all-or-nothing" boolean logic.
@@ -62,147 +71,41 @@ Built to democratize the fin-tech industry, it provides a complete infrastructur
 - **Enterprise-Grade Infrastructure:** FastAPI backend, real-time WebSocket events, background Celery workers, and multi-exchange execution.
 ## Enterprise-Grade Scalability
 
-DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 6 modern CPU cores and 16GB RAM for a stable solo instance. Its stateless architecture naturally supports advanced horizontal scaling patterns for Cloud SaaS deployments handling thousands of users:
+DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 4 modern CPU cores and 12GB RAM for a stable solo instance. Its stateless architecture naturally supports advanced horizontal scaling patterns for Cloud SaaS deployments handling thousands of users:
 
 1. **Distributed Market Data (Sharding):** The centralized market data service reduces the number of exchange WebSocket connections, allowing for shard-based division of trading pairs.
 2. **Redis Splitting:** Separate instances for system state (JWT, rate limits, Celery) and high-throughput HFT market data via Pub/Sub.
 3. **Horizontal Worker Scaling:** Trading bot processes run in a sharded, stateless pool, evenly dividing computation and risk management processing across CPU cores or physical nodes.
 4. **PgBouncer-Ready:** Designed to pool PostgreSQL connections, seamlessly handling thousands of concurrent connections from stateless FastAPI or bot worker nodes.
 
-- **Supported Exchanges:** Native integration with **Binance** and **Bybit** (Fully tested and stable). Support for **Bitget**, **OKX**, **Gate.io**, and **BingX** is currently in development and will be enabled in future updates. 
-  *Note: We recommend using Binance or Bybit for live trading at this stage.*
+- **Supported Exchanges:** Native integration with **Binance**, **Bybit**, **OKX**, and **WEEX** (Fully tested and stable). Support for **Bitget**, **Gate.io**, and **BingX** is currently in development and will be enabled in future updates. 
+  *Note: We recommend using Binance, Bybit, OKX, or WEEX for live trading at this stage.*
 - **Multi-Tenant SaaS Ready:** Built-in JWT authentication, Redis-based quota management, and fully isolated execution environments designed for multi-user, commercial deployments.
 - **Crypto Billing & Payments:** Native integration with Bitcart for processing cryptocurrency subscriptions and payments.
 - **Modern Clients:** Full-featured React web dashboard and a mobile-optimized PWA.
 
-## 🧠 AI Co-Pilot & Hierarchical Memory System
+## 🤖 AI Autopilot Co-Pilot
 
-DepthSight features an advanced **Three-Tier Hierarchical Memory System** that enables the AI Co-Pilot to learn from past backtest runs, generalize concepts into persistent rules, and transfer trading knowledge across different asset pairs.
+DepthSight includes an experimental, multi-agent AI system designed to help users generate and optimize trading strategies using natural language and computer vision.
 
-### Architecture Overview
+1. **Multimodal Generation:** Upload a screenshot of a chart setup (e.g., a breakout or support/resistance bounce). The AI vision models detect the pattern and automatically generate a corresponding block-based strategy in the visual editor.
+2. **Multi-Agent Optimization Loop:** A network of specialized agents (Researcher, Advisor, Critic) can run sequential backtests, analyze PnL metrics, and automatically mutate strategy parameters to find the optimal configuration.
+3. **Human-in-the-Loop:** All AI-generated configurations are loaded into the visual editor. The AI cannot trade your funds autonomously—you review, adjust, and manually approve every strategy before it goes live.
 
-```mermaid
-graph TB
-    subgraph "Memory Hierarchy"
-        R["🔴 RULES<br/>Permanent • Cross-Asset<br/>'Volume > 2x filters fakeouts'"]
-        I["🟡 INSIGHTS<br/>90 days • Per-Symbol<br/>'ETH breakout works best on 1m with ADX'"]
-        O["🟢 OBSERVATIONS<br/>7 days • Ephemeral<br/>'Last run: PnL=-5%, too tight SL'"]
-    end
-    
-    R --> I --> O
-    
-    subgraph "Retrieval Pipeline"
-        Q["Current Task Query"] --> S["Smart Retriever"]
-        S --> |"1. Exact match"| EM["Same symbol + strategy type"]
-        S --> |"2. Transfer"| TL["Other symbols, same type"]  
-        S --> |"3. Universal"| UL["Cross-asset rules"]
-    end
-```
+## 💎 Trade Mining & Node Economy ($DEPTH)
 
-### The Three Memory Tiers
+DepthSight introduces the first Financial DePIN network with native **Proof-of-Trade Mining**, shifting the mathematical expected value (Positive EV) in favor of the algorithmic trader.
 
-1. **🔴 RULES (Permanent & Global):**
-   * **Purpose:** High-level, cross-asset trading principles extracted by the AI from repeated observations.
-   * **Trigger:** When the agent detects the same outcome patterns across 3 or more insights of the same strategy type, it runs an automated consolidation prompt: *"Analyze these 3 insights and formulate a single concrete rule"* to synthesize a new universal trading guideline.
-   * **Retention:** Lives permanently until explicitly deprecated or contradicted by 3+ consecutive negative outcomes.
+Instead of the exchange keeping 100% of your trading commissions, the DepthSight platform redirects exchange broker rebates into an aggressive, hyper-deflationary token economy:
 
-2. **🟡 INSIGHTS (90 Days, Asset-Specific):**
-   * **Purpose:** Medium-term structured summaries of backtest runs containing KPIs, strategy configurations, and reasoning notes.
-   * **Optimization:** The system does not pollute the LLM context window with raw JSON config strings. Large configs are hashed, and only the core KPIs and textual context are loaded, fetching the config separately via Gemini tool calls only if required.
+- **Proof-of-Trade Mining:** You mine `$DEPTH` tokens simply by trading. Your daily hashrate is tied to the real USDT commissions your node generates. Even if your algorithmic bot trades near break-even, the massive cashback from mining can turn it into a highly profitable strategy.
+- **Web3 Wallet Integration:** Users seamlessly link their existing non-custodial wallets (e.g., MetaMask, Phantom) to the platform. This decentralized identity allows traders to securely migrate their trading history, referrals, and reputation across any server in the DepthSight ecosystem without relying on traditional passwords.
+- **Node Competition & Commissions:** Anyone can deploy a DepthSight node and become a "mini-exchange". Node admins define their own reward-sharing rates, competing globally for users and trading volume.
+- **Hyper-Deflationary Flywheel:** 
+  - **70/30 AI Burn:** 70% of all tokens spent on AI Swarm Intelligence queries are permanently burned.
+  - **30% Fiat Buy-Back:** 30% of the platform's net fiat profit (USDT rebates) is used to continuously buy back and burn `$DEPTH` from the open market, establishing a mathematical price floor.
 
-3. **🟢 OBSERVATIONS / OPTIMIZATIONS (7 Days, Ephemeral):**
-   * **Purpose:** Short-term raw metrics and parameter adjustments from sequential optimization runs. Automatically garbage-collected after 7 days.
 
-### Taxonomy and Tagging
-Every memory block is automatically tagged by the LLM upon creation to enable precise indexing. The metadata classification includes:
-* **Symbol:** `BTCUSDT`, `ETHUSDT`, or `all_symbols`
-* **Strategy Type:** `breakout`, `mean_reversion`, `trend_following`, etc.
-* **Outcome:** `success` or `failure`
-* **Confidence & Validations:** Statistical strength of the rule based on how many times it was confirmed.
-
-### Smart Retrieval Pipeline
-
-When a user requests a new strategy (e.g., *"Create a breakout strategy for BTCUSDT on 1m"*), the backend does not just pull the last few memories. It performs a **prioritized cascading search**:
-
-```mermaid
-flowchart LR
-    Q["Query: Breakout on BTCUSDT 1m"] 
-    
-    Q --> P1["🔴 Step 1: Universal Rules<br/>tags ∩ {breakout, all_symbols}<br/>→ 'Volume > 2x for breakout'"]
-    Q --> P2["🟡 Step 2: Exact Insights<br/>tags ∩ {BTCUSDT, breakout}<br/>→ BTC-specific notes"]
-    Q --> P3["🟡 Step 3: Cross-Asset Transfer<br/>tags ∩ {breakout} NOT {BTCUSDT}<br/>→ ETH breakout insights (marked with ⚡)"]
-    
-    P1 --> B["Budget: 7 items max"]
-    P2 --> B
-    P3 --> B
-    
-    B --> F["Final Context for AI Assistant"]
-```
-
-1. **Universal Rules:** Up to 2 active rules relevant to the strategy type.
-2. **Exact Match Insights:** Up to 3 symbol + strategy-type matches.
-3. **Cross-Asset Knowledge Transfer:** If context budget allows, it pulls insights from other symbols of the same strategy type (marked with a `⚡` flag in the LLM prompt) to apply findings from, say, ETHUSDT to SOLUSDT.
-
-This ensures the AI is always building upon validated setups and completely avoids repeating known failure conditions.
-
-### 🤖 AI Autopilot & Self-Correcting Loop
-
-DepthSight features an autonomous, self-correcting **Autopilot Loop** that automates the trading system design process from natural language prompts (or chart screenshots) to production-ready configurations:
-
-```mermaid
-graph TD
-    User["Prompt or Chart Screenshot"] --> Resolve["1. Resolve Symbol & Intent (LLM)"]
-    Resolve --> MemorySearch["2. Retrieve Memories (Researcher Agent)"]
-    MemorySearch --> Advisor["3. Strategic Advice (Advisor Agent)"]
-    Advisor --> Generate["4. Generate Strategy JSON (Generator Agent)"]
-    Generate --> Critic["5. Risk Verification (Critic Agent)"]
-    Critic --> Backtest["6. Queue Celery Backtest"]
-    Backtest --> Evaluator["7. Evaluate KPIs & Learn (Tagger & Evaluator)"]
-    
-    Evaluator -->|PnL Decreased| Backtrack["Backtrack to Best Candidate + Mutate Params"]
-    Backtrack --> Advisor
-    
-    Evaluator -->|Profitable & Target Met| HITL["Human-in-the-Loop Review"]
-    HITL -->|Approve & Deploy| Live["Deploy to Exchange Executor"]
-```
-
-1. **Intelligent Intent & Asset Resolution (LLM-based):** 
-   Instead of using simple hardcoded lookup tables, the Autopilot uses an LLM to resolve ambiguous, multilingual slang or contextual references (e.g. *"биток"*, *"эфир"*, *"dogecoin strategy"*, or *"find something on solana"*) and standardizes them into valid tradeable asset pairs on the fly.
-   
-2. **Multimodal Vision Analysis:** 
-   Users can upload screenshots of price charts. The Autopilot uses multimodal models (like `qwen-vl-max` or `gemini-1.5-flash`) to identify geometric chart patterns (e.g. Ascending Triangles, Bull Flags, Volatility Squeezes), detect key resistance/support levels, and inject this spatial metadata into the initial strategy generation.
-   
-3. **Multi-Agent Optimization Loop:**
-   * **Memory Researcher Agent:** Queries the database using semantic tags to compile relevant past successes and failures.
-   * **Strategy Advisor Agent:** Compares performance metrics of the current candidate with historical results and provides step-by-step optimization notes.
-   * **Critic Agent (Risk Manager):** Checks generated configurations for logical flaws (like inverted SL/TP prices, contradictory filters, or zero foundation weights) before executing code.
-   
-4. **Backtracking & Automated Learning:**
-   If a new parameter variation leads to a lower PnL than the best candidate found during the session, the loop automatically **backtracks** to the best configuration, records a "failure lesson" to memory, and prompts the model to mutate parameters in a different direction (e.g. modifying lookback periods, adjusting stop loss multipliers, or testing alternative entry filters).
-   
-5. **Qwen Cloud & Alibaba Cloud Ready:**
-   The AI Co-Pilot features a production-ready integration with the **Qwen Cloud (DashScope API)**. It supports native JSON formatting, function calling (MCP tools), reasoning text extraction, and incorporates robust resilience mechanisms like exponential backoff retries for transient HTTP errors (e.g., rate limits, timeout, or server outages).
-   
-6. **Human-in-the-Loop Checkpoints:**
-   For enterprise safety, the final optimized strategy is sent back to the visual editor interface. The user retains complete control, reviewing the exact rules, indicators, and backtest performance, before manually approving the deploy-to-live command.
-
-## ⚔️ DepthSight vs. Alternatives
-
-How DepthSight compares to leading open-source frameworks and commercial trading platforms:
-
-| Criterion | DepthSight | Freqtrade (34k★) | Vibe-Trading (12.7k★) | AI Hedge Fund (49k★) | 3Commas | Veles |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Type** | Production SaaS-in-a-box | Trading framework | AI research workspace | Educational script | Commercial SaaS | Commercial DCA/Grid |
-| **License & Code** | ✅ Open-source (AGPL) | ✅ Open-source (GPL) | ✅ Open-source (MIT) | ✅ Open-source (MIT) | ❌ Proprietary | ❌ Proprietary |
-| **Hosting** | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted | ✅ Self-hosted | ❌ Cloud-only | ❌ Cloud-only |
-| **Target Market** | Crypto (Binance, Bybit via CCXT) | Crypto (CCXT) | Stocks (US markets) | Stocks (US markets) | Crypto (Global) | Crypto (Global) |
-| **Visual UI** | ✅ Drag-and-drop Node Graph | ⚠️ Basic WebUI | ❌ CLI only | ❌ CLI only | ⚠️ DCA Bot Cards | ⚠️ Pre-built Templates |
-| **AI Assistant** | ✅ Prompts + Chart Screenshots | ⚠️ FreqAI (ML only) | ✅ NL → Strategy | ✅ Multi-agent Analysis | ⚠️ DCA chatbot | ❌ None |
-| **Backtesting** | ✅ Dual (vector + candle/tick) | ✅ Powerful + Hyperopt | ✅ Included | ⚠️ Basic | ⚠️ Limited AI chat | ✅ Basic backtests |
-| **Multi-Tenant SaaS** | ✅ JWT + Redis Quotas | ❌ Single-user | ❌ Single-user | ❌ Single-user | ✅ Yes (Proprietary) | ✅ Yes (Proprietary) |
-| **Risk Management** | ✅ Dynamic (adapts per pair) | ⚠️ Standard SL/TP | ❌ None | ⚠️ Simple agent | ❌ Fixed SL/TP | ⚠️ Trailing / Breakeven |
-| **Weighted Entries** | ✅ Weighted conditions system | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
-| **Mobile Client** | ✅ PWA | ⚠️ Telegram bot | ❌ None | ❌ None | ✅ iOS / Android | ✅ iOS App |
 
 ## 🚀 One-Click Deploy
 

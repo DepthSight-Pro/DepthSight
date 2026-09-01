@@ -11,15 +11,20 @@ import {
 	Coins,
 	Copy,
 	Info,
+	Layers,
 	Loader2,
 	PartyPopper,
+	Sparkles,
 	Terminal,
+	Zap,
 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
 import {
 	Card,
 	CardContent,
@@ -451,7 +456,7 @@ const PaymentCheckout: React.FC<{
 	);
 };
 
-// --- Plan Card ---
+// --- Plan Card (Styled matching AdminPlansPage and NodeLeaderboard) ---
 const PlanCard: React.FC<{
 	plan: Plan;
 	isCurrent: boolean;
@@ -459,81 +464,185 @@ const PlanCard: React.FC<{
 	isUpgrading: boolean;
 	selectedPlan: string | null;
 }> = ({ plan, isCurrent, onSelect, isUpgrading, selectedPlan }) => {
-	const { t } = useTranslation("common");
+	const { t } = useTranslation(["common", "account"]);
 	const isActionPending = isUpgrading && selectedPlan === plan.key;
 	const isLifetime =
-		plan.billing_mode === "lifetime" && plan.period_label === "lifetime";
+		(plan.billing_mode === "lifetime" && plan.period_label === "lifetime") ||
+		Boolean(plan.billing?.lifetime?.enabled);
 	const isSoldOut = Boolean(
 		isLifetime && plan.slots && plan.slots.available <= 0,
 	);
-	const priceSuffix = isLifetime
-		? t("pricingModal.lifetimeSuffix", { defaultValue: "lifetime" })
-		: "/mo";
+	const priceSuffix =
+		isLifetime && plan.period_label === "lifetime"
+			? t("pricingModal.lifetimeSuffix", { defaultValue: "lifetime" })
+			: "/month";
+
+	const isPro = plan.key === "pro" || plan.key === "ultra" || plan.key === "vip";
+	const effectivePrice = plan.price_usd ?? 0;
 
 	return (
 		<Card
 			className={cn(
-				"flex flex-col",
-				isCurrent && "border-primary ring-2 ring-primary",
+				"relative flex flex-col justify-between border-2 transition-all duration-200 overflow-hidden bg-card/60 backdrop-blur-sm rounded-xl",
+				isCurrent
+					? "border-primary ring-2 ring-primary bg-primary/[0.04] shadow-md"
+					: isPro
+						? "border-primary/40 hover:border-primary/80 shadow-sm bg-primary/[0.02]"
+						: "border-border/60 hover:border-border shadow-sm",
+				!plan.active && "opacity-60",
 			)}
 		>
-			<CardHeader>
-				<CardTitle className="text-xl">{plan.name}</CardTitle>
-				<CardDescription className="text-3xl font-bold">
-					${plan.price_usd}
-					<span className="text-sm font-normal text-muted-foreground">
-						{" "}
-						{priceSuffix}
-					</span>
+			{/* Top Badges (Current Plan or Popular) */}
+			{isCurrent ? (
+				<div className="absolute top-0 right-0">
+					<div className="bg-primary text-primary-foreground text-[10px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-bl-md shadow-sm">
+						{t("pricingModal.currentPlan", { defaultValue: "Current Plan" })}
+					</div>
+				</div>
+			) : isPro ? (
+				<div className="absolute top-0 right-0 bg-primary/90 text-primary-foreground text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-bl-md flex items-center gap-1">
+					<Sparkles className="w-2.5 h-2.5" />
+					{t("pricingModal.popular", { defaultValue: "Popular" })}
+				</div>
+			) : null}
+
+			<CardHeader className="pb-3 pt-4">
+				<div className="flex justify-between items-start pr-12">
+					<div>
+						<Badge
+							variant={isPro || isCurrent ? "default" : "secondary"}
+							className="text-[10px] font-mono font-bold tracking-wider uppercase mb-1.5"
+						>
+							{plan.key.toUpperCase()}
+						</Badge>
+						<CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
+					</div>
+				</div>
+				<div className="mt-1 flex items-baseline justify-between">
+					<div className="text-left">
+						<span className="text-3xl font-black text-primary">${effectivePrice}</span>
+						<span className="text-xs text-muted-foreground ml-1 font-mono">{priceSuffix}</span>
+					</div>
+				</div>
+				<CardDescription className="text-xs text-muted-foreground line-clamp-2 mt-1 min-h-[2.25rem]">
+					{plan.description || "Subscription tier"}
 				</CardDescription>
-				{isLifetime && plan.slots && (
-					<div
-						className={cn(
-							"inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold",
-							isSoldOut
-								? "bg-destructive/10 text-destructive"
-								: "bg-green-500/10 text-green-600",
-						)}
-					>
-						{isSoldOut
-							? t("pricingModal.soldOut", { defaultValue: "Sold out" })
-							: t("pricingModal.slotsLeft", {
-									defaultValue: "{{available}} / {{limit}} seats left",
-									available: plan.slots.available,
-									limit: plan.slots.limit,
-								})}
+			</CardHeader>
+
+			<CardContent className="space-y-3.5 flex-1 pb-4">
+				{/* Badges / Highlights */}
+				<div className="flex flex-wrap gap-1.5">
+					{isLifetime && (plan.billing?.lifetime?.enabled || plan.slots) && (
+						<Badge
+							variant="outline"
+							className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px] font-mono flex items-center gap-1"
+						>
+							<Zap className="w-3 h-3 text-amber-400" />
+							Lifetime: ${plan.billing?.lifetime?.price_usd ?? plan.price_usd}
+							{plan.slots?.limit ? ` (${plan.slots.available} / ${plan.slots.limit} slots)` : plan.billing?.lifetime?.slot_limit ? ` (${plan.billing.lifetime.slot_limit} slots)` : ""}
+						</Badge>
+					)}
+					{plan.limits?.allow_real_trading ? (
+						<Badge
+							variant="outline"
+							className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px] font-mono flex items-center gap-1"
+						>
+							<Check className="w-3 h-3" />
+							Live Bots: {plan.limits?.max_live_strategies ?? 1}
+						</Badge>
+					) : (
+						<Badge
+							variant="outline"
+							className="bg-zinc-500/10 text-zinc-400 border-zinc-500/20 text-[10px] font-mono"
+						>
+							Simulation Only
+						</Badge>
+					)}
+					{plan.limits?.allow_intracandle_triggers && (
+						<Badge
+							variant="outline"
+							className="bg-purple-500/10 text-purple-400 border-purple-500/30 text-[10px] font-mono"
+						>
+							Intracandle
+						</Badge>
+					)}
+				</div>
+
+				{/* Quotas & Operational Limits Box (styled identically to Admin & Hub) */}
+				<div className="text-xs bg-muted/40 border border-border/30 p-2.5 rounded-md space-y-1.5 font-mono">
+					<div className="flex justify-between">
+						<span className="text-muted-foreground">Backtests / day:</span>
+						<span className="font-semibold text-foreground">
+							{plan.quotas?.run_vector_backtest_per_day === -1
+								? "Unlimited"
+								: plan.quotas?.run_vector_backtest_per_day ?? (plan.key === "free" ? 20 : plan.key === "standard" ? 50 : "Unlimited")}
+						</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-muted-foreground">AI queries / day:</span>
+						<span className="font-semibold text-foreground">
+							{plan.quotas?.use_ai_assistant_per_day === -1
+								? "Unlimited"
+								: plan.quotas?.use_ai_assistant_per_day ?? (plan.key === "free" ? 10 : plan.key === "standard" ? 35 : "Unlimited")}
+						</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-muted-foreground">Live strategies:</span>
+						<span className="font-semibold text-foreground">
+							{plan.limits?.allow_real_trading
+								? `${plan.limits?.max_live_strategies ?? (plan.key === "standard" ? 10 : 30)} active bots`
+								: "Sim only"}
+						</span>
+					</div>
+					<div className="flex justify-between">
+						<span className="text-muted-foreground">History depth:</span>
+						<span className="font-semibold text-foreground">
+							{plan.limits?.max_backtest_duration_days === -1
+								? "Full history"
+								: `${plan.limits?.max_backtest_duration_days ?? (plan.key === "free" ? 90 : 365)} days`}
+						</span>
+					</div>
+				</div>
+
+				{/* Features Checklist */}
+				{(plan.features || []).length > 0 && (
+					<div className="space-y-1.5">
+						<span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+							Plan Features ({plan.features.length}):
+						</span>
+						<ul className="text-xs space-y-1.5">
+							{plan.features.map((feature, index) => {
+								const lower = feature.toLowerCase();
+								const isUnlimited = lower.includes("unlimited");
+								const isLimitation =
+									!isUnlimited &&
+									(lower.includes("limited") ||
+										lower.includes("limit") ||
+										lower.includes("days") ||
+										lower.includes("restricted"));
+								const Icon = isLimitation ? Clock : Check;
+								const iconColor = isUnlimited
+									? "text-purple-400"
+									: isLimitation
+										? "text-amber-400"
+										: "text-emerald-500";
+
+								return (
+									<li key={index} className="flex items-start gap-1.5 text-muted-foreground">
+										<Icon className={cn("h-3.5 w-3.5 mt-0.5 flex-shrink-0", iconColor)} />
+										<span className="text-foreground/90">{feature}</span>
+									</li>
+								);
+							})}
+						</ul>
 					</div>
 				)}
-			</CardHeader>
-			<CardContent className="flex-1 space-y-3">
-				<p className="text-sm text-muted-foreground h-16">{plan.description}</p>
-				<ul className="space-y-2">
-					{plan.features.map((feature, index) => {
-						const lowerFeature = feature.toLowerCase();
-						const isLimitation =
-							lowerFeature.includes("limited") ||
-							lowerFeature.includes("limited") ||
-							lowerFeature.includes("(30 days)") ||
-							lowerFeature.includes("(30 days)");
-						const Icon = isLimitation ? Clock : CheckCircle2;
-						const iconColor = isLimitation
-							? "text-yellow-500"
-							: "text-green-500";
-
-						return (
-							<li key={index} className="flex items-start">
-								<Icon
-									className={cn("h-5 w-5 mr-2 mt-0.5 flex-shrink-0", iconColor)}
-								/>
-								<span className="text-sm">{feature}</span>
-							</li>
-						);
-					})}
-				</ul>
 			</CardContent>
-			<CardFooter>
+
+			<CardFooter className="pt-2 pb-4">
 				<Button
-					className="w-full"
+					className="w-full font-bold shadow-sm"
+					variant={isCurrent ? "outline" : "default"}
 					onClick={() => onSelect(plan.key)}
 					disabled={
 						isCurrent || isUpgrading || plan.key === "free" || isSoldOut
@@ -541,19 +650,20 @@ const PlanCard: React.FC<{
 				>
 					{isActionPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
 					{isCurrent
-						? t("pricingModal.currentPlan")
+						? t("pricingModal.currentPlan", { defaultValue: "Current Plan" })
 						: plan.key === "free"
-							? t("pricingModal.downgradeNotAvailable")
+							? t("pricingModal.downgradeNotAvailable", { defaultValue: "Free Plan" })
 							: isSoldOut
 								? t("pricingModal.soldOut", { defaultValue: "Sold out" })
 								: isActionPending
-									? t("pricingModal.upgrading")
-									: t("pricingModal.selectPlan")}
+									? t("pricingModal.upgrading", { defaultValue: "Processing..." })
+									: t("pricingModal.selectPlan", { defaultValue: "Select Plan" })}
 				</Button>
 			</CardFooter>
 		</Card>
 	);
 };
+
 
 export const PricingModal: React.FC<PricingModalProps> = ({
 	isOpen,
@@ -585,6 +695,13 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 		}
 	}
 
+	// Always refresh plans from server when modal is opened
+	useEffect(() => {
+		if (isOpen) {
+			queryClient.invalidateQueries({ queryKey: ["plans"] });
+		}
+	}, [isOpen, queryClient]);
+
 	// Reset payment data when modal closes
 	useEffect(() => {
 		if (!isOpen) {
@@ -613,22 +730,28 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 			? paymentData
 			: null;
 	const showCheckout = Boolean(checkoutData);
+	const activePlans = plansData?.filter((plan) => plan.active) ?? [];
 	const lifetimePlans =
-		plansData?.filter(
+		activePlans.filter(
 			(plan) =>
-				plan.active &&
 				plan.billing_mode === "lifetime" &&
 				plan.period_label === "lifetime",
-		) ?? [];
+		);
 	const isLifetimeMode = lifetimePlans.length > 0;
 	const totalLifetimeSeats = lifetimePlans.reduce(
 		(sum, plan) => sum + (plan.slots?.limit ?? 0),
 		0,
 	);
 
+	const dialogMaxWidthClass = showCheckout
+		? "max-w-lg"
+		: activePlans.length > 3
+			? "max-w-5xl"
+			: "max-w-4xl";
+
 	return (
 		<Dialog open={isOpen} onOpenChange={onClose}>
-			<DialogContent className={cn("max-w-4xl", showCheckout && "max-w-lg")}>
+			<DialogContent className={cn(dialogMaxWidthClass, "transition-all")}>
 				<DialogHeader>
 					<DialogTitle className="text-3xl font-bold">
 						{showCheckout ? "" : t("pricingModal.title")}
@@ -703,24 +826,31 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 									</div>
 								)}
 
-								<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-									{plansData
-										.filter((plan) => plan.active)
-										.map((plan) => (
-											<PlanCard
-												key={plan.key}
-												plan={plan}
-												isCurrent={currentPlan === plan.key}
-												onSelect={handleSelectPlan}
-												isUpgrading={isCreatingPayment}
-												selectedPlan={selectedPlan}
-											/>
-										))}
+								<div
+									className={cn(
+										"grid gap-6",
+										activePlans.length === 1 && "grid-cols-1 max-w-sm mx-auto",
+										activePlans.length === 2 && "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto",
+										activePlans.length === 3 && "grid-cols-1 md:grid-cols-3",
+										activePlans.length >= 4 && "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+									)}
+								>
+									{activePlans.map((plan) => (
+										<PlanCard
+											key={plan.key}
+											plan={plan}
+											isCurrent={currentPlan === plan.key}
+											onSelect={handleSelectPlan}
+											isUpgrading={isCreatingPayment}
+											selectedPlan={selectedPlan}
+										/>
+									))}
 								</div>
 							</div>
 						)}
 					</div>
 				)}
+
 
 				{!showCheckout && (
 					<div className="text-center text-xs text-muted-foreground mt-4">

@@ -359,4 +359,168 @@ class TestUserPlans:
         payload["api_key_id"] = binance_key.id
         response = await free_user_client.post("/api/v1/strategies", json=payload)
         assert response.status_code == 403
-        assert "only allowed using Bybit API keys" in response.json()["error"]
+        assert (
+            "only allowed using Bybit or WEEX or OKX API keys"
+            in response.json()["error"]
+        )
+
+    async def test_free_user_weex_trading(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mock_redis_client,
+        mock_celery_tasks,
+    ):
+        """Verifies that a free plan user can trade on WEEX."""
+        from api import models
+
+        # 1. Add a Weex API key for the free user
+        weex_key = models.ApiKey(
+            user_id=free_user.id,
+            name="Weex Test Key",
+            exchange="weex",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="weex...1234",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(weex_key)
+        await db_session.commit()
+        await db_session.refresh(weex_key)
+
+        # 2. Try starting strategy with the Weex key (should return 202)
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": weex_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202, (
+            f"Failed starting strategy with WEEX key: {response.text}"
+        )
+
+    async def test_free_user_okx_trading(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mock_redis_client,
+        mock_celery_tasks,
+    ):
+        """Verifies that a free plan user can trade on OKX."""
+        from api import models
+
+        # 1. Add an OKX API key for the free user
+        okx_key = models.ApiKey(
+            user_id=free_user.id,
+            name="OKX Test Key",
+            exchange="okx",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="okx...1234",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(okx_key)
+        await db_session.commit()
+        await db_session.refresh(okx_key)
+
+        # 2. Try starting strategy with the OKX key (should return 202)
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": okx_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202, (
+            f"Failed starting strategy with OKX key: {response.text}"
+        )
+
+    async def test_free_user_exchange_limits(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mocker,
+    ):
+        """Verifies 5-bot limit for Bybit, Weex, and OKX separately on free tier."""
+        from api import models
+
+        # Create 5 running Bybit strategies mock
+        running_bybit = [
+            {
+                "id": f"bybit-bot-{i}",
+                "user_id": free_user.id,
+                "api_key_id": 10,
+                "mode": "live",
+            }
+            for i in range(5)
+        ]
+
+        # We need mock load_user_running_strategies to return these
+        mocker.patch(
+            "api.depthsight_api.load_user_running_strategies",
+            return_value=running_bybit,
+        )
+
+        bybit_key = models.ApiKey(
+            id=10,
+            user_id=free_user.id,
+            name="Bybit Key",
+            exchange="bybit",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="bybit...1234",
+            status="valid",
+            is_active=True,
+        )
+        weex_key = models.ApiKey(
+            id=20,
+            user_id=free_user.id,
+            name="Weex Key",
+            exchange="weex",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="weex...1234",
+            status="valid",
+            is_active=True,
+        )
+        okx_key = models.ApiKey(
+            id=30,
+            user_id=free_user.id,
+            name="OKX Key",
+            exchange="okx",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="okx...1234",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(bybit_key)
+        db_session.add(weex_key)
+        db_session.add(okx_key)
+        await db_session.commit()
+
+        # Start 6th Bybit strategy (should return 429)
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": bybit_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 429
+        assert (
+            "limit of concurrently running live strategies" in response.json()["detail"]
+        )
+
+        # Start 1st Weex strategy (should return 202, since Weex has 0 running)
+        payload["api_key_id"] = weex_key.id
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202
+
+        # Start 1st OKX strategy (should return 202, since OKX has 0 running)
+        payload["api_key_id"] = okx_key.id
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202

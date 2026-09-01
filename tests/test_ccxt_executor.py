@@ -1075,3 +1075,283 @@ async def test_get_open_algo_orders_uses_binance_futures_algo_endpoint():
             "side": "SELL",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_weex_executor_bypasses_sandbox_mode():
+    executor = CcxtExecutor(
+        "weex",
+        "key-value",
+        "secret-value",
+        market_type="futures_usdtm",
+        sandbox=True,
+    )
+    try:
+        assert executor.sandbox is True
+        # Verify it didn't call set_sandbox_mode(True) (which would crash since CCXT lacks weex sandbox urls)
+        assert executor._exchange.urls["api"]["public"] == "https://api-spot.weex.com"
+    finally:
+        await executor.close()
+
+
+def test_weex_to_legacy_symbol():
+    executor = make_executor("weex")
+    assert executor._to_legacy_symbol("BTC/USDT:USDT") == "BTCUSDT"
+    assert executor._normalize_symbol("BTCUSDT") == "BTC/USDT:USDT"
+
+
+@pytest.mark.asyncio
+async def test_weex_spot_get_account_balance():
+    executor = make_executor("weex", market_type="spot")
+    executor._exchange.fetch_balance = AsyncMock(
+        return_value={
+            "free": {"BTC": 0.1, "USDT": 1000},
+            "used": {"BTC": 0.0, "USDT": 200},
+            "total": {"BTC": 0.1, "USDT": 1200},
+        }
+    )
+
+    balances = await executor.get_account_balance()
+    assert balances["BTC"]["free"] == "0.1"
+    assert balances["USDT"]["free"] == "1000.0"
+    executor._exchange.fetch_balance.assert_called_once_with({"type": "spot"})
+
+
+@pytest.mark.asyncio
+async def test_weex_futures_get_account_balance():
+    executor = make_executor("weex", market_type="futures_usdtm")
+    executor._exchange.fetch_balance = AsyncMock(
+        return_value={
+            "free": {"USDT": 1000.0},
+            "used": {"USDT": 200.0},
+            "total": {"USDT": 1200.0},
+        }
+    )
+
+    balances = await executor.get_account_balance()
+    assert balances["USDT"]["free"] == "1000.0"
+    executor._exchange.fetch_balance.assert_called_once_with({"type": "swap"})
+
+
+@pytest.mark.asyncio
+async def test_weex_broker_id_injection(monkeypatch):
+    from bot_module import config
+
+    monkeypatch.setattr(config, "WEEX_BROKER_ID", "WEEX111159")
+
+    executor = CcxtExecutor(
+        "weex",
+        "key-value",
+        "secret-value",
+        market_type="futures_usdtm",
+        sandbox=False,
+    )
+    try:
+        # 1. Verify broker ID is injected into options with "b-" prefix
+        assert executor._exchange.options["partner"] == "b-WEEX111159"
+
+        # 2. Verify placing order includes the partner ID in params passed to CCXT
+        executor._exchange.create_order = AsyncMock(return_value={"id": "order-123"})
+        executor._exchange.amount_to_precision = lambda symbol, amount: str(amount)
+        executor._exchange.price_to_precision = lambda symbol, price: str(price)
+
+        await executor.place_order(
+            symbol="BTCUSDT",
+            side="buy",
+            order_type="market",
+            quantity=0.1,
+        )
+
+        executor._exchange.create_order.assert_called_once()
+        called_kwargs = executor._exchange.create_order.call_args.kwargs
+        assert called_kwargs["params"]["partner"] == "b-WEEX111159"
+
+        # 3. Verify placing order with custom client order ID gets formatted
+        executor._exchange.create_order.reset_mock()
+        await executor.place_order(
+            symbol="BTCUSDT",
+            side="buy",
+            order_type="market",
+            quantity=0.1,
+            newClientOrderId="x-scalein-12345",
+        )
+        called_kwargs_custom = executor._exchange.create_order.call_args.kwargs
+        assert (
+            called_kwargs_custom["params"]["clientOrderId"]
+            == "b-WEEX111159-x-scalein-12345"
+        )
+
+    finally:
+        await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_weex_password_resolution(monkeypatch):
+    # Test passing password explicitly via kwargs
+    executor = CcxtExecutor(
+        "weex",
+        "key-value",
+        "secret-value",
+        password="my-secret-passphrase",
+        market_type="futures_usdtm",
+    )
+    try:
+        assert executor._exchange.password == "my-secret-passphrase"
+    finally:
+        await executor.close()
+
+    # Test resolving password from env variable
+    monkeypatch.setenv("WEEX_PASSWORD", "env-secret-passphrase")
+    executor2 = CcxtExecutor(
+        "weex",
+        "key-value",
+        "secret-value",
+        market_type="futures_usdtm",
+    )
+    try:
+        assert executor2._exchange.password == "env-secret-passphrase"
+    finally:
+        await executor2.close()
+
+
+@pytest.mark.asyncio
+async def test_okx_broker_id_injection(monkeypatch):
+    from bot_module import config
+
+    monkeypatch.setattr(config, "OKX_BROKER_ID", "bb39c7c267cfBCDE")
+
+    executor = CcxtExecutor(
+        "okx",
+        "key-value",
+        "secret-value",
+        password="my-passphrase",
+        market_type="futures_usdtm",
+        sandbox=False,
+    )
+    try:
+        # 1. Verify broker ID is injected into options
+        assert executor._exchange.options["brokerId"] == "bb39c7c267cfBCDE"
+        assert executor._exchange.options["tag"] == "bb39c7c267cfBCDE"
+
+        # 2. Verify placing order includes the tag in params passed to CCXT
+        executor._exchange.create_order = AsyncMock(return_value={"id": "order-123"})
+        executor._exchange.amount_to_precision = lambda symbol, amount: str(amount)
+        executor._exchange.price_to_precision = lambda symbol, price: str(price)
+
+        await executor.place_order(
+            symbol="BTCUSDT",
+            side="buy",
+            order_type="market",
+            quantity=0.1,
+        )
+
+        executor._exchange.create_order.assert_called_once()
+        called_kwargs = executor._exchange.create_order.call_args.kwargs
+        assert called_kwargs["params"]["tag"] == "bb39c7c267cfBCDE"
+
+        # 3. Verify placing order with custom client order ID gets formatted
+        executor._exchange.create_order.reset_mock()
+        await executor.place_order(
+            symbol="BTCUSDT",
+            side="buy",
+            order_type="market",
+            quantity=0.1,
+            newClientOrderId="scalein12345",
+        )
+        called_kwargs_custom = executor._exchange.create_order.call_args.kwargs
+        assert (
+            called_kwargs_custom["params"]["clientOrderId"]
+            == "bb39c7c267cfBCDEscalein12345"
+        )
+        assert called_kwargs_custom["params"]["tag"] == "bb39c7c267cfBCDE"
+
+    finally:
+        await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_okx_pos_side_handling_net_and_hedge_mode():
+    executor = CcxtExecutor(
+        "okx",
+        "key-value",
+        "secret-value",
+        market_type="futures_usdtm",
+        sandbox=False,
+    )
+    try:
+        executor._exchange.create_order = AsyncMock(return_value={"id": "order-123"})
+        executor._exchange.amount_to_precision = lambda symbol, amount: str(amount)
+        executor._exchange.price_to_precision = lambda symbol, price: str(price)
+
+        # Case 1: Net mode (dualSidePosition = False). posSide & reduceOnly should NOT be in params.
+        executor._okx_dual_side = False
+        await executor.place_order(
+            symbol="XRPUSDT",
+            side="buy",
+            order_type="market",
+            quantity=14.59,
+            reduceOnly=True,
+        )
+        call_params = executor._exchange.create_order.call_args.kwargs["params"]
+        assert "posSide" not in call_params
+        assert "reduceOnly" not in call_params
+
+        # Case 2: Long/Short mode (dualSidePosition = True). posSide SHOULD be 'long' for buy.
+        executor._exchange.create_order.reset_mock()
+        executor._okx_dual_side = True
+        await executor.place_order(
+            symbol="XRPUSDT",
+            side="buy",
+            order_type="market",
+            quantity=14.59,
+        )
+        call_params = executor._exchange.create_order.call_args.kwargs["params"]
+        assert call_params["posSide"] == "long"
+
+    finally:
+        await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_okx_contract_size_conversion():
+    executor = CcxtExecutor(
+        "okx",
+        "key-value",
+        "secret-value",
+        market_type="futures_usdtm",
+        sandbox=False,
+    )
+    try:
+        executor._exchange.markets = {
+            "XRP/USDT:USDT": {
+                "id": "XRP-USDT-SWAP",
+                "symbol": "XRP/USDT:USDT",
+                "contract": True,
+                "contractSize": 100.0,
+                "precision": {"amount": 0.01, "price": 0.0001},
+            }
+        }
+        executor._exchange.create_order = AsyncMock(
+            return_value={
+                "id": "order-123",
+                "amount": 0.15,
+                "filled": 0.15,
+                "symbol": "XRP/USDT:USDT",
+            }
+        )
+        executor._exchange.amount_to_precision = lambda symbol, amount: str(amount)
+        executor._exchange.price_to_precision = lambda symbol, price: str(price)
+
+        # 14.59 XRP / 100 XRP contract size = 0.1459 contracts -> rounded to 0.01 precision = 0.15 contracts
+        res = await executor.place_order(
+            symbol="XRPUSDT",
+            side="buy",
+            order_type="market",
+            quantity=14.59,
+        )
+        called_amount = executor._exchange.create_order.call_args.kwargs["amount"]
+        assert called_amount == 0.15
+        # Return order mapping converts 0.15 contracts back to 15.0 XRP for controller
+        assert float(res["origQty"]) == 15.0
+    finally:
+        await executor.close()

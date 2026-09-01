@@ -21,6 +21,8 @@
 	"startTooltip": "Start",
 	"stopTooltip": "Stop",
 	"deleteTooltip": "Delete",
+	"addCopyTooltip": "Start copy on another coin",
+	"copiesCount": "{{count}} copies",
 
 	"filters": {
 		"all": "All",

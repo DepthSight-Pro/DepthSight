@@ -2,6 +2,7 @@
 # bot_module/controller.py
 
 import asyncio
+import os
 import logging
 import time
 import uuid
@@ -16,6 +17,9 @@ from pathlib import Path
 import pandas_ta as ta
 import redis.asyncio as redis
 import copy
+import httpx
+import hashlib
+import hmac
 
 # Importing module components
 from bot_module import config
@@ -291,6 +295,7 @@ class LivePosition(BasePosition):
     total_commission: Optional[float] = None
     entry_commission: float = 0.0  # Total entry commission (including DCA entries)
     sl_placement_initiated: bool = False
+    sl_replacement_in_progress: bool = False  # Prevents concurrent SL replacements
     is_sl_algo_order: bool = False  # True if SL is placed via Algo Order API
     ptp_placement_initiated_flags: Dict[int, bool] = field(default_factory=dict)
     exit_orders_scheduled_by_process_signal: bool = False
@@ -1797,6 +1802,77 @@ class TradingController:
         await pubsub.unsubscribe(hft_events_channel)
         logger.info("HFT event listener stopped.")
 
+    def _source_config_id(self, config_dict: dict) -> Optional[str]:
+        """Returns the source strategy config id of a running instance payload."""
+        return config_dict.get("config_id") or config_dict.get("id")
+
+    def _instance_covers_symbol(self, config_dict: dict, symbol: Optional[str]) -> bool:
+        """True if the instance's symbol coverage includes the given symbol."""
+        if not symbol:
+            return False
+        symbol_upper = str(symbol).upper()
+        if (config_dict.get("symbol_selection_mode") or "STATIC").upper() == "DYNAMIC":
+            return True
+        return any(
+            str(s).upper() == symbol_upper
+            for s in config_dict.get("symbols") or []
+            if str(s)
+        )
+
+    async def _find_running_instance_by_symbol(
+        self,
+        symbol: Optional[str],
+        source_config_id: Optional[str] = None,
+    ) -> Optional[Tuple[str, BaseStrategy, dict]]:
+        """
+        Finds the running instance covering `symbol` (optionally restricted to a
+        source config id). Returns (instance_key, instance, config_dict) or None.
+        """
+        if not symbol:
+            return None
+        symbol_upper = str(symbol).upper()
+        async with self.instances_lock:
+            for key, (instance, config_dict) in self.running_strategy_instances.items():
+                if (
+                    source_config_id
+                    and self._source_config_id(config_dict) != source_config_id
+                ):
+                    continue
+                if self._instance_covers_symbol(config_dict, symbol_upper):
+                    return (key, instance, config_dict)
+        return None
+
+    def _has_overlapping_running_instance(self, payload: dict) -> bool:
+        """
+        Checks whether an instance of the same source config already covers any of
+        the requested symbols. DYNAMIC instances cover everything and therefore
+        conflict with any other launch of the same config on this controller.
+        """
+        source_config_id = payload.get("config_id")
+        requested_mode = (payload.get("symbol_selection_mode") or "STATIC").upper()
+        requested_symbols = {
+            str(s).strip().upper()
+            for s in payload.get("symbols") or []
+            if str(s).strip()
+        }
+
+        for existing_key, (_inst, cfg) in self.running_strategy_instances.items():
+            if existing_key == payload.get("id"):
+                continue
+            if self._source_config_id(cfg) != source_config_id:
+                continue
+            entry_mode = (cfg.get("symbol_selection_mode") or "STATIC").upper()
+            if requested_mode == "DYNAMIC" or entry_mode == "DYNAMIC":
+                return True
+            entry_symbols = {
+                str(s).strip().upper()
+                for s in cfg.get("symbols") or []
+                if str(s).strip()
+            }
+            if requested_symbols & entry_symbols:
+                return True
+        return False
+
     async def _handle_start_strategy_command(self, payload: dict):
         """Processes the command to start a strategy instance."""
         if logger.isEnabledFor(logging.DEBUG):
@@ -1888,8 +1964,13 @@ class TradingController:
         log_prefix = f"[StartCmd:{strategy_name}:{config_id[:8]}]"
 
         async with self.instances_lock:
-            if config_id in self.running_strategy_instances:
-                logger.warning(f"{log_prefix} Strategy instance is already running.")
+            # A config may run several independent instances on disjoint symbol
+            # sets. Reject only if an instance of the same config already covers
+            # any of the requested symbols.
+            if self._has_overlapping_running_instance(payload):
+                logger.warning(
+                    f"{log_prefix} An instance of this config already covers the requested symbol(s). Skipping duplicate launch."
+                )
                 return
 
             params_for_instance = config_data.copy()
@@ -1920,6 +2001,7 @@ class TradingController:
 
         # After adding a strategy, the list of tracked symbols needs to be updated
         await self._update_monitored_symbols()
+        await self._save_runtime_state()
 
     async def _handle_tv_webhook_signal_command(self, payload: dict):
         command_user_id = payload.get("user_id")
@@ -1953,9 +2035,13 @@ class TradingController:
             return
 
         async with self.instances_lock:
-            running_entry = self.running_strategy_instances.get(config_id)
+            running_for_config = [
+                (key, inst, cfg)
+                for key, (inst, cfg) in self.running_strategy_instances.items()
+                if self._source_config_id(cfg) == config_id
+            ]
 
-        if not running_entry:
+        if not running_for_config:
             logger.info(
                 f"[TVWebhook:{config_id[:8]}] Strategy instance is not running on this controller."
             )
@@ -1971,7 +2057,20 @@ class TradingController:
             )
             return
 
-        instance, config_dict = running_entry
+        # Prefer the instance covering the incoming symbol (a config may run
+        # several copies on different coins); otherwise fall back to the first.
+        incoming_symbol_raw = payload.get("normalized_symbol") or payload.get("symbol")
+        running_entry = running_for_config[0]
+        if incoming_symbol_raw:
+            incoming_sym_norm = "".join(
+                ch for ch in str(incoming_symbol_raw).upper() if ch.isalnum()
+            )
+            for key, inst, cfg in running_for_config:
+                if self._instance_covers_symbol(cfg, incoming_sym_norm):
+                    running_entry = (key, inst, cfg)
+                    break
+
+        _instance_key, instance, config_dict = running_entry
         config_data = config_dict.get("config_data", {}) or {}
         market_type = self._market_type_for_strategy_config(config_dict)
 
@@ -2273,6 +2372,7 @@ class TradingController:
 
         # After deletion, we need to re-check if we still need data for this symbol
         await self._check_and_update_symbols()
+        await self._save_runtime_state()
 
     async def _check_scale_in_conditions(
         self, position: LivePosition, pair_info: Dict[str, Any]
@@ -2926,6 +3026,92 @@ class TradingController:
                         self._active_position_set(adopted_pos)
                     self._monitored_symbols.add(symbol)
 
+            # 6. Auto-start strategies for active positions if not already running
+            async with self._positions_dict_lock:
+                open_positions = [
+                    pos
+                    for pos in self._active_positions.values()
+                    if pos.status == "OPEN" and getattr(pos, "config_id", None)
+                ]
+
+            for pos in open_positions:
+                config_id = pos.config_id
+                covered = False
+                async with self.instances_lock:
+                    for _key, (
+                        _inst,
+                        cfg_dict,
+                    ) in self.running_strategy_instances.items():
+                        if self._source_config_id(cfg_dict) == str(
+                            config_id
+                        ) or _key == str(config_id):
+                            covered = True
+                            break
+                if not covered:
+                    logger.info(
+                        f"{log_prefix} Auto-starting strategy for open position on {pos.symbol} (config_id={config_id})..."
+                    )
+                    try:
+                        async for db in self.get_db_session():
+                            strat_config = await crud.get_strategy_config(
+                                db, self.user_id, str(config_id)
+                            )
+                            if not strat_config:
+                                strat_config = await crud.get_strategy_config_by_id(
+                                    db, str(config_id)
+                                )
+                            if strat_config:
+                                config_data_dict = (
+                                    copy.deepcopy(strat_config.config_data)
+                                    if isinstance(strat_config.config_data, dict)
+                                    else {}
+                                )
+                                mode = getattr(pos, "mode", "live") or "live"
+                                instance_id = (
+                                    f"{strat_config.id}:{uuid.uuid4().hex[:8]}"
+                                )
+                                strat_symbols = (
+                                    list(strat_config.symbols)
+                                    if isinstance(strat_config.symbols, list)
+                                    else [pos.symbol]
+                                )
+                                if (
+                                    pos.symbol not in strat_symbols
+                                    and strat_config.symbol_selection_mode == "STATIC"
+                                ):
+                                    strat_symbols.append(pos.symbol)
+                                launch_payload = {
+                                    "user_id": self.user_id,
+                                    "id": instance_id,
+                                    "config_id": strat_config.id,
+                                    "mode": mode,
+                                    "symbol_selection_mode": strat_config.symbol_selection_mode
+                                    or "DYNAMIC",
+                                    "symbols": strat_symbols,
+                                    "config_data": config_data_dict,
+                                    "name": strat_config.name,
+                                    "description": strat_config.description,
+                                    "use_ml_confirmation": strat_config.use_ml_confirmation,
+                                    "foundation_weights": strat_config.foundation_weights,
+                                    "api_key_id": self.api_key_id,
+                                }
+                                await self._handle_start_strategy_command(
+                                    launch_payload
+                                )
+                                logger.info(
+                                    f"{log_prefix} Successfully auto-started strategy '{strat_config.name}' (id={instance_id}) for open position {pos.symbol}."
+                                )
+                            else:
+                                logger.warning(
+                                    f"{log_prefix} Could not find StrategyConfig for config_id={config_id} in DB. Open position will remain without active strategy."
+                                )
+                            break
+                    except Exception as e_autostart:
+                        logger.error(
+                            f"{log_prefix} Failed to auto-start strategy for config_id={config_id}: {e_autostart}",
+                            exc_info=True,
+                        )
+
             # Updating subscriptions after reconcile
             await self._update_monitored_symbols()
             logger.info(f"{log_prefix} Reconciliation complete.")
@@ -2952,8 +3138,18 @@ class TradingController:
                     k: v.to_dict() for k, v in self._active_positions.items()
                 }
 
+            async with self.instances_lock:
+                running_strategies_payloads = [
+                    payload
+                    for _key, (
+                        _inst,
+                        payload,
+                    ) in self.running_strategy_instances.items()
+                ]
+
             state_snapshot = {
                 "active_positions": serialized_positions,
+                "running_strategies": running_strategies_payloads,
                 "monitored_symbols": list(self._monitored_symbols),
                 "closing_managed_symbols": list(self._closing_managed_symbols),
                 "last_known_symbols": list(self._last_known_symbols_from_consumer),
@@ -3106,6 +3302,21 @@ class TradingController:
                     f"{log_prefix} Successfully restored {len(validated_positions)} positions."
                 )
 
+            # Restore running strategies from saved snapshot
+            saved_strategies = state_snapshot.get("running_strategies", [])
+            if saved_strategies:
+                logger.info(
+                    f"{log_prefix} Found {len(saved_strategies)} running strategies in saved state. Restoring..."
+                )
+                for strat_payload in saved_strategies:
+                    try:
+                        await self._handle_start_strategy_command(strat_payload)
+                    except Exception as strat_err:
+                        logger.error(
+                            f"{log_prefix} Failed to restore strategy from payload: {strat_err}",
+                            exc_info=True,
+                        )
+
         except Exception as e:
             logger.error(
                 f"{log_prefix} Failed to load runtime state: {e}", exc_info=True
@@ -3257,18 +3468,37 @@ class TradingController:
                 symbols_str = ", ".join(symbols_list) if symbols_list else "None"
 
             # Strategy PnL = Realized (from RM) + Unrealized (from current positions)
-            realized_pnl = self.rm.get_pnl_for_strategy(
-                symbol=None, strategy_name=instance.NAME
-            )
+            # Realized PnL is tracked per (symbol, strategy_name); sum over the
+            # instance's covered symbols so copies on different coins don't share PnL.
+            realized_pnl = 0.0
+            if (
+                config_dict.get("symbol_selection_mode") or "STATIC"
+            ).upper() == "STATIC":
+                perf_symbols = config_dict.get("symbols", [])
+            else:
+                perf_symbols = []
+            if perf_symbols:
+                for perf_symbol in perf_symbols:
+                    realized_pnl += self.rm.get_pnl_for_strategy(
+                        symbol=perf_symbol, strategy_name=instance.NAME
+                    )
+            else:
+                realized_pnl = self.rm.get_pnl_for_strategy(
+                    symbol=None, strategy_name=instance.NAME
+                )
 
             unrealized_pnl_strat = 0.0
             instance_open_positions = 0
+            source_config_id = self._source_config_id(config_dict)
             for pos in active_positions_copy:
-                if pos.config_id == config_id:
-                    unrealized_pnl_strat += position_pnl_cache.get(
-                        pos.entry_client_order_id, 0.0
-                    )
-                    instance_open_positions += 1
+                if pos.config_id and pos.config_id != source_config_id:
+                    continue
+                if not self._instance_covers_symbol(config_dict, pos.symbol):
+                    continue
+                unrealized_pnl_strat += position_pnl_cache.get(
+                    pos.entry_client_order_id, 0.0
+                )
+                instance_open_positions += 1
 
             total_instance_pnl = realized_pnl + unrealized_pnl_strat
 
@@ -3281,8 +3511,13 @@ class TradingController:
 
             strat_data = {
                 "id": config_id,
+                "config_id": source_config_id,
                 "strategy_name": instance.NAME,
                 "symbol": symbols_str,
+                "symbols": config_dict.get("symbols", [])
+                if (config_dict.get("symbol_selection_mode") or "STATIC").upper()
+                == "STATIC"
+                else [],
                 "market_type": config_dict.get("config_data", {})
                 .get("marketType", "PAPER")
                 .lower(),
@@ -3708,12 +3943,14 @@ class TradingController:
                         # Finding the strategy instance
                         strategy_instance = None
                         if position_for_check.config_id:
-                            async with self.instances_lock:
-                                instance_tuple = self.running_strategy_instances.get(
-                                    position_for_check.config_id
+                            found_instance = (
+                                await self._find_running_instance_by_symbol(
+                                    position_for_check.symbol,
+                                    source_config_id=position_for_check.config_id,
                                 )
-                                if instance_tuple:
-                                    strategy_instance = instance_tuple[0]
+                            )
+                            if found_instance:
+                                strategy_instance = found_instance[1]
 
                         # Checking the strategy condition
                         if strategy_instance and symbol in screener_map:
@@ -4081,15 +4318,15 @@ class TradingController:
                     else:
                         position_to_manage = LivePosition(**vars(position))
                     if position.config_id:
-                        async with self.instances_lock:
-                            instance_tuple = self.running_strategy_instances.get(
-                                position.config_id
-                            )
-                            if instance_tuple:
-                                strategy_instance = instance_tuple[0]
-                                strategy_config_dict = instance_tuple[
-                                    1
-                                ]  # NEW: extracting config_dict
+                        found_instance = await self._find_running_instance_by_symbol(
+                            position.symbol,
+                            source_config_id=position.config_id,
+                        )
+                        if found_instance:
+                            strategy_instance = found_instance[1]
+                            strategy_config_dict = found_instance[
+                                2
+                            ]  # NEW: extracting config_dict
 
             # Log why strategy_instance might be None
             if position_to_manage and not strategy_instance:
@@ -4865,7 +5102,8 @@ class TradingController:
                         target_price=rounded_price,
                         quantity=new_quantity,
                         order_id=order_id,
-                        client_order_id=order_params["newClientOrderId"],
+                        client_order_id=resp.get("clientOrderId")
+                        or order_params["newClientOrderId"],
                         status="NEW",
                     )
                 )
@@ -5212,11 +5450,37 @@ class TradingController:
             for k in required_data_keys:
                 if k.startswith("kline_"):
                     df = market_data.get(k)
-                    if df is not None and len(df) < MIN_HISTORY_REQUIRED:
-                        logger.warning(
-                            f"{log_prefix} Insufficient history for {k}. Got {len(df)}, need {MIN_HISTORY_REQUIRED}. Waiting for cache priming."
+                    if df is None or len(df) < MIN_HISTORY_REQUIRED:
+                        logger.info(
+                            f"{log_prefix} Insufficient history for {k} (got {len(df) if df is not None else 0}, need {MIN_HISTORY_REQUIRED}). Triggering on-demand history backfill..."
                         )
-                        return None
+                        parts = k.split("_")
+                        if len(parts) == 3:
+                            tf = parts[1]
+                            target_sym = parts[2]
+                        else:
+                            tf = parts[1] if len(parts) > 1 else "1m"
+                            target_sym = symbol
+                        if hasattr(self.consumer, "_ensure_history_loaded"):
+                            await self.consumer._ensure_history_loaded(
+                                k,
+                                target_sym,
+                                tf,
+                                normalized_market_type,
+                                force=True,
+                                min_candles=MIN_HISTORY_REQUIRED,
+                            )
+                        df = await self.consumer.get_kline_history(
+                            target_sym, tf, market_type=normalized_market_type
+                        )
+                        if df is not None:
+                            market_data[k] = df
+
+                        if df is None or len(df) < MIN_HISTORY_REQUIRED:
+                            logger.warning(
+                                f"{log_prefix} Insufficient history for {k}. Got {len(df) if df is not None else 0}, need {MIN_HISTORY_REQUIRED}. Waiting for cache priming."
+                            )
+                            return None
 
             return market_data
         finally:
@@ -5380,7 +5644,13 @@ class TradingController:
 
         for instance, config_dict in applicable_instances:
             pair_info_for_instance = pair_info_base.copy()
-            pair_info_for_instance["strategy_config_id"] = config_dict.get("id")
+            # strategy_config_id must remain the REAL config id: trades/positions
+            # reference strategy_configs via this FK. instance_id is used only for
+            # routing signals to the exact running copy.
+            pair_info_for_instance["strategy_config_id"] = self._source_config_id(
+                config_dict
+            )
+            pair_info_for_instance["instance_id"] = config_dict.get("id")
             pair_info_for_instance["market_type"] = event_market_type
             await self._check_and_process_signal_for_instance(
                 instance,
@@ -6486,26 +6756,58 @@ class TradingController:
                 if isinstance(signal.details, dict)
                 else None
             )
+            target_instance_id = (
+                signal.details.get("instance_id")
+                if isinstance(signal.details, dict)
+                else None
+            )
 
             async with self.instances_lock:
                 if (
+                    target_instance_id
+                    and target_instance_id in self.running_strategy_instances
+                ):
+                    # Precise routing to the exact running copy.
+                    _instance, config_dict = self.running_strategy_instances[
+                        target_instance_id
+                    ]
+                    running_instance_config = config_dict
+                    instance_config_id = self._source_config_id(config_dict)
+                elif (
                     target_config_id
                     and target_config_id in self.running_strategy_instances
                 ):
+                    # Legacy: instance key == config id.
                     _instance, config_dict = self.running_strategy_instances[
                         target_config_id
                     ]
                     running_instance_config = config_dict
                     instance_config_id = target_config_id
                 else:
+                    # Multiple copies of the same config may be running; route by
+                    # strategy name AND symbol coverage (fallback to name only).
+                    name_fallback = None
                     for config_id_key, (
                         instance,
                         config_dict,
                     ) in self.running_strategy_instances.items():
-                        if instance.NAME == signal.strategy_name:
+                        if instance.NAME != signal.strategy_name:
+                            continue
+                        if (
+                            target_config_id
+                            and self._source_config_id(config_dict) != target_config_id
+                        ):
+                            continue
+                        if name_fallback is None:
+                            name_fallback = (config_id_key, instance, config_dict)
+                        if self._instance_covers_symbol(config_dict, signal.symbol):
                             running_instance_config = config_dict
-                            instance_config_id = config_id_key
+                            instance_config_id = self._source_config_id(config_dict)
                             break
+                    if running_instance_config is None and name_fallback is not None:
+                        _key, _inst, config_dict = name_fallback
+                        running_instance_config = config_dict
+                        instance_config_id = self._source_config_id(config_dict)
 
             if not running_instance_config:
                 logger.error(
@@ -7012,7 +7314,8 @@ class TradingController:
             new_position = LivePosition(
                 symbol=signal.symbol,
                 direction=signal.direction,
-                entry_price=None,  # Will be updated after execution
+                entry_price=signal.trigger_price
+                or signal.entry_price,  # Initialized to expected signal entry price
                 initial_quantity=final_initial_quantity,
                 remaining_quantity=final_initial_quantity,
                 entry_time=time.time(),
@@ -7443,6 +7746,16 @@ class TradingController:
                 exc_info=True,
             )
         finally:
+            async with self._positions_dict_lock:
+                reserved_pos = self._active_position_get(
+                    signal.symbol, initial_market_type
+                )
+                if reserved_pos and reserved_pos.status == "RESERVING":
+                    logger.info(
+                        f"{log_prefix} Cleaning up RESERVING slot for {signal.symbol} ({initial_market_type}) due to signal rejection or abort."
+                    )
+                    self._active_position_pop(signal.symbol, initial_market_type)
+
             async with self._processing_signal_lock:
                 if processing_key in self._processing_signal_for_symbol:
                     self._processing_signal_for_symbol.remove(processing_key)
@@ -7562,24 +7875,16 @@ class TradingController:
                 client_order_id=client_order_id,
             )
 
-            effective_entry_price_candidate = (
-                avg_fill_price  # Using the overall average price
-            )
+            effective_entry_price_candidate = avg_fill_price
 
             if (
                 effective_entry_price_candidate is not None
                 and effective_entry_price_candidate > 0
             ):
-                if (
-                    position.entry_price is None
-                    or abs(position.entry_price - effective_entry_price_candidate)
-                    > 1e-9 * effective_entry_price_candidate
-                    or is_first_time_status_open
-                ):
-                    logger.info(
-                        f"{log_prefix} Updating position entry_price from {position.entry_price} to {effective_entry_price_candidate:.8f}"
-                    )
-                    position.entry_price = effective_entry_price_candidate
+                logger.info(
+                    f"{log_prefix} Updating position entry_price from {position.entry_price} to {effective_entry_price_candidate:.8f}"
+                )
+                position.entry_price = effective_entry_price_candidate
             elif position.entry_price is None:
                 fallback_price = position.trigger_price or (
                     position.signal_details.get("entry_price")
@@ -8201,9 +8506,20 @@ class TradingController:
                 name=f"MoveSLtoBE_{symbol}_{entry_cid_for_log}",
             )
         else:
-            logger.info(
-                f"{log_prefix} Pos {entry_cid_for_log}: No SL move to BE needed or position not fully closed by this TP."
-            )
+            if position.current_sl_order_id and position.remaining_quantity > 0:
+                logger.info(
+                    f"{log_prefix} Pos {entry_cid_for_log}: Adjusting SL quantity after partial TP fill. "
+                    f"New remaining qty: {position.remaining_quantity}"
+                )
+                await self._replace_stop_loss(
+                    symbol,
+                    position.current_sl_price,
+                    market_type=self._market_type_for_position(position),
+                )
+            else:
+                logger.info(
+                    f"{log_prefix} Pos {entry_cid_for_log}: No SL adjustment needed (no SL or position fully closed)."
+                )
 
         # Notification is sent even if SL moves to BE, as these are different events
         if not position_closed_fully_by_this_tp and self.telegram_notifier:
@@ -8908,6 +9224,306 @@ class TradingController:
                         logger.info(
                             f"{log_prefix} Successfully saved trade to database."
                         )
+
+                        # Federated Trade-Mining Telemetry
+                        try:
+                            app_config = await crud.get_config(db, user_id=self.user_id)
+                            mining_on = bool(
+                                app_config and app_config.is_mining_enabled
+                            )
+                            notifs = (
+                                (app_config.notifications or {}) if app_config else {}
+                            )
+                            share_enabled = mining_on or bool(
+                                notifs.get("shareTelemetry")
+                                or notifs.get("share_telemetry")
+                            )
+                            if share_enabled:
+                                mining_config = await self._get_mining_config_from_hub()
+                                is_mining_enabled = True
+                                eligible_exchanges = [
+                                    "weex",
+                                    "okx",
+                                    "bybit",
+                                    "binance",
+                                    "weex_futures",
+                                    "okx_futures",
+                                    "bybit_futures",
+                                    "binance_futures",
+                                    "weex_spot",
+                                    "okx_spot",
+                                    "bybit_spot",
+                                    "binance_spot",
+                                ]
+                                if mining_config:
+                                    is_mining_enabled = mining_config.get(
+                                        "isMiningEnabled", True
+                                    )
+                                    eligible_exchanges = (
+                                        mining_config.get(
+                                            "eligibleExchanges", eligible_exchanges
+                                        )
+                                        or eligible_exchanges
+                                    )
+
+                                pos_market_type = getattr(
+                                    position_to_process_copy,
+                                    "market_type",
+                                    "futures_usdtm",
+                                )
+                                executor_obj = self.market_executors.get(
+                                    pos_market_type
+                                ) or self.executors.get(
+                                    position_to_process_copy.mode or "live"
+                                )
+                                exch_id = (
+                                    getattr(executor_obj, "exchange_id", None)
+                                    or getattr(self, "api_key_name", None)
+                                    or "bybit"
+                                )
+                                market_type_norm = (
+                                    "spot"
+                                    if "spot" in str(pos_market_type).lower()
+                                    else "futures"
+                                )
+
+                                lookup_key = f"{exch_id}_{market_type_norm}"
+                                is_eligible = (
+                                    (exch_id in eligible_exchanges)
+                                    or (lookup_key in eligible_exchanges)
+                                    or True
+                                )
+
+                                if is_mining_enabled and is_eligible:
+                                    strategy_config_id = trade_data_for_db.get(
+                                        "strategy_config_id"
+                                    )
+                                    strategy_blocks = []
+                                    if strategy_config_id:
+                                        strat = await crud.get_strategy_config_by_id(
+                                            db, strategy_config_id
+                                        )
+                                        if strat and isinstance(
+                                            strat.config_data, dict
+                                        ):
+                                            entry_conditions = strat.config_data.get(
+                                                "config", {}
+                                            ).get("entryConditions", {})
+
+                                            def walk_conditions(node):
+                                                blocks = []
+                                                if isinstance(node, dict):
+                                                    node_type = node.get("type")
+                                                    if node_type:
+                                                        blocks.append(
+                                                            {
+                                                                "type": node_type,
+                                                                "params": node.get(
+                                                                    "params", {}
+                                                                ),
+                                                            }
+                                                        )
+                                                    children = node.get("children")
+                                                    if isinstance(children, list):
+                                                        for child in children:
+                                                            blocks.extend(
+                                                                walk_conditions(child)
+                                                            )
+                                                return blocks
+
+                                            strategy_blocks = walk_conditions(
+                                                entry_conditions
+                                            )
+                                    if not strategy_blocks:
+                                        strategy_blocks = [
+                                            {
+                                                "type": position_to_process_copy.strategy,
+                                                "params": {},
+                                            }
+                                        ]
+
+                                    initial_qty = (
+                                        getattr(
+                                            position_to_process_copy,
+                                            "initial_quantity",
+                                            0.0,
+                                        )
+                                        or 0.0
+                                    )
+                                    entry_p = (
+                                        position_to_process_copy.entry_price
+                                        or exit_price
+                                    )
+                                    entry_vol = abs(initial_qty * entry_p)
+                                    exit_vol = abs(initial_qty * exit_price)
+                                    trade_volume = entry_vol + exit_vol
+
+                                    # Collect entry and close order IDs from execution events
+                                    _entry_ids = []
+                                    _close_ids = []
+                                    _evts = (
+                                        getattr(
+                                            position_to_process_copy,
+                                            "execution_events",
+                                            None,
+                                        )
+                                        or []
+                                    )
+                                    for _ev in _evts:
+                                        if not isinstance(_ev, dict):
+                                            continue
+                                        _cid = _ev.get("client_order_id") or _ev.get(
+                                            "clientOrderId"
+                                        )
+                                        if not _cid:
+                                            continue
+                                        _ev_type = _ev.get("type", "")
+                                        if _ev_type in (
+                                            "EXIT",
+                                            "CLOSE",
+                                            "TP",
+                                            "SL",
+                                        ):
+                                            _close_ids.append(str(_cid))
+                                        elif (
+                                            _ev_type == "ENTRY"
+                                            and _ev.get("execution_type") == "SCALE_IN"
+                                        ):
+                                            _entry_ids.append(str(_cid))
+                                    _main_entry = (
+                                        position_to_process_copy.entry_client_order_id
+                                    )
+                                    _all_entry_ids = (
+                                        [_main_entry] if _main_entry else []
+                                    )
+                                    for _eid in _entry_ids:
+                                        if _eid not in _all_entry_ids:
+                                            _all_entry_ids.append(_eid)
+                                    _ptp_list = (
+                                        getattr(
+                                            position_to_process_copy,
+                                            "partial_tp_orders",
+                                            None,
+                                        )
+                                        or []
+                                    )
+                                    for _ptp in _ptp_list:
+                                        if (
+                                            hasattr(_ptp, "client_order_id")
+                                            and _ptp.client_order_id
+                                        ):
+                                            _cid_str = str(_ptp.client_order_id)
+                                            if _cid_str not in _close_ids:
+                                                _close_ids.append(_cid_str)
+                                        elif isinstance(_ptp, dict) and _ptp.get(
+                                            "client_order_id"
+                                        ):
+                                            _cid_str = str(_ptp["client_order_id"])
+                                            if _cid_str not in _close_ids:
+                                                _close_ids.append(_cid_str)
+
+                                    strat_tf = None
+                                    if (
+                                        strategy_config_id
+                                        and "strat" in locals()
+                                        and strat
+                                        and isinstance(strat.config_data, dict)
+                                    ):
+                                        strat_tf = (
+                                            strat.config_data.get("config", {}).get(
+                                                "timeframe"
+                                            )
+                                            or strat.config_data.get("candle_timeframe")
+                                            or strat.config_data.get("entry_timeframe")
+                                        )
+                                    if not strat_tf:
+                                        strat_tf = (
+                                            signal_specific_details.get("timeframe")
+                                            or signal_specific_details.get(
+                                                "market_context", {}
+                                            ).get("timeframe")
+                                            or "1m"
+                                        )
+
+                                    payload = {
+                                        "symbol": position_to_process_copy.symbol,
+                                        "direction": position_to_process_copy.direction.name,
+                                        "entry_price": position_to_process_copy.entry_price,
+                                        "exit_price": exit_price,
+                                        "pnl_percent": pnl_percent_val,
+                                        "trade_duration_sec": duration_s,
+                                        "exit_reason": reason,
+                                        "trade_mode": trade_mode_for_db,
+                                        "timeframe": strat_tf,
+                                        "max_floating_profit": position_to_process_copy.max_floating_profit,
+                                        "max_floating_loss": position_to_process_copy.max_floating_loss,
+                                        "strategy_blocks": strategy_blocks,
+                                        "market_context": {
+                                            "session": signal_specific_details.get(
+                                                "session"
+                                            )
+                                            or signal_specific_details.get(
+                                                "market_context", {}
+                                            ).get("session"),
+                                            "natr": signal_specific_details.get("natr")
+                                            or signal_specific_details.get(
+                                                "market_context", {}
+                                            ).get("natr"),
+                                            "adx": signal_specific_details.get("adx")
+                                            or signal_specific_details.get(
+                                                "market_context", {}
+                                            ).get("adx"),
+                                            "volume_ratio": signal_specific_details.get(
+                                                "volume_ratio"
+                                            )
+                                            or signal_specific_details.get(
+                                                "market_context", {}
+                                            ).get("volume_ratio"),
+                                        },
+                                        "exchange_id": exch_id,
+                                        "market_type": market_type_norm,
+                                        "broker_trade_id": position_to_process_copy.entry_client_order_id,
+                                        "entry_broker_trade_ids": _all_entry_ids,
+                                        "close_broker_trade_ids": _close_ids,
+                                        "trade_volume_usdt": trade_volume,
+                                    }
+
+                                    # Calculate estimated rebate locally
+                                    fee_rate = 0.0005
+                                    rebate_rate = 0.60
+                                    if mining_config:
+                                        rebate_rates = mining_config.get(
+                                            "rebateRates", {}
+                                        )
+                                        rebate_rate = rebate_rates.get(lookup_key)
+                                        if rebate_rate is None:
+                                            rebate_rate = rebate_rates.get(
+                                                exch_id, 0.60
+                                            )
+
+                                    est_rebate = trade_volume * fee_rate * rebate_rate
+
+                                    # Update or create LocalUserMiningStats for this user
+                                    try:
+                                        await crud.update_user_mining_stats(
+                                            db,
+                                            self.user_id,
+                                            trade_volume,
+                                            est_rebate,
+                                        )
+                                    except Exception as e_stats:
+                                        logger.error(
+                                            f"[controller] Failed to save local user mining stats: {e_stats}"
+                                        )
+
+                                    self.loop.create_task(
+                                        self._dispatch_telemetry_to_hub(payload)
+                                    )
+                        except Exception as e_telemetry:
+                            logger.error(
+                                f"{log_prefix} Failed to compile and dispatch telemetry: {e_telemetry}",
+                                exc_info=True,
+                            )
                     except Exception as e_inner:
                         await db.rollback()
                         raise e_inner
@@ -9259,6 +9875,14 @@ class TradingController:
                 )
                 return False
 
+            if position.sl_replacement_in_progress:
+                logger.info(
+                    f"{log_prefix} SL replacement already in progress. Skipping concurrent call."
+                )
+                return True
+
+            position.sl_replacement_in_progress = True
+
             entry_cid_for_log_at_replace = position.entry_client_order_id or symbol
 
             old_sl_id_to_cancel = position.current_sl_order_id
@@ -9279,84 +9903,96 @@ class TradingController:
 
             position_ref_for_new_sl = position
 
-        if old_sl_id_to_cancel or old_sl_cid_to_cancel:
-            executor = await self._get_executor_for_symbol(
-                symbol, market_type=market_type
+        try:
+            if old_sl_id_to_cancel or old_sl_cid_to_cancel:
+                executor = await self._get_executor_for_symbol(
+                    symbol, market_type=market_type
+                )
+                if executor:
+                    logger.info(
+                        f"{log_prefix} Cancelling old SL order (ID: {old_sl_id_to_cancel}, ClientID: {old_sl_cid_to_cancel}, AlgoOrder={old_sl_is_algo})..."
+                    )
+                    self.loop.create_task(
+                        executor.cancel_order(
+                            symbol=symbol,
+                            orderId=old_sl_id_to_cancel,
+                            origClientOrderId=old_sl_cid_to_cancel,
+                            is_algo_order=old_sl_is_algo,
+                        ),
+                        name=f"CancelOldSL_ForReplace_{symbol}_{old_sl_id_to_cancel or old_sl_cid_to_cancel}",
+                    )
+                    logger.debug(f"{log_prefix} Old SL cancellation task created.")
+                    await asyncio.sleep(0.1)
+                else:
+                    logger.error(
+                        f"{log_prefix} Could not get executor to cancel old SL order. Proceeding to place new one, but old one may remain."
+                    )
+
+            if not position_ref_for_new_sl:
+                logger.error(
+                    f"{log_prefix} EXIT: Position reference for new SL is None after lock release."
+                )
+                return False
+
+            logger.info(
+                f"{log_prefix} CALLING _place_stop_loss for position {position_ref_for_new_sl.entry_client_order_id or symbol}"
             )
-            if executor:
+            # skip_preflight_check=True because this is a stop REPLACEMENT (BE/trailing)
+            # If the price has already moved past the new level, the stop will simply trigger on the exchange — this is normal
+            place_success = await self._place_stop_loss(
+                position_ref_for_new_sl, skip_preflight_check=True
+            )
+            logger.info(f"{log_prefix} _place_stop_loss returned: {place_success}")
+
+            if place_success:
                 logger.info(
-                    f"{log_prefix} Cancelling old SL order (ID: {old_sl_id_to_cancel}, ClientID: {old_sl_cid_to_cancel}, AlgoOrder={old_sl_is_algo})..."
+                    f"{log_prefix} New SL successfully placed (or placement initiated by _place_stop_loss)."
                 )
-                self.loop.create_task(
-                    executor.cancel_order(
-                        symbol=symbol,
-                        orderId=old_sl_id_to_cancel,
-                        origClientOrderId=old_sl_cid_to_cancel,
-                        is_algo_order=old_sl_is_algo,
-                    ),
-                    name=f"CancelOldSL_ForReplace_{symbol}_{old_sl_id_to_cancel or old_sl_cid_to_cancel}",
+
+                final_new_sl_order_id = position_ref_for_new_sl.current_sl_order_id
+                final_new_sl_client_order_id = (
+                    position_ref_for_new_sl.current_sl_client_order_id
                 )
-                logger.debug(f"{log_prefix} Old SL cancellation task created.")
-                await asyncio.sleep(0.1)
+
+                self.trade_logger.log_event(
+                    event_type="SL_ORDER_MOVED_SUCCESS",
+                    data={
+                        "symbol": symbol,
+                        "new_sl_price": new_sl_price,
+                        "old_sl_order_id": old_sl_id_to_cancel,
+                        "new_sl_order_id": final_new_sl_order_id,
+                        "new_sl_client_order_id": final_new_sl_client_order_id,
+                        "entry_client_order_id": entry_cid_for_log_at_replace,
+                    },
+                )
+                logger.info(
+                    f"{log_prefix} --- EXITING _replace_stop_loss (SUCCESS) ---"
+                )
             else:
                 logger.error(
-                    f"{log_prefix} Could not get executor to cancel old SL order. Proceeding to place new one, but old one may remain."
+                    f"{log_prefix} Failed to place new SL (returned by _place_stop_loss)."
+                )
+                self.trade_logger.log_event(
+                    event_type="SL_ORDER_MOVED_FAILED",
+                    data={
+                        "symbol": symbol,
+                        "new_sl_price": new_sl_price,
+                        "reason": "Failed to place new SL order (via _place_stop_loss)",
+                        "entry_client_order_id": entry_cid_for_log_at_replace,
+                    },
+                )
+                logger.error(
+                    f"{log_prefix} --- EXITING _replace_stop_loss (FAILURE) ---"
                 )
 
-        if not position_ref_for_new_sl:
-            logger.error(
-                f"{log_prefix} EXIT: Position reference for new SL is None after lock release."
-            )
-            return False
+        finally:
+            symbol_lock_cleanup = self._get_lock_for_position(symbol, market_type)
+            async with symbol_lock_cleanup:
+                pos_cleanup = self._active_position_get(symbol, market_type)
+                if pos_cleanup:
+                    pos_cleanup.sl_replacement_in_progress = False
 
-        logger.info(
-            f"{log_prefix} CALLING _place_stop_loss for position {position_ref_for_new_sl.entry_client_order_id or symbol}"
-        )
-        # skip_preflight_check=True because this is a stop REPLACEMENT (BE/trailing)
-        # If the price has already moved past the new level, the stop will simply trigger on the exchange — this is normal
-        place_success = await self._place_stop_loss(
-            position_ref_for_new_sl, skip_preflight_check=True
-        )
-        logger.info(f"{log_prefix} _place_stop_loss returned: {place_success}")
-
-        if place_success:
-            logger.info(
-                f"{log_prefix} New SL successfully placed (or placement initiated by _place_stop_loss)."
-            )
-
-            final_new_sl_order_id = position_ref_for_new_sl.current_sl_order_id
-            final_new_sl_client_order_id = (
-                position_ref_for_new_sl.current_sl_client_order_id
-            )
-
-            self.trade_logger.log_event(
-                event_type="SL_ORDER_MOVED_SUCCESS",
-                data={
-                    "symbol": symbol,
-                    "new_sl_price": new_sl_price,
-                    "old_sl_order_id": old_sl_id_to_cancel,
-                    "new_sl_order_id": final_new_sl_order_id,
-                    "new_sl_client_order_id": final_new_sl_client_order_id,
-                    "entry_client_order_id": entry_cid_for_log_at_replace,
-                },
-            )
-            logger.info(f"{log_prefix} --- EXITING _replace_stop_loss (SUCCESS) ---")
-            return True
-        else:
-            logger.error(
-                f"{log_prefix} Failed to place new SL (returned by _place_stop_loss)."
-            )
-            self.trade_logger.log_event(
-                event_type="SL_ORDER_MOVED_FAILED",
-                data={
-                    "symbol": symbol,
-                    "new_sl_price": new_sl_price,
-                    "reason": "Failed to place new SL order (via _place_stop_loss)",
-                    "entry_client_order_id": entry_cid_for_log_at_replace,
-                },
-            )
-            logger.error(f"{log_prefix} --- EXITING _replace_stop_loss (FAILURE) ---")
-            return False
+        return place_success
 
     async def _replace_take_profit(
         self,
@@ -9490,6 +10126,7 @@ class TradingController:
                 ]
 
             position.partial_tp_orders = new_ptp_orders
+            position.initial_take_profit = new_tp_price
             # Resetting initiation flags for new TP
             position.ptp_placement_initiated_flags = {}
 
@@ -10408,10 +11045,13 @@ class TradingController:
 
         # Getting strategy configuration
         strategy_config = None
-        async with self.instances_lock:
-            instance_tuple = self.running_strategy_instances.get(config_id)
-            if instance_tuple:
-                _, strategy_config = instance_tuple
+        if config_id:
+            found_instance = await self._find_running_instance_by_symbol(
+                position_obj_ref.symbol,
+                source_config_id=config_id,
+            )
+            if found_instance:
+                _, strategy_config = found_instance[1], found_instance[2]
 
         if not strategy_config:
             logger.debug(
@@ -10779,11 +11419,11 @@ class TradingController:
             if getattr(executor, "exchange_id", "") == "gateio":
                 order_type_for_api = "TAKE_PROFIT_MARKET"
                 tp_params_to_send["stopPrice"] = float(rounded_target_price)
-                tp_params_to_send["reduceOnly"] = "true"
+                tp_params_to_send["reduceOnly"] = True
                 tp_params_to_send.pop("price", None)
                 tp_params_to_send.pop("timeInForce", None)
             else:
-                tp_params_to_send["reduceOnly"] = "true"
+                tp_params_to_send["reduceOnly"] = True
 
         logger.info(
             f"{log_prefix} Pos {entry_client_order_id_for_log}: Preparing to place LIMIT TP. RoundedPrice: {rounded_target_price:.8f}, Qty: {quantity_to_close:.8f}, ClientID: {new_tp_client_id}, ReduceOnly: {tp_params_to_send.get('reduceOnly', 'N/A')}"
@@ -11891,11 +12531,19 @@ class TradingController:
 
             # 2. Stop-Loss order processing
             is_sl_order_event = (
-                position.current_sl_order_id is not None
-                and str(position.current_sl_order_id) == str(order_id)
-            ) or (
-                position.current_sl_client_order_id == client_order_id
-                and position.current_sl_client_order_id is not None
+                (
+                    position.current_sl_order_id is not None
+                    and str(position.current_sl_order_id) == str(order_id)
+                )
+                or (
+                    position.current_sl_client_order_id is not None
+                    and client_order_id is not None
+                    and (
+                        position.current_sl_client_order_id in client_order_id
+                        or client_order_id in position.current_sl_client_order_id
+                    )
+                )
+                or (client_order_id is not None and "x-sl-" in client_order_id)
             )
 
             if is_sl_order_event:
@@ -11981,19 +12629,23 @@ class TradingController:
                 elif order_status in ["CANCELED", "REJECTED", "EXPIRED"]:
                     logger.warning(f"{log_prefix} SL order is {order_status}.")
                     if position.status == "OPEN":  # Only if the position is still OPEN
-                        logger.critical(
-                            f"{log_prefix} CRITICAL: SL order for OPEN position {client_order_id} is {order_status}! Position UNPROTECTED. Attempting to replace SL immediately."
-                        )
-                        position.current_sl_order_id = None
-                        position.current_sl_client_order_id = None
-                        position.sl_placement_initiated = (
-                            False  # Reset the flag so that _place_stop_loss triggers
-                        )
+                        if position.sl_replacement_in_progress:
+                            logger.info(
+                                f"{log_prefix} SL replacement already in progress. "
+                                f"Ignoring {order_status} event for old SL (intentionally cancelled during replacement)."
+                            )
+                        else:
+                            logger.critical(
+                                f"{log_prefix} CRITICAL: SL order for OPEN position {client_order_id} is {order_status}! Position UNPROTECTED. Attempting to replace SL immediately."
+                            )
+                            position.current_sl_order_id = None
+                            position.current_sl_client_order_id = None
+                            position.sl_placement_initiated = False  # Reset the flag so that _place_stop_loss triggers
 
-                        self.loop.create_task(
-                            self._place_stop_loss(position),
-                            name=f"ReplaceSL_After_{order_status}_{symbol}_{order_id}",
-                        )
+                            self.loop.create_task(
+                                self._place_stop_loss(position),
+                                name=f"ReplaceSL_After_{order_status}_{symbol}_{order_id}",
+                            )
                     else:  # Position is no longer OPEN (CLOSING or CLOSED)
                         logger.info(
                             f"{log_prefix} SL order {order_status} (PosStatus: {position.status}). Clearing SL IDs from position object."
@@ -12031,8 +12683,12 @@ class TradingController:
                     ptp_item.order_id is not None
                     and str(ptp_item.order_id) == str(order_id)
                 ) or (
-                    ptp_item.client_order_id == client_order_id
-                    and ptp_item.client_order_id is not None
+                    ptp_item.client_order_id is not None
+                    and client_order_id is not None
+                    and (
+                        ptp_item.client_order_id in client_order_id
+                        or client_order_id in ptp_item.client_order_id
+                    )
                 ):
                     ptp_match_idx = idx
                     ptp_info_object = ptp_item
@@ -12126,7 +12782,7 @@ class TradingController:
 
             # 3.5 Processing the Scaling order (Scale-In / DCA)
             is_scale_in_event = (
-                client_order_id is not None and client_order_id.startswith("x-scalein-")
+                client_order_id is not None and "x-scalein-" in client_order_id
             )
             if is_scale_in_event:
                 logger.info(
@@ -12138,8 +12794,12 @@ class TradingController:
                             dca_item.order_id is not None
                             and str(dca_item.order_id) == str(order_id)
                         ) or (
-                            dca_item.client_order_id == client_order_id
-                            and dca_item.client_order_id is not None
+                            dca_item.client_order_id is not None
+                            and client_order_id is not None
+                            and (
+                                dca_item.client_order_id in client_order_id
+                                or client_order_id in dca_item.client_order_id
+                            )
                         ):
                             dca_item.status = order_status
                             if order_status == "FILLED":
@@ -12167,9 +12827,9 @@ class TradingController:
                 return
 
             # 4. Processing the Forced Close order (created by close_position)
-            # Assuming that client_order_id for such orders starts with "x-close-"
+            # Assuming that client_order_id for such orders contains "x-close-"
             is_forced_close_event = (position.status == "CLOSING") and (
-                client_order_id is not None and client_order_id.startswith("x-close-")
+                client_order_id is not None and "x-close-" in client_order_id
             )
 
             if is_forced_close_event:
@@ -13770,3 +14430,214 @@ class TradingController:
                     )
 
         logger.debug(f"{log_prefix_main} Finished checking pending entry orders.")
+
+    async def _dispatch_telemetry_to_hub(self, payload: dict):
+        """Sends authenticated anonymous trade telemetry to the federated hub."""
+        auth_node_uuid = None
+        node_secret = None
+
+        # 1. Prefer the wallet-derived identity whenever a wallet is configured.
+        #    The mnemonic deterministically reproduces the same mining_node_uuid on any
+        #    server (central hub or local node), so rewards/trades follow the wallet.
+        wallet_node_uuid = None
+        if getattr(self, "user_id", None):
+            try:
+                async for session in self.get_db_session():
+                    app_config = await crud.get_config(session, user_id=self.user_id)
+                    settings = app_config.exchange_settings if app_config else None
+                    if settings and isinstance(settings, dict):
+                        for ex_key in ("bybit", "okx", "weex", "binance", None):
+                            d = settings.get(ex_key) if ex_key else settings
+                            if isinstance(d, dict) and d.get("mining_node_uuid"):
+                                wallet_node_uuid = d.get("mining_node_uuid")
+                                raw_node_secret = d.get("mining_node_secret")
+                                if raw_node_secret:
+                                    from bot_module.secrets_box import (
+                                        decrypt_node_secret,
+                                    )
+
+                                    node_secret = decrypt_node_secret(raw_node_secret)
+                                auth_node_uuid = wallet_node_uuid
+                                break
+            except Exception as e:
+                logger.error(f"[controller] Failed to fetch wallet node identity: {e}")
+
+        # 2. Fallback to physical node identity if wallet secret is not configured
+        if not auth_node_uuid or not node_secret:
+            for id_path in (
+                Path("/app/data/node_identity.json"),
+                Path("data/node_identity.json"),
+                Path("node_identity.json"),
+            ):
+                if id_path.exists():
+                    try:
+                        with open(id_path, "r") as f:
+                            id_data = json.load(f)
+                            if not auth_node_uuid:
+                                auth_node_uuid = id_data.get("node_uuid")
+                            if not node_secret:
+                                node_secret = id_data.get("node_secret")
+                            if auth_node_uuid and node_secret:
+                                break
+                    except Exception as e:
+                        logger.error(f"[controller] Failed to read {id_path}: {e}")
+
+        attribution_node_uuid = wallet_node_uuid or auth_node_uuid
+
+        if not attribution_node_uuid and getattr(self, "user_id", None):
+            try:
+                async for session in self.get_db_session():
+                    if hasattr(crud, "resolve_user_attribution_node_uuid"):
+                        attribution_node_uuid = (
+                            await crud.resolve_user_attribution_node_uuid(
+                                session, self.user_id
+                            )
+                        )
+                        if attribution_node_uuid:
+                            break
+            except Exception as e:
+                logger.error(
+                    f"[controller] Failed to resolve attribution node from user: {e}"
+                )
+
+        if not attribution_node_uuid:
+            logger.warning(
+                "[controller] Node identity not found. Telemetry dispatch skipped."
+            )
+            return
+
+        payload["attribution_node_uuid"] = attribution_node_uuid
+
+        # Source server: the physical server node this bot runs on (local nodes).
+        # The server identity file is written when a local-node admin activates
+        # mining. On the central hub / no file, source stays NULL (the hub itself
+        # hosts the trades and keeps the commission).
+        for s_path in [
+            "/app/data/server_identity.json",
+            "server_identity.json",
+            "/app/server_identity.json",
+        ]:
+            s_p = Path(s_path)
+            if s_p.exists():
+                try:
+                    with open(s_p, "r") as f:
+                        s_data = json.load(f)
+                        if s_data.get("node_uuid"):
+                            payload["source_node_uuid"] = s_data["node_uuid"]
+                            break
+                except Exception as e:
+                    logger.error(
+                        f"[controller] Failed to read server identity file {s_path}: {e}"
+                    )
+
+        # Save a local copy for the Trades & Telemetry tab in the Local UI
+        created_report_id = None
+        try:
+            async for db in self.get_db_session():
+                created_report = await crud.save_hub_telemetry_report(
+                    db,
+                    payload=payload,
+                    attribution_node_uuid=attribution_node_uuid,
+                )
+                if created_report:
+                    created_report_id = created_report.id
+        except Exception as e:
+            logger.error(f"[controller] Failed to save local telemetry report: {e}")
+
+        if os.getenv("IS_CENTRAL_HUB", "false").lower() == "true":
+            # On the central hub, telemetry is saved directly in DB and needs no outbound HTTP post.
+            return
+
+        from bot_module.federation import get_federation_hub_url
+
+        url = get_federation_hub_url()
+        if url.endswith("/api/v1/hub"):
+            report_url = f"{url}/telemetry/report"
+        elif "/api/v1" in url:
+            report_url = f"{url}/hub/telemetry/report"
+        else:
+            report_url = f"{url}/api/v1/hub/telemetry/report"
+
+        try:
+            body_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+            signature = hmac.new(
+                node_secret.encode("utf-8"), body_bytes, hashlib.sha256
+            ).hexdigest()
+
+            # X-Node-Secret is intentionally sent over TLS: the hub stores only sha256(node_secret)
+            # and must verify the HMAC signature using the raw secret as the key, so a
+            # signature-only scheme would require the hub to persist a usable HMAC key instead.
+            headers = {
+                "X-Node-UUID": auth_node_uuid,
+                "X-Node-Secret": node_secret,
+                "X-Node-Signature": signature,
+                "X-Timestamp": str(int(time.time() * 1000)),
+                "Content-Type": "application/json",
+            }
+
+            logger.info(
+                f"[controller] Dispatching authenticated anonymous trade telemetry to hub: {report_url}"
+            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    report_url, content=body_bytes, headers=headers
+                )
+                if response.status_code in (200, 201) or response.status_code == 409:
+                    logger.info(
+                        "[controller] Successfully uploaded telemetry to federation hub."
+                    )
+                    if created_report_id:
+                        async for db in self.get_db_session():
+                            await crud.update_hub_telemetry_status(
+                                db, created_report_id, status="SENT"
+                            )
+                else:
+                    logger.warning(
+                        f"[controller] Failed to upload telemetry to hub. Status: {response.status_code}, Body: {response.text}"
+                    )
+        except Exception as e:
+            logger.error(
+                f"[controller] Error dispatching telemetry to hub: {e}",
+                exc_info=True,
+            )
+
+    async def _get_mining_config_from_hub(self) -> Optional[dict]:
+        """Fetches mining config from hub, cached for 5 minutes."""
+        global _mining_config_cache
+
+        now = time.time()
+        if _mining_config_cache["data"] and now < _mining_config_cache["expires_at"]:
+            return _mining_config_cache["data"]
+
+        from bot_module.federation import get_federation_hub_url
+
+        url = get_federation_hub_url()
+        if url.endswith("/api/v1/hub"):
+            config_url = f"{url}/mining/config"
+        elif "/api/v1" in url:
+            config_url = f"{url}/hub/mining/config"
+        else:
+            config_url = f"{url}/api/v1/hub/mining/config"
+
+        try:
+            logger.info(f"[controller] Fetching mining config from hub: {config_url}")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(config_url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    _mining_config_cache = {
+                        "data": data,
+                        "expires_at": now + 300,  # 5 minutes cache
+                    }
+                    return data
+                else:
+                    logger.warning(
+                        f"[controller] Failed to fetch mining config: hub status {resp.status_code}"
+                    )
+        except Exception as e:
+            logger.error(f"[controller] Connection error fetching mining config: {e}")
+
+        return _mining_config_cache.get("data")
+
+
+_mining_config_cache = {"data": None, "expires_at": 0}

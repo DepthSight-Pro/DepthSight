@@ -122,6 +122,21 @@ export const AddApiKeyModal: React.FC<AddApiKeyModalProps> = ({
 						message: "Passphrase is required for OKX",
 						path: ["api_password"],
 					},
+				)
+				.refine(
+					(data) => {
+						if (
+							data.exchange.startsWith("weex") &&
+							(!data.api_password || data.api_password.trim() === "")
+						) {
+							return false;
+						}
+						return true;
+					},
+					{
+						message: "Passphrase is required for WEEX",
+						path: ["api_password"],
+					},
 				),
 		[t],
 	);
@@ -143,8 +158,15 @@ export const AddApiKeyModal: React.FC<AddApiKeyModalProps> = ({
 	const needsExtraCredential =
 		selectedExchange.startsWith("bitget") ||
 		selectedExchange.startsWith("gateio") ||
-		selectedExchange.startsWith("okx");
+		selectedExchange.startsWith("okx") ||
+		selectedExchange.startsWith("weex");
 	const isGateioSelected = selectedExchange.startsWith("gateio");
+
+	React.useEffect(() => {
+		if (selectedExchange === "weex") {
+			form.setValue("isTestnet", false);
+		}
+	}, [selectedExchange, form]);
 
 	const onSubmit = (values: FormValues) => {
 		const payload: AddApiKeyPayload = {
@@ -228,32 +250,35 @@ export const AddApiKeyModal: React.FC<AddApiKeyModalProps> = ({
 											<SelectItem value="bitget">Bitget</SelectItem>
 											<SelectItem value="gateio">Gate.io</SelectItem>
 											<SelectItem value="bingx">BingX</SelectItem>
+											<SelectItem value="weex">WEEX</SelectItem>
 										</SelectContent>
 									</Select>
 									<FormMessage />
 								</FormItem>
 							)}
 						/>
-						<FormField
-							control={control}
-							name="isTestnet"
-							render={({ field }) => (
-								<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
-									<div className="space-y-0.5">
-										<FormLabel>Testnet Mode</FormLabel>
-										<div className="text-[0.7rem] text-muted-foreground">
-											Use testnet environment for this account
+						{selectedExchange !== "weex" && (
+							<FormField
+								control={control}
+								name="isTestnet"
+								render={({ field }) => (
+									<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+										<div className="space-y-0.5">
+											<FormLabel>Testnet Mode</FormLabel>
+											<div className="text-[0.7rem] text-muted-foreground">
+												Use testnet environment for this account
+											</div>
 										</div>
-									</div>
-									<FormControl>
-										<Switch
-											checked={field.value as boolean}
-											onCheckedChange={field.onChange}
-										/>
-									</FormControl>
-								</FormItem>
-							)}
-						/>
+										<FormControl>
+											<Switch
+												checked={field.value as boolean}
+												onCheckedChange={field.onChange}
+											/>
+										</FormControl>
+									</FormItem>
+								)}
+							/>
+						)}
 						<FormField
 							control={control}
 							name="api_key"

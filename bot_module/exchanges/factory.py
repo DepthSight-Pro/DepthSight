@@ -21,6 +21,7 @@ def _normalize_market_type(market_type: str | None) -> str | None:
         "gateio_spot",
         "bingx_spot",
         "okx_spot",
+        "weex_spot",
     }:
         return "spot"
     if raw in {
@@ -42,6 +43,9 @@ def _normalize_market_type(market_type: str | None) -> str | None:
         "okx_futures",
         "okx_usdtm",
         "okx_linear",
+        "weex_futures",
+        "weex_usdtm",
+        "weex_linear",
     }:
         return "futures_usdtm"
     return raw
@@ -92,6 +96,8 @@ def create_exchange_executor(
         "gateio_spot",
         "bingx_spot",
         "okx_spot",
+        "weex",
+        "weex_spot",
     }
     if clean_exchange_id not in supported_ccxt_exchanges:
         raise NotImplementedError(
@@ -106,6 +112,7 @@ def create_exchange_executor(
         "gateio_spot": "gateio",
         "bingx_spot": "bingx",
         "okx_spot": "okx",
+        "weex_spot": "weex",
     }
 
     target_ccxt_id = ccxt_id_map.get(clean_exchange_id, clean_exchange_id)
@@ -118,5 +125,6 @@ def create_exchange_executor(
         api_secret=api_secret,
         market_type=resolved_market_type,
         sandbox=is_testnet,
+        session=session,
         **kwargs,
     )

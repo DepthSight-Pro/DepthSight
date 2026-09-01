@@ -15,6 +15,9 @@ WORKDIR /app
 COPY requirements.txt ./
 
 # 2. Install dependencies. This step will be cached.
+# Playwright browsers are installed outside $HOME so the non-root runtime
+# user can execute them.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     playwright install-deps && \
@@ -22,9 +25,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
     
 COPY . .
 
+# Non-root runtime user; pre-create bind-mount targets with correct ownership.
+RUN chmod +x ./docker-startup.sh && \
+    useradd --uid 1000 --create-home depthsight && \
+    mkdir -p /app/data /app/data_storage /app/logs && \
+    chown -R depthsight:depthsight /app/data /app/data_storage /app/logs /opt/ms-playwright
 
-# Make startup script executable
-RUN chmod +x ./docker-startup.sh
+# Writable cache dirs for libraries that insist on $HOME
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
+USER depthsight
 
 # Set the script as the entry point
 ENTRYPOINT ["./docker-startup.sh"]

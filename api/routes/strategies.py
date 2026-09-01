@@ -1,5 +1,6 @@
 import logging
 import json
+import uuid
 from typing import List, Optional
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -322,8 +323,10 @@ async def delete_saved_strategy_configuration(
         if strategies_json:
             running_strategies = json.loads(strategies_json)
             for strategy in running_strategies:
-                # IMPORTANT: Running strategy ID in Redis is the config_id
-                if strategy.get("id") == config_id:
+                # Running instances carry 'config_id' since a config may spawn
+                # several instances; fall back to 'id' for legacy entries.
+                running_config_id = strategy.get("config_id") or strategy.get("id")
+                if running_config_id == config_id:
                     logger.warning(
                         f"User '{current_user.username}' cannot delete config {config_id} because it is currently running."
                     )
@@ -351,6 +354,85 @@ async def delete_saved_strategy_configuration(
         f"User '{current_user.username}' successfully deleted config {config_id}."
     )
     return None
+
+
+def _symbols_from_running_entry(entry: dict) -> set:
+    """Returns the concrete symbol set covered by a running instance entry."""
+    symbols = entry.get("symbols")
+    if isinstance(symbols, list) and symbols:
+        return {str(s).strip().upper() for s in symbols if str(s).strip()}
+    # Legacy entries only expose a display string.
+    display = entry.get("symbol")
+    if display and display not in ("Dynamic (All)", "None", None):
+        return {s.strip().upper() for s in str(display).split(",") if s.strip()}
+    return set()
+
+
+async def _ensure_no_overlapping_running_instance(
+    *,
+    redis_client,
+    config_id: str,
+    api_key_id: Optional[int],
+    symbol_selection_mode: Optional[str],
+    symbols: Optional[List[str]],
+    user_id: int,
+) -> None:
+    """
+    Ensures the requested launch does not overlap a currently running instance
+    of the same config on the same account. A config may run several instances
+    on disjoint symbol sets; DYNAMIC instances cover everything and therefore
+    conflict with any other launch of the same config on that account.
+    """
+    from ..live_runtime import load_user_running_strategies
+
+    try:
+        running_instances = await load_user_running_strategies(
+            redis_client,
+            bot_config.REDIS_STATE_KEY_STRATEGIES,
+            user_id,
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to load running strategies for overlap check (user {user_id}): {e}",
+            exc_info=True,
+        )
+        return
+
+    requested_mode = (symbol_selection_mode or "STATIC").upper()
+    requested_symbols = {
+        str(s).strip().upper() for s in (symbols or []) if str(s).strip()
+    }
+
+    for entry in running_instances:
+        entry_config_id = entry.get("config_id") or entry.get("id")
+        if str(entry_config_id) != str(config_id):
+            continue
+        if api_key_id is not None and str(entry.get("api_key_id")) != str(api_key_id):
+            continue
+
+        entry_mode = (entry.get("symbol_selection_mode") or "STATIC").upper()
+        entry_symbols = _symbols_from_running_entry(entry)
+
+        if requested_mode == "DYNAMIC" or entry_mode == "DYNAMIC":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This strategy configuration is already running in dynamic "
+                    "symbol-selection mode on this account. Stop the existing "
+                    "instance before launching another copy."
+                ),
+            )
+
+        overlap = requested_symbols & entry_symbols
+        if overlap:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This strategy configuration is already running on symbol(s): "
+                    f"{', '.join(sorted(overlap))}. Stop the existing instance or "
+                    "choose different coins."
+                ),
+            )
 
 
 @strategies_router.post(
@@ -418,25 +500,36 @@ async def start_strategy_instance(
     limits = user_plan.get("limits", {})
     if "allow_real_trading" not in user_plan.get("permissions", []):
         allow_free_bybit = limits.get("allow_free_bybit_trading", False)
-        if allow_free_bybit:
-            # Check if the API key being used is Bybit
-            if not api_key or api_key.exchange.lower() != "bybit":
+        allow_free_weex = limits.get("allow_free_weex_trading", False)
+        allow_free_okx = limits.get("allow_free_okx_trading", False)
+        if allow_free_bybit or allow_free_weex or allow_free_okx:
+            exch = api_key.exchange.lower() if (api_key and api_key.exchange) else ""
+            is_valid = False
+            if allow_free_bybit and (exch == "bybit" or exch.startswith("bybit")):
+                is_valid = True
+            elif allow_free_weex and exch.startswith("weex"):
+                is_valid = True
+            elif allow_free_okx and exch.startswith("okx"):
+                is_valid = True
+
+            if not is_valid:
+                allowed_exchanges = []
+                if allow_free_bybit:
+                    allowed_exchanges.append("Bybit")
+                if allow_free_weex:
+                    allowed_exchanges.append("WEEX")
+                if allow_free_okx:
+                    allowed_exchanges.append("OKX")
+                allowed_str = " or ".join(allowed_exchanges)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Trading on your plan is only allowed using Bybit API keys.",
+                    detail=f"Trading on your plan is only allowed using {allowed_str} API keys.",
                 )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Your current plan ({current_user.plan}) does not allow trading.",
             )
-
-    await _enforce_live_strategy_limit(
-        user=current_user,
-        request=request,
-        db=db,
-        redis_client=redis_client,
-    )
 
     # 2. Determine launch overrides
     symbol_selection_mode = (
@@ -445,6 +538,25 @@ async def start_strategy_instance(
         else config_to_run.symbol_selection_mode
     )
     symbols = request.symbols if request.symbols is not None else config_to_run.symbols
+
+    # 2b. Reject overlapping duplicates of the same config before dispatching.
+    # A config may run as several independent instances on *disjoint* symbol sets,
+    # but the same symbol may only be covered once per API key.
+    await _ensure_no_overlapping_running_instance(
+        redis_client=redis_client,
+        config_id=config_id,
+        api_key_id=request.api_key_id,
+        symbol_selection_mode=symbol_selection_mode,
+        symbols=symbols,
+        user_id=current_user.id,
+    )
+
+    await _enforce_live_strategy_limit(
+        user=current_user,
+        request=request,
+        db=db,
+        redis_client=redis_client,
+    )
 
     # 3. Perform permission checks (symbol list restrictions only apply to backtests)
     pass
@@ -469,11 +581,13 @@ async def start_strategy_instance(
     _enforce_strategy_plan_restrictions(config_data_dict, current_user)
 
     # The controller expects a payload with all necessary details.
-    # The 'id' field from the payload is used as the unique instance ID.
+    # 'id' is a per-launch unique instance id (multiple instances of the same
+    # config may run on disjoint symbol sets); 'config_id' keeps the source config.
+    instance_id = f"{config_id}:{uuid.uuid4().hex[:8]}"
     payload = {
         "user_id": current_user.id,
-        "id": config_id,  # Use 'id' for the instance identifier
-        "config_id": config_id,  # Also include config_id for clarity
+        "id": instance_id,  # Unique instance identifier for this launch
+        "config_id": config_id,  # Source strategy config id
         "mode": mode,
         "symbol_selection_mode": symbol_selection_mode,
         "symbols": symbols,
@@ -489,12 +603,30 @@ async def start_strategy_instance(
     command = {"command": "START_STRATEGY", "payload": payload}
 
     # 5. Publish the command to Redis
+    target_api_key_id = request.api_key_id
+    if target_api_key_id is None:
+        active_key = await crud.get_active_api_key_for_user(db, current_user.id)
+        if active_key:
+            target_api_key_id = active_key.id
+
     try:
+        if target_api_key_id:
+            activate_cmd = {
+                "command": "ACTIVATE_API_KEY",
+                "payload": {
+                    "user_id": current_user.id,
+                    "api_key_id": target_api_key_id,
+                },
+            }
+            await redis_client.publish(
+                bot_config.REDIS_COMMAND_CHANNEL, json.dumps(activate_cmd)
+            )
+
         await redis_client.publish(
             bot_config.REDIS_COMMAND_CHANNEL, json.dumps(command)
         )
         logger.info(
-            f"START_STRATEGY command published for config_id {config_id} in mode {mode}."
+            f"START_STRATEGY command published for config_id {config_id} in mode {mode} (api_key_id: {target_api_key_id})."
         )
     except Exception as e:
         logger.error(
@@ -509,6 +641,7 @@ async def start_strategy_instance(
         "data": {
             "message": f"START_STRATEGY command sent for config {config_id}.",
             "mode": mode,
+            "instance_id": instance_id,
         }
     }
 
@@ -532,7 +665,11 @@ async def stop_strategy_instance(
     user_plan = plans_config.get_plan(current_user.plan)
     if "allow_real_trading" not in user_plan.get("permissions", []):
         limits = user_plan.get("limits", {})
-        if not limits.get("allow_free_bybit_trading", False):
+        if not (
+            limits.get("allow_free_bybit_trading", False)
+            or limits.get("allow_free_weex_trading", False)
+            or limits.get("allow_free_okx_trading", False)
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Your current plan ({current_user.plan}) does not allow stopping strategies.",

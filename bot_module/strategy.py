@@ -3751,16 +3751,25 @@ class BaseStrategy:
             return position
 
         potential_new_sl = None
+        resolve_ctx = {"pair_info": pair_info, "position": position}
         try:
+            raw_val = params.get("value", 2.5)
+            resolved_val = (
+                self._resolve_value(raw_val, resolve_ctx)
+                if isinstance(raw_val, dict)
+                else raw_val
+            )
+            val_float = float(resolved_val) if resolved_val is not None else 2.5
+
             if position.direction == SignalDirection.LONG:
                 if ts_type == "ATR":
-                    value = float(params.get("value", 2.5))
+                    value = val_float
                     atr = pair_info.get("atr")
                     if not atr:
                         return position
                     potential_new_sl = k_high - (atr * value)
                 elif ts_type == "Percentage":
-                    value = float(params.get("value", 1.5))
+                    value = val_float
                     if value <= 0:
                         return position
                     potential_new_sl = k_high * (1 - value / 100.0)
@@ -3779,13 +3788,13 @@ class BaseStrategy:
 
             elif position.direction == SignalDirection.SHORT:
                 if ts_type == "ATR":
-                    value = float(params.get("value", 2.5))
+                    value = val_float
                     atr = pair_info.get("atr")
                     if not atr:
                         return position
                     potential_new_sl = k_low + (atr * value)
                 elif ts_type == "Percentage":
-                    value = float(params.get("value", 1.5))
+                    value = val_float
                     if value <= 0:
                         return position
                     potential_new_sl = k_low * (1 + value / 100.0)
@@ -3820,7 +3829,16 @@ class BaseStrategy:
 
         params = block.get("params", {})
         target_type = params.get("target_type", "atr_multiplier")
-        target_value = float(params.get("target_value", 1.0))
+        raw_target_val = params.get("target_value", 1.0)
+        resolve_ctx = {"pair_info": pair_info, "position": position}
+        resolved_target_val = (
+            self._resolve_value(raw_target_val, resolve_ctx)
+            if isinstance(raw_target_val, dict)
+            else raw_target_val
+        )
+        target_value = (
+            float(resolved_target_val) if resolved_target_val is not None else 1.0
+        )
         offset_pips = int(params.get("offset_pips", 2))
 
         # DIAGNOSTICS
@@ -3906,7 +3924,7 @@ class BaseStrategy:
                 activation_threshold_met = True
 
         elif target_type == "atr_multiplier":
-            atr = position.entry_atr
+            atr = getattr(position, "entry_atr", None) or pair_info.get("atr")
             if not atr:
                 return position
             activation_threshold = atr * target_value
@@ -5490,7 +5508,7 @@ class BaseStrategy:
                 else trace_time
             )
 
-        if context is None:
+        if not context:
             context = {
                 "pair_info": pair_info,
                 "market_data": market_data,
@@ -5498,6 +5516,13 @@ class BaseStrategy:
                 "prev_pair_info": prev_pair_info,
                 "position": position,
             }
+        else:
+            if "pair_info" not in context:
+                context["pair_info"] = pair_info
+            if "market_data" not in context:
+                context["market_data"] = market_data
+            if "trace" not in context:
+                context["trace"] = trace
 
         if node_type in ["AND", "OR"]:
             trace["children"] = []
@@ -8010,8 +8035,16 @@ class BaseStrategy:
         """
         Compares two dynamic or static values with enhanced logging.
         """
-        left_operand_cfg = params.get("leftOperand", {})
-        right_operand_cfg = params.get("rightOperand", {})
+        left_operand_cfg = (
+            params.get("leftOperand")
+            if params.get("leftOperand") is not None
+            else params.get("left", {})
+        )
+        right_operand_cfg = (
+            params.get("rightOperand")
+            if params.get("rightOperand") is not None
+            else params.get("right", {})
+        )
         operator = params.get("operator", "gt")
         details = {}
         result = False

@@ -138,7 +138,7 @@ export const ConfigAndLaunchPanel = memo(
 		const activeApiKeys: ApiKey[] = useMemo(() => {
 			if (!config?.apiKeys) return [];
 			return config.apiKeys.filter(
-				(key) => key.isActive && key.status === "valid",
+				(key) => key.isActive && key.status !== "invalid",
 			);
 		}, [config]);
 

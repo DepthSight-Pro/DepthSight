@@ -36,6 +36,7 @@ import type {
 	KlineData,
 	LevelData,
 	MarkerData,
+	ZoneData,
 } from "@/components/diagnostics/FoundationChart";
 import {
 	DecisionTraceTree,
@@ -813,8 +814,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			if (!node || typeof node !== "object") return;
 
 			const nodeType = node.type?.toLowerCase() || "";
-			const details = (node.details as Record<string, unknown>) || {};
-			const params = getTraceNodeParams(node);
+			const details = (node.details as Record<string, unknown>) || {} as Record<string, unknown>;
+			const params = getTraceNodeParams(node as unknown as Record<string, unknown>);
 			const result = node.result ?? true;
 
 			// Bollinger Bands
@@ -835,11 +836,11 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 			// Significant Levels
 			if (nodeType.includes("significant_level")) {
-				const price = details.detected_level ?? details.price ?? details.level;
+				const price = (details.detected_level as number | undefined) ?? (details.price as number | undefined) ?? (details.level as number | undefined);
 				if (price !== undefined) {
 					indicators.significantLevels.push({
 						price,
-						levelType: details.type || "support",
+						levelType: (details.type as string) || "support",
 						result,
 					});
 				}
@@ -847,11 +848,11 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 			// Local Levels
 			if (nodeType.includes("local_level")) {
-				const price = details.detected_level ?? details.price ?? details.level;
+				const price = (details.detected_level as number | undefined) ?? (details.price as number | undefined) ?? (details.level as number | undefined);
 				if (price !== undefined) {
 					indicators.localLevels.push({
 						price,
-						levelType: details.type || "support",
+						levelType: (details.type as string) || "support",
 						result,
 					});
 				}
@@ -859,7 +860,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 			// Round Levels
 			if (nodeType.includes("round_level")) {
-				const price = details.detected_level ?? details.price ?? details.level;
+				const price = (details.detected_level as number | undefined) ?? (details.price as number | undefined) ?? (details.level as number | undefined);
 				if (price !== undefined) {
 					indicators.roundLevels.push({ price, result });
 				}
@@ -883,14 +884,16 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 			// Stochastic
 			if (nodeType.includes("stoch")) {
-				if (details.k !== undefined && details.d !== undefined) {
-					indicators.stoch.push({ k: details.k, d: details.d, result });
+				const k = details.k as number | undefined;
+				const d = details.d as number | undefined;
+				if (k !== undefined && d !== undefined) {
+					indicators.stoch.push({ k, d, result });
 				}
 			}
 
 			// RSI
 			if (nodeType.includes("rsi")) {
-				const rsiValue = details.rsi ?? details.value ?? details.rsi_value;
+				const rsiValue = (details.rsi as number | undefined) ?? (details.value as number | undefined) ?? (details.rsi_value as number | undefined);
 				if (rsiValue !== undefined) {
 					indicators.rsi.push({ value: rsiValue, result });
 				}
@@ -938,8 +941,9 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 			// ATR
 			if (nodeType.includes("atr") && !nodeType.includes("natr")) {
-				if (details.atr !== undefined || details.value !== undefined) {
-					indicators.atr.push({ value: details.atr ?? details.value, result });
+				const atrVal = (details.atr as number | undefined) ?? (details.value as number | undefined);
+				if (atrVal !== undefined) {
+					indicators.atr.push({ value: atrVal, result });
 				}
 			}
 
@@ -949,15 +953,14 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				nodeType.includes("trading_hours") ||
 				nodeType.includes("time")
 			) {
+				const range = details.range as string | undefined;
+				const startHourStr = (details.start_hour as string | undefined) ?? (details.startHour as string | undefined) ?? range?.split("-")[0];
+				const endHourStr = (details.end_hour as string | undefined) ?? (details.endHour as string | undefined) ?? range?.split("-")[1];
 				indicators.timeFilter.push({
-					startHour:
-						details.start_hour ??
-						details.startHour ??
-						details.range?.split("-")[0],
-					endHour:
-						details.end_hour ?? details.endHour ?? details.range?.split("-")[1],
-					currentHour: details.current_hour ?? details.currentHour,
-					mode: details.mode,
+					startHour: Number(startHourStr),
+					endHour: Number(endHourStr),
+					currentHour: Number((details.current_hour as string | undefined) ?? (details.currentHour as string | undefined)),
+					mode: details.mode as string | undefined,
 					result,
 				});
 			}
@@ -969,8 +972,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			) {
 				indicators.trendDirection.push({
 					direction:
-						details.direction ??
-						details.trend ??
+						(details.direction as string | undefined) ??
+						(details.trend as string | undefined) ??
 						(result ? "bullish" : "bearish"),
 					result,
 				});
@@ -982,8 +985,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				(nodeType.includes("volume") && !nodeType.includes("relative"))
 			) {
 				indicators.volumeConfirmation.push({
-					volume: details.volume ?? details.value,
-					threshold: details.threshold,
+					volume: (details.volume as number | undefined) ?? (details.value as number | undefined),
+					threshold: details.threshold as number | undefined,
 					result,
 				});
 			}
@@ -992,10 +995,10 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			if (nodeType.includes("consolidation")) {
 				// Aggressive price extraction
 				const detectedLevel =
-					details.detected_level ??
-					details.level ??
-					details.price ??
-					details.detectedLevel;
+					details.detected_level as number | undefined ??
+					details.level as number | undefined ??
+					details.price as number | undefined ??
+					details.detectedLevel as number | undefined;
 				indicators.priceConsolidation.push({
 					rangePercent: toFiniteNumber(
 						details.range_percent ?? details.range ?? details.price_range,
@@ -1012,7 +1015,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 							details.lookback ??
 							params.lookback_period,
 					),
-					timeframe: details.timeframe || details.tf || params.timeframe,
+					timeframe: (details.timeframe as string) || (details.tf as string) || (params.timeframe as string),
 					result,
 				});
 			}
@@ -1027,7 +1030,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 			// Level Touch
 			if (nodeType.includes("level_touch")) {
-				const price = details.detected_level ?? details.price ?? details.level;
+				const price = (details.detected_level as number | undefined) ?? (details.price as number | undefined) ?? (details.level as number | undefined);
 				if (price !== undefined) {
 					indicators.levelTouch.push({ price, result });
 				}
@@ -1041,7 +1044,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			// Tape Acceleration
 			if (nodeType.includes("tape_acceleration") || nodeType.includes("tape")) {
 				indicators.tapeAcceleration.push({
-					value: details.acceleration ?? details.value,
+					value: (details.acceleration as number | undefined) ?? (details.value as number | undefined),
 					result,
 				});
 			}
@@ -1049,7 +1052,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			// Open Interest
 			if (nodeType.includes("open_interest") || nodeType.includes("oi")) {
 				indicators.openInterest.push({
-					change: details.change ?? details.oi_change,
+					change: (details.change as number | undefined) ?? (details.oi_change as number | undefined),
 					result,
 				});
 			}
@@ -1074,8 +1077,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			// Correlation
 			if (nodeType.includes("correlation")) {
 				indicators.correlation.push({
-					value: details.correlation ?? details.value,
-					asset: details.asset ?? details.symbol,
+					value: (details.correlation as number | undefined) ?? (details.value as number | undefined),
+					asset: (details.asset as string | undefined) ?? (details.symbol as string | undefined),
 					result,
 				});
 			}
@@ -1086,7 +1089,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				nodeType.includes("classic_pattern")
 			) {
 				indicators.pattern.push({
-					patternType: details.pattern ?? details.type ?? details.name,
+					patternType: (details.pattern as string | undefined) ?? (details.type as string | undefined) ?? (details.name as string | undefined),
 					result,
 				});
 			}
@@ -1131,15 +1134,15 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		if (!decisionTrace) return indicators;
 
 		// Check entry conditions trace
-		const entryTrace = decisionTrace.decision_trace || decisionTrace;
+		const entryTrace = (decisionTrace as Record<string, unknown>).decision_trace || decisionTrace;
 		if (entryTrace && typeof entryTrace === "object") {
-			extractIndicatorsFromTrace(entryTrace, indicators);
+			extractIndicatorsFromTrace(entryTrace as unknown as TraceNode, indicators);
 		}
 
 		// Check filters trace
-		const filtersTrace = entryTrace?.filters_trace;
+		const filtersTrace = (entryTrace as Record<string, unknown>)?.filters_trace;
 		if (filtersTrace && typeof filtersTrace === "object") {
-			extractIndicatorsFromTrace(filtersTrace, indicators);
+			extractIndicatorsFromTrace(filtersTrace as unknown as TraceNode, indicators);
 		}
 
 		return indicators;
@@ -1176,8 +1179,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 		if (foundations.size === 0 && strategyConfig) {
 			if (strategyConfig.entryConditions)
-				extractFromNode(strategyConfig.entryConditions);
-			if (strategyConfig.filters) extractFromNode(strategyConfig.filters);
+				extractFromNode(strategyConfig.entryConditions as unknown as Record<string, unknown>);
+			if (strategyConfig.filters) extractFromNode(strategyConfig.filters as unknown as Record<string, unknown>);
 		}
 
 		// 2. Also check extracted indicators from trace (as a fallback or addition)
@@ -1260,8 +1263,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			const foundationType = normalizeFoundationType(node.type as string);
 			if (foundationType) {
 				const nodeParams = preferTraceDetails
-					? getTraceNodeParams(node)
-					: (node.params as Record<string, unknown>) || {};
+					? getTraceNodeParams(node as unknown as Record<string, unknown>)
+					: (node.params as Record<string, unknown>) || {} as Record<string, unknown>;
 				if (nodeParams && typeof nodeParams === "object") {
 					mergeParams(foundationType, nodeParams);
 				}
@@ -1279,12 +1282,12 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				);
 		};
 
-		if (strategyConfig?.filters) collectFromNode(strategyConfig.filters);
+		if (strategyConfig?.filters) collectFromNode(strategyConfig.filters as unknown as Record<string, unknown>);
 		if (strategyConfig?.entryConditions)
-			collectFromNode(strategyConfig.entryConditions);
+			collectFromNode(strategyConfig.entryConditions as unknown as Record<string, unknown>);
 
-		const traceRoot = decisionTrace?.decision_trace || decisionTrace;
-		if (traceRoot) collectFromNode(traceRoot, true);
+		const traceRoot = ((decisionTrace as Record<string, unknown> | null)?.decision_trace as TraceNode | undefined) || (decisionTrace as unknown as TraceNode);
+		if (traceRoot) collectFromNode(traceRoot as unknown as Record<string, unknown>, true);
 
 		return paramsByType;
 	}, [decisionTrace, strategyConfig]);
@@ -1308,9 +1311,9 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		useCallback((): FoundationChartProps | null => {
 			if (!decisionTrace || klines.length === 0) return null;
 
-			const traceRoot = decisionTrace.decision_trace || decisionTrace;
+			const traceRoot = ((decisionTrace as Record<string, unknown>).decision_trace as TraceNode) || (decisionTrace as unknown as TraceNode);
 			const signalTime =
-				toTimestampSeconds(traceRoot?.details?.signal_time) ??
+				toTimestampSeconds((((traceRoot as unknown as Record<string, unknown>)?.details as Record<string, unknown>)?.signal_time as string | number | null | undefined)) ??
 				getTradeTimestampSeconds(trade, "timestamp_signal") ??
 				entryTime;
 			const foundationKlines: KlineData[] = klines.map((k) => ({
@@ -1319,7 +1322,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				high: k.high,
 				low: k.low,
 				close: k.close,
-				volume: Number((k as Record<string, unknown>).volume || 0),
+				volume: Number((k as unknown as Record<string, unknown>).volume || 0),
 			}));
 
 			const makePointSeries = (value: unknown) => {
@@ -1405,16 +1408,16 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				);
 				if (startTime === null || endTime === null || endTime <= startTime)
 					return;
-				visualizations.zones.push({
-					startTime,
-					endTime,
-					start_time: startTime,
-					end_time: endTime,
-					type,
-					label,
-					color,
-				} as Record<string, unknown>);
-			};
+			visualizations.zones.push({
+				startTime,
+				endTime,
+				start_time: startTime,
+				end_time: endTime,
+				type,
+				label,
+				color,
+			} as ZoneData);
+		};
 
 			const lookbackWindow = (
 				rawLookback: unknown,
@@ -1450,8 +1453,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				const details =
 					node.details && typeof node.details === "object"
 						? (node.details as Record<string, unknown>)
-						: {};
-				const params = getTraceNodeParams(node);
+						: ({} as Record<string, unknown>);
+				const params = getTraceNodeParams(node as unknown as Record<string, unknown>);
 				const result = Boolean(node.result);
 
 				if (nodeType.includes("local_level")) {
@@ -1576,7 +1579,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 						);
 					}
 				} else if (nodeType.includes("price_vs_level")) {
-					const right = details.right?.actual ?? details.right_value_resolved;
+					const right = (details.right as Record<string, unknown> | undefined)?.actual ?? details.right_value_resolved;
 					addLevel(
 						right,
 						"price_vs_level",
@@ -1619,10 +1622,10 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 							"1m",
 					);
 					const startTime =
-						toTimestampSeconds(details.zone_start_time) ??
+						toTimestampSeconds(details.zone_start_time as string | number | null | undefined) ??
 						signalTime - lookback * timeframeToSeconds(tf);
 					const endTime =
-						toTimestampSeconds(details.zone_end_time) ?? signalTime;
+						toTimestampSeconds(details.zone_end_time as string | number | null | undefined) ?? signalTime;
 
 					addZone(
 						"price_consolidation",
@@ -1633,7 +1636,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					);
 					const latestZone = visualizations.zones[
 						visualizations.zones.length - 1
-					] as Record<string, unknown>;
+					] as unknown as Record<string, unknown>;
 					if (latestZone?.type === "price_consolidation") {
 						latestZone.top_price = topPrice;
 						latestZone.bottom_price = bottomPrice;
@@ -1797,7 +1800,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								(marker.text as string) || "",
 								(marker.position as "aboveBar" | "belowBar" | "inBar") ||
 									"inBar",
-								(marker.shape as string) || "circle",
+								(marker.shape as "square" | "circle" | "arrowUp" | "arrowDown") || "circle",
 								(marker.color as string) || "#4CAF50",
 								(marker.type as string) || "price_action_analyzer",
 							);
@@ -1813,7 +1816,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				}
 
 				if (Array.isArray(node.children)) node.children.forEach(traverse);
-				if (node.filters_trace) traverse(node.filters_trace);
+				if ((node as unknown as Record<string, unknown>).filters_trace) traverse((node as unknown as Record<string, unknown>).filters_trace as unknown as TraceNode);
 			};
 
 			traverse(traceRoot);
@@ -2644,7 +2647,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					if (x1 === null && x2 === null) return;
 
 					// Use provided prices or fallback to entryPrice area
-					const zoneRec = zone as Record<string, unknown>;
+					const zoneRec = zone as unknown as Record<string, unknown>;
 					const level =
 						(zoneRec.detectedLevel as number) ??
 						(zoneRec.price as number) ??
@@ -3123,7 +3126,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				time: (k.time > 1000000000000
 					? Math.floor(k.time / 1000)
 					: k.time) as Time,
-				value: Number((k as Record<string, unknown>).volume || 0),
+				value: Number((k as unknown as Record<string, unknown>).volume || 0),
 				color:
 					k.close >= k.open
 						? "rgba(34, 197, 94, 0.5)"
@@ -3145,14 +3148,18 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			if (Array.isArray(viz.markers) && viz.markers.length > 0) {
 				foundationSeriesMarkers.setMarkers(
 					viz.markers
-						.map((marker: Record<string, unknown>) => ({
-							...marker,
+						.map((marker) => ({
 							time: (Number(marker.time) > 1000000000000
 								? Math.floor(Number(marker.time) / 1000)
 								: Number(marker.time)) as Time,
+							position: marker.position,
+							color: marker.color,
+							shape: marker.shape,
+							text: marker.text,
+							size: marker.size,
 						}))
 						.sort(
-							(a: Record<string, unknown>, b: Record<string, unknown>) =>
+							(a, b) =>
 								Number(a.time) - Number(b.time),
 						),
 				);
@@ -3205,14 +3212,14 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 				});
 				series.setData(
 					data
-						.map((d: Record<string, unknown>) => ({
+						.map((d) => ({
 							time: (Number(d.time) > 1000000000000
 								? Math.floor(Number(d.time) / 1000)
 								: Number(d.time)) as Time,
 							value: Number(d.value),
 						}))
 						.sort(
-							(a: { time: number }, b: { time: number }) => a.time - b.time,
+							(a, b) => Number(a.time) - Number(b.time),
 						),
 				);
 			});
@@ -3297,14 +3304,14 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 							const data = viz.subcharts[key];
 							if (!data) return;
 							const sData = data
-								.map((d: Record<string, unknown>) => ({
+								.map((d) => ({
 									time: (Number(d.time) > 1000000000000
 										? Math.floor(Number(d.time) / 1000)
 										: Number(d.time)) as Time,
 									value: Number(d.value),
 								}))
 								.sort(
-									(a: { time: number }, b: { time: number }) => a.time - b.time,
+									(a, b) => Number(a.time) - Number(b.time),
 								);
 
 							if (key.includes("Hist")) {
@@ -3313,12 +3320,15 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 									color: "#26a69a",
 									title: key,
 								});
-								s.setData(
-									sData.map((d: { value: number }) => ({
-										...d,
-										color: d.value >= 0 ? "#22c55e" : "#ef4444",
-									})),
-								);
+								if (s) {
+									s.setData(
+										sData.map((d) => ({
+											time: d.time,
+											value: d.value,
+											color: d.value >= 0 ? "#22c55e" : "#ef4444",
+										})),
+									);
+								}
 							} else {
 								const s = indChart?.addSeries(LineSeries, {
 									priceScaleId: paneId,
@@ -3328,7 +3338,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 									pointMarkersRadius: sData.length <= 1 ? 5 : 3,
 									title: key,
 								});
-								s.setData(sData);
+								if (s) s.setData(sData);
 							}
 						});
 					});
@@ -3649,13 +3659,13 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					{/* Chart & Tree Container */}
 					{(() => {
 						const potentialTrace =
-							decisionTrace?.decision_trace || decisionTrace;
+							(decisionTrace as Record<string, unknown> | null)?.decision_trace || decisionTrace;
 
 						const isValidTrace =
 							potentialTrace &&
 							typeof potentialTrace === "object" &&
-							"type" in potentialTrace &&
-							"result" in potentialTrace;
+							"type" in (potentialTrace as Record<string, unknown>) &&
+							"result" in (potentialTrace as object);
 
 						if (isValidTrace) {
 							return (
@@ -3688,13 +3698,13 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 											<ScrollArea className="flex-1 w-full bg-black/20">
 												<div className="p-3 space-y-3 w-full overflow-hidden">
 													{/* Filters Section */}
-													{potentialTrace.filters_trace && (
+													{Boolean((potentialTrace as Record<string, unknown>).filters_trace) && (
 														<div className="border border-amber-500/30 rounded-lg p-2 bg-amber-500/5">
 															<div className="flex items-center gap-2 mb-2">
 																<span className="text-xs font-semibold uppercase tracking-wider text-amber-500">
 																	{t("decisionTree.filters", "Filters")}
 																</span>
-																{potentialTrace.filters_trace.result ? (
+																{((potentialTrace as Record<string, unknown>).filters_trace as Record<string, unknown>).result ? (
 																	<span className="text-xs text-profit">
 																		✓ {t("decisionTree.passed", "Passed")}
 																	</span>
@@ -3706,7 +3716,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 															</div>
 															<DecisionTraceTree
 																trace={
-																	potentialTrace.filters_trace as unknown as TraceNode
+																	(potentialTrace as Record<string, unknown>).filters_trace as unknown as TraceNode
 																}
 															/>
 														</div>

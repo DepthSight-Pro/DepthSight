@@ -432,3 +432,34 @@ async def test_update_paper_wallet_balance(db_session, test_user):
     )
     assert usdt_asset is not None
     assert usdt_asset.balance == 9500.0
+
+
+@pytest.mark.asyncio
+async def test_create_oauth_user_creates_app_config(db_session):
+    oauth_user = await crud.create_oauth_user(
+        db=db_session, email="oauthuser@example.com", username="oauthuser"
+    )
+    await db_session.commit()
+
+    config = await crud.get_config(db=db_session, user_id=oauth_user.id)
+    assert config is not None
+    assert config.user_id == oauth_user.id
+    assert config.risk_management.maxDrawdown == 10.0
+
+
+@pytest.mark.asyncio
+async def test_get_config_lazy_initialization_when_missing(db_session, test_user):
+    # Simulate a user missing an AppConfig row
+    from api import models
+    from sqlalchemy import delete
+
+    await db_session.execute(
+        delete(models.AppConfig).where(models.AppConfig.user_id == test_user.id)
+    )
+    await db_session.commit()
+
+    # Requesting config should lazy-create default AppConfig
+    config = await crud.get_config(db=db_session, user_id=test_user.id)
+    assert config is not None
+    assert config.user_id == test_user.id
+    assert config.risk_management.maxDrawdown == 10.0

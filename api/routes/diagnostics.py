@@ -64,6 +64,7 @@ diagnostics_router = APIRouter(
 async def get_system_status_endpoint(
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis_client),
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Checks and returns real state of key system components.
@@ -99,6 +100,7 @@ async def get_system_status_endpoint(
         "version": APP_VERSION,  # Dynamic version
         "timestamp_utc": datetime.now(timezone.utc),
         "components": components,
+        "is_central_hub": os.getenv("IS_CENTRAL_HUB", "false").lower() == "true",
     }
 
     return {"data": schemas.SystemStatus(**dynamic_system_state)}
@@ -113,6 +115,7 @@ async def proxy_binance_klines(
     endTime: Optional[int] = None,
     limit: int = 500,
     http_session: aiohttp.ClientSession = HttpSessDep,
+    current_user: models.User = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     """
@@ -165,6 +168,7 @@ async def proxy_binance_klines(
 async def proxy_binance_exchange_info(
     symbol: Optional[str] = None,
     http_session: aiohttp.ClientSession = HttpSessDep,
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Proxy to fetch exchange info from Binance API.
@@ -207,6 +211,7 @@ async def proxy_bybit_exchange_info(
     symbol: Optional[str] = None,
     category: str = "linear",
     http_session: aiohttp.ClientSession = HttpSessDep,
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Proxy to fetch instruments info from Bybit V5 API.
@@ -243,6 +248,7 @@ async def proxy_bybit_klines(
     end: Optional[int] = None,
     limit: int = 1000,
     http_session: aiohttp.ClientSession = HttpSessDep,
+    current_user: models.User = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     """

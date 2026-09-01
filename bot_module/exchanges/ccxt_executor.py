@@ -1,6 +1,9 @@
+# bot_module/exchanges/ccxt_executor.py
+
 from __future__ import annotations
 
 import asyncio
+import aiohttp
 import logging
 import time
 from typing import Any, Callable, Coroutine, Dict, List, Optional
@@ -28,6 +31,7 @@ class CcxtExecutor:
         api_secret: str,
         market_type: str = "futures_usdtm",
         sandbox: bool = False,
+        session: Optional[aiohttp.ClientSession] = None,
         **kwargs: Any,
     ):
         self.exchange_id = exchange_id.lower()
@@ -35,6 +39,7 @@ class CcxtExecutor:
         self.api_key = api_key
         self.api_secret = api_secret
         self.sandbox = sandbox
+        self._okx_dual_side: Optional[bool] = None
 
         # Mapping market_type to CCXT expectations
         self.supports_positions = (
@@ -66,6 +71,24 @@ class CcxtExecutor:
                 exchange_options["brokerId"] = broker_id
                 logger.info(f"CcxtExecutor: Using Bybit Broker ID: {broker_id}")
 
+        # Inject WEEX Broker ID if configured
+        if self.exchange_id == "weex":
+            broker_id = getattr(config, "WEEX_BROKER_ID", None)
+            if broker_id:
+                partner_id = (
+                    broker_id if broker_id.startswith("b-") else f"b-{broker_id}"
+                )
+                exchange_options["partner"] = partner_id
+                logger.info(f"CcxtExecutor: Using WEEX Broker ID: {partner_id}")
+
+        # Inject OKX Broker ID if configured
+        if self.exchange_id == "okx":
+            broker_id = getattr(config, "OKX_BROKER_ID", None)
+            if broker_id:
+                exchange_options["brokerId"] = broker_id
+                exchange_options["tag"] = broker_id
+                logger.info(f"CcxtExecutor: Using OKX Broker ID: {broker_id}")
+
         elif "spot" in self.market_type:
             exchange_options["defaultType"] = "spot"
             # exchange_options['fetchMarkets'] = ['spot'] # Can cause KeyErrors in some sandbox environments
@@ -95,6 +118,8 @@ class CcxtExecutor:
             "enableRateLimit": True,
             "options": exchange_options,
         }
+        if session is not None:
+            exchange_config["session"] = session
 
         # Add X-Referer header for Bybit if Broker ID is present
         if self.exchange_id == "bybit":
@@ -108,7 +133,7 @@ class CcxtExecutor:
         password = kwargs.get("password") or kwargs.get("api_password")
         if self.exchange_id == "gateio" and not uid and password:
             uid = password
-        if not password and self.exchange_id in ["bitget", "okx"]:
+        if not password and self.exchange_id in ["bitget", "okx", "weex"]:
             import os
 
             env_prefix = (
@@ -126,7 +151,8 @@ class CcxtExecutor:
             exchange_config["uid"] = str(uid).strip()
 
         # Initialize CCXT REST Exchange client
-        ccxt_class = getattr(ccxt, self.exchange_id, None)
+        ccxt_name = "gate" if self.exchange_id == "gateio" else self.exchange_id
+        ccxt_class = getattr(ccxt, ccxt_name, None)
         if ccxt_class is None:
             raise ValueError(f"Exchange '{self.exchange_id}' is not supported by CCXT.")
 
@@ -139,7 +165,7 @@ class CcxtExecutor:
             )
 
         # Initialize CCXT Pro WebSocket client for User Data Stream
-        ccxtpro_class = getattr(ccxtpro, self.exchange_id, None)
+        ccxtpro_class = getattr(ccxtpro, ccxt_name, None)
         if ccxtpro_class:
             pro_config = exchange_config.copy()
             self._exchange_pro = ccxtpro_class(pro_config)
@@ -161,7 +187,7 @@ class CcxtExecutor:
         logger.info(
             f"CcxtExecutor initialized for {self.exchange_id} (Sandbox: {self.sandbox}, Market: {self.market_type})"
         )
-        if self.sandbox and self.exchange_id != "binance":
+        if self.sandbox and self.exchange_id not in {"binance", "weex"}:
             self._exchange.set_sandbox_mode(True)
             if self._exchange_pro:
                 self._exchange_pro.set_sandbox_mode(True)
@@ -303,12 +329,37 @@ class CcxtExecutor:
             if self._exchange_pro:
                 self._patch_gateio_swap_market_loader(self._exchange_pro)
 
+        self.reconnecting_task = None
+        self.user_data_stream_active = False
         self._user_data_running = False
         self._user_data_task: Optional[asyncio.Task] = None
 
         logger.info(
             f"CcxtExecutor initialized for exchange: {self.exchange_id}, market: {self.market_type}, sandbox: {self.sandbox}"
         )
+
+    async def _get_okx_dual_side(self) -> bool:
+        """Determines if OKX account is in Long/Short (Hedge) mode or Net (One-Way) mode."""
+        if self._okx_dual_side is not None:
+            return self._okx_dual_side
+        try:
+            if hasattr(self._exchange, "fetch_position_mode"):
+                res = await self._exchange.fetch_position_mode()
+                if isinstance(res, dict) and "dualSidePosition" in res:
+                    self._okx_dual_side = bool(res["dualSidePosition"])
+                    return self._okx_dual_side
+            if hasattr(self._exchange, "privateGetAccountConfig"):
+                res = await self._exchange.privateGetAccountConfig()
+                data = res.get("data")
+                if data and isinstance(data, list):
+                    pos_mode = data[0].get("posMode")
+                    self._okx_dual_side = pos_mode == "long_short_mode"
+                    return self._okx_dual_side
+        except Exception as e:
+            logger.debug(f"Could not fetch OKX dualSidePosition mode: {e}")
+        # Default to False (Net mode / One-Way) as it is the standard on OKX
+        self._okx_dual_side = False
+        return self._okx_dual_side
 
     async def close(self) -> None:
         logger.info(f"Closing CcxtExecutor for {self.exchange_id}...")
@@ -614,6 +665,18 @@ class CcxtExecutor:
         price = kwargs.get("price")
 
         params = {}
+        if self.exchange_id == "weex":
+            broker_id = getattr(config, "WEEX_BROKER_ID", None)
+            if broker_id:
+                partner_id = (
+                    broker_id if broker_id.startswith("b-") else f"b-{broker_id}"
+                )
+                params["partner"] = partner_id
+        elif self.exchange_id == "okx":
+            broker_id = getattr(config, "OKX_BROKER_ID", None)
+            if broker_id:
+                params["tag"] = broker_id
+
         stop_price = kwargs.get("stopPrice")
         if stop_price is not None:
             trigger_price = float(stop_price)
@@ -642,7 +705,10 @@ class CcxtExecutor:
                     "STOP" in order_type_upper or "TAKE_PROFIT" in order_type_upper
                 ):
                     params["orderFilter"] = "tpslOrder"
-            elif self.exchange_id in {"gateio", "bingx"} and self.supports_positions:
+            elif (
+                self.exchange_id in {"gateio", "bingx", "weex"}
+                and self.supports_positions
+            ):
                 if "TAKE_PROFIT" in order_type_upper:
                     params["takeProfitPrice"] = trigger_price
                 else:
@@ -656,32 +722,75 @@ class CcxtExecutor:
                     params["stopLossPrice"] = trigger_price
 
         if kwargs.get("reduceOnly") is not None and self.supports_positions:
-            params["reduceOnly"] = kwargs.get("reduceOnly")
+            raw_reduce = kwargs["reduceOnly"]
+            if isinstance(raw_reduce, str):
+                params["reduceOnly"] = raw_reduce.lower() == "true"
+            else:
+                params["reduceOnly"] = raw_reduce
 
-        if kwargs.get("newClientOrderId") is not None:
-            cid = str(kwargs.get("newClientOrderId"))
+        if (
+            self.exchange_id == "weex"
+            and self.supports_positions
+            and params.get("reduceOnly") is True
+            and not getattr(self, "_weex_is_oneway", False)
+        ):
+            params["positionSide"] = "LONG" if ccxt_side == "sell" else "SHORT"
+
+        raw_cid = (
+            kwargs.get("newClientOrderId")
+            or kwargs.get("clientOrderId")
+            or params.get("clientOrderId")
+        )
+        if raw_cid is not None:
+            cid = str(raw_cid)
             if self.exchange_id == "okx":
+                broker_id = getattr(config, "OKX_BROKER_ID", None)
                 cid = "".join(c for c in cid if c.isalnum())
+                if broker_id and not cid.startswith(broker_id):
+                    cid = f"{broker_id}{cid}"
+                if len(cid) > 32:
+                    cid = cid[:32]
+            elif self.exchange_id == "weex":
+                broker_id = getattr(config, "WEEX_BROKER_ID", None)
+                if broker_id:
+                    pure_broker_id = (
+                        broker_id[2:] if broker_id.startswith("b-") else broker_id
+                    )
+                    prefix = f"b-{pure_broker_id}-"
+                    if not cid.startswith(prefix):
+                        cid = f"{prefix}{cid}"
+                if len(cid) > 32:
+                    cid = cid[:32]
             params["clientOrderId"] = cid
+            params.pop("newClientOrderId", None)
 
         if kwargs.get("timeInForce") is not None:
             params["timeInForce"] = kwargs.get("timeInForce")
-        if kwargs.get("positionSide") is not None:
-            if self.exchange_id == "okx":
-                params["posSide"] = str(kwargs.get("positionSide")).lower()
+
+        if self.exchange_id == "okx" and self.supports_positions:
+            is_dual = await self._get_okx_dual_side()
+            if is_dual:
+                if kwargs.get("positionSide") is not None:
+                    params["posSide"] = str(kwargs.get("positionSide")).lower()
+                else:
+                    is_reduce = (
+                        kwargs.get("reduceOnly") is True
+                        or str(kwargs.get("reduceOnly")).lower() == "true"
+                        or kwargs.get("closePosition") is True
+                        or str(kwargs.get("closePosition")).lower() == "true"
+                    )
+                    if ccxt_side == "buy":
+                        params["posSide"] = "short" if is_reduce else "long"
+                    else:
+                        params["posSide"] = "long" if is_reduce else "short"
             else:
-                params["positionSide"] = kwargs.get("positionSide")
-        elif self.exchange_id == "okx" and self.supports_positions:
-            is_reduce = (
-                kwargs.get("reduceOnly") is True
-                or str(kwargs.get("reduceOnly")).lower() == "true"
-                or kwargs.get("closePosition") is True
-                or str(kwargs.get("closePosition")).lower() == "true"
-            )
-            if ccxt_side == "buy":
-                params["posSide"] = "short" if is_reduce else "long"
-            else:
-                params["posSide"] = "long" if is_reduce else "short"
+                # In Net mode (one-way mode), OKX forbids posSide ("long"/"short") with error 51000,
+                # AND forbids reduceOnly on trigger/algo orders with error 51205.
+                params.pop("posSide", None)
+                params.pop("positionSide", None)
+                params.pop("reduceOnly", None)
+        elif kwargs.get("positionSide") is not None:
+            params["positionSide"] = kwargs.get("positionSide")
 
         if kwargs.get("closePosition") is not None:
             params["closePosition"] = kwargs.get("closePosition")
@@ -861,6 +970,79 @@ class CcxtExecutor:
                         price=float(price) if price is not None else None,
                         params=params,
                     )
+                elif (
+                    self.exchange_id == "weex"
+                    and not getattr(self, "_weex_is_oneway", False)
+                    and "positionside" in exc_str.lower()
+                ):
+                    logger.warning(
+                        "Weex: positionSide rejected. Assuming One-Way (Unilateral) mode. Retrying without positionSide..."
+                    )
+                    self._weex_is_oneway = True
+                    params.pop("positionSide", None)
+                    order = await self._exchange.create_order(
+                        symbol=ccxt_symbol,
+                        type=ccxt_type,
+                        side=ccxt_order_side,
+                        amount=request_amount,
+                        price=float(price) if price is not None else None,
+                        params=params,
+                    )
+                elif self.exchange_id == "okx" and (
+                    "51000" in exc_str
+                    or "51205" in exc_str
+                    or "posside" in exc_str.lower()
+                    or "reduce only is not available" in exc_str.lower()
+                ):
+                    logger.warning(
+                        f"OKX: posSide/reduceOnly rejected ({exc_str}). Assuming Net (One-Way) mode. Retrying without posSide and reduceOnly..."
+                    )
+                    self._okx_dual_side = False
+                    params.pop("posSide", None)
+                    params.pop("positionSide", None)
+                    params.pop("reduceOnly", None)
+                    order = await self._exchange.create_order(
+                        symbol=ccxt_symbol,
+                        type=ccxt_type,
+                        side=ccxt_order_side,
+                        amount=request_amount,
+                        price=float(price) if price is not None else None,
+                        params=params,
+                    )
+                elif self.exchange_id == "binance" and (
+                    "-4061" in exc_str
+                    or "position side does not match" in exc_str.lower()
+                ):
+                    logger.warning(
+                        "Binance: positionSide rejected (-4061). Retrying without positionSide..."
+                    )
+                    params.pop("positionSide", None)
+                    order = await self._exchange.create_order(
+                        symbol=ccxt_symbol,
+                        type=ccxt_type,
+                        side=ccxt_order_side,
+                        amount=request_amount,
+                        price=float(price) if price is not None else None,
+                        params=params,
+                    )
+                elif self.exchange_id == "bybit" and (
+                    "110025" in exc_str
+                    or "140026" in exc_str
+                    or "positionidx" in exc_str.lower()
+                ):
+                    logger.warning(
+                        "Bybit: positionIdx mismatch. Retrying with fallback positionIdx..."
+                    )
+                    params.pop("positionIdx", None)
+                    params.pop("positionSide", None)
+                    order = await self._exchange.create_order(
+                        symbol=ccxt_symbol,
+                        type=ccxt_type,
+                        side=ccxt_order_side,
+                        amount=request_amount,
+                        price=float(price) if price is not None else None,
+                        params=params,
+                    )
                 else:
                     raise order_exc
 
@@ -1001,8 +1183,10 @@ class CcxtExecutor:
             if self.exchange_id == "gateio" and self.supports_positions:
                 params["type"] = "swap"
                 params["settle"] = "usdt"
-            if self.exchange_id == "bingx" and self.supports_positions:
+            if self.exchange_id in {"bingx", "weex"} and self.supports_positions:
                 params["type"] = "swap"
+            elif self.exchange_id == "weex" and not self.supports_positions:
+                params["type"] = "spot"
             orders = await self._exchange.fetch_open_orders(ccxt_symbol, params=params)
             if self.exchange_id == "bitget" and not self.supports_positions:
                 try:
@@ -1377,7 +1561,7 @@ class CcxtExecutor:
                     params["settle"] = "usdt"
                 else:
                     params["type"] = "spot"
-            if self.exchange_id == "bingx":
+            if self.exchange_id in {"bingx", "weex"}:
                 params["type"] = "swap" if self.supports_positions else "spot"
             balance = await self._exchange.fetch_balance(params)
             mapped_balances = {}
@@ -1488,7 +1672,7 @@ class CcxtExecutor:
             if self.exchange_id == "gateio":
                 params["type"] = "swap"
                 params["settle"] = "usdt"
-            if self.exchange_id == "bingx":
+            if self.exchange_id in {"bingx", "weex"}:
                 params["type"] = "swap"
             positions = await self._exchange.fetch_positions(params=params)
             mapped_positions = []
@@ -1499,7 +1683,7 @@ class CcxtExecutor:
                 quantity = abs(
                     self._safe_float(pos.get("contracts", pos.get("amount", 0) or 0))
                 )
-                if self._uses_gateio_contract_units():
+                if self._uses_contract_units():
                     quantity = self._contracts_to_base_quantity(
                         pos.get("symbol", ""), quantity
                     )
@@ -1852,8 +2036,8 @@ class CcxtExecutor:
         except Exception:
             return self._safe_float(precision, default)
 
-    def _uses_gateio_contract_units(self) -> bool:
-        return self.exchange_id == "gateio" and self.supports_positions
+    def _uses_contract_units(self) -> bool:
+        return self.exchange_id in {"gateio", "okx"} and self.supports_positions
 
     def _market_contract_size(
         self, symbol: Optional[str], market: Optional[Dict[str, Any]] = None
@@ -1880,7 +2064,7 @@ class CcxtExecutor:
         min_qty: float,
         max_qty: float,
     ) -> tuple[float, float, float]:
-        if not self._uses_gateio_contract_units() or not market.get("contract"):
+        if not self._uses_contract_units() or not market.get("contract"):
             return amount_step, min_qty, max_qty
         contract_size = self._market_contract_size(symbol, market)
         return (
@@ -1895,10 +2079,24 @@ class CcxtExecutor:
         if quantity is None:
             return None
         amount = float(quantity)
-        if not self._uses_gateio_contract_units():
+        if not self._uses_contract_units():
             return amount
         contract_size = self._market_contract_size(symbol)
         contracts = amount / contract_size
+        if self.exchange_id == "okx":
+            markets = getattr(self._exchange, "markets", None) or {}
+            m = markets.get(symbol) or {}
+            precision_amt = self._safe_float(
+                (m.get("precision") or {}).get("amount"), 0.01
+            )
+            if precision_amt < 1.0:
+                import math
+
+                decimals = max(0, int(round(-math.log10(precision_amt))))
+                rounded_contracts = round(contracts, decimals)
+                if rounded_contracts < precision_amt:
+                    rounded_contracts = precision_amt
+                return float(rounded_contracts)
         rounded_contracts = int(round(contracts))
         if rounded_contracts <= 0:
             rounded_contracts = 1
@@ -1908,7 +2106,7 @@ class CcxtExecutor:
         self, symbol: Optional[str], contracts: Any
     ) -> float:
         amount = self._safe_float(contracts)
-        if not self._uses_gateio_contract_units():
+        if not self._uses_contract_units():
             return amount
         return float(f"{amount * self._market_contract_size(symbol):.12g}")
 
@@ -1968,7 +2166,7 @@ class CcxtExecutor:
         raw_side = ccxt_order.get("side") or info.get("side") or ""
         side_upper = str(raw_side).upper()
         raw_symbol = ccxt_order.get("symbol") or info.get("symbol") or ""
-        if self._uses_gateio_contract_units():
+        if self._uses_contract_units():
             amount = self._contracts_to_base_quantity(raw_symbol, amount)
             filled = self._contracts_to_base_quantity(raw_symbol, filled)
         return {
@@ -2013,7 +2211,7 @@ class CcxtExecutor:
             or ccxt_order.get("lastTradeQuantity")
             or filled_value
         )
-        if self._uses_gateio_contract_units():
+        if self._uses_contract_units():
             amount = self._contracts_to_base_quantity(raw_symbol, amount)
             filled_value = self._contracts_to_base_quantity(raw_symbol, filled_value)
             last_value = self._contracts_to_base_quantity(raw_symbol, last_value)
@@ -2029,6 +2227,19 @@ class CcxtExecutor:
             or (ccxt_order.get("info") or {}).get("triggerPrice")
             or "0"
         )
+        info_dict = ccxt_order.get("info") or {}
+        weex_latest_fill = info_dict.get("latestFillPrice")
+        if (
+            self.exchange_id == "weex"
+            and weex_latest_fill
+            and self._safe_float(weex_latest_fill) > 0
+        ):
+            exec_avg_price = str(weex_latest_fill)
+        else:
+            exec_avg_price = str(
+                ccxt_order.get("average") or ccxt_order.get("price") or "0"
+            )
+
         fee = ccxt_order.get("fee") or {}
         order_data = {
             "s": self._to_legacy_symbol(raw_symbol),
@@ -2045,7 +2256,7 @@ class CcxtExecutor:
             "i": str(ccxt_order.get("id", "")),
             "z": filled,
             "l": last,
-            "L": str(ccxt_order.get("average", "0") or "0"),
+            "L": str(exec_avg_price),
             "n": str(fee.get("cost") or "0"),
             "N": fee.get("currency"),
             "T": now_ms,

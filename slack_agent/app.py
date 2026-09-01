@@ -53,7 +53,7 @@ if not API_KEY_SECRET:
     )
 
 # Initialize Slack Bolt App
-app = AsyncApp(token=SLACK_BOT_TOKEN)
+app = AsyncApp(token=SLACK_BOT_TOKEN or "xoxb-dummy-token")
 
 
 # Standalone DepthSight API HTTP Client (Trusted Slack Auth)
@@ -70,9 +70,16 @@ class DepthSightAPIClient:
     def get_headers(self, email: str) -> dict:
         """Generates trusted headers on behalf of a specific user email, falling back to JWT."""
         headers = {}
-        # Direct JWT Token override (great for testing remote production app.depthsight.pro)
+        # DEPTHSIGHT_JWT_TOKEN acts as a global identity override and is therefore
+        # disabled unless explicitly opted-in, so a leaked token is not silently used.
+        jwt_override_enabled = os.environ.get(
+            "SLACK_ALLOW_JWT_OVERRIDE", ""
+        ).lower() in ("true", "1", "yes")
         jwt_token = os.environ.get("DEPTHSIGHT_JWT_TOKEN", "")
-        if jwt_token:
+        if jwt_token and jwt_override_enabled:
+            logger.warning(
+                "DEPTHSIGHT_JWT_TOKEN override is ENABLED — all Slack actions run as that account."
+            )
             headers["Authorization"] = f"Bearer {jwt_token}"
             return headers
 
@@ -1993,10 +2000,9 @@ async def run_portfolio_and_send(client, channel_id, email, thread_ts=None):
 # Start Socket Mode Async
 async def main():
     if not SLACK_BOT_TOKEN or not SLACK_APP_TOKEN:
-        logger.error(
-            "Tokens missing! Add SLACK_BOT_TOKEN and SLACK_APP_TOKEN to .env first."
-        )
-        return
+        logger.info("Slack tokens missing. DepthSight Slack Agent idle mode active.")
+        while True:
+            await asyncio.sleep(3600)
 
     await api_client.ensure_session()
 

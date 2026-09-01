@@ -14,8 +14,6 @@ import {
 	Search,
 	Square,
 	Trash2,
-	TrendingDown,
-	TrendingUp,
 } from "lucide-react";
 import { forwardRef, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -88,7 +86,9 @@ const getStatusColor = (status: string | undefined) => {
 
 // --- Export CombinedStrategy for reuse ---
 export type CombinedStrategy = StrategyConfig &
-	Partial<Omit<StrategyData, "id" | "name">>;
+	Partial<Omit<StrategyData, "id" | "name">> & {
+		instances?: StrategyData[];
+	};
 type FilterType = "all" | "running" | "stopped" | "paper" | "live";
 
 // --- Strategy Card Component ---
@@ -98,18 +98,30 @@ const StrategyCard = forwardRef<
 		strategy: CombinedStrategy;
 		onView: () => void;
 		onStart: () => void;
-		onStop: () => void;
+		onStop: (instance: StrategyData) => void;
 		onDelete: () => void;
 		onBacktest: () => void;
 		isPending: boolean;
+		pendingInstanceId: string | null;
 	}
 >(
 	(
-		{ strategy, onView, onStart, onStop, onDelete, onBacktest, isPending },
+		{
+			strategy,
+			onView,
+			onStart,
+			onStop,
+			onDelete,
+			onBacktest,
+			isPending,
+			pendingInstanceId,
+		},
 		ref,
 	) => {
 		const { t } = useTranslation(["strategies", "common"]);
-		const isRunning = strategy.status?.toUpperCase() !== "STOPPED";
+		const instances = strategy.instances ?? [];
+		const isRunning = instances.length > 0;
+		const primary = instances[0];
 
 		return (
 			<TooltipProvider>
@@ -134,16 +146,23 @@ const StrategyCard = forwardRef<
 								</div>
 								<div className="flex flex-col gap-1 items-end flex-shrink-0">
 									<Badge className={getStatusColor(strategy.status)}>
-										{strategy.status?.toUpperCase() || "STOPPED"}
+										{isRunning ? "RUNNING" : strategy.status?.toUpperCase() || "STOPPED"}
 									</Badge>
-									<Badge
-										variant={
-											strategy.mode === "live" ? "destructive" : "secondary"
-										}
-										className="text-xs"
-									>
-										{strategy.mode?.toUpperCase() || "PAPER"}
-									</Badge>
+									{instances.length > 1 && (
+										<Badge variant="outline" className="text-xs">
+											{t("copiesCount", "{{count}} copies", {
+												count: instances.length,
+											})}
+										</Badge>
+									)}
+									{primary && (
+										<Badge
+											variant={primary.mode === "live" ? "destructive" : "secondary"}
+											className="text-xs"
+										>
+											{primary.mode?.toUpperCase() || "PAPER"}
+										</Badge>
+									)}
 								</div>
 							</div>
 							{strategy.description && (
@@ -166,61 +185,89 @@ const StrategyCard = forwardRef<
 								</span>
 							</div>
 
-							{/* Symbols */}
-							<div className="flex items-center justify-between text-sm">
-								<span className="text-muted-foreground">
-									{t("colSymbols")}:
-								</span>
-								<span className="font-medium text-xs truncate max-w-[150px]">
-									{strategy.symbol_selection_mode === "STATIC"
-										? strategy.symbols?.join(", ") || "N/A"
-										: "Dynamic"}
-								</span>
-							</div>
+							{/* Running Instances */}
+							{isRunning ? (
+								instances.map((inst) => (
+									<div
+										key={inst.id}
+										className="rounded-md border border-accent bg-accent/30 p-2 space-y-1"
+									>
+										<div className="flex items-center justify-between text-sm">
+											<span className="text-muted-foreground text-xs">
+												{t("colSymbols")}:
+											</span>
+											<span className="font-medium text-xs truncate max-w-[140px]">
+												{inst.symbol_selection_mode === "STATIC"
+													? inst.symbols?.join(", ") || "N/A"
+													: "Dynamic"}
+											</span>
+										</div>
 
-							{/* PnL */}
-							{strategy.pnl != null && (
-								<div className="flex items-center justify-between text-sm p-2 rounded-md bg-accent/50">
-									<span className="text-muted-foreground font-medium">
-										{t("colTotalPnl")}:
-									</span>
-									<div className="flex items-center gap-1">
-										{strategy.pnl! >= 0 ? (
-											<TrendingUp className="h-4 w-4 text-emerald-500" />
-										) : (
-											<TrendingDown className="h-4 w-4 text-red-500" />
+										{inst.pnl != null && (
+											<div className="flex items-center justify-between text-sm">
+												<span className="text-muted-foreground font-medium text-xs">
+													{t("colTotalPnl")}:
+												</span>
+												<span
+													className={`font-bold text-xs ${inst.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}
+												>
+													{inst.pnl >= 0 ? "+" : ""}
+													{inst.pnl.toFixed(2)} USDT
+												</span>
+											</div>
 										)}
-										<span
-											className={`font-bold ${strategy.pnl! >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}
-										>
-											{strategy.pnl! >= 0 ? "+" : ""}
-											{strategy.pnl?.toFixed(2)} USDT
-										</span>
+
+										{inst.open_positions != null && (
+											<div className="flex items-center justify-between text-sm">
+												<span className="text-muted-foreground text-xs">
+													{t("openPositions", "Open Positions")}:
+												</span>
+												<Badge variant="outline" className="font-medium text-xs">
+													{inst.open_positions}
+												</Badge>
+											</div>
+										)}
+
+										<div className="flex items-center justify-between pt-1">
+											<span className="text-xs text-muted-foreground">
+												{calculateRuntime(inst.started_at)}
+											</span>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<Button
+														size="sm"
+														variant="outline"
+														onClick={() => onStop(inst)}
+														disabled={isPending && pendingInstanceId === inst.id}
+														className="h-7 px-2 text-xs bg-amber-500/80 hover:bg-amber-600 text-white"
+													>
+														{isPending && pendingInstanceId === inst.id ? (
+															<Loader2 className="h-3 w-3 animate-spin" />
+														) : (
+															<Square className="h-3 w-3" />
+														)}
+														<span className="ml-1">
+															{t("stopTooltip", "Stop")}
+														</span>
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>
+													<p>{t("stopTooltip", "Stop")}</p>
+												</TooltipContent>
+											</Tooltip>
+										</div>
 									</div>
-								</div>
-							)}
-
-							{/* Runtime */}
-							{isRunning && (
+								))
+							) : (
 								<div className="flex items-center justify-between text-sm">
 									<span className="text-muted-foreground">
-										{t("colRuntime")}:
+										{t("colSymbols")}:
 									</span>
-									<span className="font-medium">
-										{calculateRuntime(strategy.started_at)}
+									<span className="font-medium text-xs truncate max-w-[150px]">
+										{strategy.symbol_selection_mode === "STATIC"
+											? strategy.symbols?.join(", ") || "N/A"
+											: "Dynamic"}
 									</span>
-								</div>
-							)}
-
-							{/* Open Positions */}
-							{isRunning && strategy.open_positions != null && (
-								<div className="flex items-center justify-between text-sm">
-									<span className="text-muted-foreground">
-										{t("openPositions", "Open Positions")}:
-									</span>
-									<Badge variant="outline" className="font-medium">
-										{strategy.open_positions}
-									</Badge>
 								</div>
 							)}
 						</CardContent>
@@ -277,48 +324,29 @@ const StrategyCard = forwardRef<
 								</TooltipContent>
 							</Tooltip>
 
-							{/* Start/Stop Button */}
-							{isRunning ? (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											size="icon"
-											onClick={onStop}
-											disabled={isPending}
-											className="bg-amber-500/80 hover:bg-amber-600 text-white"
-										>
-											{isPending ? (
-												<Loader2 className="h-4 w-4 animate-spin" />
-											) : (
-												<Square className="h-4 w-4" />
-											)}
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>
-										<p>{t("stopTooltip", "Stop")}</p>
-									</TooltipContent>
-								</Tooltip>
-							) : (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											size="icon"
-											onClick={onStart}
-											disabled={isPending}
-											className="bg-emerald-500/80 hover:bg-emerald-600 text-white"
-										>
-											{isPending ? (
-												<Loader2 className="h-4 w-4 animate-spin" />
-											) : (
-												<Play className="h-4 w-4" />
-											)}
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>
-										<p>{t("startTooltip", "Start")}</p>
-									</TooltipContent>
-								</Tooltip>
-							)}
+							{/* Start/Add Copy Button */}
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										size="icon"
+										onClick={onStart}
+										disabled={isPending}
+										className="bg-emerald-500/80 hover:bg-emerald-600 text-white"
+									>
+										{isPending ? (
+											<Loader2 className="h-4 w-4 animate-spin" />
+										) : (
+											<Play className="h-4 w-4" />
+										)}
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>
+									<p>
+										{isRunning
+											? t("addCopyTooltip", "Start copy on another coin")
+											: t("startTooltip", "Start")}
+									</p>								</TooltipContent>
+							</Tooltip>
 
 							{/* Delete Button - Only when stopped */}
 							{!isRunning && (
@@ -420,12 +448,14 @@ export default function Strategies() {
 		open: boolean;
 		actionType: "stop" | "delete" | null;
 		configId: string | null;
+		instanceId: string | null;
 		title: string;
 		description: string;
 	}>({
 		open: false,
 		actionType: null,
 		configId: null,
+		instanceId: null,
 		title: "",
 		description: "",
 	});
@@ -444,14 +474,24 @@ export default function Strategies() {
 
 	const combinedStrategies = useMemo((): CombinedStrategy[] => {
 		if (!savedConfigs) return [];
-		const runningMap = new Map(runningStrategies.map((s) => [s.id, s]));
+		// Group running instances by source config id (fall back to legacy id match).
+		const instancesByConfig = new Map<string, StrategyData[]>();
+		for (const inst of runningStrategies) {
+			const key = inst.config_id || inst.id;
+			const arr = instancesByConfig.get(key) ?? [];
+			arr.push(inst);
+			instancesByConfig.set(key, arr);
+		}
 		return savedConfigs.map((config) => {
-			const runningData = runningMap.get(config.id);
+			const instances = instancesByConfig.get(config.id) ?? [];
+			const primary = instances[0];
 			return {
 				...config,
-				...runningData,
+				...primary,
+				id: config.id,
 				name: config.name,
-				status: runningData?.status || "STOPPED",
+				status: instances.length ? primary?.status || "RUNNING" : "STOPPED",
+				instances,
 			};
 		});
 	}, [savedConfigs, runningStrategies]);
@@ -623,7 +663,11 @@ export default function Strategies() {
 				// Pass overrides as part of params (which merges into config_data on backend)
 				params: configDataOverrides,
 				apiKeyId:
-					typeof selectedApiKeyId === "number" ? selectedApiKeyId : undefined,
+					typeof formData.apiKeyId === "number"
+						? formData.apiKeyId
+						: typeof selectedApiKeyId === "number"
+							? selectedApiKeyId
+							: undefined,
 			},
 			{
 				onSettled: () => {
@@ -637,13 +681,15 @@ export default function Strategies() {
 	const openConfirmationModal = (
 		actionType: "stop" | "delete",
 		strategy: CombinedStrategy,
+		instance?: StrategyData,
 	) => {
-		const isRunning = strategy.status?.toLowerCase() !== "stopped";
+		const isRunning = (strategy.instances ?? []).length > 0;
 		if (actionType === "delete" && isRunning) return;
 		setConfirmAction({
 			open: true,
 			actionType,
 			configId: strategy.id,
+			instanceId: instance?.id ?? null,
 			title: t(`confirmation.${actionType}Title`, { name: strategy.name }),
 			description: t(`confirmation.${actionType}Description`),
 		});
@@ -651,7 +697,11 @@ export default function Strategies() {
 
 	const handleConfirmAction = () => {
 		if (!confirmAction.configId || !confirmAction.actionType) return;
-		setPendingActionId(confirmAction.configId);
+		setPendingActionId(
+			confirmAction.actionType === "stop"
+				? confirmAction.instanceId || confirmAction.configId
+				: confirmAction.configId,
+		);
 		const onSettled = () => {
 			if (selectedStrategyId === confirmAction.configId)
 				setSelectedStrategyId(null);
@@ -659,13 +709,16 @@ export default function Strategies() {
 				open: false,
 				actionType: null,
 				configId: null,
+				instanceId: null,
 				title: "",
 				description: "",
 			});
 			setPendingActionId(null);
 		};
 		if (confirmAction.actionType === "stop")
-			stopStrategy(confirmAction.configId, { onSettled });
+			stopStrategy(confirmAction.instanceId || confirmAction.configId, {
+				onSettled,
+			});
 		else if (confirmAction.actionType === "delete")
 			deleteStrategyConfig(confirmAction.configId, { onSettled });
 	};
@@ -751,10 +804,13 @@ export default function Strategies() {
 								strategy={strategy}
 								onView={() => setSelectedStrategyId(strategy.id)}
 								onStart={() => handleStart(strategy)}
-								onStop={() => openConfirmationModal("stop", strategy)}
+								onStop={(instance) =>
+									openConfirmationModal("stop", strategy, instance)
+								}
 								onDelete={() => openConfirmationModal("delete", strategy)}
 								onBacktest={() => handleBacktest(strategy)}
-								isPending={isActionPending && pendingActionId === strategy.id}
+								isPending={isActionPending}
+								pendingInstanceId={pendingActionId}
 							/>
 						))}
 					</AnimatePresence>

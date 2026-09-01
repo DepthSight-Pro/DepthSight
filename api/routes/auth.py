@@ -13,22 +13,9 @@ from .. import crud, schemas, security
 from ..database import get_db
 from ..audit_logger import audit_logger, get_client_ip, get_user_agent
 from ..gamification import check_and_grant_retroactive_achievements
+from ..rate_limiter import limiter, get_limit_value
 
 logger = logging.getLogger(__name__)
-
-
-# Rate limiting fallback
-def get_limit_value(val: str) -> str:
-    return val
-
-
-# Mock limiter if not available in context
-class MockLimiter:
-    def limit(self, *args, **kwargs):
-        return lambda func: func
-
-
-limiter = MockLimiter()
 
 auth_router = APIRouter(
     prefix="/api/v1/auth",
@@ -39,7 +26,7 @@ auth_root_router = APIRouter(tags=["Auth"])
 
 
 @auth_root_router.post("/token", response_model=schemas.LoginResponse)
-@limiter.limit(get_limit_value("5/hour"))
+@limiter.limit(get_limit_value("login"))
 # Login brute-force attack protection
 async def login_for_access_token(
     request: Request,  # Required for slowapi
@@ -284,14 +271,14 @@ async def register_user(
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already registered",
+            detail="Username or email already registered",
         )
 
     db_user_by_email = await crud.get_user_by_email(db, email=user.email)
     if db_user_by_email:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail="Username or email already registered",
         )
 
     # Referral logic
@@ -448,11 +435,15 @@ async def resend_confirmation_email(
         }
 
     if user.is_active:
+        # Do not disclose that the email is registered and already active:
+        # reply with the same generic message as for a non-existent account.
         logger.info(
             f"Resend confirmation requested for already active user: {email_request.email}"
         )
         return {
-            "data": {"message": "This account is already activated. You can log in."}
+            "data": {
+                "message": "If this email is registered, a confirmation link has been sent."
+            }
         }
 
     # Generate a new token

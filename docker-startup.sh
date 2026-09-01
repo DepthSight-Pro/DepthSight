@@ -1,5 +1,8 @@
 #!/bin/bash
-set -e
+set -x
+if touch /app/data/startup.log 2>/dev/null; then
+    exec > >(tee -a /app/data/startup.log) 2>&1
+fi
 
 LOCK_FILE="/tmp/migrations.lock"
 

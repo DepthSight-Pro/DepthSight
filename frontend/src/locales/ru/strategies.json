@@ -21,6 +21,8 @@
 	"startTooltip": "Запустить",
 	"stopTooltip": "Остановить",
 	"deleteTooltip": "Удалить",
+	"addCopyTooltip": "Запустить копию на другой монете",
+	"copiesCount": "{{count}} копий",
 
 	"filters": {
 		"all": "Все",

@@ -3,6 +3,7 @@
 	"userUpdateSuccessDescription": "Данные пользователя успешно обновлены.",
 	"userUpdateFailedTitle": "Ошибка обновления",
 	"bonusIssueSuccessTitle": "Бонус выдан",
+	"bonusIssueSuccessDescription": "Бонус успешно выдан пользователю.",
 	"bonusIssueFailedTitle": "Ошибка выдачи бонуса",
 	"impersonationFailedTitle": "Ошибка имперсонации"
 }

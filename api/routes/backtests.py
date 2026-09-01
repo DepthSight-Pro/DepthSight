@@ -24,20 +24,7 @@ from ..dependencies import (
 )
 from api.celery_app import celery_app
 from bot_module import data_loader
-
-
-# Rate limiting fallback
-def get_limit_value(val: str) -> str:
-    return val
-
-
-# Mock limiter if not available in context
-class MockLimiter:
-    def limit(self, *args, **kwargs):
-        return lambda func: func
-
-
-limiter = MockLimiter()
+from ..rate_limiter import limiter, get_limit_value
 
 logger = logging.getLogger(__name__)
 

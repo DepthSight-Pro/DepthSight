@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router-dom";
+import { Footer } from "@/components/layout/Footer";
 
 const NotFound = () => {
 	const { t } = useTranslation("common");
@@ -16,19 +17,22 @@ const NotFound = () => {
 	}, [location.pathname]);
 
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-gray-100">
-			<div className="text-center">
-				<h1 className="text-4xl font-bold mb-4">{t("notFound.title")}</h1>
-				<p className="text-xl text-gray-600 mb-4">
-					{t("notFound.description")}
-				</p>
-				{/* Changed 'message' to 'description' to match keys from research.json */}
-				<a href="/" className="text-blue-500 hover:text-blue-700 underline">
-					{t("notFound.goHomeButton")}
-				</a>
+		<div className="min-h-screen flex flex-col bg-background text-foreground">
+			<div className="flex-1 flex items-center justify-center">
+				<div className="text-center p-4">
+					<h1 className="text-4xl font-bold mb-4">{t("notFound.title")}</h1>
+					<p className="text-xl text-muted-foreground mb-4">
+						{t("notFound.description")}
+					</p>
+					<a href="/" className="text-primary hover:underline font-medium">
+						{t("notFound.goHomeButton")}
+					</a>
+				</div>
 			</div>
+			<Footer className="mt-auto" />
 		</div>
 	);
 };
 
 export default NotFound;
+

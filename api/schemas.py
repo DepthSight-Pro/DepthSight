@@ -12,7 +12,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_snake, to_camel
 from typing import TypeVar, Generic, Optional, List, Any, Dict, Union, Tuple, Literal
-from datetime import datetime
+from datetime import datetime, date
 from . import schemas
 from bot_module.symbol_selection import SymbolSelectionConfig  # noqa: F401
 import uuid
@@ -115,8 +115,8 @@ class PaginatedAdminUsers(BaseModel):
 # --- Token Schemas ---
 class Token(BaseModel):
     access_token: str
-    refresh_token: str
-    token_type: str
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
 
 
 class LoginResponse(BaseModel):
@@ -440,6 +440,7 @@ class NotificationSettings(BaseModel):
     notifyOrderErrors: bool = True
     notifyBotErrors: bool = True
     notifyBlacklistAlerts: bool = True
+    shareTelemetry: bool = False
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -557,6 +558,7 @@ class AppConfigBase(BaseModel):
     notifications: NotificationSettings
     data_sources: Dict[str, Any]
     exchange_settings: Optional[ExchangeSettings] = None
+    is_mining_enabled: Optional[bool] = False
 
 
 class AppConfigCreate(AppConfigBase):
@@ -571,6 +573,7 @@ class AppConfig(BaseModel):
     notifications: Optional[Dict[str, Any]] = None
     data_sources: Optional[Dict[str, Any]] = None
     api_keys: List[ApiKey] = []
+    is_mining_enabled: bool = False
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -1066,6 +1069,9 @@ class StrategyRunRequest(BaseModel):
 
 class StrategyInfo(StrategyRunRequest):  # For response
     id: str = Field(..., json_schema_extra={"example": "strat_8a3f-b821"})
+    config_id: Optional[str] = Field(
+        None, description="Source strategy config id (for multi-instance)"
+    )
     status: str = Field(..., json_schema_extra={"example": "running"})
     pnl: Optional[float] = Field(
         None, json_schema_extra={"example": 123.45}
@@ -1890,6 +1896,7 @@ class AppConfigUpdate(BaseModel):
     data_sources: Optional[Dict[str, Any]] = None
     exchange_settings: Optional[ExchangeSettings] = None
     status_message: Optional[str] = None  # For UI feedback
+    is_mining_enabled: Optional[bool] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -1944,6 +1951,7 @@ class AffiliateDashboardStats(BaseModel):
     clicks: int  # For now it will be 0, but serves as preparation for the future
     registrations: int
     paying_customers: int
+    payout_address: Optional[str] = None
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -1998,7 +2006,9 @@ class AffiliatePayout(BaseModel):
     created_at: datetime
     amount: float
     status: str
+    payout_address: Optional[str] = None
     transaction_id: Optional[str] = None
+    processed_at: Optional[datetime] = None
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -2012,8 +2022,61 @@ class PaginatedAffiliatePayouts(BaseModel):
     payouts: List[AffiliatePayout]
 
 
+class AdminAffiliatePayout(BaseModel):
+    id: str
+    user_id: int
+    username: Optional[str] = None
+    email: Optional[str] = None
+    amount: float
+    status: str
+    payout_address: Optional[str] = None
+    transaction_id: Optional[str] = None
+    created_at: datetime
+    processed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class PaginatedAdminAffiliatePayouts(BaseModel):
+    total: int
+    payouts: List[AdminAffiliatePayout]
+
+
+class ProcessPayoutRequest(BaseModel):
+    status: str = Field(..., description="'paid' or 'rejected'")
+    transaction_id: Optional[str] = Field(None, alias="transactionId")
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
 class PayoutDetailsPayload(BaseModel):
     usdt_trc20_address: str = Field(..., alias="usdtTrc20Address")
+
+
+class UserBonusItem(BaseModel):
+    id: int
+    feature_name: str
+    quantity: int
+    status: str
+    source_user_id: Optional[int] = None
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class UserBonusesResponse(BaseModel):
+    bonuses: List[UserBonusItem]
 
 
 # --- Admin Schemas ---
@@ -2584,11 +2647,39 @@ class HubNodeRegister(BaseModel):
     name: str = Field(..., max_length=100)
     node_secret: str = Field(..., max_length=255)
     version: Optional[str] = Field(None, max_length=50)
+    referrer_code: Optional[str] = None
+    weex_uid: Optional[str] = None
+    # Owner's Bybit account UID. Sensitive like referrer/mining flags: only a
+    # valid wallet ownership signature may bind or change it. The broker
+    # verifier uses it to reject orders belonging to a different account.
+    bybit_uid: Optional[str] = Field(None, max_length=32)
+    okx_uid: Optional[str] = Field(None, max_length=50)
+    is_mining_server: Optional[bool] = None
+    user_reward_share_percent: Optional[float] = None
+    public_domain: Optional[str] = Field(None, max_length=255)
+    # EVM wallet ownership. For wallet-bound nodes a valid owner signature is
+    # required to create the node, rotate its telemetry secret, set referrer or
+    # flag it as a mining server. Without it, only non-sensitive metadata may be
+    # updated by the holder of the current node secret.
+    wallet_address: Optional[str] = Field(None, max_length=42)
+    owner_signature: Optional[str] = None
+    owner_message: Optional[str] = None
+    public_plans: Optional[Dict[str, Any]] = None
 
 
 class HubNodePing(BaseModel):
     latency_ms: float
     version: Optional[str] = Field(None, max_length=50)
+    user_reward_share_percent: Optional[float] = None
+    public_domain: Optional[str] = Field(None, max_length=255)
+    public_plans: Optional[Dict[str, Any]] = None
+    referrer_code: Optional[str] = None
+
+
+class HubNodeRevokeTelemetry(BaseModel):
+    node_uuid: Optional[str] = None
+    owner_signature: Optional[str] = None
+    owner_message: Optional[str] = None
 
 
 class HubNodeResponse(BaseModel):
@@ -2600,6 +2691,14 @@ class HubNodeResponse(BaseModel):
     latency_ms: Optional[float] = None
     version: Optional[str] = None
     is_master: bool = False
+    user_reward_share_percent: Optional[float] = None
+    public_domain: Optional[str] = None
+    uptime_percent: Optional[float] = None
+    active_miners: Optional[int] = None
+    total_mined: Optional[float] = None
+    is_mining_server: bool = False
+    created_at: Optional[str] = None
+    public_plans: Optional[Dict[str, Any]] = None
 
 
 class ClientConfigurationModel(BaseModel):
@@ -2638,6 +2737,12 @@ class SystemStatus(BaseModel):
         ..., json_schema_extra={"example": "2024-06-14T12:00:00Z"}
     )
     components: List[ComponentStatus]
+    is_central_hub: bool = False
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 
 class SystemMetrics(BaseModel):
@@ -2673,3 +2778,328 @@ class UpdateAutoBlacklistRulesPayload(BaseModel):
     """Payload for updating automatic block rules."""
 
     autoRules: List[AutoBlacklistRule] = Field(default_factory=list)
+
+
+# --- Federated Telemetry & Swarm Intelligence Schemas ---
+class TelemetryBlockConfig(BaseModel):
+    type: str
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TelemetryMarketContext(BaseModel):
+    session: Optional[str] = None
+    natr: Optional[float] = None
+    adx: Optional[float] = None
+    volume_ratio: Optional[float] = None
+
+
+class TelemetryReportCreate(BaseModel):
+    symbol: str
+    direction: str
+    entry_price: float
+    exit_price: float
+    pnl_percent: Optional[float] = None
+    trade_duration_sec: Optional[float] = None
+    exit_reason: Optional[str] = None
+    trade_mode: str
+    timeframe: Optional[str] = None
+    max_floating_profit: Optional[float] = None
+    max_floating_loss: Optional[float] = None
+    strategy_blocks: List[TelemetryBlockConfig] = Field(default_factory=list)
+    market_context: TelemetryMarketContext
+
+    # Trade Mining fields
+    exchange_id: Optional[str] = None
+    market_type: Optional[str] = None
+    broker_trade_id: Optional[str] = None
+    entry_broker_trade_ids: Optional[List[str]] = Field(default_factory=list)
+    close_broker_trade_ids: Optional[List[str]] = Field(default_factory=list)
+    trade_volume_usdt: Optional[float] = None
+    attribution_node_uuid: Optional[str] = None
+    source_node_uuid: Optional[str] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class TelemetryInsightItem(BaseModel):
+    combo_key: str
+    win_rate: float
+    total_trades: int
+    avg_pnl_percent: float
+    best_exit_reasons: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+# --- Trade Mining Schemas ---
+class MiningStatusResponse(BaseModel):
+    is_mining_enabled: bool
+    eligible_exchanges: List[str]
+    rebate_rates: Dict[str, float] = Field(default_factory=dict)
+    current_epoch_date: str
+    daily_emission: float
+    your_total_mined: float
+    your_epoch_reward: float
+    epoch_total_rebates: float
+    participating_nodes: int
+    node_referral_code: Optional[str] = None
+    referrer_node_uuid: Optional[str] = None
+    has_welcome_bonus: bool = False
+    total_operator_fee_collected: float = 0.0
+    your_total_volume: float = 0.0
+    server_total_volume: float = 0.0
+    your_epoch_rebates: float = 0.0
+    your_volume_share: float = 0.0
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningLedgerEntry(BaseModel):
+    epoch_date: str
+    base_reward: float
+    referral_bonus: float
+    boost_multiplier: float
+    total_reward: float
+    verified_trades_count: int
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningConfigPublic(BaseModel):
+    is_mining_enabled: bool
+    eligible_exchanges: List[str]
+    min_trade_duration_sec: int
+    min_price_movement_percent: float = 0.15
+    referral_mining_boost: float
+    daily_emission_base: float = 547945.21
+    rebate_rates: Dict[str, float] = Field(default_factory=dict)
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningConfigUpdate(BaseModel):
+    is_mining_enabled: Optional[bool] = None
+    eligible_exchanges: Optional[List[str]] = None
+    daily_emission_base: Optional[float] = None
+    halving_interval_days: Optional[int] = None
+    launch_date: Optional[date] = None
+    min_trade_duration_sec: Optional[int] = None
+    min_trade_pnl_abs: Optional[float] = None
+    min_price_movement_percent: Optional[float] = None
+    referral_mining_boost: Optional[float] = None
+    rebate_rates: Optional[Dict[str, float]] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class LocalMiningStatusResponse(BaseModel):
+    is_mining_enabled: bool
+    node_uuid: Optional[str] = None
+    node_name: Optional[str] = None
+    registered_on_hub: bool = False
+    node_referral_code: Optional[str] = None
+    referrer_node_uuid: Optional[str] = None
+    referrer_referral_code: Optional[str] = None
+    has_welcome_bonus: bool = False
+    total_mined: float = 0.0
+    config: Optional[Dict[str, Any]] = None
+    stats: Optional[Dict[str, Any]] = None
+    is_global_mining_enabled: bool = False
+    user_reward_share_percent: float = 75.0
+    user_trade_volume: float = 0.0
+    user_estimated_rebate: float = 0.0
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningActivatePayload(BaseModel):
+    referrer_code: Optional[str] = None
+
+
+class NodeMiningConfigUpdate(BaseModel):
+    is_global_mining_enabled: bool
+    user_reward_share_percent: float
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningReferralItem(BaseModel):
+    id: str
+    name: str
+    created_at: str
+    trade_volume_usdt: float
+    total_mined_depth: float
+    referral_bonus_earned: float
+    has_welcome_bonus: bool
+    status: str
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningReferralsResponse(BaseModel):
+    total_invited: int
+    active_referrals: int
+    total_referral_rewards_depth: float
+    total_referral_volume_usdt: float
+    referrals: List[MiningReferralItem]
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningTradeItem(BaseModel):
+    id: str
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    node_uuid: str
+    is_own_trade: Optional[bool] = False
+    symbol: str
+    direction: str
+    exchange_id: Optional[str] = None
+    market_type: Optional[str] = None
+    trade_volume_usdt: float = 0.0
+    verification_status: str = "PENDING"
+    verification_error: Optional[str] = None
+    verified_volume_usdt: Optional[float] = None
+    is_mining_eligible: Optional[bool] = None
+    score: Optional[float] = None
+    reward_tokens: float = 0.0
+    created_at: str
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningTradesResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    items: List[MiningTradeItem]
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+# --- Wallet Schemas (EVM Web3 Auth) ---
+class WalletNoncePayload(BaseModel):
+    address: str
+
+
+class WalletNonceResponse(BaseModel):
+    nonce: str
+    message: str
+
+
+class WalletVerifyPayload(BaseModel):
+    address: str
+    signature: str
+    nonce: str = ""
+    message: Optional[str] = None
+    referrer_code: Optional[str] = None
+
+
+class NodeRevokeTelemetryRequest(BaseModel):
+    node_uuid: str = Field(..., max_length=36)
+    owner_signature: str
+    owner_message: str
+
+
+class WalletVerifyResponse(BaseModel):
+    wallet_address: str
+    node_uuid: str
+    status: str = "ok"
+    hub_registration_error: Optional[str] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class WalletStatusResponse(BaseModel):
+    wallet_address: Optional[str] = None
+    node_uuid: Optional[str] = None
+    wallet_configured: bool = False
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+# --- Admin Plans & AI Configuration Schemas ---
+class AdminPlansConfigResponse(BaseModel):
+    registration_trial: Optional[Dict[str, Any]] = None
+    block_restrictions: Optional[Dict[str, Any]] = None
+    billing: Optional[Dict[str, Any]] = None
+    plans: Dict[str, Any]
+    referral_program: Optional[Dict[str, Any]] = None
+    affiliate_program: Optional[Dict[str, Any]] = None
+
+
+class AdminPlansConfigUpdate(BaseModel):
+    registration_trial: Optional[Dict[str, Any]] = None
+    block_restrictions: Optional[Dict[str, Any]] = None
+    billing: Optional[Dict[str, Any]] = None
+    plans: Dict[str, Any]
+    referral_program: Optional[Dict[str, Any]] = None
+    affiliate_program: Optional[Dict[str, Any]] = None
+
+
+class AdminAISettingsResponse(BaseModel):
+    active_provider: str
+    supported_providers: List[str]
+    providers: Dict[str, Any]
+
+
+class AdminAISettingsUpdate(BaseModel):
+    active_provider: Optional[str] = None
+    providers: Optional[Dict[str, Any]] = None
+
+
+class AdminAITestRequest(BaseModel):
+    provider: str
+    config: Optional[Dict[str, Any]] = None
+
+
+class AdminAITestResponse(BaseModel):
+    success: bool
+    provider: str
+    model: Optional[str] = None
+    latency_ms: float = 0.0
+    response: Optional[str] = None
+    error: Optional[str] = None

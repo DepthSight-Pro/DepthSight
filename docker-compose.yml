@@ -77,6 +77,7 @@ services:
   api:
     build: .
     container_name: depthsight_api
+    init: true
     env_file: .env
     volumes:
       - ./data_storage:/app/data_storage
@@ -107,11 +108,17 @@ services:
   websocket:
     build: .
     container_name: depthsight_websocket
+    init: true
     command: >
       /usr/local/bin/gunicorn api.websocket_server:app
       --workers 3
       --worker-class uvicorn.workers.UvicornWorker
       --bind 0.0.0.0:8765
+    volumes:
+      - ./data_storage:/app/data_storage
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./gcp_key.json:/app/gcp_key.json:ro
     env_file: .env
     environment:
       - POSTGRES_HOST=postgres
@@ -132,12 +139,14 @@ services:
   bot:
     build: .
     container_name: depthsight_bot
+    init: true
     command: python bot_runner.py
     volumes:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
       - ./logs:/app/logs
       - ./gcp_key.json:/app/gcp_key.json:ro
+    shm_size: '2gb'
     env_file: .env
     environment:
       - MARKET_DATA_FANOUT_MODE=redis
@@ -168,6 +177,7 @@ services:
   market_data:
     build: .
     container_name: depthsight_market_data
+    init: true
     command: python market_data_service.py
     volumes:
       - ./data_storage:/app/data_storage
@@ -195,7 +205,45 @@ services:
   celery_worker:
     build: .
     container_name: depthsight_celery_worker
+    init: true
     command: celery -A tasks.celery_app worker --loglevel=info --pool=prefork -c 8
+    volumes:
+      - ./data_storage:/app/data_storage
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./gcp_key.json:/app/gcp_key.json:ro
+    shm_size: '2gb'
+    env_file: .env
+    environment:
+      - REDIS_USERNAME=celery
+      - REDIS_PASSWORD=${REDIS_CELERY_PASSWORD:-${REDIS_PASSWORD}}
+      - REDIS_HOST=redis
+      - MCP_MEMORY_HOST=mcp-memory
+      - MCP_MEMORY_PORT=8100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp-memory:
+        condition: service_started
+    restart: on-failure
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  celery_beat:
+    build: .
+    container_name: depthsight_celery_beat
+    init: true
+    # Scheduler state goes to /tmp: the image workdir is not writable by the
+    # container user, and an unwritable/unopenable celerybeat-schedule file
+    # crash-loops beat (=> no periodic tasks ever run).
+    command: >
+      celery -A tasks.celery_app beat --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
     volumes:
       - ./data_storage:/app/data_storage
       - ./data:/app/data
@@ -225,6 +273,7 @@ services:
   slack_agent:
     build: .
     container_name: depthsight_slack_agent
+    init: true
     command: python -m slack_agent.app
     env_file: .env
     environment:
@@ -256,6 +305,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         VITE_API_URL: "${PUBLIC_BASE_URL:-http://localhost}"
+        VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID}"
     container_name: depthsight_frontend
     restart: always
 
@@ -263,6 +313,9 @@ services:
     build:
       context: ./pwa
       dockerfile: Dockerfile.prod
+      args:
+        VITE_API_URL: "${PUBLIC_BASE_URL:-http://localhost}"
+        VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID}"
     container_name: depthsight_pwa
     restart: always
 

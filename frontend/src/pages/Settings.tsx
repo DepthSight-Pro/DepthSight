@@ -205,6 +205,7 @@ export default function Settings() {
 	const [notifyBotErrors, setNotifyBotErrors] = useState<boolean>(true);
 	const [notifyBlacklistAlerts, setNotifyBlacklistAlerts] =
 		useState<boolean>(true);
+	const [shareTelemetry, setShareTelemetry] = useState<boolean>(false);
 
 	const [confirmAction, setConfirmAction] = useState<{
 		open: boolean;
@@ -284,6 +285,7 @@ export default function Settings() {
 			setNotifyBlacklistAlerts(
 				config.notifications?.notifyBlacklistAlerts ?? true,
 			);
+			setShareTelemetry(config.notifications?.shareTelemetry || false);
 		}
 	}
 
@@ -454,6 +456,7 @@ export default function Settings() {
 						notifyOrderErrors,
 						notifyBotErrors,
 						notifyBlacklistAlerts,
+						shareTelemetry,
 					},
 				};
 				break;
@@ -1374,6 +1377,25 @@ export default function Settings() {
 									<Label htmlFor="telegram-notifications">
 										{t("notifications.telegramLabel")}
 									</Label>
+								</div>
+							</div>
+
+							<div className="pt-4 border-t border-border space-y-4">
+								<div className="flex items-start space-x-3">
+									<Switch
+										id="share-telemetry"
+										checked={shareTelemetry}
+										onCheckedChange={setShareTelemetry}
+										className="mt-1"
+									/>
+									<div className="space-y-1">
+										<Label htmlFor="share-telemetry" className="font-semibold text-base">
+											{"Join Swarm Intelligence & Trade Mining"}
+										</Label>
+										<p className="text-xs text-muted-foreground max-w-xl">
+											{"Required while Trade Mining is active: your closed trades (symbol, entry/exit prices, volume, PnL, duration, order IDs) and strategy parameters (blocks, NATR/ADX) are shared with the Central Hub, linked to your node's wallet address and exchange UID. Your exchange API keys, passwords and asset balances are never transmitted. Deactivate Trade Mining to turn this off."}
+										</p>
+									</div>
 								</div>
 							</div>
 

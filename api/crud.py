@@ -1,10 +1,12 @@
 # api/crud.py
 import uuid
+import time
 import logging
 import math
 from datetime import datetime, timezone, date
 from typing import Optional, List, Tuple
 from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import (
     selectinload,
@@ -111,6 +113,7 @@ async def create_oauth_user(
     )
     db.add(db_user)
     await db.flush()
+    await create_default_app_config(db, db_user.id)
     return db_user
 
 
@@ -380,12 +383,22 @@ async def update_commission_statuses(db: AsyncSession) -> int:
     return result.rowcount
 
 
-async def create_payout_request(db: AsyncSession, user_id: int) -> dict:
+async def create_payout_request(
+    db: AsyncSession, user_id: int
+) -> models.AffiliatePayout:
     """
-    Creates a payout request by marking all currently 'available' commissions as 'paid'.
-    (No-migration version: we don't store a separate payout record, just update commissions).
+    Creates an AffiliatePayout request in 'pending' status for all currently 'available' commissions,
+    marking those commissions as 'processing' and linking them to this payout.
     """
-    # 1. Get total available amount
+    user = await db.get(models.User, user_id)
+    if not user:
+        raise ValueError("User not found.")
+
+    if not user.payout_address or not user.payout_address.strip():
+        raise ValueError(
+            "Please provide your USDT TRC-20 payout address in payout details first."
+        )
+
     available_commissions_query = select(models.Commission).filter(
         models.Commission.affiliate_user_id == user_id,
         models.Commission.status == "available",
@@ -397,26 +410,154 @@ async def create_payout_request(db: AsyncSession, user_id: int) -> dict:
         raise ValueError("No available commissions for payout.")
 
     total_amount = sum(c.commission_amount_usd for c in available_commissions)
+    affiliate_config = plans_config.get_affiliate_config()
+    min_payout = float(affiliate_config.get("min_payout_usd", 50.0))
+    if total_amount < min_payout:
+        raise ValueError(
+            f"Minimum payout amount is ${min_payout:.2f}. Your available balance is ${total_amount:.2f}."
+        )
 
-    # 2. Mark commissions as 'paid'
+    payout_id = str(uuid.uuid4())
+    payout = models.AffiliatePayout(
+        id=payout_id,
+        user_id=user_id,
+        amount=total_amount,
+        status="pending",
+        payout_address=user.payout_address.strip(),
+    )
+    db.add(payout)
+
     for commission in available_commissions:
-        commission.status = "paid"
+        commission.status = "processing"
+        commission.payout_id = payout_id
 
+    await db.flush()
     await db.commit()
-
-    # Return a dict instead of a model
-    return {"amount": total_amount}
+    await db.refresh(payout)
+    logger.info(
+        f"Created payout request {payout_id} for user {user_id} with amount ${total_amount:.2f}"
+    )
+    return payout
 
 
 async def get_payouts_for_user(
     db: AsyncSession, user_id: int, skip: int = 0, limit: int = 10
-) -> Tuple[List[dict], int]:
+) -> Tuple[List[models.AffiliatePayout], int]:
     """
-    Retrieves a paginated list of 'payouts' for a specific user.
-    (No-migration version: we just return an empty list or aggregate 'paid' commissions).
-    Currently returning empty history as there is no payouts table.
+    Retrieves a paginated list of payout requests for a specific user.
     """
-    return [], 0
+    query = select(models.AffiliatePayout).filter(
+        models.AffiliatePayout.user_id == user_id
+    )
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar_one()
+
+    paginated_query = (
+        query.order_by(desc(models.AffiliatePayout.created_at))
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(paginated_query)
+    payouts = result.scalars().all()
+    return payouts, total
+
+
+async def admin_get_payouts(
+    db: AsyncSession,
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 10,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Retrieves a paginated list of all payouts across partners for admin.
+    """
+    query = select(
+        models.AffiliatePayout,
+        models.User.username,
+        models.User.email,
+    ).join(models.User, models.AffiliatePayout.user_id == models.User.id)
+    if status and status.lower() not in ("all", ""):
+        query = query.filter(models.AffiliatePayout.status == status.lower())
+
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar_one()
+
+    paginated_query = (
+        query.order_by(desc(models.AffiliatePayout.created_at))
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(paginated_query)
+    payouts_data = []
+    for payout, username, email in result.all():
+        payouts_data.append(
+            {
+                "id": payout.id,
+                "user_id": payout.user_id,
+                "username": username,
+                "email": email,
+                "amount": payout.amount,
+                "status": payout.status,
+                "payout_address": payout.payout_address,
+                "transaction_id": payout.transaction_id,
+                "created_at": payout.created_at,
+                "processed_at": payout.processed_at,
+            }
+        )
+    return payouts_data, total
+
+
+async def admin_process_payout(
+    db: AsyncSession,
+    payout_id: str,
+    status: str,
+    transaction_id: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> models.AffiliatePayout:
+    """
+    Processes an affiliate payout request (paid or rejected).
+    """
+    payout = await db.get(models.AffiliatePayout, payout_id)
+    if not payout:
+        raise ValueError("Payout not found.")
+
+    if payout.status != "pending":
+        raise ValueError(f"Cannot process payout with status '{payout.status}'.")
+
+    target_status = status.lower()
+    if target_status not in ("paid", "rejected"):
+        raise ValueError("Status must be either 'paid' or 'rejected'.")
+
+    now = datetime.now(timezone.utc)
+    payout.status = target_status
+    payout.processed_at = now
+    if transaction_id:
+        payout.transaction_id = transaction_id.strip()
+
+    # Update linked commissions
+    comm_query = select(models.Commission).filter(
+        models.Commission.payout_id == payout_id
+    )
+    comm_res = await db.execute(comm_query)
+    commissions = comm_res.scalars().all()
+
+    if target_status == "paid":
+        for comm in commissions:
+            comm.status = "paid"
+    elif target_status == "rejected":
+        for comm in commissions:
+            comm.status = "available"
+            comm.payout_id = None
+
+    await db.flush()
+    await db.commit()
+    await db.refresh(payout)
+    logger.info(
+        f"Admin processed payout {payout_id} -> status='{target_status}', tx='{transaction_id}'"
+    )
+    return payout
 
 
 async def get_affiliate_dashboard_stats(
@@ -425,10 +566,14 @@ async def get_affiliate_dashboard_stats(
     """
     Collects statistics for a specific partner's dashboard.
     """
-    # 0. Get user's referral code (always needed for clicks)
-    user_query = select(models.User.referral_code).filter(models.User.id == user_id)
+    # 0. Get user's referral code and payout address
+    user_query = select(models.User.referral_code, models.User.payout_address).filter(
+        models.User.id == user_id
+    )
     user_result = await db.execute(user_query)
-    referral_code = user_result.scalar_one_or_none()
+    user_row = user_result.one_or_none()
+    referral_code = user_row[0] if user_row else None
+    payout_address = user_row[1] if user_row else None
 
     # 1. Financial statistics
     financial_stats_query = select(
@@ -496,6 +641,7 @@ async def get_affiliate_dashboard_stats(
         "clicks": clicks,
         "registrations": registrations,
         "paying_customers": paying_customers,
+        "payout_address": payout_address,
     }
 
 
@@ -699,9 +845,12 @@ async def get_referrals_for_affiliate(
 
 
 async def get_users(
-    db: AsyncSession, skip: int = 0, limit: int = 100
+    db: AsyncSession, skip: int = 0, limit: Optional[int] = None
 ) -> List[models.User]:
-    result = await db.execute(select(models.User).offset(skip).limit(limit))
+    query = select(models.User).offset(skip)
+    if limit is not None:
+        query = query.limit(limit)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -944,16 +1093,65 @@ async def get_dashboard_stats(db: AsyncSession) -> schemas.DashboardStats:
 # --- AppConfig CRUD ---
 
 
+async def create_default_app_config(db: AsyncSession, user_id: int) -> models.AppConfig:
+    """
+    Creates and attaches default AppConfig for a given user.
+    """
+    default_risk_management = schemas.RiskManagementSettings(
+        maxDrawdown=10.0,
+        maxConsecutiveLosses=10,
+        maxConcurrentTrades=5,
+        stopLossEnabled=True,
+        defaultStopLossPercent=2.0,
+        riskPerTradePercent=1.0,  # Default 1% risk per trade for live trading
+    )
+    default_backtest_risk_management = schemas.BacktestRiskManagementSettings(
+        maxDrawdown=10.0,
+        dailyMaxLossPercent=5.0,
+        maxConsecutiveLosses=10,
+        maxConcurrentTrades=5,
+        stopLossEnabled=True,
+        defaultStopLossPercent=2.0,
+    )
+    default_notifications = schemas.NotificationSettings(
+        emailEnabled=security.EMAIL_CONFIRMATION_ENABLED,  # Set based on global config
+        telegramEnabled=False,
+        telegramChatId=None,
+        shareTelemetry=False,
+    )
+    default_exchange_settings = schemas.ExchangeSettings(
+        binance=schemas.ExchangePlatformSettings(enabled=False, api_key_name=""),
+    )
+    db_config = models.AppConfig(
+        user_id=user_id,
+        risk_management=default_risk_management.model_dump(by_alias=True),
+        backtest_risk_management=default_backtest_risk_management.model_dump(
+            by_alias=True
+        ),
+        notifications=default_notifications.model_dump(by_alias=True),
+        exchange_settings=default_exchange_settings.model_dump(by_alias=True),
+        data_sources={"symbols": ["BTCUSDT", "ETHUSDT"], "statuses": []},
+    )
+    db.add(db_config)
+    await db.flush()
+    return db_config
+
+
 async def get_config_model(
     db: AsyncSession, user_id: int
 ) -> Optional[models.AppConfig]:
     """
     Retrieves the database application configuration model for the specified user.
+    Auto-creates default AppConfig if missing.
     """
     result = await db.execute(
         select(models.AppConfig).where(models.AppConfig.user_id == user_id)
     )
-    return result.scalar_one_or_none()
+    config = result.scalar_one_or_none()
+    if not config:
+        config = await create_default_app_config(db, user_id)
+        await db.commit()
+    return config
 
 
 async def create_user(
@@ -1013,42 +1211,7 @@ async def create_user(
     db.add(db_user)
     await db.flush()
 
-    default_risk_management = schemas.RiskManagementSettings(
-        maxDrawdown=10.0,
-        maxConsecutiveLosses=10,
-        maxConcurrentTrades=5,
-        stopLossEnabled=True,
-        defaultStopLossPercent=2.0,
-        riskPerTradePercent=1.0,  # Default 1% risk per trade for live trading
-    )
-    default_backtest_risk_management = schemas.BacktestRiskManagementSettings(
-        maxDrawdown=10.0,
-        dailyMaxLossPercent=5.0,
-        maxConsecutiveLosses=10,
-        maxConcurrentTrades=5,
-        stopLossEnabled=True,
-        defaultStopLossPercent=2.0,
-    )
-    default_notifications = schemas.NotificationSettings(
-        emailEnabled=security.EMAIL_CONFIRMATION_ENABLED,  # Set based on global config
-        telegramEnabled=False,
-        telegramChatId=None,
-        shareTelemetry=False,
-    )
-    default_exchange_settings = schemas.ExchangeSettings(
-        binance=schemas.ExchangePlatformSettings(enabled=False, api_key_name=""),
-    )
-    db_config = models.AppConfig(
-        user_id=db_user.id,
-        risk_management=default_risk_management.model_dump(by_alias=True),
-        backtest_risk_management=default_backtest_risk_management.model_dump(
-            by_alias=True
-        ),
-        notifications=default_notifications.model_dump(by_alias=True),
-        exchange_settings=default_exchange_settings.model_dump(by_alias=True),
-        data_sources={"symbols": ["BTCUSDT", "ETHUSDT"], "statuses": []},
-    )
-    db.add(db_config)
+    await create_default_app_config(db, db_user.id)
 
     # for strategy_name in STRATEGIES.keys():
     #     default_params = STRATEGY_DEFAULTS.get(strategy_name, {})
@@ -1186,6 +1349,11 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
     )
     await db.execute(delete(models.Bonus).where(models.Bonus.user_id == user_id))
     await db.execute(delete(models.Task).where(models.Task.user_id == user_id))
+    await db.execute(
+        delete(models.LocalUserMiningStats).where(
+            models.LocalUserMiningStats.user_id == user_id
+        )
+    )
 
     # SQLAlchemy will now handle deleting related objects defined with `cascade="all, delete-orphan"`
     # on the User model, which are: BacktestRun, GeneticRun, Bonus (where user_id matches).
@@ -1198,7 +1366,69 @@ async def delete_user(db: AsyncSession, user_id: int) -> bool:
 async def create_pending_bonuses_for_referral(
     db: AsyncSession, referrer_id: int, referred_id: int
 ):
-    pass
+    """
+    Creates pending bonuses for both referrer and referred user upon registration.
+    """
+    referral_cfg = plans_config.get_referral_bonus_config()
+    referrer_bonus_cfg = referral_cfg.get(
+        "referrer_bonus", {"feature_name": "run_backtest", "quantity": 50}
+    )
+    referred_bonus_cfg = referral_cfg.get(
+        "referred_user_bonus", {"feature_name": "run_backtest", "quantity": 25}
+    )
+
+    bonuses = []
+    if referrer_bonus_cfg and referrer_bonus_cfg.get("quantity", 0) > 0:
+        bonuses.append(
+            models.Bonus(
+                user_id=referrer_id,
+                feature_name=referrer_bonus_cfg.get("feature_name", "run_backtest"),
+                quantity=referrer_bonus_cfg.get("quantity", 50),
+                status="pending",
+                source_user_id=referred_id,
+            )
+        )
+
+    if referred_bonus_cfg and referred_bonus_cfg.get("quantity", 0) > 0:
+        bonuses.append(
+            models.Bonus(
+                user_id=referred_id,
+                feature_name=referred_bonus_cfg.get("feature_name", "run_backtest"),
+                quantity=referred_bonus_cfg.get("quantity", 25),
+                status="pending",
+                source_user_id=referrer_id,
+            )
+        )
+
+    if bonuses:
+        db.add_all(bonuses)
+        await db.flush()
+        logger.info(
+            f"Created pending referral bonuses for referrer {referrer_id} and referred user {referred_id}"
+        )
+
+
+async def activate_referral_bonuses(db: AsyncSession, referred_user_id: int):
+    """
+    Activates pending bonuses linked to the referred user:
+    1. The referred user's own welcome bonus (where user_id == referred_user_id).
+    2. The referrer's bonus awarded for inviting this referred user (where source_user_id == referred_user_id).
+    """
+    stmt = select(models.Bonus).where(
+        models.Bonus.status == "pending",
+        or_(
+            models.Bonus.user_id == referred_user_id,
+            models.Bonus.source_user_id == referred_user_id,
+        ),
+    )
+    res = await db.execute(stmt)
+    bonuses_to_activate = res.scalars().all()
+    for bonus in bonuses_to_activate:
+        bonus.status = "active"
+    await db.flush()
+    logger.info(
+        f"Activated {len(bonuses_to_activate)} referral bonuses linked to referred user {referred_user_id}"
+    )
 
 
 async def activate_bonuses_for_user(db: AsyncSession, user_id: int):
@@ -1265,7 +1495,8 @@ async def get_config(db: AsyncSession, user_id: int) -> Optional[schemas.AppConf
     config = config_result.scalars().first()
 
     if not config:
-        return None
+        config = await create_default_app_config(db, user_id)
+        await db.commit()
 
     # 2. Get API keys
     keys_result = await db.execute(
@@ -1281,6 +1512,7 @@ async def get_config(db: AsyncSession, user_id: int) -> Optional[schemas.AppConf
         "notifications": config.notifications,
         "data_sources": config.data_sources,
         "exchange_settings": config.exchange_settings,
+        "is_mining_enabled": config.is_mining_enabled,
         # Immediately add keys to the dictionary
         "api_keys": [schemas.ApiKey.model_validate(key) for key in api_keys],
     }
@@ -1298,7 +1530,8 @@ async def update_config_section(
         )
         db_config = config_result.scalars().first()
         if not db_config:
-            return None
+            db_config = await create_default_app_config(db, user_id)
+            await db.flush()
 
         if hasattr(db_config, section):
             current_data = getattr(db_config, section)
@@ -2025,6 +2258,183 @@ async def get_strategy_config_by_id(
         select(models.StrategyConfig).filter(models.StrategyConfig.id == config_id)
     )
     return result.scalars().first()
+
+
+async def update_user_mining_stats(
+    db: AsyncSession,
+    user_id: int,
+    trade_volume: float,
+    est_rebate: float,
+) -> None:
+    from api.models import LocalUserMiningStats
+
+    stats_res = await db.execute(
+        select(LocalUserMiningStats).where(LocalUserMiningStats.user_id == user_id)
+    )
+    user_stats = stats_res.scalar_one_or_none()
+    if not user_stats:
+        user_stats = LocalUserMiningStats(
+            user_id=user_id,
+            total_trade_volume_usdt=trade_volume,
+            estimated_rebate_usdt=est_rebate,
+        )
+        db.add(user_stats)
+    else:
+        user_stats.total_trade_volume_usdt += trade_volume
+        user_stats.estimated_rebate_usdt += est_rebate
+        user_stats.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+
+async def _evaluate_saved_report(db: AsyncSession, db_report) -> None:
+    """Applies submission quality gates + rebate estimate to a freshly saved
+    LOCAL telemetry report when THIS deployment is the central hub.
+
+    On the hub, trades mined by locally-hosted bots are stored directly and
+    never go through POST /hub/telemetry/report — without this evaluation they
+    would stay dead rows (score=0, ineligible) forever. Sets PENDING for the
+    broker verifier to confirm afterwards (VERIFIED requires real commission).
+    """
+    import os
+    from types import SimpleNamespace
+
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        return
+
+    try:
+        from api.hub_router import (
+            _estimate_rebate,
+            _get_active_mining_config,
+            score_trade_with_reason,
+        )
+
+        cfg = await _get_active_mining_config(db)
+        if not cfg or not cfg.is_mining_enabled:
+            db_report.verification_status = "PENDING"
+            await db.commit()
+            return
+
+        probe = SimpleNamespace(
+            trade_mode=db_report.trade_mode,
+            trade_duration_sec=db_report.trade_duration_sec,
+            entry_price=db_report.entry_price,
+            exit_price=db_report.exit_price,
+            exchange_id=db_report.exchange_id,
+            market_type=db_report.market_type,
+            trade_volume_usdt=db_report.trade_volume_usdt,
+        )
+        score, gate_reason = score_trade_with_reason(probe, cfg)
+        db_report.score = score
+        db_report.verification_error = gate_reason
+        if score > 0.0:
+            db_report.is_mining_eligible = True
+            db_report.estimated_rebate_usdt = _estimate_rebate(probe, cfg)
+
+        # Weex/Bybit/OKX are verifiable on the hub -> let the verifier confirm.
+        exch = (db_report.exchange_id or "").lower()
+        db_report.verification_status = (
+            "PENDING" if exch in ("weex", "bybit", "okx") else "SKIPPED"
+        )
+        await db.commit()
+    except Exception as e:
+        logger.error(
+            f"[crud] Failed to evaluate locally-saved telemetry report "
+            f"{db_report.id}: {e}",
+            exc_info=True,
+        )
+
+
+async def save_hub_telemetry_report(
+    db: AsyncSession,
+    payload: dict,
+    attribution_node_uuid: str,
+) -> None:
+    from api.models import HubTelemetryReport
+
+    db_report = HubTelemetryReport(
+        symbol=payload.get("symbol"),
+        direction=payload.get("direction"),
+        entry_price=payload.get("entry_price"),
+        exit_price=payload.get("exit_price"),
+        pnl_percent=payload.get("pnl_percent"),
+        trade_duration_sec=payload.get("trade_duration_sec"),
+        exit_reason=payload.get("exit_reason"),
+        trade_mode=payload.get("trade_mode"),
+        timeframe=payload.get("timeframe"),
+        max_floating_profit=payload.get("max_floating_profit"),
+        max_floating_loss=payload.get("max_floating_loss"),
+        strategy_blocks=payload.get("strategy_blocks", []),
+        market_context=payload.get("market_context", {}),
+        node_uuid=attribution_node_uuid,
+        exchange_id=payload.get("exchange_id"),
+        market_type=payload.get("market_type"),
+        broker_trade_id=payload.get("broker_trade_id"),
+        entry_broker_trade_ids=payload.get("entry_broker_trade_ids"),
+        close_broker_trade_ids=payload.get("close_broker_trade_ids"),
+        trade_volume_usdt=payload.get("trade_volume_usdt"),
+        score=0.0,
+        is_verified=False,
+        verification_status="LOCAL_ONLY",
+        is_mining_eligible=False,
+        estimated_rebate_usdt=0.0,
+    )
+    db.add(db_report)
+    await db.commit()
+    await db.refresh(db_report)
+    # On the central hub this row would otherwise stay LOCAL_ONLY forever:
+    # nothing re-evaluates it later (verifier reads PENDING only).
+    await _evaluate_saved_report(db, db_report)
+    return db_report
+
+
+async def update_hub_telemetry_status(
+    db: AsyncSession,
+    report_id: str,
+    status: str = "SENT",
+) -> Optional[models.HubTelemetryReport]:
+    stmt = select(models.HubTelemetryReport).where(
+        models.HubTelemetryReport.id == report_id
+    )
+    res = await db.execute(stmt)
+    report = res.scalar_one_or_none()
+    if report:
+        report.verification_status = status
+        await db.commit()
+        await db.refresh(report)
+    return report
+
+
+async def get_pending_local_telemetry_reports(
+    db: AsyncSession,
+    limit: int = 50,
+) -> List[models.HubTelemetryReport]:
+    stmt = (
+        select(models.HubTelemetryReport)
+        .where(models.HubTelemetryReport.verification_status == "LOCAL_ONLY")
+        .order_by(models.HubTelemetryReport.created_at.asc())
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    return list(res.scalars().all())
+
+
+async def resolve_user_attribution_node_uuid(
+    db: AsyncSession,
+    user_id: int,
+) -> Optional[str]:
+    from api.models import User, HubNode
+
+    u_stmt = select(User).where(User.id == user_id)
+    u_res = await db.execute(u_stmt)
+    u_obj = u_res.scalars().first()
+    if u_obj and u_obj.referral_code:
+        hn_res = await db.execute(
+            select(HubNode.node_uuid)
+            .where(HubNode.node_referral_code == u_obj.referral_code)
+            .limit(1)
+        )
+        return hn_res.scalar()
+    return None
 
 
 async def update_strategy_config(
@@ -3964,3 +4374,70 @@ async def get_hub_news_comments(
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def claim_ownership_message(
+    db: AsyncSession, message_hash: str, expires_at: int
+) -> bool:
+    """Registers a wallet ownership-message hash as consumed (replay protection).
+
+    Returns True when the hash is claimed for the first time; False when the
+    exact same signed message was already consumed (replay attempt). Expired
+    claims are lazily cleaned up on every call.
+
+    The claim is inserted inside a SAVEPOINT and released together with the
+    caller's transaction: if the authorized state change is rolled back, the
+    claim is released too and the signature can be legitimately retried.
+    """
+    await db.execute(
+        delete(models.UsedOwnershipMessage).where(
+            models.UsedOwnershipMessage.expires_at < int(time.time())
+        )
+    )
+    existing = (
+        await db.execute(
+            select(models.UsedOwnershipMessage).where(
+                models.UsedOwnershipMessage.message_hash == message_hash
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return False
+
+    try:
+        async with db.begin_nested():
+            db.add(
+                models.UsedOwnershipMessage(
+                    message_hash=message_hash, expires_at=expires_at
+                )
+            )
+            await db.flush()
+    except IntegrityError:
+        # A concurrent request claimed the same message first.
+        return False
+    return True
+
+
+async def referrer_link_creates_cycle(
+    db: AsyncSession, node_uuid: str, target_uuid: str, max_depth: int = 64
+) -> bool:
+    """True when linking ``node_uuid`` -> ``target_uuid`` would close a referral
+    cycle (A -> B -> ... -> A). Walks up the existing referrer chain from the
+    target; ``max_depth`` guards against pathological pre-existing loops."""
+    seen = set()
+    cur = target_uuid
+    depth = 0
+    while cur and depth < max_depth:
+        if cur == node_uuid:
+            return True
+        if cur in seen:
+            break
+        seen.add(cur)
+        res = await db.execute(
+            select(models.HubNode.referrer_node_uuid).where(
+                models.HubNode.node_uuid == cur
+            )
+        )
+        cur = res.scalar()
+        depth += 1
+    return False

@@ -212,6 +212,7 @@ class BasePosition:
     current_sl_price: Optional[float] = None
     initial_take_profit: Optional[float] = None
     no_stop_loss: bool = False
+    entry_atr: Optional[float] = None
 
     # General control fields
     is_stop_at_be: bool = False

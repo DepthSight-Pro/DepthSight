@@ -49,6 +49,7 @@ import AIChatScreen from "./screens/AIChatScreen";
 import EditorHybridScreen from "./screens/EditorHybridScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import MiningScreen from "./screens/MiningScreen";
 import { AIChatProvider } from "./contexts/AIChatContext";
 import { SymbolSelectionSettingsProvider } from "./contexts/SymbolSelectionSettingsContext";
 
@@ -790,6 +791,8 @@ const MainAppLayout = () => {
 				return <ProfileScreen />;
 			case Screen.Settings:
 				return <SettingsScreen />;
+			case Screen.Mining:
+				return <MiningScreen />;
 			default:
 				return <DashboardScreen />;
 		}

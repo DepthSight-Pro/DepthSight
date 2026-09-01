@@ -183,7 +183,7 @@ async def test_exchange(exchange_name: str, market_type: str = "futures_usdtm"):
 
 
 async def main():
-    exchanges_to_test = ["binance", "bybit", "bitget", "gateio", "okx", "bingx"]
+    exchanges_to_test = ["binance", "bybit", "bitget", "gateio", "okx", "bingx", "weex"]
 
     results = []
     for exc in exchanges_to_test:

@@ -1,6 +1,5 @@
 import logging
 import numpy as np
-import xgboost as xgb
 import joblib
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple, Literal
@@ -48,7 +47,7 @@ class CompassStrategy(BaseStrategy):
             config, "ORACLE_MODEL_PATH", Path("data/oracle_model.joblib")
         )
 
-        self.compass_model: Optional[xgb.Booster] = None
+        self.compass_model: Any = None
         self.oracle_model: Any = None
         self.feature_names: List[str] = []
 
@@ -58,11 +57,21 @@ class CompassStrategy(BaseStrategy):
 
     def _load_models(self):
         """Loads XGBoost and Oracle models."""
+        try:
+            import xgboost as xgb
+        except ImportError:
+            logger.warning("xgboost not installed, Compass strategy unavailable.")
+            xgb = None
+
         # Load Compass Model
         try:
             if not Path(self.compass_model_path).exists():
                 logger.error(
                     f"[{self.NAME}] Compass model not found at {self.compass_model_path}"
+                )
+            elif xgb is None:
+                logger.error(
+                    f"[{self.NAME}] Cannot load Compass model because xgboost is not installed or failed to import."
                 )
             else:
                 self.compass_model = xgb.Booster()
@@ -194,6 +203,8 @@ class CompassStrategy(BaseStrategy):
 
         # Prepare DMatrix
         try:
+            import xgboost as xgb
+
             # Ensure correct order
             feature_vector = [compass_features.get(f, 0.0) for f in self.feature_names]
             dtest = xgb.DMatrix([feature_vector], feature_names=self.feature_names)

@@ -22,6 +22,8 @@
 	"noActivePositions": "No active positions.",
 	"emergencyStopConfirmTitle": "Confirm Emergency Stop",
 	"emergencyStopConfirmDesc": "This will immediately close ALL open positions and cancel ALL orders. This action cannot be undone.",
+	"closePositionConfirmTitle": "Close Position: {{symbol}}",
+	"closePositionConfirmDesc": "Are you sure you want to close this position? This action will execute a market order to close the position immediately.",
 	"editSlTpModal": {
 		"title": "Edit SL/TP for {{symbol}}",
 		"description": "Current Entry Price: ${{price}}. Leave input empty to remove an existing SL/TP.",

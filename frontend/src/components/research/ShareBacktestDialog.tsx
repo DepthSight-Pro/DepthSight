@@ -72,8 +72,7 @@ export const ShareBacktestDialog: React.FC<ShareBacktestDialogProps> = ({
 
 	const handleGenerateLink = () => {
 		const HUB_API_URL =
-			import.meta.env.VITE_HUB_API_URL ||
-			"https://app.depthsight.pro/api/v1/hub";
+			import.meta.env.VITE_HUB_API_URL || "/api/v1/hub";
 
 		shareBacktest(
 			{

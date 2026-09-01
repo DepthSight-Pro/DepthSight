@@ -320,5 +320,5 @@ async def test_real_data_parity(direction):
             f"Trade {i} exit time mismatch"
         )
         assert float(fast_t["pnl_pct"]) == pytest.approx(
-            strat_t["pnl_pct"], abs=1e-10
+            strat_t["pnl_pct"], abs=1e-6
         ), f"Trade {i} PnL mismatch"

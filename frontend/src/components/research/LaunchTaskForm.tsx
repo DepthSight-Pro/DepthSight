@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, type Resolver } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import * as z from "zod";
@@ -199,7 +199,7 @@ export const LaunchTaskForm: React.FC = () => {
 		useRunPortfolioBacktest();
 
 	const backtestForm = useForm<BacktestFormValues>({
-		resolver: zodResolver(backtestSchema),
+		resolver: zodResolver(backtestSchema) as unknown as Resolver<BacktestFormValues>,
 		// --- UPDATING DATES IN defaultValues ---
 		defaultValues: {
 			strategy_name: "",
@@ -213,7 +213,7 @@ export const LaunchTaskForm: React.FC = () => {
 	});
 
 	const optimizationForm = useForm<OptimizationFormValues>({
-		resolver: zodResolver(optimizationSchema),
+		resolver: zodResolver(optimizationSchema) as unknown as Resolver<OptimizationFormValues>,
 		// --- UPDATING DATES IN defaultValues ---
 		defaultValues: {
 			strategy_name: "",
@@ -226,7 +226,7 @@ export const LaunchTaskForm: React.FC = () => {
 	});
 
 	const portfolioBacktestForm = useForm<PortfolioBacktestFormValues>({
-		resolver: zodResolver(portfolioBacktestSchema),
+		resolver: zodResolver(portfolioBacktestSchema) as unknown as Resolver<PortfolioBacktestFormValues>,
 		defaultValues: defaultPortfolioBacktestValues(),
 	});
 
@@ -264,7 +264,7 @@ export const LaunchTaskForm: React.FC = () => {
 				setSeedStrategy(strategy);
 				optimizationForm.setValue(
 					"strategy_name",
-					strategy.name || "VisualStrategy",
+					(strategy as Record<string, unknown>).name as string || "VisualStrategy",
 				);
 
 				// Prefill fields from location.state if redirected from backtest viewer

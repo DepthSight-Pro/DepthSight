@@ -26,6 +26,9 @@ os.environ["RATELIMIT_ENABLED"] = "false"
 os.environ["JWT_SECRET_KEY"] = "test_secret_key_1234567890_test_secret_key"
 os.environ["API_ENCRYPTION_KEY"] = "fFEvqTGV-LGkN0ASdZrlOUhEpllCyi1Dj-PmKY3eh6Y="
 os.environ["API_KEY_SECRET"] = "test_api_key_secret_1234567890"
+os.environ["IS_CENTRAL_HUB"] = "true"
+os.environ["FEDERATION_HUB_URL"] = "http://localhost:8000/api/v1/hub"
+os.environ["ALLOW_INSECURE_HUB_URL"] = "true"
 
 
 # Now the import will pass without errors
@@ -1014,6 +1017,27 @@ async def setup_database():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def dispose_test_engine():
+    """
+    Closes the shared aiosqlite engine after the whole session.
+
+    Without an explicit dispose(), the aiosqlite connection worker threads are
+    never stopped and the interpreter blocks forever at shutdown (deadlock in
+    threading._shutdown on Windows).
+    """
+    yield
+    import asyncio
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(test_engine.dispose())
+        loop.close()
+    except Exception:
+        pass
+
+
 # Global stub for API requests used by old tests
 
 
@@ -1499,3 +1523,20 @@ async def running_bot_with_mock_binance(
     await controller.stop()
     await executor.close()
     await session.close()
+
+
+@pytest.fixture(autouse=True)
+def reset_dynamic_ai_settings_autouse():
+    try:
+        from api import ai_assistant
+
+        ai_assistant._DYNAMIC_AI_SETTINGS = None
+    except ImportError:
+        pass
+    yield
+    try:
+        from api import ai_assistant
+
+        ai_assistant._DYNAMIC_AI_SETTINGS = None
+    except ImportError:
+        pass

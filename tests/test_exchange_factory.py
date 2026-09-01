@@ -25,6 +25,9 @@ def test_exchange_id_normalization():
     assert normalize_exchange_id("bingx_spot") == "bingx_spot"
     assert normalize_exchange_id("okx_futures") == "okx"
     assert normalize_exchange_id("okx_spot") == "okx_spot"
+    assert normalize_exchange_id("weex") == "weex"
+    assert normalize_exchange_id("weex_futures") == "weex"
+    assert normalize_exchange_id("weex_spot") == "weex_spot"
 
 
 def test_supported_exchanges_are_explicit():
@@ -38,6 +41,7 @@ def test_supported_exchanges_are_explicit():
     assert "gateio" in supported_exchange_ids()
     assert "bingx" in supported_exchange_ids()
     assert "okx" in supported_exchange_ids()
+    assert "weex" in supported_exchange_ids()
 
 
 def test_factory_returns_ccxt_adapter_for_existing_exchange():
@@ -196,3 +200,37 @@ def test_factory_enables_bingx_vst_sandbox_in_testnet(monkeypatch):
     assert executor.exchange_id == "bingx"
     assert executor.sandbox is True
     assert executor._exchange.urls["api"]["swap"].startswith("https://open-api-vst.")
+
+
+def test_factory_returns_ccxt_for_weex():
+    session = Mock()
+    session.closed = False
+
+    executor = create_exchange_executor(
+        exchange="weex",
+        api_key="test_key",
+        api_secret="test_secret",
+        session=session,
+    )
+
+    assert isinstance(executor, CcxtExecutor)
+    assert executor.exchange_id == "weex"
+    assert executor.market_type == "futures_usdtm"
+    assert executor.supports_positions is True
+
+
+def test_factory_returns_ccxt_for_weex_spot():
+    session = Mock()
+    session.closed = False
+
+    executor = create_exchange_executor(
+        exchange="weex_spot",
+        api_key="test_key",
+        api_secret="test_secret",
+        session=session,
+    )
+
+    assert isinstance(executor, CcxtExecutor)
+    assert executor.exchange_id == "weex"
+    assert executor.market_type == "spot"
+    assert executor.supports_positions is False

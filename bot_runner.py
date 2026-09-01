@@ -1,5 +1,8 @@
 # bot_runner.py
 # ruff: noqa: E402
+import faulthandler
+
+faulthandler.enable()
 import asyncio
 import platform
 
@@ -59,10 +62,10 @@ from bot_module.logger_setup import setup_bot_logging
 setup_bot_logging()
 logger = logging.getLogger("bot_module.runner")
 
-# --- Global Variables for Multi-User Bot ---
-# user_controllers[user_id][api_key_id] = TradingController
+import threading
+
 user_controllers: Dict[int, Dict[int, TradingController]] = {}
-shutdown_event = asyncio.Event()
+shutdown_event = threading.Event()
 telegram_notifier: Optional[TelegramNotifier] = None
 
 
@@ -105,7 +108,11 @@ def _user_is_live_eligible(user: models.User) -> bool:
     if plan:
         plan_config = plans_config.get_plan(plan)
         limits = plan_config.get("limits", {})
-        if limits.get("allow_free_bybit_trading", False):
+        if (
+            limits.get("allow_free_bybit_trading", False)
+            or limits.get("allow_free_weex_trading", False)
+            or limits.get("allow_free_okx_trading", False)
+        ):
             return True
     return _plan_allows_live_trading(plan)
 
@@ -135,10 +142,24 @@ async def _get_sharded_active_api_keys_for_user(
     if plan_name:
         plan_config = plans_config.get_plan(plan_name)
         limits = plan_config.get("limits", {})
-        if limits.get(
-            "allow_free_bybit_trading", False
-        ) and "allow_real_trading" not in plan_config.get("permissions", []):
-            active_keys = [k for k in active_keys if k.exchange.lower() == "bybit"]
+        if "allow_real_trading" not in plan_config.get("permissions", []):
+            allow_bybit = limits.get("allow_free_bybit_trading", False)
+            allow_weex = limits.get("allow_free_weex_trading", False)
+            allow_okx = limits.get("allow_free_okx_trading", False)
+            if allow_bybit or allow_weex or allow_okx:
+                active_keys = [
+                    k
+                    for k in active_keys
+                    if (
+                        allow_bybit
+                        and (
+                            k.exchange.lower() == "bybit"
+                            or k.exchange.lower().startswith("bybit")
+                        )
+                    )
+                    or (allow_weex and k.exchange.lower().startswith("weex"))
+                    or (allow_okx and k.exchange.lower().startswith("okx"))
+                ]
 
     return [
         api_key_obj
@@ -265,7 +286,7 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
         db_gen = get_db()
         db = await anext(db_gen)
 
-        users = await crud.get_users(db)
+        users = await crud.get_users(db, limit=None)
         controllers_to_initialize = []
         eligible_live_users = 0
 
@@ -311,7 +332,8 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
         )
 
         logger.info("Command listener started. Waiting for shutdown signal...")
-        await shutdown_event.wait()
+        while not shutdown_event.is_set():
+            await asyncio.sleep(1)
         logger.info("Shutdown event received.")
 
         # Clean up the command listener
@@ -350,6 +372,7 @@ async def _initialize_user_controllers(
     Initializes TradingControllers for all active API keys of a single user
     that belong to the current shard.
     """
+    db.expire_all()
     if not _user_is_live_eligible(user):
         logger.info(
             "Skipping live controller initialization for user %s (ID: %s) because plan '%s' does not allow live trading.",
@@ -554,6 +577,7 @@ async def _run_command_listener(
                                 )
                                 continue
 
+                            db.expire_all()
                             user = await crud.get_user_by_id(db, user_id=user_id)
                             api_key_obj = await crud.get_api_key_by_id(
                                 db, user_id=user_id, key_id=api_key_id
@@ -562,20 +586,39 @@ async def _run_command_listener(
                             if user and api_key_obj:
                                 plan_config = plans_config.get_plan(user.plan)
                                 limits = plan_config.get("limits", {})
-                                if limits.get(
-                                    "allow_free_bybit_trading", False
-                                ) and "allow_real_trading" not in plan_config.get(
+                                if "allow_real_trading" not in plan_config.get(
                                     "permissions", []
                                 ):
-                                    if api_key_obj.exchange.lower() != "bybit":
-                                        logger.warning(
-                                            "[Shard %s] Ignoring ACTIVATE_API_KEY for user_id=%s, api_key_id=%s because plan '%s' only allows Bybit key live trading.",
-                                            shard_id,
-                                            user_id,
-                                            api_key_id,
-                                            user.plan,
-                                        )
-                                        continue
+                                    allow_bybit = limits.get(
+                                        "allow_free_bybit_trading", False
+                                    )
+                                    allow_weex = limits.get(
+                                        "allow_free_weex_trading", False
+                                    )
+                                    allow_okx = limits.get(
+                                        "allow_free_okx_trading", False
+                                    )
+                                    if allow_bybit or allow_weex or allow_okx:
+                                        exch = api_key_obj.exchange.lower()
+                                        keep = False
+                                        if allow_bybit and (
+                                            exch == "bybit" or exch.startswith("bybit")
+                                        ):
+                                            keep = True
+                                        elif allow_weex and exch.startswith("weex"):
+                                            keep = True
+                                        elif allow_okx and exch.startswith("okx"):
+                                            keep = True
+
+                                        if not keep:
+                                            logger.warning(
+                                                "[Shard %s] Ignoring ACTIVATE_API_KEY for user_id=%s, api_key_id=%s because plan '%s' only allows Bybit/WEEX/OKX key live trading.",
+                                                shard_id,
+                                                user_id,
+                                                api_key_id,
+                                                user.plan,
+                                            )
+                                            continue
 
                                 if not _user_is_live_eligible(user):
                                     logger.warning(
@@ -671,6 +714,7 @@ async def _run_command_listener(
                             logger.info(
                                 f"[Shard {shard_id}] Received INITIALIZE_USER_CONTROLLER for user_id: {user_id}"
                             )
+                            db.expire_all()
                             user = await crud.get_user_by_id(db, user_id=user_id)
                             if user:
                                 await _initialize_user_controllers(
@@ -735,7 +779,10 @@ def worker_main(shard_id, num_workers):
 
 # --- Entry Point ---
 if __name__ == "__main__":
-    num_workers = getattr(config, "BOT_RUNNER_PROCESSES", 1)
+    try:
+        num_workers = int(getattr(config, "BOT_RUNNER_PROCESSES", 1))
+    except (ValueError, TypeError):
+        num_workers = 1
     import time
 
     if num_workers <= 1:

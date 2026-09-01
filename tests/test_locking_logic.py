@@ -67,6 +67,7 @@ async def test_concurrency_limit_integrity_with_fine_grained_locks():
     mock_rm.assess_signal = AsyncMock(return_value=(True, 1.0, 100.0, None))
 
     mock_executor = AsyncMock()
+    mock_executor.market_type = "futures_usdtm"
 
     # Simulate slightly slow order placement to increase race condition window
     async def slow_place_order(*args, **kwargs):

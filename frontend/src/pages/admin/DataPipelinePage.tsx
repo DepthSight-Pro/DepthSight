@@ -130,14 +130,17 @@ const DataPipelinePage: React.FC = () => {
     }
   };
 
-  const fetchStorageInfo = async () => {
+  const fetchStorageInfo = async (force: boolean = false) => {
     try {
-      const data = await apiClient<{ symbols: StorageSymbol[] }>(
-        "/admin/data-pipeline/storage-info"
-      );
-      setStorageData(data.symbols);
-    } catch (error) {
+      const url = force
+        ? "/admin/data-pipeline/storage-info?force_refresh=true"
+        : "/admin/data-pipeline/storage-info";
+      const res = await apiClient<any>(url);
+      const list = res?.symbols || res?.data?.symbols || (Array.isArray(res) ? res : []);
+      setStorageData(list);
+    } catch (error: any) {
       console.error("Error fetching storage info:", error);
+      toast.error(`Storage load error: ${error?.message || error}`);
     }
   };
 
@@ -149,6 +152,12 @@ const DataPipelinePage: React.FC = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "storage") {
+      fetchStorageInfo();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (terminalEndRef.current) {
@@ -485,7 +494,15 @@ const DataPipelinePage: React.FC = () => {
                 <CardTitle>Storage Map</CardTitle>
                 <CardDescription>Available historical data in data_storage/binance/futures</CardDescription>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchStorageInfo(true)}
+                  className="gap-1.5 text-xs"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Refresh
+                </Button>
                 <div className="flex items-center space-x-2">
                    <Checkbox 
                      id="catchUpDelete" 

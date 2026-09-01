@@ -685,6 +685,7 @@ class DataConsumer:
         timeframe: str,
         limit: int = DEFAULT_KLINE_CACHE_SIZE_CONFIG,
         market_type: Optional[str] = None,
+        min_candles: Optional[int] = None,
     ) -> Optional[pd.DataFrame]:
         executor = self._executor_for_market(market_type)
         exchange_id = (
@@ -709,20 +710,57 @@ class DataConsumer:
                     if limit and limit < len(cached_df)
                     else cached_df.copy()
                 )
-                if result_df.empty:
-                    logger.warning(
-                        f"{log_prefix_get} Returning EMPTY or None DataFrame from cached snapshot."
-                    )
-                else:
-                    logger.debug(
-                        f"{log_prefix_get} Returning DataFrame with {len(result_df)} rows from cached snapshot. Last candle time: {result_df.index[-1] if not result_df.empty else 'N/A'}"
-                    )
-                return result_df
+                if min_candles is None or len(result_df) >= min_candles:
+                    if result_df.empty:
+                        logger.warning(
+                            f"{log_prefix_get} Returning EMPTY or None DataFrame from cached snapshot."
+                        )
+                    else:
+                        logger.debug(
+                            f"{log_prefix_get} Returning DataFrame with {len(result_df)} rows from cached snapshot. Last candle time: {result_df.index[-1] if not result_df.empty else 'N/A'}"
+                        )
+                    return result_df
 
             cache_deque = _global_kline_cache.get(cache_key)
             if cache_deque:
                 deque_len = len(cache_deque)
                 data_list = list(cache_deque)[-limit:]
+
+        if not data_list or (min_candles is not None and len(data_list) < min_candles):
+            legacy_cache_key = f"{symbol.upper()}:{timeframe}"
+            if not data_list and legacy_cache_key != cache_key:
+                async with _global_cache_lock:
+                    cache_deque = _global_kline_cache.get(legacy_cache_key)
+                    if cache_deque:
+                        data_list = list(cache_deque)[-limit:]
+                        deque_len = len(cache_deque)
+
+            # If min_candles is requested or no data, attempt on-demand history load
+            if min_candles is not None and len(data_list) < min_candles:
+                logger.info(
+                    f"{log_prefix_get} Cache has {len(data_list)} rows (need {min_candles}). Triggering on-demand history load..."
+                )
+                await self._ensure_history_loaded(
+                    f"kline_{timeframe}",
+                    symbol.upper(),
+                    timeframe,
+                    market_type or self._effective_market_type(),
+                    exchange_id,
+                    force=True,
+                    min_candles=min_candles,
+                )
+                async with _global_cache_lock:
+                    cached_df = _global_kline_df_cache.get(cache_key)
+                    if cached_df is not None:
+                        return (
+                            cached_df.iloc[-limit:].copy()
+                            if limit and limit < len(cached_df)
+                            else cached_df.copy()
+                        )
+                    cache_deque = _global_kline_cache.get(cache_key)
+                    if cache_deque:
+                        deque_len = len(cache_deque)
+                        data_list = list(cache_deque)[-limit:]
 
         if not data_list:
             if deque_len > 0:
@@ -731,22 +769,10 @@ class DataConsumer:
                     f"{log_prefix_get} Returning EMPTY or None DataFrame from cache after processing. Deque length was {deque_len}."
                 )
                 return empty_df
-            legacy_cache_key = f"{symbol.upper()}:{timeframe}"
-            if legacy_cache_key != cache_key:
-                cache_deque = _global_kline_cache.get(legacy_cache_key)
-                if cache_deque:
-                    data_list = list(cache_deque)[-limit:]
-                    deque_len = len(cache_deque)
-                else:
-                    logger.warning(
-                        f"{log_prefix_get} No kline data IN CACHE (deque not found). Returning None."
-                    )
-                    return None
-            else:
-                logger.warning(
-                    f"{log_prefix_get} No kline data IN CACHE (deque not found). Returning None."
-                )
-                return None
+            logger.warning(
+                f"{log_prefix_get} No kline data IN CACHE (deque not found). Returning None."
+            )
+            return None
 
         try:
             df = await asyncio.to_thread(
@@ -1885,6 +1911,8 @@ class DataConsumer:
         timeframe: str,
         market_type: str,
         exchange_id: str = "binance",
+        force: bool = False,
+        min_candles: Optional[int] = None,
     ) -> bool:
         """
         Universal history loading dispatcher.
@@ -1899,6 +1927,9 @@ class DataConsumer:
             symbol_uc (str): Symbol in uppercase (e.g., "BTCUSDT").
             timeframe (str): Timeframe (relevant for kline, ignored for OI).
             market_type (str): Market type (e.g., "futures_usdtm").
+            exchange_id (str): Exchange ID (e.g., "binance", "weex").
+            force (bool): If True, forces a fresh download even if key was previously recorded as loaded.
+            min_candles (int, optional): Minimum number of cached candles required; triggers download if cache has fewer.
 
         Returns:
             bool: True if history was successfully loaded (or was loaded previously), False in case of error.
@@ -1908,6 +1939,18 @@ class DataConsumer:
                 f"DataConsumer is in REDIS mode. Skipping local history download for {data_type_key}:{symbol_uc}."
             )
             return True
+
+        if (exchange_id == "binance" or not exchange_id) and hasattr(
+            self, "_executor_for_market"
+        ):
+            executor = self._executor_for_market(market_type)
+            if executor:
+                resolved_id = getattr(executor, "exchange_id", "binance")
+                if getattr(executor, "sandbox", False) and not resolved_id.endswith(
+                    "_testnet"
+                ):
+                    resolved_id = f"{resolved_id}_testnet"
+                exchange_id = resolved_id
 
         # Step 1: Define a unique key for the cache and a prefix for logs
         log_prefix_base = f"[HistLoadEnsure:{symbol_uc}]"
@@ -1924,16 +1967,37 @@ class DataConsumer:
             return True
 
         logger.debug(
-            f"{log_prefix} Called for symbol {symbol_uc}, market: {market_type}."
+            f"{log_prefix} Called for symbol {symbol_uc}, market: {market_type} (force={force}, min_candles={min_candles})."
         )
 
         # Step 2: Check if the history has already been loaded or if the task is already active (GLOBALLY)
         async with _global_cache_lock:
-            if cache_key in _global_history_loaded_keys:
+            cached_count = (
+                len(_global_kline_cache.get(cache_key, []))
+                if data_type_key.startswith("kline_")
+                else 0
+            )
+            if (
+                data_type_key.startswith("kline_")
+                and cache_key in _global_kline_df_cache
+            ):
+                df_c = _global_kline_df_cache[cache_key]
+                if df_c is not None:
+                    cached_count = max(cached_count, len(df_c))
+            has_enough = min_candles is None or cached_count >= min_candles
+
+            if not force and has_enough and cache_key in _global_history_loaded_keys:
                 logger.debug(
-                    f"{log_prefix} History already loaded (global cache hit). Returning True."
+                    f"{log_prefix} History already loaded (global cache hit, count={cached_count}). Returning True."
                 )
                 return True
+
+            if force or not has_enough:
+                _global_history_loaded_keys.discard(cache_key)
+                _global_history_loaded_keys.discard(
+                    f"{exchange_id}:{symbol_uc}:{timeframe}"
+                )
+
             active_download_task = _global_history_download_tasks.get(cache_key)
 
         # Step 3: If the task is already running, wait for its completion
@@ -2192,8 +2256,9 @@ class DataConsumer:
                             _global_kline_df_cache[legacy_cache_key] = (
                                 _global_kline_df_cache[cache_key].copy()
                             )
-                        _global_history_loaded_keys.add(cache_key)
-                        _global_history_loaded_keys.add(legacy_cache_key)
+                        if historical_candles_tuples or len(cache_deque) > 0:
+                            _global_history_loaded_keys.add(cache_key)
+                            _global_history_loaded_keys.add(legacy_cache_key)
                     logger.info(
                         f"{log_prefix} Successfully loaded/cached {len(historical_candles_tuples)} CCXT hist klines (merged with {len(existing_live_candles)} live, total in cache: {len(cache_deque)})."
                     )
@@ -2214,7 +2279,7 @@ class DataConsumer:
                     return
                 if df_history.empty:
                     logger.warning(
-                        f"{log_prefix} No historical data downloaded (empty DataFrame). Processing will continue, and history will be marked as loaded (empty)."
+                        f"{log_prefix} No historical data downloaded (empty DataFrame). Processing will continue."
                     )
 
                 historical_candles_tuples = []
@@ -2242,7 +2307,7 @@ class DataConsumer:
                     )
                 elif not historical_candles_tuples and df_history.empty:
                     logger.info(
-                        f"{log_prefix} historical_candles_tuples is empty because df_history was empty. Proceeding to mark history loaded."
+                        f"{log_prefix} historical_candles_tuples is empty because df_history was empty."
                     )
 
             # Using GLOBAL cache for multi-user mode
@@ -2275,8 +2340,9 @@ class DataConsumer:
                         cache_key
                     ].copy()
 
-                _global_history_loaded_keys.add(cache_key)
-                _global_history_loaded_keys.add(legacy_cache_key)
+                if historical_candles_tuples or len(cache_deque) > 0:
+                    _global_history_loaded_keys.add(cache_key)
+                    _global_history_loaded_keys.add(legacy_cache_key)
                 logger.info(
                     f"{log_prefix} Successfully loaded/cached {len(historical_candles_tuples)} hist klines (merged with {len(existing_live_candles)} live, total in cache: {len(cache_deque)})."
                 )
@@ -2609,6 +2675,13 @@ class DataConsumer:
         logger.info(f"Starting main_app_ws_loop. Connecting to {self._main_app_ws_url}")
         while self._running:
             websocket = None
+            if not getattr(config, "ENABLE_MAIN_APP_WS", True):
+                logger.info(
+                    "Auto-connection to screener/main app WS is disabled (ENABLE_SCREENER_AUTO_CONNECT=false). Loop paused."
+                )
+                await asyncio.sleep(15)
+                continue
+
             if not self._main_app_ws_url or not self._main_app_ws_url.startswith(
                 ("ws://", "wss://")
             ):
@@ -3989,14 +4062,18 @@ class DataConsumer:
 
                             if is_closed:
                                 if candle_ts in last_emitted_closed_ts:
-                                    continue
-                                last_emitted_closed_ts.add(candle_ts)
-
-                                # IMPORTANT: If this is the FIRST packet after subscription, we emit only
-                                # The MOST RECENT closed candle from the list (the one immediately before the current one),
-                                # to avoid spamming with the entire old history (e.g., 500 candles).
-                                if is_first_batch and i < len(ohlcv_list) - 2:
-                                    continue
+                                    is_closed_for_event = False
+                                else:
+                                    last_emitted_closed_ts.add(candle_ts)
+                                    # IMPORTANT: If this is the FIRST packet after subscription, we emit only
+                                    # the MOST RECENT closed candle from the list (the one immediately before the current one),
+                                    # to avoid spamming with the entire old history (e.g., 500 candles), while still caching all candles.
+                                    if is_first_batch and i < len(ohlcv_list) - 2:
+                                        is_closed_for_event = False
+                                    else:
+                                        is_closed_for_event = True
+                            else:
+                                is_closed_for_event = False
 
                             # Reformat to Binance Payload
                             payload = {
@@ -4008,11 +4085,11 @@ class DataConsumer:
                                     "l": str(candle[3]),
                                     "c": str(candle[4]),
                                     "v": str(candle[5]),
-                                    "x": is_closed,
+                                    "x": is_closed_for_event,
                                 },
                             }
                             logger.info(
-                                f"{log_prefix} Updating local cache for candle ts={candle_ts} is_closed={is_closed}"
+                                f"{log_prefix} Updating local cache for candle ts={candle_ts} is_closed={is_closed_for_event}"
                             )
                             await self._update_local_cache(
                                 data_type_key, symbol, payload, market_type, exchange_id

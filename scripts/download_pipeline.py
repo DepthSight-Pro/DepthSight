@@ -179,6 +179,86 @@ def handle_corrupted_parquet(path: Path) -> bool:
         return True
 
 
+def _ensure_datetime_index(d: pd.DataFrame) -> pd.DataFrame:
+    """Ensures DataFrame has a clean, timezone-aware UTC DatetimeIndex."""
+    if not isinstance(d.index, pd.DatetimeIndex):
+        for col in ("open_time", "timestamp", "time", "date"):
+            if col in d.columns:
+                d[col] = pd.to_datetime(d[col], utc=True)
+                d.set_index(col, inplace=True)
+                break
+        else:
+            try:
+                # Try parsing as millisecond timestamp or datetime string
+                d.index = pd.to_datetime(d.index, unit="ms", utc=True)
+            except Exception:
+                try:
+                    d.index = pd.to_datetime(d.index, utc=True)
+                except Exception as e:
+                    logging.warning(f"Could not convert index to DatetimeIndex: {e}")
+    if isinstance(d.index, pd.DatetimeIndex):
+        if d.index.tz is None:
+            d.index = d.index.tz_localize("UTC")
+        elif str(d.index.tz) != "UTC":
+            d.index = d.index.tz_convert("UTC")
+    return d
+
+
+def _safe_save_parquet(df: pd.DataFrame, target_path: Path) -> bool:
+    """Saves DataFrame to Parquet atomically and safely with fallback and directory creation."""
+    if df.empty:
+        logging.warning(f"Received empty DataFrame for {target_path}. Save skipped.")
+        return False
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    df_save = df.select_dtypes(include=[np.number, "bool"])
+    for col in df_save.select_dtypes(include=["float64"]).columns:
+        df_save[col] = df_save[col].astype("float32")
+
+    # Column deduplication before saving
+    if df_save.columns.duplicated().any():
+        df_save = df_save.loc[:, ~df_save.columns.duplicated(keep="first")]
+
+    temp_path = target_path.with_name(
+        f"{target_path.name}.tmp.{os.getpid()}_{time.time_ns()}"
+    )
+    try:
+        df_save.to_parquet(
+            temp_path, engine="pyarrow", compression="snappy", use_dictionary=False
+        )
+        if temp_path.exists():
+            os.replace(temp_path, target_path)
+            return True
+        else:
+            df_save.to_parquet(
+                target_path,
+                engine="pyarrow",
+                compression="snappy",
+                use_dictionary=False,
+            )
+            return True
+    except Exception as e:
+        logging.error(f"Error saving to Parquet file {target_path}: {e}")
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+        try:
+            df_save.to_parquet(
+                target_path,
+                engine="pyarrow",
+                compression="snappy",
+                use_dictionary=False,
+            )
+            return True
+        except Exception as direct_err:
+            logging.error(
+                f"Direct fallback write to {target_path} also failed: {direct_err}"
+            )
+            return False
+
+
 def save_data(df: pd.DataFrame, target_path: Path):
     if df.empty:
         logging.warning(f"Received empty DataFrame. Saving to {target_path} canceled.")
@@ -190,6 +270,8 @@ def save_data(df: pd.DataFrame, target_path: Path):
     # Cast float64 columns to float32 to save memory/space and prevent mixed types
     for col in df.select_dtypes(include=["float64"]).columns:
         df[col] = df[col].astype("float32")
+
+    df = _ensure_datetime_index(df)
 
     handle_corrupted_parquet(target_path)
 
@@ -205,41 +287,21 @@ def save_data(df: pd.DataFrame, target_path: Path):
             for col in existing_df.select_dtypes(include=["float64"]).columns:
                 existing_df[col] = existing_df[col].astype("float32")
 
-            # Align timezones to UTC aware to prevent merging conflicts
-            if existing_df.index.tz is None:
-                existing_df.index = existing_df.index.tz_localize("UTC")
-            if df.index.tz is None:
-                df.index = df.index.tz_localize("UTC")
-            if str(existing_df.index.tz) != "UTC":
-                existing_df.index = existing_df.index.tz_convert("UTC")
-            if str(df.index.tz) != "UTC":
-                df.index = df.index.tz_convert("UTC")
+            existing_df = _ensure_datetime_index(existing_df)
 
-            df = pd.concat([existing_df, df])
+            df = pd.concat([existing_df, df], join="outer")
             df.sort_index(inplace=True)
             df = df[~df.index.duplicated(keep="last")]
         except Exception as e:
             logging.error(
-                f"CRITICAL: Failed to read/merge {target_path}: {e}. "
-                f"Attempting recovery by renaming/removing the corrupted file."
+                f"CRITICAL: Failed to read/merge existing {target_path}: {e}. "
+                f"Aborting save to protect existing data from corruption/overwriting."
             )
-            handle_corrupted_parquet(target_path)
+            return
 
     df = df[~df.index.duplicated(keep="last")].sort_index()  # Final check
-    temp_path = target_path.with_name(f"{target_path.name}.tmp")
-    try:
-        df.to_parquet(
-            temp_path, engine="pyarrow", compression="snappy", use_dictionary=False
-        )
-        os.replace(temp_path, target_path)
+    if _safe_save_parquet(df, target_path):
         print(f"Successfully saved/updated {len(df)} rows in file {target_path}")
-    except Exception as e:
-        logging.error(f"Error saving to Parquet file {target_path}: {e}")
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except Exception:
-                pass
 
 
 def download_and_process(
@@ -976,25 +1038,10 @@ def run_enrichment_for_1m(
             print(
                 f"\nSaving intermediate enriched file kline_1m.parquet after month {year}-{month:02d}..."
             )
-            try:
-                if klines_df.columns.duplicated().any():
-                    klines_df = klines_df.loc[
-                        :, ~klines_df.columns.duplicated(keep="first")
-                    ]
-                klines_df_save = klines_df.select_dtypes(include=[np.number, "bool"])
-                for col in klines_df_save.select_dtypes(include=["float64"]).columns:
-                    klines_df_save[col] = klines_df_save[col].astype("float32")
-                temp_kline_path = kline_path.with_name(f"{kline_path.name}.tmp")
-                klines_df_save.to_parquet(
-                    temp_kline_path,
-                    engine="pyarrow",
-                    compression="snappy",
-                    use_dictionary=False,
-                )
-                os.replace(temp_kline_path, kline_path)
+            if _safe_save_parquet(klines_df, kline_path):
                 print("Intermediate save complete.")
-            except Exception as e:
-                logging.error(f"Failed to save intermediate progress: {e}")
+            else:
+                logging.error("Failed to save intermediate progress.")
 
     if days_processed > 0:
         print(f"\nSuccessfully enriched {days_processed} days.")
@@ -1002,22 +1049,10 @@ def run_enrichment_for_1m(
         print("\nNo new days for enrichment found (all skipped).")
 
     print("\nSaving final enriched file kline_1m.parquet...")
-
-    # Column deduplication before saving (in case of artifacts from previous failures)
-    if klines_df.columns.duplicated().any():
-        dup_cols = klines_df.columns[klines_df.columns.duplicated()].tolist()
-        print(f"WARNING: Duplicate columns detected: {dup_cols}. Removing duplicates.")
-        klines_df = klines_df.loc[:, ~klines_df.columns.duplicated(keep="first")]
-
-    klines_df_save = klines_df.select_dtypes(include=[np.number, "bool"])
-    for col in klines_df_save.select_dtypes(include=["float64"]).columns:
-        klines_df_save[col] = klines_df_save[col].astype("float32")
-    temp_kline_path = kline_path.with_name(f"{kline_path.name}.tmp")
-    klines_df_save.to_parquet(
-        temp_kline_path, engine="pyarrow", compression="snappy", use_dictionary=False
-    )
-    os.replace(temp_kline_path, kline_path)
-    print("Saving complete.")
+    if _safe_save_parquet(klines_df, kline_path):
+        print("Saving complete.")
+    else:
+        logging.error(f"Failed to save final enriched file {kline_path}")
 
 
 def run_generation_for_1s(
@@ -1072,17 +1107,7 @@ def run_generation_for_1s(
             symbol, "klines_1s", partition_date=month_key, base_path=base_path
         )
         print(f"Saving enriched 1s klines to {target_path}...")
-        final_month_df_save = final_month_df.select_dtypes(include=[np.number, "bool"])
-        for col in final_month_df_save.select_dtypes(include=["float64"]).columns:
-            final_month_df_save[col] = final_month_df_save[col].astype("float32")
-        temp_target_path = target_path.with_name(f"{target_path.name}.tmp")
-        final_month_df_save.to_parquet(
-            temp_target_path,
-            engine="pyarrow",
-            compression="snappy",
-            use_dictionary=False,
-        )
-        os.replace(temp_target_path, target_path)
+        _safe_save_parquet(final_month_df, target_path)
         del month_trades_df, klines_1s_df, enriched_1s_df, final_month_df
         gc.collect()
         print_memory_usage(f"After memory cleanup for {month_key.strftime('%Y-%m')}")

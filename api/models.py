@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import (
     Column,
     Integer,
+    BigInteger,
     String,
     Float,
     DateTime,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Enum,
+    Date,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -39,6 +41,7 @@ class User(Base):
     # AFFILIATE PROGRAM FIELDS
     role = Column(String, nullable=False, server_default="user")  # Reverted from Enum
     affiliate_commission_rate = Column(Float, nullable=True)
+    payout_address = Column(String, nullable=True)
 
     # ADMIN FIELDS
     admin_notes = Column(Text, nullable=True)
@@ -104,6 +107,12 @@ class User(Base):
         "Commission",
         back_populates="affiliate",
         foreign_keys="[Commission.affiliate_user_id]",
+    )
+    affiliate_payouts = relationship(
+        "AffiliatePayout",
+        back_populates="user",
+        foreign_keys="[AffiliatePayout.user_id]",
+        cascade="all, delete-orphan",
     )
 
 
@@ -191,10 +200,13 @@ class Commission(Base):
     source_payment_id = Column(
         String, ForeignKey("payments.id"), nullable=False, index=True
     )
+    payout_id = Column(
+        String, ForeignKey("affiliate_payouts.id"), nullable=True, index=True
+    )
     commission_amount_usd = Column(Float, nullable=False)
     status = Column(
         String, nullable=False, index=True, default="pending"
-    )  # Reverted from Enum
+    )  # pending, available, processing, paid
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     becomes_available_at = Column(DateTime(timezone=True), nullable=False)
 
@@ -204,6 +216,7 @@ class Commission(Base):
     )
     referred_user = relationship("User", foreign_keys=[referred_user_id])
     source_payment = relationship("Payment", back_populates="commission")
+    payout = relationship("AffiliatePayout", back_populates="commissions")
 
 
 class AffiliatePayout(Base):
@@ -220,7 +233,8 @@ class AffiliatePayout(Base):
     transaction_id = Column(String, nullable=True)
     payout_address = Column(String, nullable=True)
 
-    user = relationship("User")
+    user = relationship("User", back_populates="affiliate_payouts")
+    commissions = relationship("Commission", back_populates="payout")
 
 
 class AppConfig(Base):
@@ -234,6 +248,9 @@ class AppConfig(Base):
     notifications = Column(JSON, nullable=False)
     data_sources = Column(JSON, nullable=False)
     exchange_settings = Column(JSON, nullable=True)
+    is_mining_enabled = Column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -1080,4 +1097,247 @@ class HubNode(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
+    )
+
+    # Trade Mining fields
+    referrer_node_uuid = Column(
+        String(36), ForeignKey("hub_nodes.node_uuid"), nullable=True
+    )
+    node_referral_code = Column(String(50), unique=True, index=True, nullable=True)
+    total_mined = Column(Float, default=0.0, nullable=False, server_default="0.0")
+    has_welcome_bonus = Column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    weex_uid = Column(String(50), nullable=True, index=True)
+    is_operator = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Nodes flagged as mining servers host telemetry for other miners; only these
+    # nodes may act as the source_node_uuid of a telemetry report.
+    is_mining_server = Column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    public_domain = Column(String(255), nullable=True)
+    wallet_address = Column(String(42), unique=True, nullable=True, index=True)
+    # Exchange-account binding used by the broker verifier to prove that a
+    # reported trade belongs to THIS node (attribution-theory protection).
+    # Weex, OKX, and Bybit UIDs resolve dynamically from user API keys.
+    bybit_uid = Column(String(32), nullable=True, index=True)
+    okx_uid = Column(String(50), nullable=True, index=True)
+    public_plans = Column(JSON, nullable=True)
+
+
+class HubTelemetryReport(Base):
+    __tablename__ = "hub_telemetry_reports"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    symbol = Column(String(20), nullable=False, index=True)
+    direction = Column(String(10), nullable=False)
+    entry_price = Column(Float, nullable=False)
+    exit_price = Column(Float, nullable=False)
+    pnl_percent = Column(Float, nullable=True)
+    trade_duration_sec = Column(Integer, nullable=True)
+    exit_reason = Column(String(50), nullable=True)
+    trade_mode = Column(String(20), nullable=False)
+    timeframe = Column(String(10), nullable=True)
+    max_floating_profit = Column(Float, nullable=True)  # MFP / MFE in USD
+    max_floating_loss = Column(Float, nullable=True)  # MFL / MAE in USD
+    strategy_blocks = Column(JSON, nullable=False, server_default="[]")
+    market_context = Column(JSON, nullable=False, server_default="{}")
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        index=True,
+    )
+
+    # Trade Mining fields
+    node_uuid = Column(
+        String(36), ForeignKey("hub_nodes.node_uuid"), nullable=True, index=True
+    )
+    # The server node through which this trade was mined (commission is routed to
+    # this server's operator). NULL means the central hub itself.
+    source_node_uuid = Column(
+        String(36), ForeignKey("hub_nodes.node_uuid"), nullable=True, index=True
+    )
+    exchange_id = Column(String(30), nullable=True, index=True)
+    market_type = Column(String(20), nullable=True)
+    broker_trade_id = Column(String(100), nullable=True, unique=True)
+    close_broker_trade_ids = Column(JSON, nullable=True)
+    entry_broker_trade_ids = Column(JSON, nullable=True)
+    trade_volume_usdt = Column(Float, nullable=True)
+    estimated_rebate_usdt = Column(Float, nullable=True)
+
+    # Scoring / verification
+    score = Column(Float, nullable=True)
+    is_verified = Column(
+        Boolean, default=False, nullable=False
+    )  # Kept for backward compatibility
+    verification_status = Column(
+        String(20),
+        default="PENDING",
+        nullable=False,
+        server_default="PENDING",
+        index=True,
+    )
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    verified_volume_usdt = Column(Float, nullable=True)
+    verification_error = Column(String(255), nullable=True)
+    is_mining_eligible = Column(Boolean, default=False, nullable=False)
+
+    # Mining reward
+    reward_tokens = Column(Float, default=0.0, nullable=False)
+    epoch_date = Column(Date, nullable=True, index=True)
+
+
+class MiningLedger(Base):
+    __tablename__ = "mining_ledger"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    node_uuid = Column(
+        String(36), ForeignKey("hub_nodes.node_uuid"), nullable=False, index=True
+    )
+    epoch_date = Column(Date, nullable=False, index=True)
+
+    # Rewards breakdown
+    base_reward = Column(Float, default=0.0, nullable=False)
+    referral_bonus = Column(Float, default=0.0, nullable=False)
+    welcome_bonus = Column(Float, default=0.0, nullable=False)
+    boost_multiplier = Column(Float, default=1.0, nullable=False)
+    total_reward = Column(Float, default=0.0, nullable=False)
+
+    # Audit trail
+    total_rebate_usdt = Column(Float, default=0.0, nullable=False)
+    verified_trades_count = Column(Integer, default=0, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("node_uuid", "epoch_date", name="uix_ledger_node_epoch"),
+    )
+
+
+class MiningEpoch(Base):
+    __tablename__ = "mining_epochs"
+
+    epoch_date = Column(Date, primary_key=True)
+    daily_emission = Column(Float, nullable=False)
+    total_rebate_pool = Column(Float, default=0.0, nullable=False)
+    total_distributed = Column(Float, default=0.0, nullable=False)
+    participating_nodes = Column(Integer, default=0, nullable=False)
+    status = Column(String(20), default="open", nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class MiningConfig(Base):
+    __tablename__ = "mining_config"
+
+    id = Column(Integer, primary_key=True)
+    is_mining_enabled = Column(Boolean, default=False, nullable=False)
+    eligible_exchanges = Column(JSON, default=list, nullable=False, server_default="[]")
+    daily_emission_base = Column(Float, default=547945.21, nullable=False)
+    halving_interval_days = Column(Integer, default=365, nullable=False)
+    launch_date = Column(Date, nullable=True)
+    min_trade_duration_sec = Column(Integer, default=30, nullable=False)
+    # RESERVED FOR ANALYTICS FILTERS ONLY — intentionally NOT a payout gate:
+    # unprofitable trades mine fully. Nothing in the reward path reads this.
+    min_trade_pnl_abs = Column(Float, default=0.0, nullable=False)
+    # Anti-instant-exit gate: minimum absolute price movement,
+    # |exit - entry| / entry * 100 (%), required for a trade to mine.
+    # Enforced at submission (_score_trade) and re-checked against REAL
+    # exchange order prices in the broker verifier. 0 disables the check.
+    min_price_movement_percent = Column(
+        Float, default=0.15, nullable=False, server_default="0.15"
+    )
+    referral_mining_boost = Column(Float, default=0.10, nullable=False)
+    rebate_rates = Column(JSON, default=dict, nullable=False, server_default="{}")
+    total_operator_fee_collected = Column(
+        Float, default=0.0, nullable=False, server_default="0.0"
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class NodeMiningConfig(Base):
+    __tablename__ = "node_mining_config"
+
+    id = Column(Integer, primary_key=True, default=1)
+    is_global_mining_enabled = Column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    user_reward_share_percent = Column(
+        Float, default=75.0, nullable=False, server_default="75.0"
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class LocalUserMiningStats(Base):
+    __tablename__ = "local_user_mining_stats"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    total_trade_volume_usdt = Column(
+        Float, default=0.0, nullable=False, server_default="0.0"
+    )
+    estimated_rebate_usdt = Column(
+        Float, default=0.0, nullable=False, server_default="0.0"
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user = relationship("User", lazy="selectin")
+
+
+class HubServerConfig(Base):
+    """Per-server reward-share config for mining servers (keyed by the server's
+    HubNode.node_uuid). The hub uses it to apply each server's commission to the
+    telemetry reports that identify it as their source_node_uuid."""
+
+    __tablename__ = "hub_server_configs"
+
+    node_uuid = Column(String(36), ForeignKey("hub_nodes.node_uuid"), primary_key=True)
+    user_reward_share_percent = Column(
+        Float, default=75.0, nullable=False, server_default="75.0"
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UsedOwnershipMessage(Base):
+    """Single-use registry of wallet ownership signatures (replay protection).
+
+    Each successfully consumed ownership message (bind / re-key / revoke /
+    local verify) is recorded here by the sha256 hash of its full text. A
+    second submission of the same signed message is rejected even within its
+    TTL window."""
+
+    __tablename__ = "used_ownership_messages"
+
+    message_hash = Column(String(64), primary_key=True)
+    expires_at = Column(BigInteger, nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+
+class SystemSetting(Base):
+    """Dynamic system-wide settings (e.g. plans_config, ai_settings)."""
+
+    __tablename__ = "system_settings"
+
+    key = Column(String(100), primary_key=True, index=True)
+    value = Column(JSON, nullable=False)
+    description = Column(Text, nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    updated_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    updated_by = relationship(
+        "User", foreign_keys=[updated_by_user_id], lazy="selectin"
     )

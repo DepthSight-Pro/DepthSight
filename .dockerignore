@@ -4,6 +4,18 @@
 .git
 .gitignore
 
+# Secrets — never bake into image layers (compose injects env at runtime)
+.env
+.env.*
+gcp_key.json
+*.pem
+*.key
+*credentials*.json
+*.tar
+*.tar.gz
+*.tgz
+db_backup.sql
+
 # Docker
 Dockerfile
 Dockerfile.*

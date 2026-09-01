@@ -256,6 +256,7 @@ async def test_data_consumer_start_stop(data_consumer_instance, monkeypatch):
     with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
         mock_connect.side_effect = mock_main_app_ws.mock_connect_method
         monkeypatch.setattr(global_config, "SYMBOL_SOURCE_MODE", "MAIN_APP")
+        monkeypatch.setattr(global_config, "ENABLE_MAIN_APP_WS", True)
         data_consumer_instance._main_app_ws_url = "ws://mock-main-app-server:1234"
         await data_consumer_instance.start()
         assert data_consumer_instance._running
@@ -269,6 +270,7 @@ async def test_active_pairs_update_from_main_app_ws(
     data_consumer_instance, simple_main_app_ws_server, monkeypatch
 ):
     monkeypatch.setattr(global_config, "SYMBOL_SOURCE_MODE", "MAIN_APP")
+    monkeypatch.setattr(global_config, "ENABLE_MAIN_APP_WS", True)
     monkeypatch.setattr(data_consumer, "BINANCE_WS_RECONNECT_DELAY_BASE", 0.1)
     data_consumer_instance._main_app_ws_url = simple_main_app_ws_server
 
@@ -285,6 +287,20 @@ async def test_active_pairs_update_from_main_app_ws(
 
     assert found, "BTCUSDT not found in active symbols after WS update"
     await data_consumer_instance.stop()
+
+
+@pytest.mark.asyncio
+async def test_screener_auto_connect_disabled_in_data_consumer(
+    data_consumer_instance, monkeypatch
+):
+    monkeypatch.setattr(global_config, "SYMBOL_SOURCE_MODE", "MAIN_APP")
+    monkeypatch.setattr(global_config, "ENABLE_MAIN_APP_WS", False)
+    with patch("websockets.connect", new_callable=AsyncMock) as mock_connect:
+        data_consumer_instance._main_app_ws_url = "ws://mock-main-app-server:1234"
+        await data_consumer_instance.start()
+        await asyncio.sleep(0.1)
+        mock_connect.assert_not_called()
+        await data_consumer_instance.stop()
 
 
 @pytest.mark.asyncio
@@ -306,7 +322,19 @@ async def test_ensure_subscription_for_kline_and_history_load(
     with patch(
         "bot_module.data_consumer.download_klines", new_callable=AsyncMock
     ) as mock_download:
-        mock_download.return_value = pd.DataFrame()
+        sample_df = pd.DataFrame(
+            [
+                {
+                    "open": 100.0,
+                    "high": 105.0,
+                    "low": 95.0,
+                    "close": 102.0,
+                    "volume": 10.0,
+                }
+            ],
+            index=[pd.Timestamp("2026-01-01 00:00:00", tz="UTC")],
+        )
+        mock_download.return_value = sample_df
 
         await data_consumer_instance.ensure_subscription(data_type_key, symbol)
         await asyncio.sleep(0.2)

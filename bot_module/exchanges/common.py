@@ -31,6 +31,11 @@ _EXCHANGE_ALIASES = {
     "okx_usdtm": "okx",
     "okx_linear": "okx",
     "okx_spot": "okx_spot",
+    "weex": "weex",
+    "weex_futures": "weex",
+    "weex_usdtm": "weex",
+    "weex_linear": "weex",
+    "weex_spot": "weex_spot",
 }
 
 
@@ -47,7 +52,7 @@ def normalize_exchange_id(exchange: str | None) -> str:
 
 
 def supported_exchange_ids() -> tuple[str, ...]:
-    return ("binance", "bybit", "gateio", "okx", "bitget", "kucoin", "bingx")
+    return ("binance", "bybit", "gateio", "okx", "bitget", "kucoin", "bingx", "weex")
 
 
 def is_binance_exchange(exchange: str | None) -> bool:

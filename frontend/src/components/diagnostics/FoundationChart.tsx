@@ -238,6 +238,11 @@ export const FoundationChart = ({
 			},
 		});
 
+		const sortedKlines = [...klines].sort((a, b) => a.time - b.time);
+		const uniqueKlines = sortedKlines.filter(
+			(k, i, arr) => i === 0 || k.time > arr[i - 1].time,
+		);
+
 		const effectiveTickSize = tickSize || estimateTickSize(uniqueKlines);
 		const candleSeries = chart.addSeries(CandlestickSeries, {
 			upColor: "#22c55e",
@@ -252,11 +257,6 @@ export const FoundationChart = ({
 			},
 		});
 		const markers = createSeriesMarkers(candleSeries);
-
-		const sortedKlines = [...klines].sort((a, b) => a.time - b.time);
-		const uniqueKlines = sortedKlines.filter(
-			(k, i, arr) => i === 0 || k.time > arr[i - 1].time,
-		);
 
 		const klineData: CandlestickData[] = uniqueKlines.map((k) => ({
 			time: k.time as UTCTimestamp,

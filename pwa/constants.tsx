@@ -56,9 +56,11 @@ import {
 	Check,
 	Copy,
 	Wallet,
+	Coins,
 } from "lucide-react";
 
 export const ICONS = {
+	Coins: Coins,
 	Sun: Sun,
 	Loader: Loader,
 	Moon: Moon,
@@ -175,6 +177,7 @@ export const getScreenTitles = (
 	[Screen.BacktestResult]: t("header.backtestResult"),
 	[Screen.Profile]: t("header.profile"),
 	[Screen.Settings]: t("header.settings"),
+	[Screen.Mining]: t("sideMenu.mining"),
 	[Screen.ForgotPassword]: t("auth.forgotPasswordTitle"),
 	[Screen.ResetPassword]: t("auth.resetPasswordTitle"),
 });

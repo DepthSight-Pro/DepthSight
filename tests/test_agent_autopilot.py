@@ -4,11 +4,20 @@ from httpx import AsyncClient
 from api import ai_assistant, crud, schemas
 
 
+@pytest.fixture(autouse=True)
+def reset_ai_settings():
+    ai_assistant._DYNAMIC_AI_SETTINGS = None
+    yield
+    ai_assistant._DYNAMIC_AI_SETTINGS = None
+
+
 def test_get_qwen_model_name_defaults_to_qwen_max(monkeypatch):
     monkeypatch.delenv("QWEN_MODEL", raising=False)
-    assert ai_assistant._get_qwen_model_name() == "qwen-max"
+    ai_assistant._DYNAMIC_AI_SETTINGS = None
+    assert ai_assistant._get_qwen_model_name() == "qwen-3.8-max"
 
     monkeypatch.setenv("QWEN_MODEL", "qwen-plus")
+    ai_assistant._DYNAMIC_AI_SETTINGS = None
     assert ai_assistant._get_qwen_model_name() == "qwen-plus"
 
 
@@ -43,7 +52,8 @@ def test_extract_qwen_response_text_raises_on_incomplete():
 def test_ensure_ai_provider_configured_requires_qwen_key(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "qwen")
     monkeypatch.delenv("QWEN_API_KEY", raising=False)
-    monkeypatch.setenv("QWEN_MODEL", "qwen-max")
+    monkeypatch.setenv("QWEN_MODEL", "qwen-3.8-max")
+    ai_assistant._DYNAMIC_AI_SETTINGS = None
 
     with pytest.raises(ConnectionError, match="QWEN_API_KEY"):
         ai_assistant._ensure_ai_provider_configured()

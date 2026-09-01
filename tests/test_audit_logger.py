@@ -38,5 +38,5 @@ def test_audit_request_helpers_prefer_proxy_headers():
         client=SimpleNamespace(host="127.0.0.1"),
     )
 
-    assert get_client_ip(request) == "198.51.100.20"
+    assert get_client_ip(request) == "10.0.0.1"
     assert get_user_agent(request) == "DepthSightTest/1.0"

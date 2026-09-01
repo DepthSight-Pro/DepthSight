@@ -1,3 +1,5 @@
+import html
+import json
 import logging
 
 import redis.asyncio as redis
@@ -131,42 +133,55 @@ async def render_shared_backtest(
         image_url = f"{abs_base_url}/og-image/{public_slug}.png"
         page_url = f"{abs_base_url}/s/{public_slug}"
 
+        e_title = html.escape(title, quote=True)
+        e_description = html.escape(description, quote=True)
+        e_page_url = html.escape(page_url, quote=True)
+        e_image_url = html.escape(image_url, quote=True)
+        e_strategy_name = html.escape(strategy_name, quote=True)
+        e_symbol = html.escape(symbol, quote=True)
+        e_pnl_str = html.escape(pnl_str, quote=True)
+        e_redirect = (
+            json.dumps(f"/s/{public_slug}")
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+        )
+
         html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>{title}</title>
-    <meta name="description" content="{description}" />
+    <title>{e_title}</title>
+    <meta name="description" content="{e_description}" />
     
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website">
-    <meta property="og:url" content="{page_url}">
-    <meta property="og:title" content="{title}">
-    <meta property="og:description" content="{description}">
-    <meta property="og:image" content="{image_url}">
+    <meta property="og:url" content="{e_page_url}">
+    <meta property="og:title" content="{e_title}">
+    <meta property="og:description" content="{e_description}">
+    <meta property="og:image" content="{e_image_url}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
-    <meta property="twitter:url" content="{page_url}">
-    <meta property="twitter:title" content="{title}">
-    <meta property="twitter:description" content="{description}">
-    <meta property="twitter:image" content="{image_url}">
+    <meta property="twitter:url" content="{e_page_url}">
+    <meta property="twitter:title" content="{e_title}">
+    <meta property="twitter:description" content="{e_description}">
+    <meta property="twitter:image" content="{e_image_url}">
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- Redirect for regular users if they get here directly -->
     <script>
-        window.location.href = "/s/{public_slug}";
+        window.location.href = {e_redirect};
     </script>
 </head>
 <body style="background-color: #0d1117; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
     <div style="text-align: center; padding: 20px;">
-        <h1 style="color: #58a6ff;">{strategy_name}</h1>
-        <p style="font-size: 1.2em;">{symbol} | {pnl_str}</p>
+        <h1 style="color: #58a6ff;">{e_strategy_name}</h1>
+        <p style="font-size: 1.2em;">{e_symbol} | {e_pnl_str}</p>
         <p style="color: #8b949e;">Loading report...</p>
-        <img src="{image_url}" alt="Equity Curve" style="max-width: 100%; border-radius: 8px; margin-top: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+        <img src="{e_image_url}" alt="Equity Curve" style="max-width: 100%; border-radius: 8px; margin-top: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
     </div>
 </body>
 </html>"""

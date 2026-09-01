@@ -115,7 +115,10 @@ async def test_regime_change_winning_trade_moves_sl(
     config_id = "test_config_1"
 
     async with controller.instances_lock:
-        controller.running_strategy_instances[config_id] = (strategy, MagicMock())
+        controller.running_strategy_instances[config_id] = (
+            strategy,
+            {"config_id": config_id, "symbol_selection_mode": "DYNAMIC"},
+        )
 
     position = LivePosition(
         symbol=symbol,
@@ -193,7 +196,10 @@ async def test_regime_change_losing_trade_closes_position(controller_fixture):
     config_id = "test_config_2"
 
     async with controller.instances_lock:
-        controller.running_strategy_instances[config_id] = (strategy, MagicMock())
+        controller.running_strategy_instances[config_id] = (
+            strategy,
+            {"config_id": config_id, "symbol_selection_mode": "DYNAMIC"},
+        )
 
     position = LivePosition(
         symbol=symbol,

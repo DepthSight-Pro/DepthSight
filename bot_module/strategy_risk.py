@@ -28,6 +28,10 @@ class StrategyRiskOverride:
     risk_pct: Optional[float] = None
     risk_usd: Optional[float] = None
 
+    # Upper bound for a per-trade risk percentage (fraction of balance).
+    # Guards against absurd strategy-input values driving oversized positions.
+    MAX_RISK_PCT = 1.0
+
     @property
     def is_explicit(self) -> bool:
         return self.risk_pct is not None or self.risk_usd is not None
@@ -55,6 +59,7 @@ def resolve_strategy_risk_override(
         return StrategyRiskOverride(risk_usd=numeric_risk_value)
 
     if risk_type in _PERCENT_BALANCE_RISK_TYPES:
-        return StrategyRiskOverride(risk_pct=numeric_risk_value / 100.0)
+        risk_pct = min(numeric_risk_value / 100.0, StrategyRiskOverride.MAX_RISK_PCT)
+        return StrategyRiskOverride(risk_pct=risk_pct)
 
     return StrategyRiskOverride()

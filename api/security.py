@@ -9,7 +9,6 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi import HTTPException
 import os
 from itsdangerous import URLSafeTimedSerializer
-from cryptography.fernet import Fernet, MultiFernet
 from dotenv import load_dotenv
 
 from pathlib import Path
@@ -48,10 +47,12 @@ EMAIL_CONFIRMATION_SALT = "email-confirmation-salt"
 PASSWORD_RESET_SALT = "password-reset-salt"
 PASSWORD_RESET_TOKEN_MAX_AGE = 3600  # 1 hour
 
-email_confirmation_serializer = URLSafeTimedSerializer(CONFIRMATION_SECRET_KEY)
+email_confirmation_serializer = URLSafeTimedSerializer(
+    CONFIRMATION_SECRET_KEY, salt=EMAIL_CONFIRMATION_SALT
+)
 password_reset_serializer = URLSafeTimedSerializer(
-    CONFIRMATION_SECRET_KEY
-)  # Using same for now
+    CONFIRMATION_SECRET_KEY, salt=PASSWORD_RESET_SALT
+)
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -91,10 +92,15 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
 
 
 def validate_token(token: str, credentials_exception: HTTPException) -> str:
+    """Validates an access token and returns the ``sub`` (username).
+
+    Requires the ``type`` claim to be ``"access"`` so that 30-day refresh tokens
+    cannot be used to authenticate on access-token-protected endpoints.
+    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        if username is None or payload.get("type") != "access":
             raise credentials_exception
     except JWTError:
         raise credentials_exception
@@ -108,28 +114,16 @@ def validate_token(token: str, credentials_exception: HTTPException) -> str:
 env_path = Path(".") / ".env"
 load_dotenv(dotenv_path=env_path)
 
-# API_ENCRYPTION_KEY can now be a comma-separated list of keys
-# The first key in the list is the active key used for encryption.
-# Subsequent keys are fallback keys used for decrypting older data.
-API_ENCRYPTION_KEYS_ENV = os.getenv("API_ENCRYPTION_KEY")
-
-if not API_ENCRYPTION_KEYS_ENV:
-    raise ValueError(
-        "API_ENCRYPTION_KEY is not set in the environment. This is required for production."
-    )
-
-# Parse the keys
-_encryption_keys = [k.strip() for k in API_ENCRYPTION_KEYS_ENV.split(",") if k.strip()]
-
-if not _encryption_keys:
-    raise ValueError(
-        "API_ENCRYPTION_KEY is empty or invalid. Provide at least one valid Fernet key."
-    )
-
-# Create a Fernet instance using MultiFernet for automatic fallback decryption
-# The first key in the list will be used for encryption (fernet_instances[0])
-_fernet_instances = [Fernet(key.encode()) for key in _encryption_keys]
-fernet = MultiFernet(_fernet_instances)
+# The Fernet box (key parsing, MultiFernet rotation, encrypt/decrypt and the
+# mining-node-secret helpers) lives in bot_module.secrets_box — the shared,
+# dependency-safe location. This module re-exports it for the API layer.
+from bot_module.secrets_box import (  # noqa: E402
+    decrypt_data as _sb_decrypt_data,
+    decrypt_node_secret,  # noqa: F401  re-exported
+    encrypt_data as _sb_encrypt_data,
+    encrypt_node_secret,  # noqa: F401  re-exported
+    fernet,  # noqa: F401  kept for backward compatibility with importers
+)
 
 _security_logger = logging.getLogger(__name__)
 
@@ -143,21 +137,15 @@ def hash_data(data: str) -> str:
 
 def encrypt_data(data: str) -> str:
     """Encrypts a string using Fernet."""
-    if not data:
-        return ""
-    encrypted_data = fernet.encrypt(data.encode())
-    return encrypted_data.decode()
+    return _sb_encrypt_data(data)
 
 
 def decrypt_data(encrypted_data: str) -> str:
     """Decrypts a string using Fernet."""
-    if not encrypted_data:
-        return ""
-    try:
-        decrypted_data = fernet.decrypt(encrypted_data.encode())
-        return decrypted_data.decode()
-    except Exception as e:
-        _security_logger.error(
-            f"SECURITY: Failed to decrypt data — possible key mismatch or data corruption: {e}"
-        )
-        raise ValueError(f"Decryption failed: {e}") from e
+    return _sb_decrypt_data(encrypted_data)
+
+
+# --- Mining node secret at rest -------------------------------------------
+# encrypt_node_secret / decrypt_node_secret are re-exported above from
+# bot_module.secrets_box (single implementation shared with the bot runtime;
+# legacy plaintext values are accepted transparently on read).

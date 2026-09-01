@@ -25,10 +25,11 @@ pytestmark = pytest.mark.asyncio
 class TestAuthentication:
     """Group of tests to verify authentication and authorization."""
 
-    async def test_unprotected_endpoint_is_accessible(self, test_client: AsyncClient):
+    async def test_status_endpoint_requires_authentication(
+        self, test_client: AsyncClient
+    ):
         response = await test_client.get("/api/v1/status")
-        assert response.status_code == 200
-        assert response.json()["data"]["status"] == "ok"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize(
         "url, method",
@@ -431,12 +432,18 @@ class TestLiveStrategyEndpoints:
             "/api/v1/strategies", json={"config_id": config.id}
         )
         assert response.status_code == 202
-        override_redis_client.publish.assert_called_once()
-        channel, message_str = override_redis_client.publish.call_args[0]
-        message_data = json.loads(message_str)
-        assert message_data.get("command") == "START_STRATEGY"
-        assert message_data["payload"]["id"] == config.id
-        assert str(message_data["payload"]["user_id"]) == str(pro_user.id)
+        assert override_redis_client.publish.call_count == 2
+        publish_calls = override_redis_client.publish.call_args_list
+        start_strategy_call = None
+        for call_args in publish_calls:
+            channel, message_str = call_args[0]
+            message_data = json.loads(message_str)
+            if message_data.get("command") == "START_STRATEGY":
+                start_strategy_call = message_data
+                break
+        assert start_strategy_call is not None
+        assert start_strategy_call["payload"]["config_id"] == config.id
+        assert str(start_strategy_call["payload"]["user_id"]) == str(pro_user.id)
 
     # Replaced 'authenticated_client' with 'pro_user_client'
     async def test_list_running_strategies_reads_from_redis(

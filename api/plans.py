@@ -17,15 +17,25 @@ class PlansConfig:
         self._block_restrictions = {}
         self._registration_trial = {}
         self._last_mtime_ns = -1
+        self._last_size = -1
+        self._has_db_override = False
         self._load_config(force=True)
 
-    def _get_config_mtime_ns(self) -> int:
-        return self._config_path.stat().st_mtime_ns
+    def _get_config_stat(self) -> tuple[int, int]:
+        try:
+            st = self._config_path.stat()
+            return st.st_mtime_ns, st.st_size
+        except Exception:
+            return -1, -1
 
     def _load_config(self, force: bool = False) -> None:
         try:
-            current_mtime_ns = self._get_config_mtime_ns()
-            if not force and current_mtime_ns == self._last_mtime_ns:
+            current_mtime_ns, current_size = self._get_config_stat()
+            if (
+                not force
+                and current_mtime_ns == self._last_mtime_ns
+                and current_size == self._last_size
+            ):
                 return
 
             with open(self._config_path, "r", encoding="utf-8") as f:
@@ -38,6 +48,7 @@ class PlansConfig:
             self._block_restrictions = config.get("block_restrictions", {})
             self._registration_trial = config.get("registration_trial", {})
             self._last_mtime_ns = current_mtime_ns
+            self._last_size = current_size
 
             if self._plans:
                 logger.info(
@@ -66,7 +77,8 @@ class PlansConfig:
             )
 
     def _reload_if_changed(self) -> None:
-        self._load_config(force=False)
+        if not self._has_db_override:
+            self._load_config(force=False)
 
     def get_plan(self, plan_name: str) -> dict:
         self._reload_if_changed()
@@ -89,13 +101,27 @@ class PlansConfig:
         self._reload_if_changed()
         selected_mode = mode or self.get_billing_mode()
         plan = self._plans.get(plan_name, {})
-        return plan.get("billing", {}).get(selected_mode, {})
+        billing = plan.get("billing", {}).get(selected_mode, {})
+        if (
+            selected_mode == "monthly"
+            and "price_usd" not in billing
+            and "price_usd" in plan
+        ):
+            billing = dict(billing)
+            billing["price_usd"] = plan["price_usd"]
+        return billing
 
     def get_effective_plan_price(self, plan_name: str) -> float:
         self._reload_if_changed()
-        mode_billing = self.get_plan_billing(plan_name)
+        selected_mode = self.get_billing_mode()
         plan = self._plans.get(plan_name, {})
-        return float(mode_billing.get("price_usd", plan.get("price_usd", 0)))
+        if selected_mode == "lifetime":
+            lifetime_billing = plan.get("billing", {}).get("lifetime", {})
+            if lifetime_billing.get("enabled"):
+                return float(
+                    lifetime_billing.get("price_usd", plan.get("price_usd", 0))
+                )
+        return float(plan.get("price_usd", 0))
 
     def get_lifetime_reservation_ttl_seconds(self) -> int:
         self._reload_if_changed()
@@ -132,6 +158,117 @@ class PlansConfig:
             "plan": str(config.get("plan", "standard") or "standard"),
             "days": max(days, 0),
         }
+
+    def get_full_config(self) -> dict:
+        """Returns the full parsed plans configuration."""
+        self._reload_if_changed()
+        return {
+            "registration_trial": self._registration_trial,
+            "block_restrictions": self._block_restrictions,
+            "billing": self._billing,
+            "plans": self._plans,
+            "referral_program": self._referral_program,
+            "affiliate_program": self._affiliate_program,
+        }
+
+    def update_full_config(self, config: dict, write_to_file: bool = True) -> dict:
+        """Updates internal structures and writes back to YAML file."""
+        if not isinstance(config, dict):
+            raise ValueError("Plans config must be a dictionary.")
+
+        self._plans = config.get("plans", {})
+        self._billing = config.get("billing", {})
+        self._referral_program = config.get("referral_program", {})
+        self._affiliate_program = config.get("affiliate_program", {})
+        self._block_restrictions = config.get("block_restrictions", {})
+        self._registration_trial = config.get("registration_trial", {})
+
+        # Ensure monthly billing price stays in sync with plan price_usd
+        for _, p_data in self._plans.items():
+            if isinstance(p_data, dict):
+                p_price = p_data.get("price_usd", 0)
+                if "billing" in p_data and isinstance(p_data["billing"], dict):
+                    if "monthly" in p_data["billing"] and isinstance(
+                        p_data["billing"]["monthly"], dict
+                    ):
+                        p_data["billing"]["monthly"]["price_usd"] = p_price
+
+        if write_to_file and self._config_path:
+            try:
+                full_dict = {
+                    "registration_trial": self._registration_trial,
+                    "block_restrictions": self._block_restrictions,
+                    "billing": self._billing,
+                    "plans": self._plans,
+                    "referral_program": self._referral_program,
+                    "affiliate_program": self._affiliate_program,
+                }
+                with open(self._config_path, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(
+                        full_dict, f, sort_keys=False, allow_unicode=True, indent=2
+                    )
+                current_mtime_ns, current_size = self._get_config_stat()
+                self._last_mtime_ns = current_mtime_ns
+                self._last_size = current_size
+                logger.info(
+                    "Successfully updated plans configuration file %s",
+                    self._config_path,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Notice: Could not write updated plans config to disk file %s (DB remains primary): %s",
+                    self._config_path,
+                    e,
+                )
+
+        return self.get_full_config()
+
+    async def load_from_db(self, db) -> bool:
+        """Loads plans configuration from the system_settings table if present."""
+        try:
+            from sqlalchemy import select
+            from .models import SystemSetting
+
+            stmt = select(SystemSetting).where(SystemSetting.key == "plans_config")
+            result = await db.execute(stmt)
+            setting = result.scalar_one_or_none()
+            if setting and isinstance(setting.value, dict):
+                self._has_db_override = True
+                self.update_full_config(setting.value, write_to_file=True)
+                logger.info("Loaded plans configuration from system_settings DB table.")
+                return True
+        except Exception as e:
+            logger.warning(
+                "Could not load plans configuration from DB (using YAML fallback): %s",
+                e,
+            )
+        return False
+
+    async def save_to_db(self, db, config: dict, user_id: int | None = None) -> None:
+        """Saves plans configuration to the system_settings table and synchronizes file."""
+        from sqlalchemy import select
+        from sqlalchemy.orm.attributes import flag_modified
+        from .models import SystemSetting
+
+        self._has_db_override = True
+        self.update_full_config(config, write_to_file=True)
+
+        stmt = select(SystemSetting).where(SystemSetting.key == "plans_config")
+        result = await db.execute(stmt)
+        setting = result.scalar_one_or_none()
+        if setting:
+            setting.value = config
+            setting.updated_by_user_id = user_id
+            flag_modified(setting, "value")
+        else:
+            setting = SystemSetting(
+                key="plans_config",
+                value=config,
+                description="Platform subscription plans, billing, and restriction settings",
+                updated_by_user_id=user_id,
+            )
+            db.add(setting)
+        await db.commit()
 
 
 CONFIG_FILE_PATH = Path(__file__).parent / "plans_config.yml"

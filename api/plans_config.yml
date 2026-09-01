@@ -1,73 +1,69 @@
-# plans_config.yml
 registration_trial:
   enabled: true
   plan: standard
   days: 0
-
 block_restrictions:
   pro_only:
-    - btc_state_filter
-    - correlation
-    - open_interest
-    - tape_condition
-    - order_book_zone_condition
-    - l2_microstructure
-    - conditional_exit
+  - btc_state_filter
+  - correlation
+  - open_interest
+  - tape_condition
+  - order_book_zone_condition
+  - l2_microstructure
+  - conditional_exit
   kline_only:
-    - senior_tf_confluence
-    - tape_condition
-    - tape_analysis
-    - order_book_zone_condition
-    - order_book_zone
-    - l2_microstructure
-    - l2_microstructure_check
-    - trailing_stop
-    - conditional_exit
-
+  - senior_tf_confluence
+  - tape_condition
+  - tape_analysis
+  - order_book_zone_condition
+  - order_book_zone
+  - l2_microstructure
+  - l2_microstructure_check
+  - trailing_stop
+  - conditional_exit
 billing:
-  mode: monthly # monthly | lifetime
+  mode: monthly
   lifetime:
     reservation_ttl_seconds: 900
-
 plans:
   free:
-    name: "Free"
+    name: Free
     price_usd: 0
     active: true
-    description: "Basic capabilities and standard strategy blocks."
+    description: Basic capabilities and standard strategy blocks.
     features:
-      - "20 fast backtests per day"
-      - "Standard blocks (Logic, Indicators, Proximity)"
-      - "Limited history (90 days)"
-      - "Limited trading pairs list"
-      - "10 AI Assistant queries per day"
+    - 20 fast backtests per day
+    - Standard blocks (Logic, Indicators, Proximity)
+    - Limited history (90 days)
+    - Limited trading pairs list
+    - 10 AI Assistant queries per day
     permissions:
-      - view_dashboard
-      - run_backtest
-      - view_strategies
-      - use_ai_assistant
+    - view_dashboard
+    - run_backtest
+    - view_strategies
+    - use_ai_assistant
     allowed_symbols:
-      - "0GUSDT"
-      - "ADAUSDT"
-      - "AIAUSDT"
-      - "AVNTUSDT"
-      - "BTCUSDT"
-      - "COAIUSDT"
-      - "DASHUSDT"
-      - "DOGEUSDT"
-      - "ETHUSDT"
-      - "EVAAUSDT"
-      - "FARTCOINUSDT"
-      - "HIFIUSDT"
-      - "HYPEUSDT"
-      - "IPUSDT"
-      - "JELLYJELLYUSDT"
-      - "LINKUSDT"
-      - "MYXUSDT"
-      - "PUMPUSDT"
-      - "SOLUSDT"
-      - "SOONUSDT"
-      - "TRUTHUSDT"
+    - 0GUSDT
+    - ADAUSDT
+    - AIAUSDT
+    - AVNTUSDT
+    - BTCUSDT
+    - COAIUSDT
+    - DASHUSDT
+    - DOGEUSDT
+    - ETHUSDT
+    - EVAAUSDT
+    - FARTCOINUSDT
+    - HIFIUSDT
+    - HYPEUSDT
+    - IPUSDT
+    - JELLYJELLYUSDT
+    - LINKUSDT
+    - MYXUSDT
+    - PUMPUSDT
+    - SOLUSDT
+    - SOONUSDT
+    - TRUTHUSDT
     quotas:
       run_vector_backtest_per_day: 20
       run_kline_backtest_per_day: 0
@@ -86,41 +82,44 @@ plans:
       max_concurrent_tasks: 1
       allow_free_bybit_trading: true
       max_free_bybit_live_strategies: 5
-
+      allow_free_weex_trading: true
+      max_free_weex_live_strategies: 5
+      allow_free_okx_trading: true
+      max_free_okx_live_strategies: 5
   standard:
-    name: "Standard"
-    price_usd: 30
+    name: Standard
+    price_usd: 45
     billing:
       monthly:
-        price_usd: 30
+        price_usd: 45
         period_days: 30
       lifetime:
         enabled: true
         price_usd: 99
         slot_limit: 75
     active: true
-    description: "For active traders. Live trading and standard blocks."
+    description: For active traders. Live trading and standard blocks.
     features:
-      - "50 backtests per day"
-      - "20 AI Assistant queries per day"
-      - "Live trading enabled"
-      - "Paper trading"
-      - "Standard strategy blocks"
-      - "Full history (1 year)"
-      - "10 live trading strategies"
-      - "TradingView webhooks"
+    - 50 backtests per day
+    - 20 AI Assistant queries per day
+    - Live trading enabled
+    - Paper trading
+    - Standard strategy blocks
+    - Full history (1 year)
+    - 10 live trading strategies
+    - TradingView webhooks
     permissions:
-      - view_dashboard
-      - run_backtest
-      - run_portfolio_backtest
-      - save_strategy_config
-      - view_strategies
-      - allow_real_trading
-      - use_ai_assistant
+    - view_dashboard
+    - run_backtest
+    - run_portfolio_backtest
+    - save_strategy_config
+    - view_strategies
+    - allow_real_trading
+    - use_ai_assistant
     quotas:
       run_vector_backtest_per_day: 50
       run_kline_backtest_per_day: 0
-      use_ai_assistant_per_day: 20
+      use_ai_assistant_per_day: 35
       run_portfolio_backtest_per_day: 0
       run_optimization_per_month: 0
       run_genetic_search_per_month: 0
@@ -133,41 +132,40 @@ plans:
       max_backtest_duration_days: 365
       celery_task_priority: 5
       max_concurrent_tasks: 2
-
   pro:
-    name: "Professional"
-    price_usd: 100
+    name: Professional
+    price_usd: 49
     billing:
       monthly:
-        price_usd: 100
+        price_usd: 49
         period_days: 30
       lifetime:
         enabled: true
-        price_usd: 299
+        price_usd: 149
         slot_limit: 25
     active: true
-    description: "Maximum power. Access to all PRO blocks and genetic search."
+    description: Maximum power. Access to all PRO blocks and genetic search.
     features:
-      - "Unlimited backtests"
-      - "Access to PRO blocks (Tape, Book, OI)"
-      - "Unlimited AI Assistant"
-      - "Genetic strategy search"
-      - "ML Model Laboratory"
-      - "High task priority"
-      - "30 live trading strategies"   
+    - Unlimited backtests
+    - Access to PRO blocks (Tape, Book, OI)
+    - Unlimited AI Assistant
+    - Genetic strategy search
+    - ML Model Laboratory
+    - High task priority
+    - 30 live trading strategies
     permissions:
-      - view_dashboard
-      - run_backtest
-      - run_portfolio_backtest
-      - run_optimization
-      - run_genetic_search
-      - run_simulation
-      - generate_dataset
-      - train_model
-      - save_strategy_config
-      - view_strategies
-      - allow_real_trading
-      - use_ai_assistant
+    - view_dashboard
+    - run_backtest
+    - run_portfolio_backtest
+    - run_optimization
+    - run_genetic_search
+    - run_simulation
+    - generate_dataset
+    - train_model
+    - save_strategy_config
+    - view_strategies
+    - allow_real_trading
+    - use_ai_assistant
     quotas:
       run_vector_backtest_per_day: -1
       run_kline_backtest_per_day: -1
@@ -184,15 +182,14 @@ plans:
       max_backtest_duration_days: -1
       celery_task_priority: 1
       max_concurrent_tasks: 5
-
 referral_program:
   referrer_bonus:
-    feature_name: "run_backtest"
+    feature_name: run_backtest
     quantity: 50
   referred_user_bonus:
-    feature_name: "run_backtest"
+    feature_name: run_backtest
     quantity: 25
-
 affiliate_program:
-  default_commission_rate: 0.40
+  default_commission_rate: 0.4
   commission_hold_period_days: 10
+  min_payout_usd: 50.0

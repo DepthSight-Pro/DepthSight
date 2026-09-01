@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import json
 
 import pytest
@@ -42,7 +42,7 @@ async def test_initialize_user_controllers_uses_api_key_sharding(mocker):
 
     await bot_runner._initialize_user_controllers(
         user,
-        db=object(),
+        db=MagicMock(),
         session=object(),
         redis_client=object(),
         telegram_notifier_instance=None,
@@ -69,7 +69,7 @@ async def test_initialize_user_controllers_skips_non_live_plans(mocker):
 
     await bot_runner._initialize_user_controllers(
         user,
-        db=object(),
+        db=MagicMock(),
         session=object(),
         redis_client=object(),
         telegram_notifier_instance=None,

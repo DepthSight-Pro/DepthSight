@@ -454,6 +454,82 @@ async def admin_get_affiliate_referrals(
     return {"total": total, "referrals": users}
 
 
+@admin_router.get(
+    "/payouts",
+    response_model=schemas.PaginatedAdminAffiliatePayouts,
+    summary="Get all affiliate payout requests",
+)
+async def admin_get_payouts(
+    status: Optional[str] = Query(
+        None, description="Filter by status: pending, paid, rejected, all"
+    ),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retrieves a paginated list of all payout requests across partners.
+    Admin only.
+    """
+    payouts, total = await crud.admin_get_payouts(
+        db, status=status, skip=skip, limit=limit
+    )
+    return {"total": total, "payouts": payouts}
+
+
+@admin_router.post(
+    "/payouts/{payout_id}/process",
+    response_model=schemas.AffiliatePayout,
+    summary="Process an affiliate payout request",
+)
+async def admin_process_payout(
+    payout_id: str,
+    payload: schemas.ProcessPayoutRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Approves (mark as 'paid' with transactionId) or rejects an affiliate payout.
+    If rejected, funds revert back to the affiliate's available balance.
+    Admin only.
+    """
+    try:
+        payout = await crud.admin_process_payout(
+            db,
+            payout_id=payout_id,
+            status=payload.status,
+            transaction_id=payload.transaction_id,
+            notes=payload.notes,
+        )
+        return payout
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@admin_router.get(
+    "/affiliates/{user_id}/payouts",
+    response_model=schemas.PaginatedAffiliatePayouts,
+    summary="Get payout requests for a specific affiliate",
+)
+async def admin_get_affiliate_payouts(
+    user_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Retrieves a paginated list of payout requests for a specific affiliate.
+    Admin only.
+    """
+    user = await crud.admin_get_user_details(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    payouts, total = await crud.get_payouts_for_user(
+        db, user_id=user_id, skip=skip, limit=limit
+    )
+    return {"total": total, "payouts": payouts}
+
+
 PIPELINE_LOG_FILE = Path("logs") / "download_pipeline.log"
 
 
@@ -594,44 +670,124 @@ async def stop_data_pipeline(
     return {"message": "Pipeline stopped."}
 
 
-@admin_router.get("/data-pipeline/storage-info")
-async def get_data_pipeline_storage_info():
+def _get_kline_1m_info(f: Path, pfile) -> Optional[dict]:
+    import json
+
+    size_mb = round(f.stat().st_size / (1024 * 1024), 2)
+    is_enriched = "tape_total_count_5s" in pfile.schema.names
+
+    idx_col = None
+    if pfile.schema_arrow.pandas_metadata:
+        try:
+            pm = json.loads(pfile.schema_arrow.pandas_metadata)
+            index_cols = pm.get("index_columns", [])
+            if (
+                index_cols
+                and isinstance(index_cols[0], str)
+                and index_cols[0] in pfile.schema.names
+            ):
+                idx_col = index_cols[0]
+        except Exception:
+            pass
+
+    if not idx_col:
+        for candidate in (
+            "__index_level_0__",
+            "open_time",
+            "timestamp",
+            "time",
+            "date",
+            "datetime",
+        ):
+            if candidate in pfile.schema.names:
+                idx_col = candidate
+                break
+
+    s_date, e_date = None, None
+
+    if idx_col:
+        try:
+            first_batch = next(pfile.iter_batches(batch_size=1, columns=[idx_col]))
+            d0_val = first_batch.column(0)[0].as_py()
+
+            last_rg_idx = pfile.num_row_groups - 1
+            last_rg = pfile.read_row_group(last_rg_idx, columns=[idx_col])
+            d1_val = last_rg.column(0)[-1].as_py()
+
+            if hasattr(d0_val, "date"):
+                s_date = d0_val.date().isoformat()
+            else:
+                s_date = str(pd.to_datetime(d0_val, utc=True).date())
+
+            if hasattr(d1_val, "date"):
+                e_date = d1_val.date().isoformat()
+            else:
+                e_date = str(pd.to_datetime(d1_val, utc=True).date())
+        except Exception as e:
+            logger.warning(f"Fast index read failed for {f}: {e}")
+
+    if not s_date or not e_date:
+        try:
+            df_head = pd.read_parquet(
+                f, columns=[] if not idx_col else [idx_col], engine="pyarrow"
+            ).head(1)
+            df_tail = pd.read_parquet(
+                f, columns=[] if not idx_col else [idx_col], engine="pyarrow"
+            ).tail(1)
+            if not df_head.empty and not df_tail.empty:
+                d0 = df_head.index[0]
+                d1 = df_tail.index[-1]
+                s_date = (
+                    d0.date().isoformat()
+                    if hasattr(d0, "date")
+                    else str(pd.to_datetime(d0, utc=True).date())
+                )
+                e_date = (
+                    d1.date().isoformat()
+                    if hasattr(d1, "date")
+                    else str(pd.to_datetime(d1, utc=True).date())
+                )
+        except Exception as e:
+            logger.error(f"Fallback read failed for {f}: {e}")
+
+    if s_date and e_date:
+        return {
+            "start_date": s_date,
+            "end_date": e_date,
+            "size_mb": size_mb,
+            "is_enriched": is_enriched,
+        }
+    return {
+        "start_date": "N/A",
+        "end_date": "N/A",
+        "size_mb": size_mb,
+        "is_enriched": is_enriched,
+    }
+
+
+def _scan_storage_sync(base_path: Path) -> list:
     import pyarrow.parquet as pq
 
-    project_root = Path(__file__).parent.parent.parent.resolve()
-    base_path = project_root / "data_storage" / "binance" / "futures"
-
-    if not base_path.exists():
-        return {"symbols": []}
-
     symbols_data = []
+    if not base_path.exists():
+        return symbols_data
 
-    for symbol_dir in base_path.iterdir():
-        if symbol_dir.is_dir():
+    try:
+        for symbol_dir in base_path.iterdir():
+            if not symbol_dir.is_dir():
+                continue
             symbol = symbol_dir.name.upper()
 
-            # 1. Detect all kline timeframes
             timeframes = []
             klines_1m_info = None
             for f in symbol_dir.glob("kline_*.parquet"):
                 tf = f.name.replace("kline_", "").replace(".parquet", "")
                 timeframes.append(tf)
 
-                # Special check for 1m (main range and enrichment)
                 if tf == "1m":
                     try:
                         pfile = pq.ParquetFile(f)
-                        # Fast range check from metadata
-                        # We still use pandas for index read if metadata is not enough
-                        df_index = pd.read_parquet(f, columns=[], engine="pyarrow")
-                        if len(df_index) > 0:
-                            klines_1m_info = {
-                                "start_date": df_index.index[0].date().isoformat(),
-                                "end_date": df_index.index[-1].date().isoformat(),
-                                "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
-                                "is_enriched": "tape_total_count_5s"
-                                in pfile.schema.names,
-                            }
+                        klines_1m_info = _get_kline_1m_info(f, pfile)
                     except Exception as e:
                         logger.error(f"Error inspecting {f}: {e}")
 
@@ -645,8 +801,43 @@ async def get_data_pipeline_storage_info():
                 "has_depth": (symbol_dir / "bookDepth").exists(),
             }
             symbols_data.append(info)
+    except Exception as scan_err:
+        logger.error(f"Error scanning storage directory {base_path}: {scan_err}")
 
-    return {"symbols": symbols_data}
+    symbols_data.sort(key=lambda x: x["symbol"])
+    return symbols_data
+
+
+@admin_router.get("/data-pipeline/storage-info")
+async def get_data_pipeline_storage_info(
+    force_refresh: bool = Query(False, description="Force disk rescan"),
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
+    import asyncio
+    import json
+
+    cache_key = "depthsight:admin:storage_info"
+    if not force_refresh:
+        cached_data = await redis_client.get(cache_key)
+        if cached_data:
+            try:
+                symbols_data = json.loads(cached_data)
+                return {"data": {"symbols": symbols_data}, "symbols": symbols_data}
+            except Exception:
+                pass
+
+    project_root = Path(__file__).parent.parent.parent.resolve()
+    base_path = project_root / "data_storage" / "binance" / "futures"
+
+    symbols_data = await asyncio.to_thread(_scan_storage_sync, base_path)
+
+    # Cache for 10 minutes
+    try:
+        await redis_client.set(cache_key, json.dumps(symbols_data), ex=600)
+    except Exception:
+        pass
+
+    return {"data": {"symbols": symbols_data}, "symbols": symbols_data}
 
 
 @admin_router.post("/data-pipeline/catch-up")
@@ -690,3 +881,104 @@ async def catch_up_data_pipeline(
         delete_aggtrades=req_params.delete_aggtrades,
     )
     return await start_data_pipeline(req, redis_client=redis_client)
+
+
+# --- Plans Management Endpoints ---
+
+
+@admin_router.get("/plans/config", response_model=schemas.AdminPlansConfigResponse)
+async def admin_get_plans_config(db: AsyncSession = Depends(get_db)):
+    """
+    Get the full plans, billing, restrictions, and program configuration.
+    Admin only.
+    """
+    await plans_config.load_from_db(db)
+    return plans_config.get_full_config()
+
+
+@admin_router.put("/plans/config", response_model=schemas.AdminPlansConfigResponse)
+async def admin_update_plans_config(
+    payload: schemas.AdminPlansConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin_user: models.User = Depends(require_admin_role),
+):
+    """
+    Update the full plans, billing, restrictions, and bonus configuration.
+    Persists to DB system_settings and synchronizes plans_config.yml.
+    Admin only.
+    """
+    if not payload.plans:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one plan must be defined.",
+        )
+
+    config_dict = payload.model_dump(exclude_unset=True)
+    await plans_config.save_to_db(db, config_dict, user_id=admin_user.id)
+    return plans_config.get_full_config()
+
+
+@admin_router.post(
+    "/plans/reset-defaults", response_model=schemas.AdminPlansConfigResponse
+)
+async def admin_reset_plans_config(
+    db: AsyncSession = Depends(get_db),
+    admin_user: models.User = Depends(require_admin_role),
+):
+    """
+    Reloads plans configuration from the disk YAML file into the DB.
+    Admin only.
+    """
+    plans_config._has_db_override = False
+    plans_config._load_config(force=True)
+    config_dict = plans_config.get_full_config()
+    await plans_config.save_to_db(db, config_dict, user_id=admin_user.id)
+    return config_dict
+
+
+# --- AI / LLM Settings Endpoints ---
+
+
+@admin_router.get("/ai/settings", response_model=schemas.AdminAISettingsResponse)
+async def admin_get_ai_settings(db: AsyncSession = Depends(get_db)):
+    """
+    Get the dynamic AI provider settings and masked API keys.
+    Admin only.
+    """
+    from ..ai_assistant import get_ai_settings_for_admin, load_ai_settings_from_db
+
+    await load_ai_settings_from_db(db)
+    return get_ai_settings_for_admin()
+
+
+@admin_router.put("/ai/settings", response_model=schemas.AdminAISettingsResponse)
+async def admin_update_ai_settings(
+    payload: schemas.AdminAISettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin_user: models.User = Depends(require_admin_role),
+):
+    """
+    Update the active AI provider, models, endpoints, and API keys.
+    Encrypts secret keys and persists to system_settings DB table.
+    Admin only.
+    """
+    from ..ai_assistant import save_ai_settings_from_admin
+
+    return await save_ai_settings_from_admin(
+        db, update_data=payload, user_id=admin_user.id
+    )
+
+
+@admin_router.post("/ai/test", response_model=schemas.AdminAITestResponse)
+async def admin_test_ai_connection(
+    payload: schemas.AdminAITestRequest,
+):
+    """
+    Test connectivity to a specific AI provider with real latency metrics.
+    Admin only.
+    """
+    from ..ai_assistant import test_ai_provider_connection
+
+    return await test_ai_provider_connection(
+        provider=payload.provider, config=payload.config
+    )

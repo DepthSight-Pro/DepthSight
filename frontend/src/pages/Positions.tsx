@@ -113,6 +113,11 @@ export default function Positions() {
 		null,
 	);
 	const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
+	const [positionToClose, setPositionToClose] = useState<{
+		symbol: string;
+		id: string;
+		apiKeyId?: number;
+	} | null>(null);
 
 	// Local state for fake positions (only for testing)
 	const [testPositions, setTestPositions] = useState<PositionData[]>([]);
@@ -268,27 +273,25 @@ export default function Positions() {
 			return;
 		}
 
-		// Use `t` for confirmation text localization
-		const confirmationText = t("confirmClosePosition", {
-			symbol: symbol,
-			ns: "positions",
-		});
-		const isConfirmed = window.confirm(confirmationText);
-
-		if (isConfirmed && id) {
-			// 1. Set the "loading" state for a specific button
-			setClosingPositionId(id);
-			// 2. Call the mutation, passing callbacks here
-			closePosition(
-				{ symbol, apiKeyId },
-				{
-					onSettled: () => {
-						// 3. Reset the "loading" state after the request is completed
-						setClosingPositionId(null);
-					},
-				},
-			);
+		if (id) {
+			setPositionToClose({ symbol, id, apiKeyId });
 		}
+	};
+
+	const handleClosePositionConfirm = () => {
+		if (!positionToClose) return;
+		const { symbol, id, apiKeyId } = positionToClose;
+
+		setClosingPositionId(id);
+		closePosition(
+			{ symbol, apiKeyId },
+			{
+				onSettled: () => {
+					setClosingPositionId(null);
+					setPositionToClose(null);
+				},
+			},
+		);
 	};
 
 	const handleAddTestPosition = () => {
@@ -554,6 +557,17 @@ export default function Positions() {
 				description={t("emergencyStopConfirmDesc")}
 				onConfirm={handleEmergencyStopConfirm}
 				loading={isStoppingAll}
+			/>
+
+			<ConfirmationModal
+				open={!!positionToClose}
+				onOpenChange={(open) => {
+					if (!open) setPositionToClose(null);
+				}}
+				title={t("closePositionConfirmTitle", { symbol: positionToClose?.symbol })}
+				description={t("closePositionConfirmDesc", { symbol: positionToClose?.symbol })}
+				onConfirm={handleClosePositionConfirm}
+				loading={!!closingPositionId}
 			/>
 
 			{editingPosition && (

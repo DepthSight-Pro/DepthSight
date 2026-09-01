@@ -62,7 +62,15 @@
 		"consensus": "Consensus",
 		"channelLatency": "Channel Latency",
 		"optimizedRouting": "Optimized routing",
-		"consensusVerified": "Consensus verified"
+		"consensusVerified": "Consensus verified",
+		"leaderboard": {
+			"publicTitle": "Public Mining Nodes",
+			"publicDesc": "Nodes accepting external miners · sorted by conditions",
+			"privateTitle": "Private Nodes",
+			"privateDesc": "Self-hosted nodes without public access · domain not disclosed",
+			"seasonsTitle": "Operator Seasons",
+			"seasonsDesc": "Compete for seasonal bonuses! Top node operators earn $DEPTH prizes for uptime, volume, and growth."
+		}
 	},
 	"news": {
 		"title": "News & Releases",

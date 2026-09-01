@@ -15,24 +15,14 @@ scratch/
 /__pycache__
 __pycache__/
 /data_storage
-/data_storage_old
 /pwa/node_modules/
 /frontend/node_modules/
-/md/
 /extracted_strategies/
-depth_sight_hft
-depth_sight_hft/target/
-depth_sight_hft/.env
-depth_sight_hft/*.log
-depth_sight_hft/config.toml
-depth_sight_hft/
 data/
-catboost_info/
-perfomance_test/
-performance_result/
 
 # Security and local configs
 gcp_key.json
 .vscode/
 docker-compose.legacy.yml
 .agent/
+hub_private/

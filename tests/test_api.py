@@ -18,12 +18,19 @@ INVALID_API_KEY = "invalid-key"
 
 
 @pytest.mark.asyncio
-async def test_get_status(test_client: AsyncClient):
-    """Tests the /status endpoint."""
-    response = await test_client.get("/api/v1/status")
+async def test_get_status(authenticated_client: AsyncClient):
+    """Tests the /status endpoint (requires authentication)."""
+    response = await authenticated_client.get("/api/v1/status")
     assert response.status_code == 200
     data = response.json()
     assert data["data"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_status_requires_authentication(test_client: AsyncClient):
+    """The /status endpoint must not be reachable without a token."""
+    response = await test_client.get("/api/v1/status")
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -75,12 +82,19 @@ async def test_strategies_workflow(
     )
     assert response.status_code == 202, f"API returned error on start: {response.text}"
 
-    mock_redis_client.publish.assert_called_once()
-    channel, message_json = mock_redis_client.publish.call_args[0]
-    assert channel == REDIS_COMMAND_CHANNEL
-    message_data = json.loads(message_json)
+    # The endpoint may also publish ACTIVATE_API_KEY; locate the START_STRATEGY one.
+    start_messages = [
+        json.loads(message_json)
+        for _channel, message_json in mock_redis_client.publish_calls
+        if json.loads(message_json).get("command") == "START_STRATEGY"
+    ]
+    assert len(start_messages) == 1
+    message_data = start_messages[0]
     assert message_data["command"] == "START_STRATEGY"
-    assert message_data["payload"]["id"] == config_id_to_run
+    assert message_data["payload"]["config_id"] == config_id_to_run
+    assert message_data["payload"]["id"].startswith(f"{config_id_to_run}:")
+    instance_id = message_data["payload"]["id"]
+    mock_redis_client.publish_calls = []
     mock_redis_client.publish.reset_mock()
 
     mock_strategies_state = [
@@ -107,7 +121,7 @@ async def test_strategies_workflow(
     data = response.json()["data"]
     assert len(data) >= 0, f"API returned unexpected data: {data}"
 
-    instance_id_to_stop = config_id_to_run
+    instance_id_to_stop = instance_id
     response = await pro_user_client.delete(f"/api/v1/strategies/{instance_id_to_stop}")
     assert response.status_code == 202
     mock_redis_client.publish.assert_called_once()
@@ -115,6 +129,170 @@ async def test_strategies_workflow(
     message_data_stop = json.loads(message_json_stop)
     assert message_data_stop["command"] == "STOP_STRATEGY"
     assert message_data_stop["payload"]["strategy_id"] == instance_id_to_stop
+
+
+async def _create_config_for_user(
+    db_session: AsyncSession, user_id: int
+) -> schemas.StrategyConfig:
+    created_config = await crud.create_strategy_config(
+        db_session,
+        user_id=user_id,
+        config_create=schemas.StrategyConfigCreate(
+            name="Multi Coin Strategy",
+            config_data={"strategy_name": "Test", "params": {}},
+        ),
+    )
+    await db_session.commit()
+    await db_session.refresh(created_config)
+    return created_config
+
+
+@pytest.mark.asyncio
+async def test_start_same_config_on_disjoint_symbols_succeeds(
+    pro_user_client: AsyncClient,
+    mock_redis_client: MagicMock,
+    db_session: AsyncSession,
+    pro_user: models.User,
+):
+    """
+    The same config may run as several independent instances on disjoint symbol sets.
+    """
+    created_config = await _create_config_for_user(db_session, pro_user.id)
+    config_id = created_config.id
+    active_keys = await crud.get_active_api_keys_for_user(
+        db_session, user_id=pro_user.id
+    )
+    api_key_id = active_keys[0].id
+
+    for symbols in (["BTCUSDT"], ["ETHUSDT"]):
+        response = await pro_user_client.post(
+            "/api/v1/strategies",
+            json={
+                "config_id": config_id,
+                "symbol_selection_mode": "STATIC",
+                "symbols": symbols,
+                "api_key_id": api_key_id,
+            },
+        )
+        assert response.status_code == 202, response.text
+
+    start_payload_ids = []
+    for channel, message_json in mock_redis_client.publish_calls:
+        message_data = json.loads(message_json)
+        if message_data["command"] == "START_STRATEGY":
+            payload = message_data["payload"]
+            assert payload["config_id"] == config_id
+            assert payload["symbol_selection_mode"] == "STATIC"
+            start_payload_ids.append(payload["id"])
+
+    assert len(start_payload_ids) == 2
+    assert len(set(start_payload_ids)) == 2, "Each launch must get a unique instance id"
+
+
+@pytest.mark.asyncio
+async def test_start_same_config_on_overlapping_symbol_returns_409(
+    pro_user_client: AsyncClient,
+    mock_redis_client: MagicMock,
+    db_session: AsyncSession,
+    pro_user: models.User,
+):
+    """
+    Launching the same config on a symbol already covered by a running instance is rejected.
+    """
+    created_config = await _create_config_for_user(db_session, pro_user.id)
+    config_id = created_config.id
+    active_keys = await crud.get_active_api_keys_for_user(
+        db_session, user_id=pro_user.id
+    )
+    api_key_id = active_keys[0].id
+
+    running_entry = {
+        "id": f"{config_id}:abcdef12",
+        "config_id": config_id,
+        "strategy_name": "Test",
+        "symbol": "BTCUSDT",
+        "symbols": ["BTCUSDT"],
+        "symbol_selection_mode": "STATIC",
+        "api_key_id": api_key_id,
+        "mode": "paper",
+        "status": "running",
+        "pnl": 0.0,
+        "open_positions": 0,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": pro_user.id,
+    }
+    state_key = f"{REDIS_STATE_KEY_STRATEGIES}:{pro_user.id}:{api_key_id}"
+    await mock_redis_client.set(state_key, json.dumps([running_entry]))
+
+    response = await pro_user_client.post(
+        "/api/v1/strategies",
+        json={
+            "config_id": config_id,
+            "symbol_selection_mode": "STATIC",
+            "symbols": ["BTCUSDT"],
+            "api_key_id": api_key_id,
+        },
+    )
+    assert response.status_code == 409, response.text
+
+    # But a disjoint symbol still launches fine.
+    response = await pro_user_client.post(
+        "/api/v1/strategies",
+        json={
+            "config_id": config_id,
+            "symbol_selection_mode": "STATIC",
+            "symbols": ["ETHUSDT"],
+            "api_key_id": api_key_id,
+        },
+    )
+    assert response.status_code == 202, response.text
+
+
+@pytest.mark.asyncio
+async def test_start_same_config_when_dynamic_instance_running_returns_409(
+    pro_user_client: AsyncClient,
+    mock_redis_client: MagicMock,
+    db_session: AsyncSession,
+    pro_user: models.User,
+):
+    """
+    A DYNAMIC instance covers everything, so any second launch of the same config conflicts.
+    """
+    created_config = await _create_config_for_user(db_session, pro_user.id)
+    config_id = created_config.id
+    active_keys = await crud.get_active_api_keys_for_user(
+        db_session, user_id=pro_user.id
+    )
+    api_key_id = active_keys[0].id
+
+    running_entry = {
+        "id": f"{config_id}:abcdef12",
+        "config_id": config_id,
+        "strategy_name": "Test",
+        "symbol": "Dynamic (All)",
+        "symbols": [],
+        "symbol_selection_mode": "DYNAMIC",
+        "api_key_id": api_key_id,
+        "mode": "paper",
+        "status": "running",
+        "pnl": 0.0,
+        "open_positions": 0,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": pro_user.id,
+    }
+    state_key = f"{REDIS_STATE_KEY_STRATEGIES}:{pro_user.id}:{api_key_id}"
+    await mock_redis_client.set(state_key, json.dumps([running_entry]))
+
+    response = await pro_user_client.post(
+        "/api/v1/strategies",
+        json={
+            "config_id": config_id,
+            "symbol_selection_mode": "STATIC",
+            "symbols": ["BTCUSDT"],
+            "api_key_id": api_key_id,
+        },
+    )
+    assert response.status_code == 409, response.text
 
 
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { migrateStrategy } from "@/components/strategy-editor/migration";
 import {
 	CONDITIONAL_MANAGEMENT_ACTION_TYPES,
+	type ActionBlock,
 	type ComponentType,
 	type ConditionalManagementBlock,
 	type ConditionBlock,
@@ -16,6 +17,7 @@ import {
 	type PlanTier,
 	type StrategyState,
 	type TrailingStopBlock,
+	type TriggerState,
 } from "@/components/strategy-editor/types";
 import i18n from "@/i18n";
 import type { StrategyConfigData } from "@/types/api";
@@ -790,54 +792,53 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 					) as StrategyState;
 					const defaults = getDefaultInitialState();
 
-					draft.id = strat.id || null;
-					draft.name = strat.name || defaults.name;
-					draft.description = strat.description || defaults.description;
+					draft.id = (strat as Record<string, unknown>).id as string | null || null;
+					draft.name = (strat as Record<string, unknown>).name as string || defaults.name;
+					draft.description = (strat as Record<string, unknown>).description as string || defaults.description;
 					draft.strategy_name = resolveRuntimeStrategyName(
-						flattenedData.strategy_name ||
-							strat.strategy_name ||
+						(flattenedData as unknown as Record<string, unknown>).strategy_name as string ||
+							(strat as Record<string, unknown>).strategy_name as string ||
 							defaults.strategy_name,
 						flattenedData,
 					);
 					draft.signal_source =
 						flattenedData.signal_source ||
-						strat.signal_source ||
+						(strat as Record<string, unknown>).signal_source as string ||
 						defaults.signal_source;
 					draft.symbol =
-						flattenedData.symbol || strat.symbol || defaults.symbol;
+						flattenedData.symbol || (strat as Record<string, unknown>).symbol as string || defaults.symbol;
 					draft.marketType =
-						flattenedData.marketType || strat.marketType || defaults.marketType;
+						flattenedData.marketType || (strat as Record<string, unknown>).marketType as "FUTURES" | "SPOT" || defaults.marketType;
 					draft.min_foundation_weight_threshold =
 						flattenedData.min_foundation_weight_threshold ??
-						strat.min_foundation_weight_threshold ??
+						(strat as Record<string, unknown>).min_foundation_weight_threshold as number ??
 						defaults.min_foundation_weight_threshold;
 
 					// New fields for oracle and ML
 					draft.oracleRegime =
-						flattenedData.oracle_regime ??
-						strat.oracle_regime ??
+						(flattenedData as unknown as Record<string, unknown>).oracle_regime as number | null ??
+						(strat as Record<string, unknown>).oracle_regime as number | null ??
 						defaults.oracleRegime;
 					draft.oracleConfidence =
-						flattenedData.oracle_confidence ??
-						strat.oracle_confidence ??
+						(flattenedData as unknown as Record<string, unknown>).oracle_confidence as number ??
+						(strat as Record<string, unknown>).oracle_confidence as number ??
 						defaults.oracleConfidence;
 					draft.use_ml_confirmation =
 						flattenedData.use_ml_confirmation ??
-						strat.use_ml_confirmation ??
+						(strat as Record<string, unknown>).use_ml_confirmation as boolean ??
 						defaults.use_ml_confirmation;
 					draft.breakeven_on_regime_change =
 						flattenedData.breakeven_on_regime_change ??
-						strat.breakeven_on_regime_change ??
+						(strat as Record<string, unknown>).breakeven_on_regime_change as boolean ??
 						defaults.breakeven_on_regime_change;
 
 					// Symbol selection fields
 					let mode =
-						strat.symbol_selection_mode || defaults.symbol_selection_mode;
+						(strat as Record<string, unknown>).symbol_selection_mode as string || defaults.symbol_selection_mode;
 					if (mode === "DYNAMIC") {
-						// Refining the mode based on existing settings
 						if (
-							flattenedData.oracle_settings ||
-							strat.oracle_regime !== undefined
+							(flattenedData as unknown as Record<string, unknown>).oracle_settings ||
+							(strat as Record<string, unknown>).oracle_regime !== undefined
 						) {
 							mode = "DYNAMIC_ORACLE";
 						} else {
@@ -848,16 +849,16 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 						mode as StrategyState["symbol_selection_mode"];
 					draft.max_concurrent_symbols =
 						flattenedData.max_concurrent_symbols ??
-						strat.max_concurrent_symbols ??
+						(strat as Record<string, unknown>).max_concurrent_symbols as number ??
 						defaults.max_concurrent_symbols;
 					draft.min_natr =
-						flattenedData.natr_settings?.min_natr ??
-						strat.min_natr ??
+						((flattenedData as unknown as Record<string, unknown>).natr_settings as Record<string, unknown>)?.min_natr as number ??
+						(strat as Record<string, unknown>).min_natr as number ??
 						defaults.min_natr;
 
 					// If a specific symbol came in the AI config, force STATIC mode
 					const incomingSymbol =
-						flattenedData.symbol || configData.symbol || strat.symbol;
+						flattenedData.symbol || configData.symbol as string || (strat as Record<string, unknown>).symbol as string;
 					if (
 						incomingSymbol &&
 						incomingSymbol !== "BTCUSDT" &&
@@ -898,10 +899,10 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 						strat.foundation_weights ||
 						strat.foundationWeights ||
 						configData.foundation_weights ||
-						flattenedData.foundation_weights;
+						(flattenedData as unknown as Record<string, unknown>).foundation_weights;
 
 					if (weightsToLoad && typeof weightsToLoad === "object") {
-						draft.foundationWeights = normalizeFoundationWeights(weightsToLoad);
+						draft.foundationWeights = normalizeFoundationWeights(weightsToLoad as Record<string, number>);
 						if (Object.keys(draft.foundationWeights).length > 0) {
 							draft.useFoundationWeights = true;
 						}
@@ -919,21 +920,22 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 		},
 
 		loadDiscoveredStrategy: (strategyJson) => {
+			const s = strategyJson as Record<string, unknown>;
 			const newStructure: Partial<StrategyState> = {
-				strategy_name: strategyJson.strategy_name || "GeneticStrategy",
-				signal_source: strategyJson.signal_source || "internal",
-				name: strategyJson.name,
-				symbol: strategyJson.symbol,
-				marketType: strategyJson.marketType,
-				entryTrigger: strategyJson.entryTrigger || strategyJson.trigger,
-				entryConditions: strategyJson.entryConditions ||
-					strategyJson.conditions || {
+				strategy_name: (s.strategy_name as string) || "GeneticStrategy",
+				signal_source: (s.signal_source as "internal" | "tradingview_webhook") || "internal",
+				name: s.name as string,
+				symbol: s.symbol as string,
+				marketType: s.marketType as "FUTURES" | "SPOT",
+				entryTrigger: (s.entryTrigger || s.trigger) as TriggerState,
+				entryConditions: (s.entryConditions ||
+					s.conditions) as ConditionBlock || {
 						id: uuidv4(),
-						type: "AND",
+						type: "AND" as const,
 						children: [],
 					},
-				initialization: strategyJson.initialization || strategyJson.action,
-				positionManagement: strategyJson.positionManagement || [],
+				initialization: (s.initialization || s.action) as ActionBlock,
+				positionManagement: (s.positionManagement || []) as ManagementBlock[],
 			};
 			get().loadState(newStructure);
 		},
@@ -1176,8 +1178,8 @@ export const useStrategyEditorStore = create<StrategyState & EditorActions>(
 									consumer.params.rightOperand = newSimpleParams.value;
 								if (newSimpleParams.time_window_sec !== undefined) {
 									provider.params.time_window_sec =
-										newSimpleParams.time_window_sec;
-									leftOp.key = normalizeTapeOutputKey(leftOp.key);
+										newSimpleParams.time_window_sec as number;
+									leftOp.key = normalizeTapeOutputKey(leftOp.key as string);
 								}
 							}
 							break;

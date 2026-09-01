@@ -18,11 +18,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	useAdminAffiliateCommissions,
+	useAdminAffiliatePayouts,
 	useAdminAffiliateReferrals,
 } from "@/lib/api";
 import type {
 	AdminAffiliateCommission,
 	AdminAffiliateReferral,
+	AffiliatePayout,
 } from "@/types/api";
 
 const AdminAffiliateDetailPage: React.FC = () => {
@@ -31,13 +33,15 @@ const AdminAffiliateDetailPage: React.FC = () => {
 
 	const [commissionsPage, setCommissionsPage] = useState(1);
 	const [referralsPage, setReferralsPage] = useState(1);
+	const [payoutsPage, setPayoutsPage] = useState(1);
 
 	const { data: commissionsData, isLoading: isLoadingCommissions } =
 		useAdminAffiliateCommissions(userId, commissionsPage, 10);
 	const { data: referralsData, isLoading: isLoadingReferrals } =
 		useAdminAffiliateReferrals(userId, referralsPage, 10);
+	const { data: payoutsData, isLoading: isLoadingPayouts } =
+		useAdminAffiliatePayouts(userId, payoutsPage, 10);
 
-	// TODO: Fetch affiliate details to get username for the title
 	const affiliateUsername = `User #${id}`;
 
 	const formatCurrency = (amount: number) =>
@@ -45,8 +49,25 @@ const AdminAffiliateDetailPage: React.FC = () => {
 			style: "currency",
 			currency: "USD",
 		}).format(amount);
-	const formatDate = (dateString: string) =>
-		new Date(dateString).toLocaleDateString();
+	const formatDate = (dateString?: string | null) => {
+		if (!dateString) return "-";
+		return new Date(dateString).toLocaleDateString();
+	};
+
+	const getStatusBadge = (status: string) => {
+		switch (status.toLowerCase()) {
+			case "paid":
+			case "completed":
+				return <Badge className="bg-green-600">Paid</Badge>;
+			case "pending":
+				return <Badge variant="secondary" className="bg-yellow-600/20 text-yellow-500">Pending</Badge>;
+			case "rejected":
+			case "failed":
+				return <Badge variant="destructive">Rejected</Badge>;
+			default:
+				return <Badge variant="outline">{status}</Badge>;
+		}
+	};
 
 	return (
 		<div>
@@ -58,6 +79,7 @@ const AdminAffiliateDetailPage: React.FC = () => {
 				<TabsList className="mb-4">
 					<TabsTrigger value="commissions">Commissions</TabsTrigger>
 					<TabsTrigger value="referrals">Referrals</TabsTrigger>
+					<TabsTrigger value="payouts">Payouts</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="commissions">
@@ -160,6 +182,69 @@ const AdminAffiliateDetailPage: React.FC = () => {
 									currentPage={referralsPage}
 									totalPages={Math.ceil(referralsData.total / 10)}
 									onPageChange={setReferralsPage}
+								/>
+							)}
+						</CardContent>
+					</Card>
+				</TabsContent>
+
+				<TabsContent value="payouts">
+					<Card>
+						<CardHeader>
+							<CardTitle>Payout History</CardTitle>
+						</CardHeader>
+						<CardContent>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>Date</TableHead>
+										<TableHead>Amount</TableHead>
+										<TableHead>Address</TableHead>
+										<TableHead>Status</TableHead>
+										<TableHead>Transaction ID</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{isLoadingPayouts
+										? [...Array(5)].map((_, i) => (
+												<TableRow key={i}>
+													<TableCell colSpan={5}>
+														<Skeleton className="h-8 w-full" />
+													</TableCell>
+												</TableRow>
+											))
+										: !payoutsData?.payouts || payoutsData.payouts.length === 0 ? (
+												<TableRow>
+													<TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+														No payouts found for this affiliate.
+													</TableCell>
+												</TableRow>
+											) : (
+												payoutsData.payouts.map((payout: AffiliatePayout) => (
+													<TableRow key={payout.id}>
+														<TableCell>
+															{formatDate(payout.createdAt)}
+														</TableCell>
+														<TableCell className="font-semibold">
+															{formatCurrency(payout.amount)}
+														</TableCell>
+														<TableCell className="font-mono text-xs max-w-[180px] truncate" title={payout.payoutAddress || ""}>
+															{payout.payoutAddress || "N/A"}
+														</TableCell>
+														<TableCell>{getStatusBadge(payout.status)}</TableCell>
+														<TableCell className="font-mono text-xs max-w-[150px] truncate" title={payout.transactionId || ""}>
+															{payout.transactionId || "-"}
+														</TableCell>
+													</TableRow>
+												))
+											)}
+								</TableBody>
+							</Table>
+							{payoutsData && payoutsData.total > 10 && (
+								<Pagination
+									currentPage={payoutsPage}
+									totalPages={Math.ceil(payoutsData.total / 10)}
+									onPageChange={setPayoutsPage}
 								/>
 							)}
 						</CardContent>

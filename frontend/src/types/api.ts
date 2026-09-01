@@ -19,6 +19,7 @@ export interface SystemStatusData {
 	version: string;
 	timestamp_utc: string;
 	components: SystemComponent[];
+	isCentralHub?: boolean;
 }
 
 export interface PortfolioData {
@@ -50,6 +51,7 @@ export interface StrategyTemplate {
 
 export interface StrategyData {
 	id: string;
+	config_id?: string;
 	name: string;
 	strategy_name: string;
 	symbol: string;
@@ -630,6 +632,7 @@ export interface NotificationSettings {
 	notifyOrderErrors?: boolean;
 	notifyBotErrors?: boolean;
 	notifyBlacklistAlerts?: boolean;
+	shareTelemetry?: boolean;
 }
 
 export interface DataSourceStatus {
@@ -1029,8 +1032,6 @@ export interface AdminAffiliateReferral {
 	plan: string;
 }
 
-// --- Types for the Affiliate Program (Affiliate View) ---
-
 export interface AffiliateDashboardStats {
 	pendingAmount: number;
 	availableAmount: number;
@@ -1038,13 +1039,14 @@ export interface AffiliateDashboardStats {
 	clicks: number;
 	registrations: number;
 	payingCustomers: number;
+	payoutAddress?: string | null;
 }
 
 export interface AffiliateCommission {
 	id: string;
 	createdAt: string;
 	amount: number;
-	status: "pending" | "available" | "paid";
+	status: "pending" | "available" | "processing" | "paid";
 	description: string;
 }
 
@@ -1079,13 +1081,39 @@ export interface AffiliatePayout {
 	id: string;
 	createdAt: string;
 	amount: number;
-	status: "pending" | "completed" | "failed";
+	status: "pending" | "paid" | "rejected" | "completed" | "failed";
+	payoutAddress?: string;
 	transactionId?: string;
+	processedAt?: string | null;
 }
 
 export interface PaginatedAffiliatePayouts {
 	total: number;
 	payouts: AffiliatePayout[];
+}
+
+export interface AdminAffiliatePayout {
+	id: string;
+	userId: number;
+	username?: string;
+	email?: string;
+	amount: number;
+	status: "pending" | "paid" | "rejected";
+	payoutAddress?: string;
+	transactionId?: string;
+	createdAt: string;
+	processedAt?: string | null;
+}
+
+export interface PaginatedAdminAffiliatePayouts {
+	total: number;
+	payouts: AdminAffiliatePayout[];
+}
+
+export interface ProcessPayoutRequest {
+	status: "paid" | "rejected";
+	transactionId?: string;
+	notes?: string;
 }
 
 export interface PayoutDetailsPayload {
@@ -1205,6 +1233,11 @@ export interface AgentMemory {
 	relevance_score: number;
 	created_at: string;
 	expires_at?: string;
+	tags?: string[];
+	symbol?: string;
+	strategy_type?: string;
+	outcome?: string;
+	confidence?: number;
 }
 
 export interface AIChatRequest {
@@ -1301,3 +1334,157 @@ export interface BEScatterDataResponse {
 	avg_mfe: number;
 	avg_mae: number;
 }
+
+export interface HubMiningConfig {
+	isMiningEnabled: boolean;
+	eligibleExchanges: string[];
+	minTradeDurationSec: number;
+	minPriceMovementPercent?: number;
+	referralMiningBoost: number;
+	dailyEmissionBase?: number;
+	rebateRates?: Record<string, number>;
+}
+
+export interface HubMiningConfigUpdate {
+	isMiningEnabled?: boolean;
+	eligibleExchanges?: string[];
+	minTradeDurationSec?: number;
+	minPriceMovementPercent?: number;
+	referralMiningBoost?: number;
+	dailyEmissionBase?: number;
+	rebateRates?: Record<string, number>;
+}
+
+// --- Admin Plans & AI Configuration Types ---
+
+export interface PlanBillingOption {
+	monthly?: {
+		price_usd: number;
+		period_days: number;
+	};
+	lifetime?: {
+		enabled: boolean;
+		price_usd: number;
+		slot_limit: number;
+	};
+}
+
+export interface PlanQuotas {
+	run_vector_backtest_per_day?: number;
+	run_kline_backtest_per_day?: number;
+	use_ai_assistant_per_day?: number;
+	run_portfolio_backtest_per_day?: number;
+	run_optimization_per_month?: number;
+	run_genetic_search_per_month?: number;
+	generate_dataset_per_month?: number;
+	train_model_per_month?: number;
+	[key: string]: number | undefined;
+}
+
+export interface PlanLimits {
+	allow_real_trading?: boolean;
+	max_live_strategies?: number;
+	allow_intracandle_triggers?: boolean;
+	max_backtest_duration_days?: number;
+	celery_task_priority?: number;
+	max_concurrent_tasks?: number;
+	allow_free_bybit_trading?: boolean;
+	max_free_bybit_live_strategies?: number;
+	allow_free_weex_trading?: boolean;
+	max_free_weex_live_strategies?: number;
+	allow_free_okx_trading?: boolean;
+	max_free_okx_live_strategies?: number;
+	[key: string]: boolean | number | string | undefined;
+}
+
+export interface AdminPlanItem {
+	name: string;
+	price_usd: number;
+	active: boolean;
+	description?: string;
+	features?: string[];
+	permissions?: string[];
+	allowed_symbols?: string[];
+	quotas?: PlanQuotas;
+	limits?: PlanLimits;
+	billing?: PlanBillingOption;
+}
+
+export interface AdminPlansConfig {
+	registration_trial?: {
+		enabled: boolean;
+		plan: string;
+		days: number;
+	};
+	block_restrictions?: {
+		pro_only?: string[];
+		kline_only?: string[];
+	};
+	billing?: {
+		mode: "monthly" | "lifetime";
+		lifetime?: {
+			reservation_ttl_seconds: number;
+		};
+	};
+	plans: Record<string, AdminPlanItem>;
+	referral_program?: {
+		referrer_bonus?: {
+			feature_name: string;
+			quantity: number;
+			description?: string;
+		};
+		referred_user_bonus?: {
+			feature_name: string;
+			quantity: number;
+			description?: string;
+		};
+	};
+	affiliate_program?: {
+		default_commission_rate: number;
+		commission_hold_period_days: number;
+	};
+}
+
+export interface AdminAIProviderConfig {
+	api_key?: string;
+	api_key_masked?: string;
+	is_configured?: boolean;
+	model?: string;
+	api_url?: string;
+	timeout_seconds?: number;
+	use_vertex?: boolean;
+	gcp_project_id?: string;
+	gcp_location?: string;
+	gcp_key_path?: string;
+	http_referer?: string;
+	app_title?: string;
+	agent_id?: string;
+	endpoint?: string;
+	[key: string]: any;
+}
+
+export interface AdminAISettings {
+	active_provider: string;
+	supported_providers: string[];
+	providers: Record<string, AdminAIProviderConfig>;
+}
+
+export interface AdminAISettingsUpdate {
+	active_provider?: string;
+	providers?: Record<string, AdminAIProviderConfig>;
+}
+
+export interface AdminAITestRequest {
+	provider: string;
+	config?: AdminAIProviderConfig;
+}
+
+export interface AdminAITestResponse {
+	success: boolean;
+	provider: string;
+	model?: string;
+	latency_ms: number;
+	response?: string;
+	error?: string;
+}
+

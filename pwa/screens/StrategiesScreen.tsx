@@ -28,7 +28,12 @@ const StrategyItem: React.FC<StrategyItemProps> = ({
 	onEdit,
 	onDelete,
 }) => {
-	const { id, name, isRunning, runningInstance } = strategy;
+	const { id, name, isRunning, runningInstance, runningInstances } = strategy;
+	const instances = runningInstances && runningInstances.length > 0
+		? runningInstances
+		: runningInstance
+			? [runningInstance]
+			: [];
 	const pnl = runningInstance?.pnl ?? 0;
 	const pnlPositive = pnl >= 0;
 	const symbol =
@@ -55,6 +60,12 @@ const StrategyItem: React.FC<StrategyItemProps> = ({
 							? t("strategies.status.running")
 							: t("strategies.status.stopped")}
 					</span>
+					{instances.length > 1 && (
+						<span className="text-xs text-[hsl(var(--muted-foreground))]">
+							{instances.length}{" "}
+							{t("strategies.copiesCount", "copies")}
+						</span>
+					)}
 					{isRunning && (
 						<span
 							className={`text-sm font-medium ${pnlPositive ? "text-[hsl(var(--profit))]" : "text-[hsl(var(--loss))]"}`}
@@ -104,14 +115,43 @@ const StrategyItem: React.FC<StrategyItemProps> = ({
 				</div>
 			)}
 			{isRunning && (
-				<div className="border-t border-[hsl(var(--border))] mt-3 pt-3 flex gap-2">
-					<button
-						onClick={() => onStop(id)}
-						className="w-full text-sm bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] py-2 rounded-lg flex items-center justify-center gap-2 transition hover:opacity-90"
-					>
-						{" "}
-						<ICONS.Stop className="w-4 h-4" /> {t("strategies.stop")}{" "}
-					</button>
+				<div className="border-t border-[hsl(var(--border))] mt-3 pt-3 space-y-2">
+					{instances.map((inst) => (
+						<div
+							key={inst.id}
+							className="flex items-center justify-between gap-2"
+						>
+							<div className="flex-1 min-w-0">
+								<div className="text-sm font-medium truncate text-[hsl(var(--card-foreground))]">
+									{inst.symbol_selection_mode === "STATIC"
+										? inst.symbols?.join(", ") || inst.symbol
+										: t("strategies.dynamic", "Dynamic")}
+								</div>
+								<div className="text-xs text-[hsl(var(--muted-foreground))]">
+									{inst.open_positions != null
+										? `${t("strategies.openPositions", "Open Positions")}: ${inst.open_positions}`
+										: ""}
+								</div>
+							</div>
+							<div className="flex items-center gap-2">
+								{inst.pnl != null && (
+									<span
+										className={`text-sm font-medium ${inst.pnl >= 0 ? "text-[hsl(var(--profit))]" : "text-[hsl(var(--loss))]"}`}
+									>
+										{inst.pnl >= 0 ? "+" : ""}
+										{inst.pnl.toLocaleString()}
+									</span>
+								)}
+								<button
+									onClick={() => onStop(inst.id)}
+									className="text-sm bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] px-3 py-1.5 rounded-lg flex items-center justify-center gap-2 transition hover:opacity-90"
+								>
+									<ICONS.Stop className="w-4 h-4" />{" "}
+									{t("strategies.stop")}
+								</button>
+							</div>
+						</div>
+					))}
 				</div>
 			)}
 		</div>
@@ -157,12 +197,17 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 			]);
 			const savedConfigs = savedRes;
 			const runningInstances = runningRes;
-			const runningIds = new Set(runningInstances.map((r) => r.id));
-			const merged: DisplayStrategy[] = savedConfigs.map((config) => ({
-				...config,
-				isRunning: runningIds.has(config.id),
-				runningInstance: runningInstances.find((r) => r.id === config.id),
-			}));
+			const merged: DisplayStrategy[] = savedConfigs.map((config) => {
+				const matching = runningInstances.filter(
+					(r) => (r.config_id || r.id) === config.id,
+				);
+				return {
+					...config,
+					isRunning: matching.length > 0,
+					runningInstance: matching[0],
+					runningInstances: matching,
+				};
+			});
 			setStrategies(merged);
 		} catch (err) {
 			console.error(err);

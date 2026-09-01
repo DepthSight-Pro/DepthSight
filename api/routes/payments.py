@@ -25,11 +25,12 @@ payments_router = APIRouter(
 @payments_router.get("/plans")
 async def get_plans(db: AsyncSession = Depends(get_db)):
     """
-    Get a list of all available plans from the config file.
+    Get a list of all available plans from the config file or database.
     """
     try:
         from ..depthsight_api import _get_lifetime_slots_for_plan
 
+        await plans_config.load_from_db(db)
         all_plans = plans_config.get_all_plans()
         billing_mode = plans_config.get_billing_mode()
         # Convert to required format
@@ -56,8 +57,13 @@ async def get_plans(db: AsyncSession = Depends(get_db)):
                     "slots": slots,
                     "description": config.get("description", ""),
                     "features": config.get("features", []),
+                    "quotas": config.get("quotas", {}),
+                    "limits": config.get("limits", {}),
+                    "permissions": config.get("permissions", []),
+                    "billing": config.get("billing", {}),
                 }
             )
+
         return response_plans
     except Exception as e:
         logger.error(f"Failed to load plans from config: {e}", exc_info=True)
@@ -77,6 +83,7 @@ async def create_payment(
     """
     from ..depthsight_api import _get_lifetime_slots_for_plan
 
+    await plans_config.load_from_db(db)
     plan_name = request.plan_name
     plan_config = plans_config.get_plan(plan_name)
 

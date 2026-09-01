@@ -87,10 +87,7 @@ async def add_api_key(
         logger.info(
             f"Activating referral bonuses for user {current_user.id} and referrer {current_user.referred_by_user_id}."
         )
-        await crud.activate_bonuses_for_user(db, user_id=current_user.id)
-        await crud.activate_bonuses_for_user(
-            db, user_id=current_user.referred_by_user_id
-        )
+        await crud.activate_referral_bonuses(db, referred_user_id=current_user.id)
         await db.commit()
 
     # Now, check if we should set it as the active key
@@ -119,6 +116,40 @@ async def add_api_key(
                     db, current_user.id, "exchange_settings", current_exchange_settings
                 )
                 await db.commit()
+                if db_api_key.exchange in ["weex", "weex_futures", "weex_spot"]:
+                    try:
+                        from .config import auto_resolve_weex_uid
+
+                        await auto_resolve_weex_uid(db, current_user.id)
+                    except Exception:
+                        pass
+                elif db_api_key.exchange in [
+                    "okx",
+                    "okx_futures",
+                    "okx_spot",
+                    "okx_usdtm",
+                    "okx_linear",
+                ]:
+                    try:
+                        from .config import auto_resolve_okx_uid
+
+                        await auto_resolve_okx_uid(db, current_user.id)
+                    except Exception:
+                        pass
+                elif db_api_key.exchange in [
+                    "bybit",
+                    "bybit_futures",
+                    "bybit_spot",
+                    "bybit_linear",
+                    "bybit_usdtm",
+                    "bybit_unified",
+                ]:
+                    try:
+                        from .config import auto_resolve_bybit_uid
+
+                        await auto_resolve_bybit_uid(db, current_user.id)
+                    except Exception:
+                        pass
                 logger.info(
                     f"Successfully set '{db_api_key.name}' as the active key for user {current_user.id}."
                 )
@@ -515,6 +546,46 @@ async def test_api_key(
     )
     await db.commit()
     await db.refresh(updated_key)
+
+    if new_status == "valid":
+        if updated_key.exchange in [
+            "weex",
+            "weex_futures",
+            "weex_spot",
+        ]:
+            try:
+                from .config import auto_resolve_weex_uid
+
+                await auto_resolve_weex_uid(db, current_user.id)
+            except Exception:
+                pass
+        elif updated_key.exchange in [
+            "okx",
+            "okx_futures",
+            "okx_spot",
+            "okx_usdtm",
+            "okx_linear",
+        ]:
+            try:
+                from .config import auto_resolve_okx_uid
+
+                await auto_resolve_okx_uid(db, current_user.id)
+            except Exception:
+                pass
+        elif updated_key.exchange in [
+            "bybit",
+            "bybit_futures",
+            "bybit_spot",
+            "bybit_linear",
+            "bybit_usdtm",
+            "bybit_unified",
+        ]:
+            try:
+                from .config import auto_resolve_bybit_uid
+
+                await auto_resolve_bybit_uid(db, current_user.id)
+            except Exception:
+                pass
 
     # --- Audit Log ---
     audit_logger.api_key_tested(

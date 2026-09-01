@@ -3,6 +3,7 @@
 	"userUpdateSuccessDescription": "User details have been successfully updated.",
 	"userUpdateFailedTitle": "Update Failed",
 	"bonusIssueSuccessTitle": "Bonus Issued",
+	"bonusIssueSuccessDescription": "Bonus has been successfully issued to the user.",
 	"bonusIssueFailedTitle": "Failed to Issue Bonus",
 	"impersonationFailedTitle": "Impersonation Failed"
 }

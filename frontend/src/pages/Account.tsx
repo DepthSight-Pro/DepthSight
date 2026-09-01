@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Achievements from "@/components/research/Achievements";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
+import { Footer } from "@/components/layout/Footer";
 import { PricingModal } from "@/components/shared/PricingModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -167,13 +168,14 @@ const AccountPage: React.FC = () => {
 	}
 
 	return (
-		<div className="p-4 md:p-8 space-y-6">
-			<h1 className="text-3xl font-bold tracking-tight flex items-center">
-				<User className="mr-3 h-8 w-8 text-primary" />
-				{t("pageTitle")}
-			</h1>
+		<div className="p-4 md:p-8 space-y-6 flex flex-col min-h-full">
+			<div className="flex-1 space-y-6">
+				<h1 className="text-3xl font-bold tracking-tight flex items-center">
+					<User className="mr-3 h-8 w-8 text-primary" />
+					{t("pageTitle")}
+				</h1>
 
-			<Tabs defaultValue="account">
+				<Tabs defaultValue="account">
 				<TabsList>
 					<TabsTrigger value="account">
 						<User className="mr-2 h-4 w-4" />
@@ -448,7 +450,10 @@ const AccountPage: React.FC = () => {
 				<TabsContent value="achievements">
 					<Achievements />
 				</TabsContent>
-			</Tabs>
+				</Tabs>
+			</div>
+
+			<Footer className="mt-8 flex-shrink-0" />
 
 			{/* Modal windows */}
 			<ConfirmationModal

@@ -1,5 +1,6 @@
 # bot_module/data_loader.py
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -69,6 +70,21 @@ AGGTRADE_COLUMNS = [
 # Helper functions
 # ==============================================================================
 
+_SAFE_SYMBOL_RE = re.compile(r"^[A-Z0-9_-]+$")
+
+
+def _safe_symbol(symbol: str) -> str:
+    """Normalizes a trading symbol for use as a filesystem path component.
+
+    Symbols arrive from user input (backtest/optimization requests) and are used
+    to build data file paths, so anything other than letters/digits/_/- is
+    rejected to prevent path traversal outside the data tree.
+    """
+    normalized = str(symbol or "").upper().strip()
+    if not normalized or not _SAFE_SYMBOL_RE.match(normalized):
+        raise ValueError(f"Invalid symbol for local data path: {symbol!r}")
+    return normalized
+
 
 def get_local_path(
     symbol: str, data_type: str, market_type: str, timeframe: Optional[str] = None
@@ -94,7 +110,7 @@ def get_local_path(
         Path(config.LOCAL_DATA_STORAGE_PATH)
         / "binance"
         / market_folder
-        / symbol.upper()
+        / _safe_symbol(symbol)
         / filename
     )
 

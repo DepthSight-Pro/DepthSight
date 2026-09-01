@@ -1,21 +1,22 @@
 # api/depthsight_api.py
 
-import os
-import uuid
-from datetime import datetime, timezone, timedelta
-import secrets
-from typing import Any, Dict, Optional, List
+import asyncio
 import json
 import logging
+import os
+import secrets
 import traceback
+import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import asyncio
+from typing import Any
+
 import aiohttp
 import numpy as np
+from celery.result import AsyncResult  # noqa: F401
 
 from bot_module.logger_setup import setup_global_logging
 
-from celery.result import AsyncResult  # noqa: F401
 from .gamification import grant_achievement  # noqa: F401
 
 # Tasks imports removed to decouple layers
@@ -40,20 +41,22 @@ except ModuleNotFoundError:
     )
 
 try:
+    from contextlib import asynccontextmanager
+
     from fastapi import (
+        APIRouter,
+        Depends,
         FastAPI,
         HTTPException,
-        status,
-        Depends,
-        APIRouter,
         Query,
         Request,
+        status,
     )
-    from contextlib import asynccontextmanager
-    from .session_manager import session_manager
-    from fastapi.responses import JSONResponse, Response
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import JSONResponse, Response
     from fastapi.security import OAuth2PasswordRequestForm
+
+    from .session_manager import session_manager
 
     FASTAPI_INSTALLED_API = True
 except ModuleNotFoundError:
@@ -89,136 +92,133 @@ except ModuleNotFoundError:
     JSONResponse = MockFastAPIComponent
     CORSMiddleware = MockFastAPIComponent
     OAuth2PasswordRequestForm = MockFastAPIComponent
-from pydantic import BaseModel
 import redis.asyncio as redis
+from pydantic import BaseModel
 
 # --- Rate Limiting ---
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
-from . import crud, schemas, models
 
-from bot_module.exchanges.common import is_binance_exchange
+from bot_module import data_loader
 from bot_module.exchanges import (
     create_exchange_executor as _create_exchange_executor,
 )
 from bot_module.exchanges.binance import BinanceExchangeExecutor as BinanceExecutor
+from bot_module.exchanges.common import is_binance_exchange
 
-from . import ai_assistant
-from .gamification import check_and_grant_retroactive_achievements
-from .database import get_db
-from .redis_client import get_redis_client
-from .auth import get_current_user
-from . import security
+from . import ai_assistant, crud, models, schemas, security
 from .audit_logger import audit_logger, get_client_ip, get_user_agent
+from .auth import get_current_user
+from .database import get_db
 from .dependencies import (
-    is_strategy_pro_only,
     is_strategy_kline_only,
+    is_strategy_pro_only,
 )
-
-from .plans import plans_config
-from .routes.affiliate import affiliate_router
-from .routes.ai import create_ai_routers
-from .routes.model_lab import create_model_lab_router
-from .routes.notifications import notifications_router
-from .routes.public import public_router
-from .routes.registry import include_application_routers
-from .routes.support import admin_support_router, support_router
-from .routes.users import users_extra_router
-from bot_module import data_loader
+from .gamification import check_and_grant_retroactive_achievements
 from .hft_router import router as hft_router
-from .routes.auth import auth_router
-from .routes.payments import payments_router
-from .routes.webhooks import webhooks_router
-from .routes.admin import admin_router
-from .routes.discovery import discovery_router
+from .plans import plans_config
+from .rate_limiter import get_limit_value, limiter
+from .redis_client import get_redis_client
 from .routes.account import (  # noqa: F401
     account_router,
     get_account_status,
     get_paper_wallet,
     reset_paper_wallet,
 )
-from .routes.portfolio import (  # noqa: F401
-    portfolio_router,
-    get_portfolio_status,
-    get_portfolio_equity,
-    emergency_stop,
-    list_positions,
-    close_position,
-    update_position_sl_tp,
-    get_trades_history,
-    list_portfolio_backtests,
-    run_portfolio_backtest_endpoint,
+from .routes.admin import admin_router
+from .routes.affiliate import affiliate_router
+from .routes.ai import create_ai_routers
+from .routes.api_keys import (  # noqa: F401
+    add_api_key,
+    api_keys_router,
+    delete_api_key,
+    get_multi_account_balances,
+    test_api_key,
+    update_api_key_status_active,
+)
+from .routes.auth import auth_router
+from .routes.backtests import (  # noqa: F401
+    backtests_router,
+    create_shareable_backtest_link,
+    delete_backtest,
+    get_backtest_details,
+    get_backtest_klines,
+    list_backtests,
+    run_backtest,
 )
 from .routes.config import (  # noqa: F401
-    config_router,
-    get_config_endpoint,
-    update_config_endpoint,
     add_symbol,
+    add_to_blacklist,
+    config_router,
     delete_symbol,
     get_blacklist,
-    add_to_blacklist,
+    get_block_restrictions,
+    get_config_endpoint,
     remove_from_blacklist,
     update_auto_blacklist_rules,
-    get_block_restrictions,
+    update_config_endpoint,
 )
 from .routes.diagnostics import (  # noqa: F401
     diagnostics_router,
-    get_system_status_endpoint,
-    proxy_binance_klines,
-    proxy_bybit_klines,
-    preview_foundation,
     find_available_symbols,
     get_log_history,
+    get_system_status_endpoint,
+    preview_foundation,
+    proxy_binance_klines,
+    proxy_bybit_klines,
 )
-from .routes.tasks import (  # noqa: F401
-    tasks_router,
-    get_all_tasks,
-    get_task_status_endpoint,
-    run_optimization,
-    get_optimization_status,
-)
+from .routes.discovery import discovery_router
 from .routes.gamification import (  # noqa: F401
-    gamification_router,
-    get_leaderboard,
     delete_leaderboard_entry,
-    get_achievements,
-    get_user_achievements,
+    gamification_router,
     general_exception_handler_custom,
+    get_achievements,
+    get_leaderboard,
+    get_user_achievements,
 )
-from .routes.api_keys import (  # noqa: F401
-    api_keys_router,
-    add_api_key,
-    delete_api_key,
-    update_api_key_status_active,
-    get_multi_account_balances,
-    test_api_key,
+from .routes.model_lab import create_model_lab_router
+from .routes.notifications import notifications_router
+from .routes.payments import payments_router
+from .routes.portfolio import (  # noqa: F401
+    close_position,
+    emergency_stop,
+    get_portfolio_equity,
+    get_portfolio_status,
+    get_trades_history,
+    list_portfolio_backtests,
+    list_positions,
+    portfolio_router,
+    run_portfolio_backtest_endpoint,
+    update_position_sl_tp,
 )
-from .routes.backtests import (  # noqa: F401
-    backtests_router,
-    get_backtest_klines,
-    run_backtest,
-    list_backtests,
-    get_backtest_details,
-    delete_backtest,
-    create_shareable_backtest_link,
-)
+from .routes.public import public_router
+from .routes.registry import include_application_routers
 from .routes.strategies import (  # noqa: F401
-    strategies_router,
-    list_strategies,
-    list_saved_strategy_configurations,
-    generate_strategy_from_text_endpoint,
-    save_strategy_configuration,
-    get_saved_strategy_configuration,
-    update_saved_strategy_configuration,
+    breed_strategies,
     delete_saved_strategy_configuration,
+    generate_strategy_from_text_endpoint,
+    get_saved_strategy_configuration,
+    get_strategy_lineage,
+    get_strategy_lineages,
+    list_saved_strategy_configurations,
+    list_strategies,
+    save_strategy_configuration,
     start_strategy_instance,
     stop_strategy_instance,
-    get_strategy_lineages,
-    get_strategy_lineage,
-    breed_strategies,
+    strategies_router,
+    update_saved_strategy_configuration,
 )
+from .routes.support import admin_support_router, support_router
+from .routes.tasks import (  # noqa: F401
+    get_all_tasks,
+    get_optimization_status,
+    get_task_status_endpoint,
+    run_optimization,
+    tasks_router,
+)
+from .routes.users import users_extra_router
+from .routes.webhooks import webhooks_router
 
 # Initialize global logging for the API service
 setup_global_logging("api.log")
@@ -231,7 +231,7 @@ def create_exchange_executor(
     api_key: str,
     api_secret: str,
     session,
-    market_type: Optional[str] = None,
+    market_type: str | None = None,
 ):
     """Create an exchange executor while keeping legacy BinanceExecutor mocks working."""
     if is_binance_exchange(exchange) and BinanceExecutor is not _BINANCE_ADAPTER_CLASS:
@@ -256,7 +256,7 @@ MARKET_TYPE_SPOT = "spot"
 SUPPORTED_BALANCE_MARKETS = (MARKET_TYPE_FUTURES, MARKET_TYPE_SPOT)
 
 
-def normalize_market_type_filter(raw_market_type: Optional[str]) -> str:
+def normalize_market_type_filter(raw_market_type: str | None) -> str:
     raw = str(raw_market_type or MARKET_TYPE_ALL).strip().lower()
     if raw in {"", MARKET_TYPE_ALL}:
         return MARKET_TYPE_ALL
@@ -270,14 +270,14 @@ def normalize_market_type_filter(raw_market_type: Optional[str]) -> str:
     )
 
 
-def market_types_for_filter(raw_market_type: Optional[str]) -> List[str]:
+def market_types_for_filter(raw_market_type: str | None) -> list[str]:
     normalized = normalize_market_type_filter(raw_market_type)
     if normalized == MARKET_TYPE_ALL:
         return list(SUPPORTED_BALANCE_MARKETS)
     return [normalized]
 
 
-def _balance_float(balance_row: Dict[str, Any], key: str) -> float:
+def _balance_float(balance_row: dict[str, Any], key: str) -> float:
     try:
         return float(balance_row.get(key, 0) or 0)
     except (TypeError, ValueError):
@@ -285,9 +285,9 @@ def _balance_float(balance_row: Dict[str, Any], key: str) -> float:
 
 
 def _asset_balances_from_exchange_response(
-    balances: Optional[Dict[str, Dict[str, Any]]],
-) -> List[schemas.AssetBalance]:
-    assets: List[schemas.AssetBalance] = []
+    balances: dict[str, dict[str, Any]] | None,
+) -> list[schemas.AssetBalance]:
+    assets: list[schemas.AssetBalance] = []
     for asset, row in (balances or {}).items():
         if not isinstance(row, dict):
             continue
@@ -364,8 +364,8 @@ async def fetch_api_key_market_balance(
 
 
 def get_deduplicated_balances_for_totals(
-    accounts: List[schemas.AccountBalance],
-) -> List[schemas.AccountBalance]:
+    accounts: list[schemas.AccountBalance],
+) -> list[schemas.AccountBalance]:
     """
     Deduplicates accounts for summing totals.
     For unified account exchanges (Bybit, OKX), if both spot and futures_usdtm
@@ -397,9 +397,9 @@ def get_deduplicated_balances_for_totals(
 
 
 def build_market_balance_breakdown(
-    accounts: List[schemas.AccountBalance],
-) -> List[schemas.MarketBalanceSummary]:
-    breakdown: List[schemas.MarketBalanceSummary] = []
+    accounts: list[schemas.AccountBalance],
+) -> list[schemas.MarketBalanceSummary]:
+    breakdown: list[schemas.MarketBalanceSummary] = []
     for market_type in SUPPORTED_BALANCE_MARKETS:
         market_accounts = [
             account for account in accounts if account.market_type == market_type
@@ -485,7 +485,7 @@ def _is_lifetime_payment(payment: models.Payment) -> bool:
     return abs(float(payment.amount_usd) - lifetime_price) < 0.0001
 
 
-def _get_payment_plan_expires_at(payment: models.Payment) -> Optional[datetime]:
+def _get_payment_plan_expires_at(payment: models.Payment) -> datetime | None:
     if _is_lifetime_payment(payment):
         return None
 
@@ -498,7 +498,7 @@ async def _get_lifetime_slots_for_plan(
     db: AsyncSession,
     plan_name: str,
     plan_config: dict,
-) -> Optional[dict]:
+) -> dict | None:
     lifetime_billing = plan_config.get("billing", {}).get("lifetime", {})
     if not lifetime_billing.get("enabled", False):
         return None
@@ -534,18 +534,21 @@ async def _sync_live_runtime_for_plan_change(
     redis_client: redis.Redis,
     db: AsyncSession,
     user_id: int,
-    previous_plan: Optional[str],
-    new_plan: Optional[str],
+    previous_plan: str | None,
+    new_plan: str | None,
 ) -> None:
-    def allows_all_keys(plan: Optional[str]) -> bool:
+    def allows_all_keys(plan: str | None) -> bool:
         if not plan:
             return False
         plan_config = plans_config.get_plan(plan)
-        return plan_allows_live_trading(plan) and not plan_config.get("limits", {}).get(
-            "allow_free_bybit_trading", False
+        limits = plan_config.get("limits", {})
+        return plan_allows_live_trading(plan) and not (
+            limits.get("allow_free_bybit_trading", False)
+            or limits.get("allow_free_weex_trading", False)
+            or limits.get("allow_free_okx_trading", False)
         )
 
-    def allows_free_bybit(plan: Optional[str]) -> bool:
+    def allows_free_bybit(plan: str | None) -> bool:
         if not plan:
             return False
         plan_config = plans_config.get_plan(plan)
@@ -553,10 +556,34 @@ async def _sync_live_runtime_for_plan_change(
             "allow_free_bybit_trading", False
         ) and "allow_real_trading" not in plan_config.get("permissions", [])
 
+    def allows_free_weex(plan: str | None) -> bool:
+        if not plan:
+            return False
+        plan_config = plans_config.get_plan(plan)
+        return plan_config.get("limits", {}).get(
+            "allow_free_weex_trading", False
+        ) and "allow_real_trading" not in plan_config.get("permissions", [])
+
+    def allows_free_okx(plan: str | None) -> bool:
+        if not plan:
+            return False
+        plan_config = plans_config.get_plan(plan)
+        return plan_config.get("limits", {}).get(
+            "allow_free_okx_trading", False
+        ) and "allow_real_trading" not in plan_config.get("permissions", [])
+
     prev_all = allows_all_keys(previous_plan)
     new_all = allows_all_keys(new_plan)
-    prev_free = allows_free_bybit(previous_plan)
-    new_free = allows_free_bybit(new_plan)
+    prev_free = (
+        allows_free_bybit(previous_plan)
+        or allows_free_weex(previous_plan)
+        or allows_free_okx(previous_plan)
+    )
+    new_free = (
+        allows_free_bybit(new_plan)
+        or allows_free_weex(new_plan)
+        or allows_free_okx(new_plan)
+    )
 
     # Case 1: No live trading in previous plan, but live trading is allowed now
     if not (prev_all or prev_free) and (new_all or new_free):
@@ -597,17 +624,32 @@ async def _sync_live_runtime_for_plan_change(
         )
         return
 
-    # Case 4: Downgrading from standard/pro to free (only Bybit keys can run now)
+    # Case 4: Downgrading from standard/pro to free (only Bybit/WEEX/OKX keys can run now)
     if prev_all and new_free:
         active_keys = await crud.get_active_api_keys_for_user(db, user_id=user_id)
         deactivated_count = 0
+        new_plan_config = plans_config.get_plan(new_plan)
+        new_limits = new_plan_config.get("limits", {})
+        allow_bybit = new_limits.get("allow_free_bybit_trading", False)
+        allow_weex = new_limits.get("allow_free_weex_trading", False)
+        allow_okx = new_limits.get("allow_free_okx_trading", False)
+
         for key in active_keys:
-            if key.exchange.lower() != "bybit":
+            exch = key.exchange.lower() if key.exchange else ""
+            keep = False
+            if allow_bybit and (exch == "bybit" or exch.startswith("bybit")):
+                keep = True
+            elif allow_weex and exch.startswith("weex"):
+                keep = True
+            elif allow_okx and exch.startswith("okx"):
+                keep = True
+
+            if not keep:
                 command = build_deactivate_api_key_command(user_id, key.id)
                 await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
                 deactivated_count += 1
         logger.info(
-            "Published %s DEACTIVATE_API_KEY commands for non-Bybit keys after downgrade to free for user_id=%s (%s -> %s).",
+            "Published %s DEACTIVATE_API_KEY commands for non-free keys after downgrade to free for user_id=%s (%s -> %s).",
             deactivated_count,
             user_id,
             previous_plan,
@@ -629,10 +671,41 @@ async def _enforce_live_strategy_limit(
     live_limit = get_max_live_strategies(user.plan)
     plan_config = plans_config.get_plan(user.plan)
     limits = plan_config.get("limits", {})
-    if limits.get(
-        "allow_free_bybit_trading", False
-    ) and "allow_real_trading" not in plan_config.get("permissions", []):
-        live_limit = int(limits.get("max_free_bybit_live_strategies", 1))
+
+    active_keys = await crud.get_active_api_keys_for_user(db, user_id=user.id)
+
+    target_exchange = ""
+    if request.api_key_id is not None:
+        target_api_key = next(
+            (k for k in active_keys if k.id == int(request.api_key_id)), None
+        )
+        if not target_api_key:
+            target_api_key = await crud.get_api_key_by_id(
+                db, user_id=user.id, key_id=int(request.api_key_id)
+            )
+        if target_api_key and target_api_key.exchange:
+            target_exchange = target_api_key.exchange.lower()
+
+    is_free_bybit = (
+        target_exchange == "bybit" or target_exchange.startswith("bybit")
+    ) and limits.get("allow_free_bybit_trading", False)
+    is_free_weex = target_exchange.startswith("weex") and limits.get(
+        "allow_free_weex_trading", False
+    )
+    is_free_okx = target_exchange.startswith("okx") and limits.get(
+        "allow_free_okx_trading", False
+    )
+    is_free_exchange = (
+        is_free_bybit or is_free_weex or is_free_okx
+    ) and "allow_real_trading" not in plan_config.get("permissions", [])
+
+    if is_free_exchange:
+        if target_exchange == "bybit" or target_exchange.startswith("bybit"):
+            live_limit = int(limits.get("max_free_bybit_live_strategies", 1))
+        elif target_exchange.startswith("weex"):
+            live_limit = int(limits.get("max_free_weex_live_strategies", 1))
+        elif target_exchange.startswith("okx"):
+            live_limit = int(limits.get("max_free_okx_live_strategies", 1))
 
     if live_limit is None or live_limit < 0:
         return
@@ -643,12 +716,38 @@ async def _enforce_live_strategy_limit(
         user.id,
         mode="live",
     )
-    current_count = len(running_live_strategies)
+
+    if is_free_exchange:
+        # Filter running strategies to only those on the same exchange category
+        filtered_running = []
+        for s in running_live_strategies:
+            s_key_id = s.get("api_key_id")
+            if s_key_id is not None:
+                s_key = next((k for k in active_keys if k.id == int(s_key_id)), None)
+                if not s_key:
+                    s_key = await crud.get_api_key_by_id(
+                        db, user_id=user.id, key_id=int(s_key_id)
+                    )
+                s_exchange = (
+                    s_key.exchange.lower() if (s_key and s_key.exchange) else ""
+                )
+                if (
+                    target_exchange == "bybit" or target_exchange.startswith("bybit")
+                ) and (s_exchange == "bybit" or s_exchange.startswith("bybit")):
+                    filtered_running.append(s)
+                elif target_exchange.startswith("weex") and s_exchange.startswith(
+                    "weex"
+                ):
+                    filtered_running.append(s)
+                elif target_exchange.startswith("okx") and s_exchange.startswith("okx"):
+                    filtered_running.append(s)
+        current_count = len(filtered_running)
+    else:
+        current_count = len(running_live_strategies)
 
     if request.api_key_id is not None:
         target_api_key_ids = [int(request.api_key_id)]
     else:
-        active_keys = await crud.get_active_api_keys_for_user(db, user_id=user.id)
         target_api_key_ids = get_active_api_key_ids(active_keys)
 
     projected_new_instances = count_new_strategy_instances(
@@ -678,7 +777,7 @@ async def _enforce_live_strategy_limit(
     )
 
 
-async def _check_symbol_permissions(user: models.User, symbols: List[str]):
+async def _check_symbol_permissions(user: models.User, symbols: list[str]):
     """Checks if requested symbols are allowed for the user under their plan."""
     if not symbols:
         return
@@ -767,7 +866,7 @@ async def _validate_backtest_for_leaderboard(backtest_run: models.BacktestRun):
 
 
 def _check_intracandle_trigger_permission(
-    user: models.User, config_data: Dict[str, Any]
+    user: models.User, config_data: dict[str, Any]
 ):
     """
     Checks if the user is allowed to use intra-candle triggers.
@@ -793,7 +892,7 @@ def _check_intracandle_trigger_permission(
             )
 
 
-def _coerce_strategy_config_dict(config_data: Any, config_id: str) -> Dict[str, Any]:
+def _coerce_strategy_config_dict(config_data: Any, config_id: str) -> dict[str, Any]:
     if isinstance(config_data, BaseModel):
         return config_data.model_dump(exclude_none=True)
 
@@ -834,7 +933,7 @@ def _user_has_pro_tier_access(user: models.User) -> bool:
 
 
 def _enforce_strategy_plan_restrictions(
-    strategy_payload: Dict[str, Any], user: models.User
+    strategy_payload: dict[str, Any], user: models.User
 ) -> None:
     if is_strategy_pro_only(strategy_payload) and not _user_has_pro_tier_access(user):
         raise HTTPException(
@@ -868,9 +967,7 @@ def _mask_secret_token(token: str) -> str:
     return f"{token[:4]}...{token[-4:]}"
 
 
-def _build_tradingview_symbol_hint(
-    symbol: str, market_type: Optional[str] = None
-) -> str:
+def _build_tradingview_symbol_hint(symbol: str, market_type: str | None = None) -> str:
     normalized_symbol = _normalize_tradingview_symbol(symbol) or "BTCUSDT"
     if str(market_type or "").upper() == "FUTURES":
         return f"BINANCE:{normalized_symbol}.P"
@@ -885,19 +982,19 @@ def _get_public_base_url(request: Request) -> str:
 
 
 def _build_tradingview_webhook_url(
-    request: Request, user_secret_token: str, strategy_id: Optional[str] = None
+    request: Request, user_secret_token: str, strategy_id: str | None = None
 ) -> str:
     suffix = f"/{strategy_id}" if strategy_id else ""
     return _get_public_base_url(request) + f"/webhooks/tv/{user_secret_token}{suffix}"
 
 
 def _build_tradingview_sample_payload(
-    strategy_id: Optional[str] = "<strategy_id>",
+    strategy_id: str | None = "<strategy_id>",
     symbol: str = "BINANCE:BTCUSDT.P",
-    api_key_id: Optional[int] = 123,
+    api_key_id: int | None = 123,
     include_strategy_id: bool = True,
-) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "action": "buy",
         "symbol": symbol,
         "event_id": "{{strategy.order.id}}",
@@ -919,9 +1016,9 @@ def _build_tv_webhook_dedupe_key(
     strategy_id: str,
     action: str,
     symbol: str,
-    api_key_id: Optional[int],
-    event_id: Optional[str],
-    sent_at: Optional[datetime],
+    api_key_id: int | None,
+    event_id: str | None,
+    sent_at: datetime | None,
 ) -> str:
     event_id_part = event_id or ""
     sent_at_part = sent_at.isoformat() if sent_at else ""
@@ -938,19 +1035,19 @@ async def _store_tv_webhook_status(
     user_id: int,
     config_id: str,
     status_value: str,
-    message: Optional[str] = None,
+    message: str | None = None,
     *,
     source: str = "tradingview_webhook",
-    action: Optional[str] = None,
-    symbol: Optional[str] = None,
-    event_id: Optional[str] = None,
-    api_key_id: Optional[int] = None,
-    trace: Optional[Dict[str, Any]] = None,
+    action: str | None = None,
+    symbol: str | None = None,
+    event_id: str | None = None,
+    api_key_id: int | None = None,
+    trace: dict[str, Any] | None = None,
 ) -> None:
     if not redis_client or not config_id:
         return
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "config_id": config_id,
         "status": status_value,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -982,17 +1079,17 @@ async def _queue_tradingview_signal_command(
     strategy_id: str,
     action: str,
     symbol: str,
-    api_key_id: Optional[int],
-    event_id: Optional[str],
-    sent_at: Optional[datetime],
-    price: Optional[float],
-    timeframe: Optional[str],
-    bar_time: Optional[str],
-    metadata: Optional[Dict[str, Any]],
+    api_key_id: int | None,
+    event_id: str | None,
+    sent_at: datetime | None,
+    price: float | None,
+    timeframe: str | None,
+    bar_time: str | None,
+    metadata: dict[str, Any] | None,
     redis_client: redis.Redis,
     db: AsyncSession,
     source: str = "tradingview_webhook",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     strategy_config = await crud.get_strategy_config(
         db, user_id=user.id, config_id=strategy_id
     )
@@ -1131,7 +1228,7 @@ async def _queue_tradingview_signal_command(
 
 # Global variable to hold the client, to be initialized on startup
 # We will use this as a fallback, but the main one will be in app.state
-_redis_client_instance: Optional[redis.Redis] = None
+_redis_client_instance: redis.Redis | None = None
 
 
 # This function remains unchanged
@@ -1146,22 +1243,62 @@ async def create_redis_client_instance() -> redis.Redis:
     )
 
 
+async def _get_local_share_percent() -> float | None:
+    """Read the local node's NodeMiningConfig.user_reward_share_percent."""
+    try:
+        from sqlalchemy import select
+
+        from api.database import AsyncSessionLocal
+        from api.models import NodeMiningConfig
+
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(
+                select(NodeMiningConfig).where(NodeMiningConfig.id == 1)
+            )
+            cfg = res.scalars().first()
+            if cfg and cfg.user_reward_share_percent:
+                return float(cfg.user_reward_share_percent)
+    except Exception as e:
+        logger.warning(f"Failed to read local share percent: {e}")
+    return None
+
+
 async def perform_node_hub_sync():
     import time
     from pathlib import Path
 
-    hub_url = os.getenv("FEDERATION_HUB_URL", "https://app.depthsight.pro/api/v1/hub")
-    hub_url = hub_url.rstrip("/")
+    from .federation import get_federation_hub_url
+
+    hub_url = get_federation_hub_url()
 
     identity_path = Path("/app/data/node_identity.json")
     if not identity_path.parent.exists():
         identity_path = Path("node_identity.json")
 
+    server_identity_path = Path("/app/data/server_identity.json")
+    if not server_identity_path.parent.exists():
+        server_identity_path = Path("server_identity.json")
+
     node_uuid = None
     node_secret = None
     node_name = None
+    used_server_identity = False
 
-    if identity_path.exists():
+    # 1. Prefer server identity (wallet-bound mining identity) if active
+    if server_identity_path.exists():
+        try:
+            with open(server_identity_path, "r") as f:
+                data = json.load(f)
+                node_uuid = data.get("node_uuid")
+                node_secret = data.get("node_secret")
+                if node_uuid:
+                    node_name = f"DepthSightNode-{node_uuid[:8]}"
+                    used_server_identity = True
+        except Exception as e:
+            logger.error(f"Failed to read server identity file: {e}")
+
+    # 2. Fallback to physical node identity
+    if not node_uuid and identity_path.exists():
         try:
             with open(identity_path, "r") as f:
                 data = json.load(f)
@@ -1173,10 +1310,19 @@ async def perform_node_hub_sync():
 
     app_version = APP_VERSION
 
+    share_pct = await _get_local_share_percent()
+
+    public_domain = os.getenv("PUBLIC_DOMAIN")
+    node_referrer_code = (os.getenv("NODE_REFERRER_CODE") or "").strip() or None
+
+    # 3. If no identity exists, generate and register a new physical node identity
     if not node_uuid or not node_secret:
         node_uuid = str(uuid.uuid4())
         node_secret = secrets.token_hex(32)
         node_name = f"DepthSightNode-{node_uuid[:8]}"
+
+        # Fetch current node plans configuration
+        local_plans = plans_config.get_full_config().get("plans", {})
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -1185,6 +1331,10 @@ async def perform_node_hub_sync():
                     "name": node_name,
                     "node_secret": node_secret,
                     "version": app_version,
+                    "user_reward_share_percent": share_pct,
+                    "public_domain": public_domain,
+                    "public_plans": local_plans,
+                    "referrer_code": node_referrer_code,
                 }
                 async with session.post(
                     f"{hub_url}/nodes/register", json=payload, timeout=10.0
@@ -1212,13 +1362,22 @@ async def perform_node_hub_sync():
             logger.error(f"Connection error during node registration to Hub: {e}")
             return
 
+    # 4. Send heartbeat ping to Hub
     try:
+        local_plans = plans_config.get_full_config().get("plans", {})
         headers = {"X-Node-UUID": node_uuid, "X-Node-Secret": node_secret}
         async with aiohttp.ClientSession() as session:
             t0 = time.time()
             async with session.post(
                 f"{hub_url}/nodes/ping",
-                json={"latency_ms": 0.0, "version": app_version},
+                json={
+                    "latency_ms": 0.0,
+                    "version": app_version,
+                    "user_reward_share_percent": share_pct,
+                    "public_domain": public_domain,
+                    "public_plans": local_plans,
+                    "referrer_code": node_referrer_code,
+                },
                 headers=headers,
                 timeout=10.0,
             ) as resp:
@@ -1226,18 +1385,47 @@ async def perform_node_hub_sync():
                 if resp.status == 200:
                     await session.post(
                         f"{hub_url}/nodes/ping",
-                        json={"latency_ms": latency, "version": app_version},
+                        json={
+                            "latency_ms": latency,
+                            "version": app_version,
+                            "user_reward_share_percent": share_pct,
+                            "public_domain": public_domain,
+                            "public_plans": local_plans,
+                            "referrer_code": node_referrer_code,
+                        },
                         headers=headers,
                         timeout=5.0,
                     )
+
                     logger.debug(f"Heartbeat ping successful. Latency: {latency}ms")
                 else:
                     err_text = await resp.text()
                     logger.error(
                         f"Heartbeat ping failed. Status: {resp.status}, Response: {err_text}"
                     )
+                    # If Hub returns 404 (Not Found) and we are using a physical identity (not server identity),
+                    # clear the invalid identity file so we re-register on the next loop.
+                    if resp.status == 404 and not used_server_identity:
+                        try:
+                            if identity_path.exists():
+                                identity_path.unlink()
+                                logger.warning(
+                                    "Cleared invalid node_identity.json after 404 Hub response to trigger re-registration."
+                                )
+                        except Exception as unlink_err:
+                            logger.error(
+                                f"Failed to clear node_identity.json: {unlink_err}"
+                            )
     except Exception as e:
         logger.error(f"Connection error during node heartbeat ping to Hub: {e}")
+
+    # 5. Resync pending telemetry reports
+    try:
+        from telemetry_sync import resync_pending_telemetry_reports
+
+        await resync_pending_telemetry_reports()
+    except Exception as e:
+        logger.error(f"Error during telemetry resync to Hub: {e}")
 
 
 @asynccontextmanager
@@ -1252,86 +1440,129 @@ async def lifespan(app: FastAPI):
     await session_manager.start_session()
     print("INFO: Aiohttp session started.")
 
-    if os.getenv("IS_CENTRAL_HUB", "false").lower() == "true":
-        try:
-            from .database import engine
-            from .models import Base
-            from sqlalchemy import text
+    try:
+        import api.models as _models_registry
 
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-                # Auto-heal table if image column is missing
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE support_ticket_messages ADD COLUMN IF NOT EXISTS image TEXT;"
-                        )
+        from .database import engine
+
+        async with engine.begin() as conn:
+            await conn.run_sync(_models_registry.Base.metadata.create_all)
+            # Migration: add close_broker_trade_ids and entry_broker_trade_ids columns if missing
+            try:
+                from sqlalchemy import text
+
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS close_broker_trade_ids JSON"
                     )
-                except Exception as alter_err:
-                    logger.warning(
-                        f"Could not auto-add 'image' column to support_ticket_messages: {alter_err}"
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS entry_broker_trade_ids JSON"
                     )
-                # Auto-heal news table if likes_count column is missing
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE hub_news ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0;"
-                        )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS timeframe VARCHAR(10)"
                     )
-                except Exception as alter_err:
-                    logger.warning(
-                        f"Could not auto-add 'likes_count' column to hub_news: {alter_err}"
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS max_floating_profit FLOAT"
                     )
-                # Auto-heal news table if is_pinned column is missing
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE hub_news ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;"
-                        )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS max_floating_loss FLOAT"
                     )
-                except Exception as alter_err:
-                    logger.warning(
-                        f"Could not auto-add 'is_pinned' column to hub_news: {alter_err}"
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE mining_config "
+                        "ADD COLUMN IF NOT EXISTS total_operator_fee_collected FLOAT DEFAULT 0.0"
                     )
-                # Auto-heal nodes table if version column is missing
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE hub_nodes ADD COLUMN IF NOT EXISTS version VARCHAR(50) DEFAULT '1.0.0';"
-                        )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS weex_uid VARCHAR(50)"
                     )
-                except Exception as alter_err:
-                    logger.warning(
-                        f"Could not auto-add 'version' column to hub_nodes: {alter_err}"
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS bybit_uid VARCHAR(32)"
                     )
-                # Auto-heal topics table if is_verified column is missing
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE hub_topics ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE;"
-                        )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS okx_uid VARCHAR(50)"
                     )
-                except Exception as alter_err:
-                    logger.warning(
-                        f"Could not auto-add 'is_verified' column to hub_topics: {alter_err}"
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS is_operator BOOLEAN DEFAULT false"
                     )
-                # Auto-heal topics table if tags column is missing
-                try:
-                    await conn.execute(
-                        text(
-                            "ALTER TABLE hub_topics ADD COLUMN IF NOT EXISTS tags JSON;"
-                        )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS is_mining_server BOOLEAN DEFAULT false"
                     )
-                except Exception as alter_err:
-                    logger.warning(
-                        f"Could not auto-add 'tags' column to hub_topics: {alter_err}"
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS source_node_uuid VARCHAR(36)"
                     )
-            logger.info("Central Hub database tables verified/created successfully.")
-        except Exception as db_err:
-            logger.error(
-                f"Error during Hub database tables auto-creation: {db_err}",
-                exc_info=True,
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS public_domain VARCHAR(255)"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS wallet_address VARCHAR(42)"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS public_plans JSON"
+                    )
+                )
+            except Exception:
+                pass
+    except Exception as db_init_err:
+        logger.warning(f"Auto-creating tables fallback notice: {db_init_err}")
+
+    # Synchronize database-persisted Plans and AI Settings into memory on worker startup
+    try:
+        from .database import AsyncSessionLocal
+        from .plans import plans_config
+        from .ai_assistant import load_ai_settings_from_db
+
+        async with AsyncSessionLocal() as startup_db:
+            await plans_config.load_from_db(startup_db)
+            await load_ai_settings_from_db(startup_db)
+            logger.info(
+                "Successfully synchronized plans and AI settings from database on startup."
             )
+    except Exception as sync_err:
+        logger.warning(f"Initial DB settings sync notice: {sync_err}")
+
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() == "true":
+        pass
     else:
 
         async def run_sync_loop_wrapper():
@@ -1451,62 +1682,10 @@ async def add_security_headers(request: Request, call_next):
 
 
 # --- Rate Limiter Setup ---
-# Use memory storage in tests, Redis in production for synchronization between workers
-_redis_auth_str = ""
-if REDIS_PASSWORD:
-    _redis_auth_str = (
-        f"{REDIS_USERNAME}:{REDIS_PASSWORD}@"
-        if REDIS_USERNAME
-        else f":{REDIS_PASSWORD}@"
-    )
-RATE_LIMIT_REDIS_URL = os.getenv(
-    "RATE_LIMIT_REDIS_URL", f"redis://{_redis_auth_str}{REDIS_HOST}:{REDIS_PORT}/1"
-)
-TESTING = os.getenv("TESTING", "false").lower() == "true"
+# The shared Limiter instance lives in api/rate_limiter.py (avoids circular imports).
+# It uses memory storage in tests and Redis in production for synchronization.
 IS_CENTRAL_HUB = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
-RATELIMIT_ENABLED = (
-    os.getenv("RATELIMIT_ENABLED", "true").lower() != "false"
-)  # DISABLED FOR LOAD TEST
 
-# Limits for different endpoints. Overridden in tests.
-LIMITS_CONFIG = {
-    "backtest": "100/hour",
-    "genetic": "10/hour",
-    "login": "5/minute",
-    "default": "600/minute",
-    "hub_feedback": "5/hour",
-    "hub_topics": "10/hour",
-    "hub_like": "60/minute",
-    "hub_comments": "30/minute",
-    "hub_messages": "30/minute",
-}
-
-
-def get_limit_value(limit_name: str) -> str:
-    """Returns limit by name or stub for tests."""
-    is_testing = os.getenv("TESTING", "false").lower() == "true"
-    if is_testing:
-        # For quota testing, low limits can be selectively enabled via env or mock
-        test_limit = os.getenv(f"TEST_LIMIT_{limit_name.upper()}")
-        return test_limit if test_limit else "10000/hour"
-
-    return LIMITS_CONFIG.get(limit_name, LIMITS_CONFIG["default"])
-
-
-if TESTING:
-    limiter = Limiter(
-        key_func=get_remote_address,
-        storage_uri="memory://",
-        default_limits=["10000/hour"],
-        enabled=RATELIMIT_ENABLED,
-    )
-else:
-    limiter = Limiter(
-        key_func=get_remote_address,
-        storage_uri=RATE_LIMIT_REDIS_URL,
-        default_limits=[get_limit_value("default")],
-        enabled=RATELIMIT_ENABLED,
-    )
 app.state.limiter = limiter
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -1523,8 +1702,8 @@ SYSTEM_STATE = {
         {"name": "task_queue_connection", "status": "ok"},
     ],
 }
-ACTIVE_STRATEGIES: Dict[str, Dict[str, Any]] = {}
-TASKS: Dict[str, Dict[str, Any]] = {}
+ACTIVE_STRATEGIES: dict[str, dict[str, Any]] = {}
+TASKS: dict[str, dict[str, Any]] = {}
 CLIENT_CONFIG = {
     "risk_management": {
         "daily_max_loss_percent": 5.0,
@@ -1738,14 +1917,14 @@ async def register_user(
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already registered",
+            detail="Username or email already registered",
         )
 
     db_user_by_email = await crud.get_user_by_email(db, email=user.email)
     if db_user_by_email:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
+            detail="Username or email already registered",
         )
 
     # Referral logic
@@ -1907,8 +2086,8 @@ def count_blocks(config_data: dict) -> int:
 )
 async def get_tradingview_webhook_info(
     request: Request,
-    config_id: Optional[str] = Query(None),
-    api_key_id: Optional[int] = Query(None),
+    config_id: str | None = Query(None),
+    api_key_id: int | None = Query(None),
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2018,7 +2197,7 @@ async def get_tradingview_webhook_status(
 
 
 @api_router.post(
-    "/webhooks/tv-test", response_model=schemas.ApiResponseData[Dict[str, Any]]
+    "/webhooks/tv-test", response_model=schemas.ApiResponseData[dict[str, Any]]
 )
 async def send_tradingview_test_signal(
     request: schemas.TradingViewWebhookTestRequest,
@@ -2165,7 +2344,7 @@ ai_meta_router, ai_core_router = create_ai_routers(
 @app.exception_handler(HTTPException)
 async def http_exception_handler_custom(request, exc: HTTPException):
     return JSONResponse(
-        status_code=exc.status_code, content={"error": exc.detail, "detail": None}
+        status_code=exc.status_code, content={"error": exc.detail, "detail": exc.detail}
     )
 
 

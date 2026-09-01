@@ -10,6 +10,8 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 echo -e "${BLUE}------------------------------------------------"
@@ -57,6 +59,10 @@ find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
 find . -type f -name "Caddyfile" -exec sed -i 's/\r$//' {} +
 find . -type f -name ".env*" -exec sed -i 's/\r$//' {} +
 find . -type f -name "Dockerfile*" -exec sed -i 's/\r$//' {} +
+if [ ! -f "gcp_key.json" ]; then
+    [ -d "gcp_key.json" ] && rm -rf gcp_key.json
+    touch gcp_key.json
+fi
 
 # 3. Initial System Setup
 export DEBIAN_FRONTEND=noninteractive
@@ -80,8 +86,12 @@ fi
 
 # 3. Project Setup
 if [ -f "deploy.sh" ] && [ -d "api" ]; then
-    echo -e "${BLUE}[*] Detected local project files. Skipping clone...${NC}"
+    echo -e "${BLUE}[*] Detected local project files in current directory. Skipping clone...${NC}"
     PROJECT_DIR=$(pwd)
+elif [ -d "/opt/depthsight/api" ]; then
+    echo -e "${BLUE}[*] Detected local project in /opt/depthsight. Skipping clone...${NC}"
+    PROJECT_DIR="/opt/depthsight"
+    cd "$PROJECT_DIR"
 else
     PROJECT_DIR="/opt/depthsight"
     if [ ! -d "$PROJECT_DIR/.git" ]; then
@@ -165,12 +175,32 @@ if [ -c /dev/tty ]; then
                 START_BITCART="n"
                 ;;
         esac
+
+        if [ -z "$NODE_REFERRER_CODE" ]; then
+            echo -e "${GREEN}[?] Enter Node Referrer Code if you have one (Press ENTER to skip):${NC}"
+            echo -e "${BLUE}    (Using a referral code grants +10% boost and Welcome Bonus eligibility!)${NC}"
+            read -r INPUT_REF < /dev/tty
+            INPUT_REF=$(echo "$INPUT_REF" | tr -d '\r' | xargs)
+            if [ -n "$INPUT_REF" ]; then
+                NODE_REFERRER_CODE="$INPUT_REF"
+            fi
+        fi
     else
         # Local/Private mode - Fast track
         DOMAIN=$(hostname -I | awk '{print $1}')
         PROTOCOL="http"
         SITE_ADDRESS="http://$DOMAIN"
         echo -e "${GREEN}[+] Local mode detected. System will be available at http://$DOMAIN${NC}"
+
+        if [ -z "$NODE_REFERRER_CODE" ]; then
+            echo -e "${GREEN}[?] Enter Node Referrer Code if you have one (Press ENTER to skip):${NC}"
+            echo -e "${BLUE}    (Using a referral code grants +10% boost and Welcome Bonus eligibility!)${NC}"
+            read -r INPUT_REF < /dev/tty
+            INPUT_REF=$(echo "$INPUT_REF" | tr -d '\r' | xargs)
+            if [ -n "$INPUT_REF" ]; then
+                NODE_REFERRER_CODE="$INPUT_REF"
+            fi
+        fi
     fi
 else
     # Truly non-interactive mode (e.g. cloud-init)
@@ -209,6 +239,21 @@ echo "DOMAIN=$SITE_ADDRESS" >> .env
 echo "ADMIN_EMAIL=$EMAIL" >> .env
 echo "EMAIL_CONFIRMATION_ENABLED=false" >> .env
 echo "IS_CENTRAL_HUB=false" >> .env
+if [ -n "$NODE_REFERRER_CODE" ]; then
+    sed -i "/NODE_REFERRER_CODE=/d" .env
+    echo "NODE_REFERRER_CODE=$NODE_REFERRER_CODE" >> .env
+fi
+
+# Sync VITE_GOOGLE_CLIENT_ID with GOOGLE_CLIENT_ID for Vite build args
+GC_ID=$(grep "^GOOGLE_CLIENT_ID=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)
+if [ -n "$GC_ID" ]; then
+    sed -i "/VITE_GOOGLE_CLIENT_ID=/d" .env
+    echo "VITE_GOOGLE_CLIENT_ID=$GC_ID" >> .env
+fi
+
+# Ensure bind-mounted dirs are writable by the non-root container user (uid 1000)
+mkdir -p "$PROJECT_DIR/data" "$PROJECT_DIR/data_storage" "$PROJECT_DIR/logs"
+chown -R 1000:1000 "$PROJECT_DIR/data" "$PROJECT_DIR/data_storage" "$PROJECT_DIR/logs"
 
 # 6. Start Engine
 COMPOSE_CMD="docker compose"
@@ -243,3 +288,7 @@ echo -e "${GREEN}------------------------------------------------"
 echo "[+] SUCCESS! DepthSight is rising."
 echo "[+] URL: $PROTOCOL://$DOMAIN"
 echo "------------------------------------------------${NC}"
+echo ""
+echo -e "${CYAN}DepthSight deployed successfully! If you love the platform, star us on GitHub:${NC}"
+echo -e "${YELLOW}⭐ https://github.com/DepthSight-Pro/DepthSight${NC}"
+echo ""

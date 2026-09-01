@@ -46,6 +46,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Footer } from "@/components/layout/Footer";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -314,7 +315,8 @@ const SupportPage = () => {
 	};
 
 	return (
-		<div className="min-h-screen bg-background text-foreground pb-20">
+		<div className="min-h-screen bg-background text-foreground pb-20 flex flex-col">
+			<div className="flex-1">
 			{/* Hero Section */}
 			<section className="relative overflow-hidden pt-16 pb-24 px-4 border-b border-border/40">
 				<div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
@@ -691,7 +693,7 @@ const SupportPage = () => {
 														<div className="mt-3 flex items-center gap-2 text-[10px] text-primary/60 font-mono">
 															<AlertCircle className="w-3 h-3" />
 															{t("history.attachedContext")}: STRATEGY #
-															{ticket.context.strategyId?.slice(0, 8)}
+															{(ticket.context as { strategyId?: string }).strategyId?.slice(0, 8)}
 														</div>
 													)}
 												</CardContent>
@@ -835,8 +837,8 @@ const SupportPage = () => {
 											{"Technical Context"}
 										</h4>
 										<div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-											{(activeTicket.context as Record<string, unknown>)
-												.strategyId && (
+											{Boolean((activeTicket.context as Record<string, unknown>)
+												.strategyId) && (
 												<div className="p-3 bg-card/50 border border-border/30 rounded-xl">
 													<span className="text-muted-foreground block mb-0.5">
 														{"Strategy ID"}
@@ -849,8 +851,8 @@ const SupportPage = () => {
 													</code>
 												</div>
 											)}
-											{(activeTicket.context as Record<string, unknown>)
-												.appVersion && (
+											{Boolean((activeTicket.context as Record<string, unknown>)
+												.appVersion) && (
 												<div className="p-3 bg-card/50 border border-border/30 rounded-xl">
 													<span className="text-muted-foreground block mb-0.5">
 														{"App Version"}
@@ -863,8 +865,8 @@ const SupportPage = () => {
 													</code>
 												</div>
 											)}
-											{(activeTicket.context as Record<string, unknown>)
-												.url && (
+											{Boolean((activeTicket.context as Record<string, unknown>)
+												.url) && (
 												<div className="p-3 bg-card/50 border border-border/30 rounded-xl md:col-span-2">
 													<span className="text-muted-foreground block mb-0.5">
 														URL
@@ -1019,6 +1021,8 @@ const SupportPage = () => {
 					</Dialog>
 				);
 			})()}
+			</div>
+			<Footer className="mt-8 flex-shrink-0" />
 		</div>
 	);
 };

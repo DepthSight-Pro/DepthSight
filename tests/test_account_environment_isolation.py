@@ -23,7 +23,19 @@ def mock_data_loader():
             "bot_module.data_consumer.download_open_interest", new_callable=AsyncMock
         ) as doi,
     ):
-        dk.return_value = pd.DataFrame()
+        sample_df = pd.DataFrame(
+            [
+                {
+                    "open": 100.0,
+                    "high": 105.0,
+                    "low": 95.0,
+                    "close": 102.0,
+                    "volume": 10.0,
+                }
+            ],
+            index=[pd.Timestamp("2026-01-01 00:00:00", tz="UTC")],
+        )
+        dk.return_value = sample_df
         doi.return_value = pd.DataFrame()
         yield dk, doi
 
@@ -45,6 +57,7 @@ async def test_factory_environment_detection(mock_session, mock_ccxt_executor):
             api_secret="secret",
             market_type="futures_usdtm",
             sandbox=False,
+            session=mock_session,
         )
 
         # 2. Binance Testnet via suffix
@@ -55,6 +68,7 @@ async def test_factory_environment_detection(mock_session, mock_ccxt_executor):
             api_secret="secret",
             market_type="futures_usdtm",
             sandbox=True,
+            session=mock_session,
         )
         # 3. Bitget Testnet
         create_exchange_executor("bitget_testnet", "key", "secret", mock_session)
@@ -64,6 +78,7 @@ async def test_factory_environment_detection(mock_session, mock_ccxt_executor):
             api_secret="secret",
             market_type="futures_usdtm",
             sandbox=True,
+            session=mock_session,
         )
 
 

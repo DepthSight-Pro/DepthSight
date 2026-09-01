@@ -2,7 +2,9 @@
 # ruff: noqa: E402
 
 import sys
+import os
 import asyncio
+import uuid
 import nest_asyncio
 import json
 import logging
@@ -87,6 +89,13 @@ from api.celery_app import (
     _simulation_inspector_state_key,
     _simulation_inspector_events_key,
 )
+
+if os.getenv("IS_CENTRAL_HUB", "false").lower() == "true":
+    try:
+        import hub_private.tasks  # noqa: F401
+        import hub_private.broker_verifier  # noqa: F401
+    except Exception as preload_exc:
+        logger.warning(f"hub_private preload failed: {preload_exc!r}", exc_info=True)
 
 
 def _simulation_inspector_update_state(
@@ -2673,10 +2682,11 @@ async def _async_dispatch_paper_start_command(
             f"Task {task_id}: Overriding saved config with launch params: {launch_overrides}"
         )
 
+        instance_id = f"{config_id}:{uuid.uuid4().hex[:8]}"
         payload = {
             "user_id": user_id,
-            "id": config_id,  # Use 'id' for the instance identifier
-            "config_id": config_id,  # Also include config_id for clarity
+            "id": instance_id,  # Unique per-launch instance identifier
+            "config_id": config_id,  # Source strategy config id
             "mode": "paper",  # CRITICAL: Ensure the mode is set to 'paper'
             "symbol_selection_mode": launch_overrides.get(
                 "symbol_selection_mode", pydantic_config.symbol_selection_mode
@@ -2785,7 +2795,7 @@ def update_leaderboard_ranks_task():
 
 async def _async_update_leaderboard_ranks():
     async with get_isolated_worker_session() as session:
-        periods = [p.value for p in models.LeaderboardPeriod]
+        periods = list(models.LeaderboardPeriod)
         categories = ["sharpe_ratio", "net_pnl_percent"]
 
         for period in periods:
@@ -3013,6 +3023,11 @@ def concurrent_task_watchdog():
 
 @celery_app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() == "true":
+        sender.add_periodic_task(
+            crontab(hour=12, minute=0),
+            process_mining_epoch_task.s(),
+        )
     sender.add_periodic_task(
         crontab(hour=0, minute=5),
         check_expired_subscriptions.s(),
@@ -3030,6 +3045,14 @@ def setup_periodic_tasks(sender, **kwargs):
         recalculate_gene_rarity.s(),
     )
     sender.add_periodic_task(crontab(minute="*/15"), concurrent_task_watchdog.s())
+    # Store-and-forward safety net: re-upload LOCAL_ONLY telemetry reports that
+    # could not reach the hub when the trade was closed (hub offline). The API
+    # process already retries every 60s; this covers deployments where only the
+    # worker is alive. No-op on the central hub (skips internally).
+    sender.add_periodic_task(
+        crontab(minute="*/10"),
+        sync_pending_telemetry_task.s(),
+    )
 
 
 @celery_app.task
@@ -3220,3 +3243,807 @@ def run_data_pipeline_task(self, cmd_args: List[str]):
                         f"Failed to write failure/stopped status to Redis: {redis_err}"
                     )
             raise e
+
+
+@celery_app.task(name="tasks.process_mining_epoch")
+def process_mining_epoch_task():
+    """
+    Celery task to run the daily mining epoch processor logic.
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        logger.info("Skipping process_mining_epoch_task: not a central hub deployment.")
+        return
+    logger.info("Running periodic task: process_mining_epoch_task")
+    run_async_from_sync(_async_process_mining_epoch())
+
+
+async def _async_process_mining_epoch(force_yesterday_date=None):
+    from datetime import timedelta
+    from sqlalchemy.sql import func
+    from sqlalchemy.future import select
+    from api.database import get_isolated_worker_session
+    from api import models
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    lag_days = int(os.getenv("MINING_EPOCH_LAG_DAYS", "1"))
+    if force_yesterday_date:
+        yesterday = force_yesterday_date
+    else:
+        yesterday = datetime.now(timezone.utc).date() - timedelta(days=lag_days)
+
+    # Never process an epoch for a day that has not fully passed yet. Manual
+    # triggers / recalculate scripts must not finalize the current day early,
+    # otherwise late-arriving reports for it get stuck in PENDING forever.
+    today = datetime.now(timezone.utc).date()
+    if yesterday >= today:
+        logger.warning(
+            f"[MINING] Refusing to process epoch {yesterday}: not a completed past day."
+        )
+        return
+
+    async with get_isolated_worker_session() as session:
+        try:
+            # Get active mining configuration
+            config_stmt = select(models.MiningConfig).limit(1)
+            config_res = await session.execute(config_stmt)
+            config = config_res.scalars().first()
+            if not config or not config.is_mining_enabled:
+                logger.info(
+                    "[MINING] Mining is disabled or config not found. Skipping epoch processing."
+                )
+                return
+
+            import datetime as dt
+
+            yesterday_start = dt.datetime.combine(
+                yesterday, dt.time.min, tzinfo=dt.timezone.utc
+            )
+            yesterday_end = dt.datetime.combine(
+                yesterday, dt.time.max, tzinfo=dt.timezone.utc
+            )
+
+            # 1. Run Hub-only closed source verification for the epoch's pending trades.
+            #    This runs BEFORE the finalized-epoch check so that late-arriving PENDING
+            #    reports for an already-finalized epoch still get VERIFIED and are credited
+            #    to the next epoch (picked up below via epoch_date IS NULL) instead of
+            #    being stuck in PENDING forever.
+            try:
+                from hub_private.tasks import verify_epoch_trades
+
+                await verify_epoch_trades(session, yesterday_start, yesterday_end)
+            except ImportError as import_exc:
+                logger.error(
+                    f"[MINING] hub_private verifier import failed: {import_exc!r}",
+                    exc_info=True,
+                )
+            except Exception as v_exc:
+                logger.error(
+                    f"[MINING] Error running daily trade verification: {v_exc}",
+                    exc_info=True,
+                )
+
+            # Check if this epoch was already finalized
+            epoch_stmt = select(models.MiningEpoch).where(
+                models.MiningEpoch.epoch_date == yesterday
+            )
+            epoch_res = await session.execute(epoch_stmt)
+            existing_epoch = epoch_res.scalars().first()
+            if existing_epoch and existing_epoch.status == "finalized":
+                # Epoch is already finalized. Late-verified trades (epoch_date IS NULL) are
+                # credited to the next epoch being processed instead of re-distributing this one.
+                # Re-processing here would double-count previously attributed reports because
+                # the MiningLedger upsert is additive.
+                logger.info(
+                    f"[MINING] Epoch {yesterday} is already finalized. Skipping."
+                )
+                return
+
+            # Only pick up reports that have NOT yet been attributed to any epoch
+            # (epoch_date IS NULL). Already-attributed reports (epoch_date == yesterday) must
+            # NOT be re-included here, otherwise re-processing would double-count their
+            # rewards because MiningLedger upserts are additive.
+            reports_stmt = select(models.HubTelemetryReport).where(
+                models.HubTelemetryReport.verification_status == "VERIFIED",
+                models.HubTelemetryReport.is_mining_eligible.is_(True),
+                models.HubTelemetryReport.created_at <= yesterday_end,
+                models.HubTelemetryReport.epoch_date.is_(None),
+            )
+            reports_res = await session.execute(reports_stmt)
+            reports = reports_res.scalars().all()
+
+            if not reports:
+                pending_stmt = (
+                    select(models.HubTelemetryReport.id)
+                    .where(
+                        models.HubTelemetryReport.verification_status == "PENDING",
+                        models.HubTelemetryReport.created_at <= yesterday_end,
+                    )
+                    .limit(1)
+                )
+                pending_exists = (
+                    await session.execute(pending_stmt)
+                ).scalars().first() is not None
+                if pending_exists:
+                    logger.warning(
+                        f"[MINING] Epoch {yesterday} has unverified PENDING reports. "
+                        "Not finalizing; will retry on next run."
+                    )
+                    return
+                logger.info(
+                    f"[MINING] No eligible trades reported for epoch {yesterday}."
+                )
+                # Check if epoch already exists; if not, write an empty finalized epoch
+                if not existing_epoch:
+                    epoch = models.MiningEpoch(
+                        epoch_date=yesterday,
+                        daily_emission=0.0,
+                        total_rebate_pool=0.0,
+                        total_distributed=0.0,
+                        participating_nodes=0,
+                        status="finalized",
+                        processed_at=dt.datetime.now(dt.timezone.utc),
+                    )
+                    session.add(epoch)
+                    await session.commit()
+                return
+
+            # Safety net: fill in estimated_rebate_usdt for reports where the
+            # broker verifier did not set it.  This should be rare after the
+            # verifier was updated to use real exchange rebates.  Use a
+            # conservative minimum rate and log a warning so these cases
+            # are visible and can be investigated.
+            _fee_rate = 0.0005
+            _CONSERVATIVE_DEFAULT_RATE = 0.10  # 10% — floor across all tiers
+            for _r in reports:
+                if _r.estimated_rebate_usdt and _r.estimated_rebate_usdt > 0:
+                    continue
+                _vol = _r.verified_volume_usdt or _r.trade_volume_usdt
+                if not _vol or _vol <= 0:
+                    continue
+                _ex_key = _r.exchange_id or "weex"
+                _mkt_key = _r.market_type or "futures"
+                _lk = f"{_ex_key}_{_mkt_key}"
+                _rr = config.rebate_rates.get(_lk)
+                if _rr is None:
+                    _rr = config.rebate_rates.get(_ex_key, _CONSERVATIVE_DEFAULT_RATE)
+                _r.estimated_rebate_usdt = round(_vol * _fee_rate * _rr, 6)
+                logger.warning(
+                    "[MINING] Report %s missing real rebate — filled with "
+                    "conservative estimate %.6f (vol=%.2f, rate=%.4f)",
+                    _r.id,
+                    _r.estimated_rebate_usdt,
+                    _vol,
+                    _rr,
+                )
+
+            # Calculate daily emission base with halvings
+            launch_date = config.launch_date or yesterday
+            days_since_launch = max((yesterday - launch_date).days, 0)
+            halvings = days_since_launch // config.halving_interval_days
+            daily_emission = config.daily_emission_base / (2**halvings)
+
+            # Sum total rebates in the pool
+            total_rebate_pool = sum(
+                r.estimated_rebate_usdt for r in reports if r.estimated_rebate_usdt
+            )
+            if total_rebate_pool <= 0.0:
+                logger.info(
+                    f"[MINING] Total estimated rebates is 0.0 for epoch {yesterday}."
+                )
+                epoch = models.MiningEpoch(
+                    epoch_date=yesterday,
+                    daily_emission=daily_emission,
+                    total_rebate_pool=0.0,
+                    total_distributed=0.0,
+                    participating_nodes=len(reports),
+                    status="finalized",
+                    processed_at=dt.datetime.now(dt.timezone.utc),
+                )
+                session.add(epoch)
+                await session.commit()
+                return
+
+            # --- Referrer / operator resolution helpers (mirror api/hub_router) ---
+            async def _user_wallet_node(user_id):
+                cfg_stmt = select(models.AppConfig).where(
+                    models.AppConfig.user_id == user_id
+                )
+                cfg_res = await session.execute(cfg_stmt)
+                cfg = cfg_res.scalars().first()
+                _settings = cfg.exchange_settings or {}
+                wallet_uuid = (
+                    (_settings.get("bybit") or {}).get("mining_node_uuid")
+                    or (_settings.get("okx") or {}).get("mining_node_uuid")
+                    or (_settings.get("weex") or {}).get("mining_node_uuid")
+                    or (_settings.get("binance") or {}).get("mining_node_uuid")
+                    or _settings.get("mining_node_uuid")
+                )
+                if not wallet_uuid:
+                    return None
+                n_res = await session.execute(
+                    select(models.HubNode.node_uuid).where(
+                        models.HubNode.node_uuid == wallet_uuid
+                    )
+                )
+                return n_res.scalar() or None
+
+            async def _resolve_user_node(user_id):
+                wallet_uuid = await _user_wallet_node(user_id)
+                if wallet_uuid:
+                    return wallet_uuid
+                u_res = await session.execute(
+                    select(models.User).where(models.User.id == user_id)
+                )
+                user = u_res.scalars().first()
+                if user and user.referral_code:
+                    hn_res = await session.execute(
+                        select(models.HubNode.node_uuid)
+                        .where(models.HubNode.node_referral_code == user.referral_code)
+                        .limit(1)
+                    )
+                    real_uuid = hn_res.scalar()
+                    if real_uuid:
+                        return real_uuid
+                return None
+
+            async def _wallet_node_owner(node_id):
+                # Preloaded once per epoch run (see wallet_owner_by_node below);
+                # the previous implementation re-scanned ALL AppConfig rows for
+                # every referrer resolution (O(nodes × configs)).
+                return wallet_owner_by_node.get(node_id)
+
+            # One full scan instead of N: map mining_node_uuid -> owner user_id.
+            wallet_owner_by_node = {}
+            _wcfg_res = await session.execute(
+                select(models.AppConfig).where(
+                    models.AppConfig.exchange_settings.isnot(None)
+                )
+            )
+            for _cfg in _wcfg_res.scalars().all():
+                _settings = _cfg.exchange_settings or {}
+                _muuid = (
+                    (_settings.get("bybit") or {}).get("mining_node_uuid")
+                    or (_settings.get("okx") or {}).get("mining_node_uuid")
+                    or (_settings.get("weex") or {}).get("mining_node_uuid")
+                    or (_settings.get("binance") or {}).get("mining_node_uuid")
+                    or _settings.get("mining_node_uuid")
+                )
+                if _muuid:
+                    wallet_owner_by_node[_muuid] = _cfg.user_id
+
+            async def _resolve_referrer(node_id):
+                if not node_id:
+                    return None
+
+                async def _valid_ref(candidate_uuid):
+                    if not candidate_uuid or candidate_uuid == node_id:
+                        return None
+                    b_res = await session.execute(
+                        select(models.HubNode.is_banned).where(
+                            models.HubNode.node_uuid == candidate_uuid
+                        )
+                    )
+                    if b_res.scalar():
+                        return None
+                    return candidate_uuid
+
+                n_res = await session.execute(
+                    select(models.HubNode.referrer_node_uuid).where(
+                        models.HubNode.node_uuid == node_id
+                    )
+                )
+                ref_uuid = n_res.scalar()
+                if ref_uuid:
+                    return await _valid_ref(ref_uuid)
+                owner_id = await _wallet_node_owner(node_id)
+                if not owner_id:
+                    code_res = await session.execute(
+                        select(models.HubNode.node_referral_code).where(
+                            models.HubNode.node_uuid == node_id
+                        )
+                    )
+                    code = code_res.scalar()
+                    if code:
+                        u_res = await session.execute(
+                            select(models.User).where(models.User.referral_code == code)
+                        )
+                        u = u_res.scalars().first()
+                        if u:
+                            owner_id = u.id
+                if not owner_id:
+                    return None
+                owner_res = await session.execute(
+                    select(models.User).where(models.User.id == owner_id)
+                )
+                owner = owner_res.scalars().first()
+                if not owner or not owner.referred_by_user_id:
+                    return None
+                return await _valid_ref(
+                    await _resolve_user_node(owner.referred_by_user_id)
+                )
+
+            async def _resolve_operator_root():
+                op_res = await session.execute(
+                    select(models.HubNode).where(models.HubNode.is_operator.is_(True))
+                )
+                op_node = op_res.scalars().first()
+                if op_node:
+                    return op_node.node_uuid
+                admin_res = await session.execute(
+                    select(models.User)
+                    .where(models.User.role == "admin")
+                    .order_by(models.User.id.asc())
+                )
+                for admin_user in admin_res.scalars().all():
+                    wallet_uuid = await _user_wallet_node(admin_user.id)
+                    if wallet_uuid:
+                        return wallet_uuid
+                return None
+
+            # 1. Aggregate basic stats
+            node_stats = {}
+            for report in reports:
+                node_id = report.node_uuid
+                if not node_id:
+                    continue
+                node_rebate = report.estimated_rebate_usdt or 0.0
+
+                if node_id not in node_stats:
+                    node_stats[node_id] = {
+                        "total_rebate": 0.0,
+                        "trades_count": 0,
+                        # Unique closed trades: partial closes / DCA produce
+                        # several REPORTS for one logical trade, so counting
+                        # raw rows would inflate the ledger counter.
+                        "trade_ids": set(),
+                    }
+                node_stats[node_id]["total_rebate"] += node_rebate
+                if report.broker_trade_id:
+                    node_stats[node_id]["trade_ids"].add(report.broker_trade_id)
+                else:
+                    node_stats[node_id]["trades_count"] += 1
+
+            # 2. Assign Points
+            node_points = {}
+            total_network_points = 0.0
+
+            for node_id, stats in list(node_stats.items()):
+                base_pts = stats["total_rebate"]
+                if node_id not in node_points:
+                    node_points[node_id] = {
+                        "base_points": 0.0,
+                        "referral_points": 0.0,
+                        "total_rebate": stats["total_rebate"],
+                        "trades_count": stats["trades_count"] + len(stats["trade_ids"]),
+                    }
+                node_points[node_id]["base_points"] += base_pts
+                total_network_points += base_pts
+
+                # Resolve referrer (explicit node link first, then owner user
+                # relationship resolved to the referrer's wallet mining node).
+                referrer_uuid = await _resolve_referrer(node_id)
+
+                if referrer_uuid:
+                    ref_pts = base_pts * config.referral_mining_boost
+
+                    if referrer_uuid not in node_points:
+                        node_points[referrer_uuid] = {
+                            "base_points": 0.0,
+                            "referral_points": 0.0,
+                            "total_rebate": 0.0,
+                            "trades_count": 0,
+                        }
+                    node_points[referrer_uuid]["referral_points"] += ref_pts
+                    total_network_points += ref_pts
+
+            # 3. Calculate Token Value per Point and Distribute
+            token_value_per_point = (
+                daily_emission / total_network_points
+                if total_network_points > 0
+                else 0.0
+            )
+
+            # "Participants" = nodes that actually MINED (earned base points).
+            # Referral-only nodes, operator root and servers receiving only
+            # commission are excluded from this counter.
+            mining_participants = sum(
+                1 for p in node_points.values() if p["base_points"] > 0
+            )
+
+            node_rewards = {}
+            for node_id, points in node_points.items():
+                node_rewards[node_id] = {
+                    "base_reward": points["base_points"] * token_value_per_point,
+                    "referral_bonus": points["referral_points"] * token_value_per_point,
+                    "welcome_bonus": 0.0,
+                    "total_rebate": points["total_rebate"],
+                    "trades_count": points["trades_count"],
+                }
+
+            # 4. Attribute epoch to individual reports
+            for report in reports:
+                report.epoch_date = yesterday
+                node_id = report.node_uuid
+                if not node_id or node_id not in node_rewards:
+                    report.reward_tokens = 0.0
+                    continue
+
+                node_rebate = report.estimated_rebate_usdt or 0.0
+                node_total_rebate = node_rewards[node_id]["total_rebate"]
+                if node_total_rebate > 0:
+                    report_share = node_rebate / node_total_rebate
+                    report.reward_tokens = (
+                        node_rewards[node_id]["base_reward"] * report_share
+                    )
+                else:
+                    report.reward_tokens = 0.0
+
+            # Welcome bonus milestone checks & halving calculations
+            # Pool is capped so the welcome program cannot mint beyond its allocated
+            # supply (default 100M $DEPTH), and a single Weex UID can only claim the
+            # bonus a limited number of times (default 1 node per UID).
+            WELCOME_BONUS_MAX_POOL = float(
+                os.getenv("WELCOME_BONUS_MAX_POOL", "100000000.0")
+            )
+            MAX_NODES_PER_UID = int(os.getenv("MAX_NODES_PER_UID", "1"))
+            min_welcome_threshold = float(os.getenv("MIN_WELCOME_REBATE_USDT", "5.0"))
+
+            # Running in-memory counters seeded from committed DB state. The ledger
+            # is written once per epoch below, so we must NOT re-read
+            # MiningLedger/has_welcome_bonus mid-loop for nodes granted THIS epoch.
+            welcome_pool_used = 0.0
+            stmt_sum0 = select(func.sum(models.MiningLedger.welcome_bonus))
+            res_sum0 = await session.execute(stmt_sum0)
+            welcome_pool_used = float(res_sum0.scalar() or 0.0)
+
+            uid_counts = {}
+            uid_count_stmt = (
+                select(
+                    models.HubNode.weex_uid,
+                    func.count(models.HubNode.node_uuid),
+                )
+                .where(
+                    models.HubNode.has_welcome_bonus.is_(True),
+                    models.HubNode.weex_uid.isnot(None),
+                )
+                .group_by(models.HubNode.weex_uid)
+            )
+            uid_count_res = await session.execute(uid_count_stmt)
+            for uid, cnt in uid_count_res.all():
+                uid_counts[uid] = int(cnt)
+            granted_uids = {}  # in-epoch UID grant counter
+
+            def _uid_claimed_count(uid: str) -> int:
+                return uid_counts.get(uid, 0) + granted_uids.get(uid, 0)
+
+            for node_id, reward in list(node_rewards.items()):
+                stmt_cum = select(
+                    func.sum(models.MiningLedger.total_rebate_usdt)
+                ).where(models.MiningLedger.node_uuid == node_id)
+                res_cum = await session.execute(stmt_cum)
+                cum_rebate_before = float(res_cum.scalar() or 0.0)
+                cum_rebate_total = cum_rebate_before + reward["total_rebate"]
+
+                if cum_rebate_total >= min_welcome_threshold:
+                    node_stmt = select(models.HubNode).where(
+                        models.HubNode.node_uuid == node_id
+                    )
+                    node_res = await session.execute(node_stmt)
+                    node_obj = node_res.scalars().first()
+
+                    if node_obj and not node_obj.has_welcome_bonus:
+                        # 1) Pool cap: once the welcome pool is exhausted, no more
+                        #    welcome bonuses are issued (prevents infinite minting).
+                        if welcome_pool_used >= WELCOME_BONUS_MAX_POOL:
+                            logger.warning(
+                                f"[MINING] Welcome bonus pool exhausted "
+                                f"({welcome_pool_used:.2f} >= {WELCOME_BONUS_MAX_POOL}); "
+                                f"skipping welcome bonus for node {node_id}."
+                            )
+                            continue
+
+                        # 2) Per-UID node cap: a single Weex UID may only claim the
+                        #    welcome bonus for a limited number of nodes.
+                        if (
+                            node_obj.weex_uid
+                            and _uid_claimed_count(node_obj.weex_uid)
+                            >= MAX_NODES_PER_UID
+                        ):
+                            logger.warning(
+                                f"[MINING] Node {node_id} skipped: Weex UID "
+                                f"{node_obj.weex_uid} already claimed the welcome "
+                                f"bonus {_uid_claimed_count(node_obj.weex_uid)} time(s)."
+                            )
+                            continue
+
+                        # Halving stages
+                        if welcome_pool_used < 50_000_000.0:
+                            bonus_amount = 1000.0
+                        elif welcome_pool_used < 75_000_000.0:
+                            bonus_amount = 500.0
+                        elif welcome_pool_used < 87_500_000.0:
+                            bonus_amount = 250.0
+                        else:
+                            bonus_amount = 125.0
+
+                        # Never let a single grant push the pool beyond its cap.
+                        bonus_amount = min(
+                            bonus_amount,
+                            max(0.0, WELCOME_BONUS_MAX_POOL - welcome_pool_used),
+                        )
+                        if bonus_amount <= 0.0:
+                            continue
+
+                        node_obj.has_welcome_bonus = True
+                        reward["welcome_bonus"] += bonus_amount
+                        welcome_pool_used += bonus_amount
+                        if node_obj.weex_uid:
+                            granted_uids[node_obj.weex_uid] = (
+                                granted_uids.get(node_obj.weex_uid, 0) + 1
+                            )
+
+                        # Referrer also gets the welcome bonus from the SAME pool.
+                        # A single grant (node + its referrer) may not push the
+                        # welcome pool beyond its cap.
+                        if node_obj.referrer_node_uuid:
+                            ref_id = node_obj.referrer_node_uuid
+                            ref_node_stmt = select(models.HubNode).where(
+                                models.HubNode.node_uuid == ref_id
+                            )
+                            ref_node_res = await session.execute(ref_node_stmt)
+                            ref_node_obj = ref_node_res.scalars().first()
+                            if ref_node_obj and not ref_node_obj.is_banned:
+                                # The referrer's matching grant is capped by the
+                                # remaining pool (shares the same 100M budget).
+                                ref_bonus = min(
+                                    bonus_amount,
+                                    max(
+                                        0.0,
+                                        WELCOME_BONUS_MAX_POOL - welcome_pool_used,
+                                    ),
+                                )
+                                if ref_bonus > 0.0:
+                                    if ref_id not in node_rewards:
+                                        node_rewards[ref_id] = {
+                                            "base_reward": 0.0,
+                                            "referral_bonus": 0.0,
+                                            "welcome_bonus": 0.0,
+                                            "total_rebate": 0.0,
+                                            "trades_count": 0,
+                                        }
+                                    node_rewards[ref_id]["welcome_bonus"] += ref_bonus
+                                    welcome_pool_used += ref_bonus
+
+            # 5. Server commission (per-report). Every telemetry report carries the
+            #    source_node_uuid of the server the trade was mined through. The server
+            #    keeps (1 - share) of that report's base reward as commission and the
+            #    miner keeps share. NULL/unknown source = the central hub (fee to the
+            #    hub operator root). Welcome/referral bonuses are emission-pool bonuses
+            #    and are NOT subject to server commission.
+            # Resolve the hub operator (root) node: a node explicitly flagged
+            # is_operator, else the first admin (by registration) who bound a
+            # wallet mining node.
+            root_id = await _resolve_operator_root()
+
+            mining_cfg_stmt = select(models.MiningConfig).where(
+                models.MiningConfig.id == 1
+            )
+            mining_cfg_res = await session.execute(mining_cfg_stmt)
+            mining_cfg = mining_cfg_res.scalars().first()
+
+            node_cfg_res = await session.execute(
+                select(models.NodeMiningConfig).where(models.NodeMiningConfig.id == 1)
+            )
+            node_config_obj = node_cfg_res.scalar_one_or_none()
+            # Safe default: 0.0 in the DB (legacy) would give 100% of node
+            # rewards to the operator. Treat missing or non-positive values as the
+            # 75% user share so rewards are never silently zeroed out.
+            if node_config_obj and node_config_obj.user_reward_share_percent > 0.0:
+                share_pct = node_config_obj.user_reward_share_percent / 100.0
+            else:
+                share_pct = 0.75
+
+            # Per-server share configs registered by local mining servers.
+            server_cfg_stmt = select(models.HubServerConfig)
+            server_cfg_res = await session.execute(server_cfg_stmt)
+            server_shares = {}
+            banned_servers = set()
+            for s_cfg in server_cfg_res.scalars().all():
+                b_res = await session.execute(
+                    select(models.HubNode.is_banned).where(
+                        models.HubNode.node_uuid == s_cfg.node_uuid
+                    )
+                )
+                if b_res.scalar():
+                    banned_servers.add(s_cfg.node_uuid)
+                    continue
+                if (
+                    s_cfg.user_reward_share_percent
+                    and s_cfg.user_reward_share_percent > 0.0
+                ):
+                    server_shares[s_cfg.node_uuid] = (
+                        s_cfg.user_reward_share_percent / 100.0
+                    )
+
+            def _server_share_for(_report) -> float:
+                if (
+                    _report.source_node_uuid
+                    and _report.source_node_uuid in server_shares
+                ):
+                    return server_shares[_report.source_node_uuid]
+                return share_pct  # central hub / unknown source / banned source
+
+            total_operator_fee_this_epoch = 0.0
+
+            if root_id and root_id not in node_rewards:
+                node_rewards[root_id] = {
+                    "base_reward": 0.0,
+                    "referral_bonus": 0.0,
+                    "welcome_bonus": 0.0,
+                    "total_rebate": 0.0,
+                    "trades_count": 0,
+                }
+
+            # Per-report pass: compute net reward and fees (using GROSS base_reward).
+            fee_by_node: dict = {}
+            server_fees: dict = {}
+            for report in reports:
+                node_id = report.node_uuid
+                if not node_id or node_id not in node_rewards:
+                    continue
+                reward = node_rewards[node_id]
+                node_rebate = report.estimated_rebate_usdt or 0.0
+                if reward["total_rebate"] <= 0 or node_rebate <= 0:
+                    report.reward_tokens = 0.0
+                    continue
+                report_share = node_rebate / reward["total_rebate"]
+                gross_base = reward["base_reward"] * report_share
+                server_share = _server_share_for(report)
+                # Commission only applies when there is an operator to pay it to
+                # (the source server, or the hub operator root for NULL source / banned source).
+                target = report.source_node_uuid or root_id
+                if (
+                    report.source_node_uuid
+                    and report.source_node_uuid in banned_servers
+                ):
+                    target = root_id
+                if not target:
+                    report.reward_tokens = gross_base
+                    continue
+                fee = gross_base * (1.0 - server_share)
+                report.reward_tokens = gross_base - fee
+                if fee > 0:
+                    fee_by_node[node_id] = fee_by_node.get(node_id, 0.0) + fee
+                    server_fees[target] = server_fees.get(target, 0.0) + fee
+                    total_operator_fee_this_epoch += fee
+
+            if fee_by_node:
+                # Deduct the collected commission from each paying node's base reward.
+                for node_id, fee_total in fee_by_node.items():
+                    node_rewards[node_id]["base_reward"] = max(
+                        0.0, node_rewards[node_id]["base_reward"] - fee_total
+                    )
+
+            if server_fees:
+                # Credit commission to each server operator node.
+                for target, fee_total in server_fees.items():
+                    if target not in node_rewards:
+                        node_rewards[target] = {
+                            "base_reward": 0.0,
+                            "referral_bonus": 0.0,
+                            "welcome_bonus": 0.0,
+                            "total_rebate": 0.0,
+                            "trades_count": 0,
+                        }
+                    node_rewards[target]["base_reward"] += fee_total
+
+            if mining_cfg and total_operator_fee_this_epoch > 0:
+                mining_cfg.total_operator_fee_collected = (
+                    mining_cfg.total_operator_fee_collected or 0.0
+                ) + total_operator_fee_this_epoch
+
+            # Write entries to MiningLedger (upsert) and update HubNode.total_mined
+            total_distributed = 0.0
+            for node_id, reward in node_rewards.items():
+                total_reward = (
+                    reward["base_reward"]
+                    + reward["referral_bonus"]
+                    + reward["welcome_bonus"]
+                )
+                total_distributed += total_reward
+
+                # Upsert: update existing ledger entry or create new one
+                existing_ledger_stmt = select(models.MiningLedger).where(
+                    models.MiningLedger.node_uuid == node_id,
+                    models.MiningLedger.epoch_date == yesterday,
+                )
+                existing_ledger_res = await session.execute(existing_ledger_stmt)
+                existing_ledger = existing_ledger_res.scalars().first()
+
+                if existing_ledger:
+                    # Update existing: add new rewards on top
+                    existing_ledger.base_reward = (
+                        existing_ledger.base_reward or 0.0
+                    ) + reward["base_reward"]
+                    existing_ledger.referral_bonus = (
+                        existing_ledger.referral_bonus or 0.0
+                    ) + reward["referral_bonus"]
+                    existing_ledger.welcome_bonus = (
+                        existing_ledger.welcome_bonus or 0.0
+                    ) + reward["welcome_bonus"]
+                    existing_ledger.total_reward = (
+                        existing_ledger.total_reward or 0.0
+                    ) + total_reward
+                    existing_ledger.total_rebate_usdt = (
+                        existing_ledger.total_rebate_usdt or 0.0
+                    ) + reward["total_rebate"]
+                    existing_ledger.verified_trades_count = (
+                        existing_ledger.verified_trades_count or 0
+                    ) + reward["trades_count"]
+                else:
+                    ledger = models.MiningLedger(
+                        node_uuid=node_id,
+                        epoch_date=yesterday,
+                        base_reward=reward["base_reward"],
+                        referral_bonus=reward["referral_bonus"],
+                        welcome_bonus=reward["welcome_bonus"],
+                        boost_multiplier=1.0,
+                        total_reward=total_reward,
+                        total_rebate_usdt=reward["total_rebate"],
+                        verified_trades_count=reward["trades_count"],
+                    )
+                    session.add(ledger)
+
+                # Update node cumulative balance
+                node_stmt = select(models.HubNode).where(
+                    models.HubNode.node_uuid == node_id
+                )
+                node_res = await session.execute(node_stmt)
+                node_obj = node_res.scalars().first()
+                if node_obj:
+                    node_obj.total_mined = (node_obj.total_mined or 0.0) + total_reward
+
+            # Save the MiningEpoch state (update existing or create new)
+            if existing_epoch:
+                existing_epoch.daily_emission = daily_emission
+                existing_epoch.total_rebate_pool = total_rebate_pool
+                existing_epoch.total_distributed = (
+                    existing_epoch.total_distributed + total_distributed
+                )
+                existing_epoch.participating_nodes = mining_participants
+                existing_epoch.status = "finalized"
+                existing_epoch.processed_at = dt.datetime.now(dt.timezone.utc)
+            else:
+                epoch = models.MiningEpoch(
+                    epoch_date=yesterday,
+                    daily_emission=daily_emission,
+                    total_rebate_pool=total_rebate_pool,
+                    total_distributed=total_distributed,
+                    participating_nodes=mining_participants,
+                    status="finalized",
+                    processed_at=dt.datetime.now(dt.timezone.utc),
+                )
+                session.add(epoch)
+
+            await session.commit()
+            logger.info(
+                f"[MINING] Successfully processed epoch {yesterday}. Total distributed: {total_distributed} $DEPTH."
+            )
+        except Exception as e:
+            logger.error(
+                f"[MINING] Error processing epoch {yesterday}: {e}", exc_info=True
+            )
+            await session.rollback()
+
+
+@celery_app.task(name="sync_pending_telemetry_task")
+def sync_pending_telemetry_task(limit: int = 50) -> Dict[str, Any]:
+    """
+    Celery task to resynchronize pending LOCAL_ONLY telemetry reports with the central hub.
+    """
+    import asyncio
+    from telemetry_sync import resync_pending_telemetry_reports
+
+    return asyncio.run(resync_pending_telemetry_reports(limit=limit))

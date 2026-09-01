@@ -36,11 +36,14 @@ import AdminLayout from "./pages/admin/AdminLayout";
 import AdminSupportPage from "./pages/admin/AdminSupportPage";
 import AdminUserDetailPage from "./pages/admin/AdminUserDetailPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import AdminPlansPage from "./pages/admin/AdminPlansPage";
+import AdminAISettingsPage from "./pages/admin/AdminAISettingsPage";
 import AdminAnalyticsPage from "./pages/admin/AnalyticsPage";
 import AdminAffiliateDetailPage from "./pages/admin/affiliates/AdminAffiliateDetailPage";
 import ErrorLogsPage from "./pages/admin/ErrorLogsPage";
 import PlatformHealthPage from "./pages/admin/PlatformHealthPage";
 import DataPipelinePage from "./pages/admin/DataPipelinePage";
+import AdminMiningPage from "./pages/admin/AdminMiningPage";
 import BacktestViewerPage from "./pages/BacktestViewer";
 import CommunityHub from "./pages/CommunityHub";
 import ConfirmEmailPage from "./pages/ConfirmEmail";
@@ -54,6 +57,7 @@ import LeaderboardPage from "./pages/LeaderboardPage";
 // Page imports that EXIST in this application
 import LoginPage from "./pages/Login";
 import MLCorePage from "./pages/MLCorePage";
+import MiningHub from "./pages/MiningHub";
 import NotFound from "./pages/NotFound";
 import OptimizationViewerPage from "./pages/OptimizationViewerPage";
 import PortfolioBacktestViewer from "./pages/PortfolioBacktestViewer";
@@ -153,9 +157,18 @@ function App() {
 														<Route path="/admin" element={<AdminLayout />}>
 															<Route index element={<AdminDashboardPage />} />
 															<Route
+																path="plans"
+																element={<AdminPlansPage />}
+															/>
+															<Route
+																path="ai-settings"
+																element={<AdminAISettingsPage />}
+															/>
+															<Route
 																path="users"
 																element={<AdminUsersPage />}
 															/>
+
 															<Route
 																path="users/:id"
 																element={<AdminUserDetailPage />}
@@ -187,6 +200,10 @@ function App() {
 															<Route
 																path="support"
 																element={<AdminSupportPage />}
+															/>
+															<Route
+																path="mining"
+																element={<AdminMiningPage />}
 															/>
 														</Route>
 													</Route>
@@ -234,6 +251,10 @@ function App() {
 														<Route
 															path="/affiliate-dashboard"
 															element={<AffiliateDashboard />}
+														/>
+														<Route
+															path="/mining"
+															element={<MiningHub />}
 														/>
 														{/* Diagnostic / Admin only separate pages */}
 														<Route element={<AdminRoute />}>

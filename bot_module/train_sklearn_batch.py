@@ -30,8 +30,7 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 
 # GBM library imports
-import lightgbm as lgb
-import xgboost as xgb
+# (Import lazily where needed to avoid SIGBUS on VirtualBox without AVX)
 
 # Attempt to import bot_module components for configuration and logging
 try:
@@ -673,48 +672,73 @@ def run_sklearn_training_from_config(config: Dict[str, Any]):
         "max_depth": [3, 5, 7],
     }
 
-    models_to_test = {
-        "LGBMClassifier": {
+    try:
+        import lightgbm as lgb
+    except ImportError:
+        lgb = None
+
+    try:
+        import xgboost as xgb
+    except ImportError:
+        xgb = None
+
+    models_to_test = {}
+    if lgb is not None:
+        models_to_test["LGBMClassifier"] = {
             "model_class": lgb.LGBMClassifier,
             "param_grid": lgbm_param_dist
             if use_randomized_search_flag
             else default_lgbm_grid,
-        },
-        "XGBClassifier": {
+        }
+    else:
+        logger.warning(
+            "lightgbm not installed or failed to import. Skipping LGBMClassifier."
+        )
+
+    if xgb is not None:
+        models_to_test["XGBClassifier"] = {
             "model_class": xgb.XGBClassifier,
             "param_grid": xgb_param_dist
             if use_randomized_search_flag
             else default_xgb_grid,
-        },
-        "GradientBoostingClassifier": {
-            "model_class": GradientBoostingClassifier,
-            "param_grid": {
-                "n_estimators": [100, 200, 300],
-                "learning_rate": [0.05, 0.1],
-                "max_depth": [3, 5],
-                "subsample": [0.7, 1.0],
+        }
+    else:
+        logger.warning(
+            "xgboost not installed or failed to import. Skipping XGBClassifier."
+        )
+
+    models_to_test.update(
+        {
+            "GradientBoostingClassifier": {
+                "model_class": GradientBoostingClassifier,
+                "param_grid": {
+                    "n_estimators": [100, 200, 300],
+                    "learning_rate": [0.05, 0.1],
+                    "max_depth": [3, 5],
+                    "subsample": [0.7, 1.0],
+                },
             },
-        },
-        "RandomForestClassifier": {
-            "model_class": RandomForestClassifier,
-            "param_grid": {
-                "n_estimators": [100, 200, 300],
-                "max_depth": [5, 10, 15, None],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 3, 5],
-                "class_weight": ["balanced", "balanced_subsample"],
+            "RandomForestClassifier": {
+                "model_class": RandomForestClassifier,
+                "param_grid": {
+                    "n_estimators": [100, 200, 300],
+                    "max_depth": [5, 10, 15, None],
+                    "min_samples_split": [2, 5, 10],
+                    "min_samples_leaf": [1, 3, 5],
+                    "class_weight": ["balanced", "balanced_subsample"],
+                },
             },
-        },
-        "SVC": {
-            "model_class": SVC,
-            "param_grid": {
-                "C": [0.1, 1, 10],
-                "gamma": ["scale", "auto", 0.01, 0.1],
-                "kernel": ["rbf"],
-                "class_weight": ["balanced"],
+            "SVC": {
+                "model_class": SVC,
+                "param_grid": {
+                    "C": [0.1, 1, 10],
+                    "gamma": ["scale", "auto", 0.01, 0.1],
+                    "kernel": ["rbf"],
+                    "class_weight": ["balanced"],
+                },
             },
-        },
-    }
+        }
+    )
 
     all_results = []
 

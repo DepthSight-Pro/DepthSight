@@ -57,6 +57,16 @@ def mock_consumer():
     """Creates a DataConsumer mock."""
     consumer = AsyncMock(spec=DataConsumer)
     consumer.get_active_symbols.return_value = {"BTCUSDT", "ETHUSDT"}
+
+    async def get_active_pair_by_symbol(symbol):
+        for pair in consumer.get_active_pairs.return_value:
+            if pair["symbol"] == symbol:
+                return pair
+        return None
+
+    consumer.get_active_pair_by_symbol = AsyncMock(
+        side_effect=get_active_pair_by_symbol
+    )
     consumer.get_active_pairs.return_value = [
         {
             "symbol": "BTCUSDT",
@@ -741,6 +751,66 @@ async def test_handle_event_routes_tick_for_on_tick_trigger(controller):
     assert pair_info["strategy_config_id"] == "tick-config"
 
 
+def _multi_instance_payload(config_id: str, instance_suffix: str, symbol: str) -> dict:
+    return {
+        "user_id": 1,
+        "id": f"{config_id}:{instance_suffix}",
+        "config_id": config_id,
+        "api_key_id": None,
+        "symbol_selection_mode": "STATIC",
+        "symbols": [symbol],
+        "config_data": {"strategy_name": "VisualBuilderStrategy", "params": {}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_start_command_allows_same_config_on_disjoint_symbols(controller):
+    config_id = "cfg-multi"
+    controller.running_strategy_instances.clear()
+
+    with (
+        patch(
+            "bot_module.controller.create_strategy_instance",
+            return_value=MagicMock(spec=BaseStrategy),
+        ) as mock_create,
+        patch.object(controller, "_update_monitored_symbols", new_callable=AsyncMock),
+    ):
+        await controller._handle_start_strategy_command(
+            _multi_instance_payload(config_id, "aaa11111", "BTCUSDT")
+        )
+        await controller._handle_start_strategy_command(
+            _multi_instance_payload(config_id, "bbb22222", "ETHUSDT")
+        )
+
+    assert mock_create.call_count == 2
+    assert f"{config_id}:aaa11111" in controller.running_strategy_instances
+    assert f"{config_id}:bbb22222" in controller.running_strategy_instances
+
+
+@pytest.mark.asyncio
+async def test_start_command_rejects_same_config_on_overlapping_symbol(controller):
+    config_id = "cfg-multi"
+    controller.running_strategy_instances.clear()
+
+    with (
+        patch(
+            "bot_module.controller.create_strategy_instance",
+            return_value=MagicMock(spec=BaseStrategy),
+        ) as mock_create,
+        patch.object(controller, "_update_monitored_symbols", new_callable=AsyncMock),
+    ):
+        await controller._handle_start_strategy_command(
+            _multi_instance_payload(config_id, "aaa11111", "BTCUSDT")
+        )
+        await controller._handle_start_strategy_command(
+            _multi_instance_payload(config_id, "ccc33333", "BTCUSDT")
+        )
+
+    assert mock_create.call_count == 1
+    assert f"{config_id}:aaa11111" in controller.running_strategy_instances
+    assert f"{config_id}:ccc33333" not in controller.running_strategy_instances
+
+
 @pytest.mark.asyncio
 async def test_handle_tv_webhook_signal_command_processes_external_signal(controller):
     symbol = "BTCUSDT"
@@ -1079,7 +1149,7 @@ async def test_handle_order_update_entry_filled(
         and tp_call_kwargs["quantity"] == initial_qty
     )
     assert tp_call_kwargs.get("timeInForce") == "GTC"
-    assert tp_call_kwargs.get("reduceOnly") == "true"
+    assert tp_call_kwargs.get("reduceOnly") in (True, "true")
 
 
 @pytest.mark.asyncio

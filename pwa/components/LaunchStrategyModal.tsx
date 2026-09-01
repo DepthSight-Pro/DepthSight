@@ -3,7 +3,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useAuth } from "../contexts/AuthContext";
+
 import type { DisplayStrategy } from "../types";
 
 interface LaunchStrategyModalProps {
@@ -37,9 +37,6 @@ const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 	strategy,
 }) => {
 	const { t } = useTranslation("pwa-common");
-	const { user } = useAuth();
-	const isAdmin = user?.role === "admin";
-	const isPro = user?.plan === "pro";
 	const canUseOracle = true; // Oracle is available to everyone
 
 	const [mode, setMode] = useState<"paper" | "live">("paper");

@@ -148,12 +148,15 @@ def count_new_strategy_instances(
     target_api_key_ids: Iterable[int],
     running_strategies: Iterable[dict],
 ) -> int:
-    running_pairs = {
+    # A config may run several independent instances on disjoint symbol sets, and
+    # overlapping duplicates are already rejected by the 409 overlap check. Each
+    # launch therefore counts as one new instance per targeted API key, unless the
+    # exact same instance id is already running (which should not normally happen).
+    running_instance_ids = {
         (entry.get("id"), entry.get("api_key_id")) for entry in running_strategies
     }
-    new_pairs = {
-        (config_id, api_key_id)
-        for api_key_id in target_api_key_ids
-        if (config_id, api_key_id) not in running_pairs
-    }
-    return len(new_pairs)
+    return sum(
+        1
+        for api_key_id in set(target_api_key_ids)
+        if (config_id, api_key_id) not in running_instance_ids
+    )

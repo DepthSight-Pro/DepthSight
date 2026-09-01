@@ -27,6 +27,8 @@ import simulationEn from "./locales/en/simulation.json";
 import strategiesEn from "./locales/en/strategies.json";
 import strategyEditorEn from "./locales/en/strategy-editor.json";
 import supportEn from "./locales/en/support.json";
+import miningEn from "./locales/en/mining.json";
+import adminEn from "./locales/en/admin.json";
 import accountRu from "./locales/ru/account.json";
 import achievementsRu from "./locales/ru/achievements.json";
 import affiliateRu from "./locales/ru/affiliate.json";
@@ -52,6 +54,8 @@ import simulationRu from "./locales/ru/simulation.json";
 import strategiesRu from "./locales/ru/strategies.json";
 import strategyEditorRu from "./locales/ru/strategy-editor.json";
 import supportRu from "./locales/ru/support.json";
+import miningRu from "./locales/ru/mining.json";
+import adminRu from "./locales/ru/admin.json";
 
 const resources = {
 	en: {
@@ -80,6 +84,8 @@ const resources = {
 		simulation: simulationEn,
 		support: supportEn,
 		community: communityEn,
+		mining: miningEn,
+		admin: adminEn,
 	},
 	ru: {
 		common: commonRu,
@@ -107,6 +113,8 @@ const resources = {
 		simulation: simulationRu,
 		support: supportRu,
 		community: communityRu,
+		mining: miningRu,
+		admin: adminRu,
 	},
 };
 

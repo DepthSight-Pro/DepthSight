@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover - depends on optional package availabili
     types = None
 
 from . import schemas, crud, models
+from .security import encrypt_data, decrypt_data
 from .analytics_parsers import DecisionTraceParser
 from .gamification import grant_achievement
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,10 +43,17 @@ logger = logging.getLogger(__name__)
 CACHED_GENERATOR_PROMPT: Optional[str] = None
 CACHED_ADVISOR_TEMPLATE: Optional[str] = None
 
-SUPPORTED_AI_PROVIDERS = {"google", "openrouter", "qwen"}
+SUPPORTED_AI_PROVIDERS = {
+    "google",
+    "openrouter",
+    "qwen",
+    "vertex_agent_builder",
+    "openai",
+}
 DEFAULT_AI_PROVIDER = "qwen"
-DEFAULT_GOOGLE_MODEL = "gemini-3-flash-preview"
+DEFAULT_GOOGLE_MODEL = "gemini-3.7-flash"
 DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
 DEFAULT_OPENROUTER_TIMEOUT_SECONDS = 120.0
 DEFAULT_QWEN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 DEFAULT_QWEN_TIMEOUT_SECONDS = 300.0
@@ -587,24 +595,159 @@ async def enrich_market_context_for_ai(text_prompt: str) -> str:
     return ""
 
 
-# --- Core Logic ---
+# --- Dynamic AI Settings & Core Logic ---
+
+_DYNAMIC_AI_SETTINGS: Optional[Dict[str, Any]] = None
+
+
+def _mask_key(key: Optional[str]) -> str:
+    if not key or not isinstance(key, str):
+        return ""
+    stripped = key.strip()
+    if len(stripped) <= 8:
+        return "••••••••"
+    return f"{stripped[:4]}••••••••{stripped[-4:]}"
+
+
+def _get_dynamic_settings() -> Dict[str, Any]:
+    global _DYNAMIC_AI_SETTINGS
+    if _DYNAMIC_AI_SETTINGS is None:
+        _DYNAMIC_AI_SETTINGS = {
+            "active_provider": os.getenv("AI_PROVIDER")
+            or (
+                "vertex_agent_builder"
+                if os.getenv("USE_GENAI_APP_BUILDER", "False").lower() == "true"
+                else DEFAULT_AI_PROVIDER
+            ),
+            "providers": {
+                "qwen": {
+                    "api_key": os.getenv("QWEN_API_KEY", "").strip(),
+                    "model": os.getenv("QWEN_MODEL", "qwen-3.8-max").strip(),
+                    "api_url": os.getenv("QWEN_API_URL", DEFAULT_QWEN_URL).strip()
+                    or DEFAULT_QWEN_URL,
+                    "timeout_seconds": float(
+                        os.getenv(
+                            "QWEN_TIMEOUT_SECONDS", str(DEFAULT_QWEN_TIMEOUT_SECONDS)
+                        )
+                    ),
+                },
+                "google": {
+                    "api_key": os.getenv("GEMINI_API_KEY", "").strip(),
+                    "model": (
+                        os.getenv("GOOGLE_GEMINI_MODEL")
+                        or os.getenv("GEMINI_MODEL_NAME", DEFAULT_GOOGLE_MODEL)
+                    ).strip(),
+                    "use_vertex": os.getenv("USE_VERTEX_AI", "False").lower() == "true",
+                    "gcp_project_id": os.getenv("GCP_PROJECT_ID", "").strip(),
+                    "gcp_location": os.getenv("GCP_LOCATION", "global").strip(),
+                    "gcp_key_path": os.getenv("GCP_KEY_PATH", "").strip(),
+                },
+                "openrouter": {
+                    "api_key": os.getenv("OPENROUTER_API_KEY", "").strip(),
+                    "model": os.getenv(
+                        "OPENROUTER_MODEL", "anthropic/claude-opus-5"
+                    ).strip(),
+                    "api_url": os.getenv(
+                        "OPENROUTER_API_URL", DEFAULT_OPENROUTER_URL
+                    ).strip()
+                    or DEFAULT_OPENROUTER_URL,
+                    "timeout_seconds": float(
+                        os.getenv(
+                            "OPENROUTER_TIMEOUT_SECONDS",
+                            str(DEFAULT_OPENROUTER_TIMEOUT_SECONDS),
+                        )
+                    ),
+                    "http_referer": os.getenv("OPENROUTER_HTTP_REFERER", "").strip(),
+                    "app_title": os.getenv(
+                        "OPENROUTER_APP_TITLE", "DepthSight AI Assistant"
+                    ).strip(),
+                },
+                "vertex_agent_builder": {
+                    "agent_id": os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip(),
+                    "endpoint": os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip(),
+                    "model": os.getenv(
+                        "VERTEX_AGENT_BUILDER_MODEL", "gemini-3.7-flash"
+                    ).strip(),
+                    "gcp_project_id": os.getenv("GCP_PROJECT_ID", "").strip(),
+                    "gcp_location": os.getenv("GCP_LOCATION", "global").strip(),
+                },
+                "openai": {
+                    "api_key": os.getenv("OPENAI_API_KEY", "").strip(),
+                    "model": os.getenv("OPENAI_MODEL", "gpt-5.6-sol").strip(),
+                    "api_url": os.getenv(
+                        "OPENAI_API_URL", "https://api.openai.com/v1/chat/completions"
+                    ).strip(),
+                    "timeout_seconds": float(
+                        os.getenv("OPENAI_TIMEOUT_SECONDS", "120.0")
+                    ),
+                },
+            },
+        }
+    return _DYNAMIC_AI_SETTINGS
+
+
+def _get_provider_setting(
+    provider_name: str, setting_key: str, env_var: str, default: Any = ""
+) -> Any:
+    # First check env var for explicit test overrides
+    env_val = os.getenv(env_var)
+    dyn = _get_dynamic_settings()
+    provider_dict = dyn.get("providers", {}).get(provider_name, {})
+    val = provider_dict.get(setting_key)
+
+    if env_val is not None and env_val.strip() != "":
+        # If env is explicitly set and dynamic setting is empty, use env
+        if val is None or not str(val).strip():
+            return env_val.strip()
+    return (
+        val
+        if (val is not None and str(val).strip() != "")
+        else (env_val.strip() if env_val else default)
+    )
 
 
 def _get_active_ai_provider() -> str:
-    provider = os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).strip().lower()
-    if provider not in SUPPORTED_AI_PROVIDERS:
-        raise ConnectionError(
-            f"Unsupported AI_PROVIDER '{provider}'. Supported values: {', '.join(sorted(SUPPORTED_AI_PROVIDERS))}."
-        )
-    return provider
+    dyn = _get_dynamic_settings()
+    if dyn.get("active_provider"):
+        prov = str(dyn.get("active_provider")).strip().lower()
+        if prov not in SUPPORTED_AI_PROVIDERS:
+            raise ConnectionError(
+                f"Unsupported AI_PROVIDER '{prov}'. Supported values: {', '.join(sorted(SUPPORTED_AI_PROVIDERS))}."
+            )
+        return prov
+
+    raw_provider = os.getenv("AI_PROVIDER")
+    if raw_provider:
+        provider = raw_provider.strip().lower()
+        if provider not in SUPPORTED_AI_PROVIDERS:
+            raise ConnectionError(
+                f"Unsupported AI_PROVIDER '{provider}'. Supported values: {', '.join(sorted(SUPPORTED_AI_PROVIDERS))}."
+            )
+        return provider
+
+    if os.getenv("USE_GENAI_APP_BUILDER", "False").lower() == "true":
+        return "vertex_agent_builder"
+
+    return DEFAULT_AI_PROVIDER
 
 
 def _get_google_model_name() -> str:
-    return os.getenv("GOOGLE_GEMINI_MODEL", DEFAULT_GOOGLE_MODEL).strip()
+    return _get_provider_setting(
+        "google",
+        "model",
+        "GOOGLE_GEMINI_MODEL",
+        os.getenv("GEMINI_MODEL_NAME", DEFAULT_GOOGLE_MODEL),
+    )
+
+
+def _get_gemini_api_key() -> str:
+    return _get_provider_setting("google", "api_key", "GEMINI_API_KEY", "")
 
 
 def _get_openrouter_model_name() -> str:
-    configured_model = os.getenv("OPENROUTER_MODEL", "").strip()
+    configured_model = _get_provider_setting(
+        "openrouter", "model", "OPENROUTER_MODEL", ""
+    )
     if configured_model:
         return configured_model
 
@@ -616,8 +759,79 @@ def _get_openrouter_model_name() -> str:
     return f"google/{google_model}"
 
 
+def _get_openrouter_api_key() -> str:
+    return _get_provider_setting("openrouter", "api_key", "OPENROUTER_API_KEY", "")
+
+
+def _get_openrouter_api_url() -> str:
+    return _get_provider_setting(
+        "openrouter", "api_url", "OPENROUTER_API_URL", DEFAULT_OPENROUTER_URL
+    )
+
+
+def _get_openrouter_timeout() -> float:
+    raw = _get_provider_setting(
+        "openrouter",
+        "timeout_seconds",
+        "OPENROUTER_TIMEOUT_SECONDS",
+        str(DEFAULT_OPENROUTER_TIMEOUT_SECONDS),
+    )
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return DEFAULT_OPENROUTER_TIMEOUT_SECONDS
+
+
 def _get_qwen_model_name() -> str:
-    return os.getenv("QWEN_MODEL", "qwen-max").strip()
+    return _get_provider_setting("qwen", "model", "QWEN_MODEL", "qwen-max")
+
+
+def _get_qwen_api_key() -> str:
+    return _get_provider_setting("qwen", "api_key", "QWEN_API_KEY", "")
+
+
+def _get_qwen_api_url() -> str:
+    return _get_provider_setting("qwen", "api_url", "QWEN_API_URL", DEFAULT_QWEN_URL)
+
+
+def _get_qwen_timeout() -> float:
+    raw = _get_provider_setting(
+        "qwen",
+        "timeout_seconds",
+        "QWEN_TIMEOUT_SECONDS",
+        str(DEFAULT_QWEN_TIMEOUT_SECONDS),
+    )
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return DEFAULT_QWEN_TIMEOUT_SECONDS
+
+
+def _get_openai_model_name() -> str:
+    return _get_provider_setting("openai", "model", "OPENAI_MODEL", "gpt-4o")
+
+
+def _get_openai_api_key() -> str:
+    return _get_provider_setting("openai", "api_key", "OPENAI_API_KEY", "")
+
+
+def _get_openai_api_url() -> str:
+    return _get_provider_setting(
+        "openai",
+        "api_url",
+        "OPENAI_API_URL",
+        "https://api.openai.com/v1/chat/completions",
+    )
+
+
+def _get_openai_timeout() -> float:
+    raw = _get_provider_setting(
+        "openai", "timeout_seconds", "OPENAI_TIMEOUT_SECONDS", "120.0"
+    )
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return 120.0
 
 
 def _get_active_model_name(provider: Optional[str] = None) -> str:
@@ -628,6 +842,15 @@ def _get_active_model_name(provider: Optional[str] = None) -> str:
         return _get_openrouter_model_name()
     if active_provider == "qwen":
         return _get_qwen_model_name()
+    if active_provider == "openai":
+        return _get_openai_model_name()
+    if active_provider == "vertex_agent_builder":
+        return _get_provider_setting(
+            "vertex_agent_builder",
+            "model",
+            "VERTEX_AGENT_BUILDER_MODEL",
+            "gemini-1.5-flash",
+        )
     raise ConnectionError(f"Unsupported AI provider: {active_provider}")
 
 
@@ -640,10 +863,18 @@ def _get_gemini_client():
         raise ConnectionError("google-genai package is not installed.")
 
     # Check if Vertex AI is enabled
-    use_vertex = os.getenv("USE_VERTEX_AI", "False").lower() == "true"
+    dyn = _get_dynamic_settings()
+    google_cfg = dyn.get("providers", {}).get("google", {})
+    use_vertex = bool(
+        google_cfg.get(
+            "use_vertex", os.getenv("USE_VERTEX_AI", "False").lower() == "true"
+        )
+    )
     if use_vertex:
         # Check for GCP key file path
-        gcp_key_path = os.getenv("GCP_KEY_PATH", "")
+        gcp_key_path = str(
+            google_cfg.get("gcp_key_path") or os.getenv("GCP_KEY_PATH", "")
+        ).strip()
         if not gcp_key_path:
             possible_paths = [
                 os.path.join(
@@ -662,8 +893,12 @@ def _get_gemini_client():
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.abspath(gcp_key_path)
             logger.info(f"Loaded GCP credentials from {gcp_key_path}")
 
-        project_id = os.getenv("GCP_PROJECT_ID")
-        location = os.getenv("GCP_LOCATION", "global")
+        project_id = str(
+            google_cfg.get("gcp_project_id") or os.getenv("GCP_PROJECT_ID", "")
+        ).strip()
+        location = str(
+            google_cfg.get("gcp_location") or os.getenv("GCP_LOCATION", "global")
+        ).strip()
 
         _CONFIGURED_GEMINI_CLIENT = genai.Client(
             vertexai=True, project=project_id, location=location
@@ -672,7 +907,7 @@ def _get_gemini_client():
             f"Initialized Gemini Client via Vertex AI (Project: {project_id}, Location: {location})"
         )
     else:
-        gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        gemini_api_key = _get_gemini_api_key()
         if not gemini_api_key:
             raise ConnectionError("GEMINI_API_KEY is not configured.")
         _CONFIGURED_GEMINI_CLIENT = genai.Client(api_key=gemini_api_key)
@@ -689,18 +924,228 @@ def _ensure_google_client_configured() -> None:
         raise ConnectionError(f"Could not configure Google Gemini: {e}") from e
 
 
+def _setup_gcp_credentials_env() -> Optional[str]:
+    gcp_key_path = os.getenv("GCP_KEY_PATH", "")
+    if not gcp_key_path:
+        possible_paths = [
+            os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), "tg_bot", "gcp_key.json"
+            ),
+            "tg_bot/gcp_key.json",
+            "../tg_bot/gcp_key.json",
+            "gcp_key.json",
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                gcp_key_path = path
+                break
+
+    if gcp_key_path and os.path.exists(gcp_key_path):
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.abspath(gcp_key_path)
+        return os.path.abspath(gcp_key_path)
+    return None
+
+
+def _get_gcp_bearer_token() -> Tuple[str, str]:
+    _setup_gcp_credentials_env()
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        credentials, project_id = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        if not credentials.valid:
+            credentials.refresh(Request())
+        env_project = os.getenv("GCP_PROJECT_ID")
+        return credentials.token, env_project or project_id or ""
+    except Exception as e:
+        logger.error(f"Failed to acquire GCP OAuth token for Agent Builder: {e}")
+        raise ConnectionError(
+            f"Could not authenticate with Google Cloud for GenAI App Builder. "
+            f"Check GCP_KEY_PATH or GOOGLE_APPLICATION_CREDENTIALS. Details: {e}"
+        ) from e
+
+
+def _ensure_vertex_agent_builder_configured() -> None:
+    token, project_id = _get_gcp_bearer_token()
+    if not project_id:
+        raise ConnectionError(
+            "GCP_PROJECT_ID is not configured for GenAI App Builder / Vertex AI."
+        )
+
+
+async def _generate_vertex_agent_builder_json_response(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    image_base64: Optional[str] = None,
+    image_mime_type: Optional[str] = None,
+    max_output_tokens: int = 8192,
+    model_name: Optional[str] = None,
+) -> str:
+    try:
+        token, project_id = _get_gcp_bearer_token()
+        location = os.getenv("GCP_LOCATION", "global")
+        agent_id = os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip()
+        if not agent_id:
+            raise ValueError("VERTEX_AGENT_BUILDER_AGENT_ID is not configured in .env")
+        session_id = str(uuid.uuid4())
+
+        endpoint = (
+            os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip()
+            or f"https://dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}\n\nRespond with the complete JSON configuration according to the system instructions above."
+        else:
+            full_prompt = user_prompt
+
+        payload = {
+            "queryInput": {
+                "text": {"text": full_prompt},
+                "languageCode": "en",
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                query_result = data.get("queryResult", {})
+                response_messages = query_result.get("responseMessages", [])
+                text_parts = []
+                for msg in response_messages:
+                    if "text" in msg and "text" in msg["text"]:
+                        text_parts.extend(msg["text"]["text"])
+                grounded_text = "\n".join(text_parts).strip()
+
+                if grounded_text:
+                    logger.info(
+                        "Successfully generated JSON via Conversational Agent (GenAI App Builder) API"
+                    )
+                    return grounded_text
+            else:
+                logger.warning(
+                    f"Conversational Agent API returned status {response.status_code}: {response.text}. "
+                    "Falling back to standard Google Gemini / Vertex AI call..."
+                )
+    except Exception as e:
+        logger.warning(
+            f"Conversational Agent API request failed: {e}. Falling back to standard Google Gemini / Vertex AI call..."
+        )
+
+    # Fallback to standard Google Gemini / Vertex AI
+    return await _generate_google_json_response(
+        system_prompt,
+        user_prompt,
+        image_base64=image_base64,
+        image_mime_type=image_mime_type,
+        max_output_tokens=max_output_tokens,
+        model_name=model_name,
+    )
+
+
+async def _generate_vertex_agent_builder_text_response(
+    system_instruction: str,
+    messages: List[Dict[str, str]],
+    *,
+    image_base64: Optional[str] = None,
+    image_mime_type: Optional[str] = None,
+) -> str:
+    try:
+        token, project_id = _get_gcp_bearer_token()
+        location = os.getenv("GCP_LOCATION", "global")
+        agent_id = os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip()
+        if not agent_id:
+            raise ValueError("VERTEX_AGENT_BUILDER_AGENT_ID is not configured in .env")
+        session_id = str(uuid.uuid4())
+
+        endpoint = (
+            os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip()
+            or f"https://dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        formatted_text = ""
+        if system_instruction:
+            formatted_text += f"[System]: {system_instruction}\n\n"
+        for msg in messages:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            formatted_text += f"[{role}]: {msg['content']}\n\n"
+
+        payload = {
+            "queryInput": {
+                "text": {"text": formatted_text.strip()},
+                "languageCode": "en",
+            }
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                query_result = data.get("queryResult", {})
+                response_messages = query_result.get("responseMessages", [])
+                text_parts = []
+                for msg in response_messages:
+                    if "text" in msg and "text" in msg["text"]:
+                        text_parts.extend(msg["text"]["text"])
+                grounded_text = "\n".join(text_parts).strip()
+
+                if grounded_text:
+                    logger.info(
+                        "Successfully generated text via Conversational Agent (GenAI App Builder) API"
+                    )
+                    return grounded_text
+            else:
+                logger.warning(
+                    f"Conversational Agent API returned status {response.status_code}: {response.text}. "
+                    "Falling back to standard Google Gemini / Vertex AI call..."
+                )
+    except Exception as e:
+        logger.warning(
+            f"Conversational Agent API request failed: {e}. Falling back to standard Google Gemini / Vertex AI call..."
+        )
+
+    return await _generate_google_text_response(
+        system_instruction,
+        messages,
+        image_base64=image_base64,
+        image_mime_type=image_mime_type,
+    )
+
+
 def _ensure_ai_provider_configured() -> str:
     provider = _get_active_ai_provider()
     if provider == "google":
         _ensure_google_client_configured()
+    elif provider == "vertex_agent_builder":
+        _ensure_vertex_agent_builder_configured()
     elif provider == "qwen":
-        qwen_api_key = os.getenv("QWEN_API_KEY", "").strip()
+        qwen_api_key = _get_qwen_api_key()
         if not qwen_api_key:
             raise ConnectionError("QWEN_API_KEY is not configured.")
         if not _get_qwen_model_name():
             raise ConnectionError("QWEN_MODEL is not configured.")
+    elif provider == "openai":
+        openai_api_key = _get_openai_api_key()
+        if not openai_api_key:
+            raise ConnectionError("OPENAI_API_KEY is not configured.")
+        if not _get_openai_model_name():
+            raise ConnectionError("OPENAI_MODEL is not configured.")
     else:
-        openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        openrouter_api_key = _get_openrouter_api_key()
         if not openrouter_api_key:
             raise ConnectionError("OPENROUTER_API_KEY is not configured.")
         if not _get_openrouter_model_name():
@@ -710,15 +1155,23 @@ def _ensure_ai_provider_configured() -> str:
 
 def _build_openrouter_headers() -> Dict[str, str]:
     headers = {
-        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '').strip()}",
+        "Authorization": f"Bearer {_get_openrouter_api_key()}",
         "Content-Type": "application/json",
     }
 
-    referer = os.getenv("OPENROUTER_HTTP_REFERER", "").strip()
+    dyn = _get_dynamic_settings()
+    or_cfg = dyn.get("providers", {}).get("openrouter", {})
+
+    referer = str(
+        or_cfg.get("http_referer") or os.getenv("OPENROUTER_HTTP_REFERER", "")
+    ).strip()
     if referer:
         headers["HTTP-Referer"] = referer
 
-    title = os.getenv("OPENROUTER_APP_TITLE", "DepthSight AI Assistant").strip()
+    title = str(
+        or_cfg.get("app_title")
+        or os.getenv("OPENROUTER_APP_TITLE", "DepthSight AI Assistant")
+    ).strip()
     if title:
         headers["X-Title"] = title
 
@@ -948,7 +1401,7 @@ async def _call_openrouter_api(
     require_complete: bool,
     model_name: Optional[str] = None,
 ) -> str:
-    openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    openrouter_api_key = _get_openrouter_api_key()
     if not openrouter_api_key:
         raise ConnectionError("OPENROUTER_API_KEY is not configured.")
 
@@ -956,9 +1409,7 @@ async def _call_openrouter_api(
     if not model_name:
         raise ConnectionError("OPENROUTER_MODEL is not configured.")
 
-    timeout_seconds = float(
-        os.getenv("OPENROUTER_TIMEOUT_SECONDS", str(DEFAULT_OPENROUTER_TIMEOUT_SECONDS))
-    )
+    timeout_seconds = _get_openrouter_timeout()
     payload: Dict[str, Any] = {
         "model": model_name,
         "messages": messages,
@@ -968,10 +1419,7 @@ async def _call_openrouter_api(
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
 
-    openrouter_url = (
-        os.getenv("OPENROUTER_API_URL", DEFAULT_OPENROUTER_URL).strip()
-        or DEFAULT_OPENROUTER_URL
-    )
+    openrouter_url = _get_openrouter_api_url()
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(
@@ -980,6 +1428,7 @@ async def _call_openrouter_api(
                 json=payload,
             )
             response.raise_for_status()
+
     except httpx.HTTPStatusError as e:
         response_body = e.response.text
         logger.error(
@@ -1099,7 +1548,7 @@ async def _call_qwen_api(
     require_complete: bool,
     model_name: Optional[str] = None,
 ) -> str:
-    qwen_api_key = os.getenv("QWEN_API_KEY", "").strip()
+    qwen_api_key = _get_qwen_api_key()
     if not qwen_api_key:
         raise ConnectionError("QWEN_API_KEY is not configured.")
 
@@ -1107,9 +1556,7 @@ async def _call_qwen_api(
     if not model_name:
         raise ConnectionError("QWEN_MODEL is not configured.")
 
-    timeout_seconds = float(
-        os.getenv("QWEN_TIMEOUT_SECONDS", str(DEFAULT_QWEN_TIMEOUT_SECONDS))
-    )
+    timeout_seconds = _get_qwen_timeout()
     payload: Dict[str, Any] = {
         "model": model_name,
         "messages": messages,
@@ -1119,7 +1566,7 @@ async def _call_qwen_api(
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
 
-    qwen_url = os.getenv("QWEN_API_URL", DEFAULT_QWEN_URL).strip() or DEFAULT_QWEN_URL
+    qwen_url = _get_qwen_api_url()
     headers = {
         "Authorization": f"Bearer {qwen_api_key}",
         "Content-Type": "application/json",
@@ -1258,6 +1705,137 @@ async def _generate_qwen_text_response(
     )
 
 
+async def _call_openai_api(
+    messages: List[Dict[str, str]],
+    *,
+    response_format: Optional[Dict[str, str]] = None,
+    max_tokens: Optional[int] = None,
+    require_complete: bool,
+    model_name: Optional[str] = None,
+) -> str:
+    openai_api_key = _get_openai_api_key()
+    if not openai_api_key:
+        raise ConnectionError("OPENAI_API_KEY is not configured.")
+
+    model_name = model_name or _get_openai_model_name()
+    if not model_name:
+        raise ConnectionError("OPENAI_MODEL is not configured.")
+
+    timeout_seconds = _get_openai_timeout()
+    payload: Dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+    }
+    if response_format:
+        payload["response_format"] = response_format
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+
+    openai_url = _get_openai_api_url()
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await client.post(
+                openai_url,
+                headers=headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return _extract_openrouter_response_text(
+                data, require_complete=require_complete
+            )
+    except httpx.HTTPStatusError as e:
+        response_body = e.response.text
+        logger.error(
+            f"OpenAI request failed with status {e.response.status_code}: {response_body}"
+        )
+        raise ConnectionError(
+            f"OpenAI request failed with status {e.response.status_code}: {response_body}"
+        ) from e
+    except httpx.RequestError as e:
+        logger.error(f"OpenAI request error: {e}")
+        raise ConnectionError(f"OpenAI request failed: {e}") from e
+
+
+async def _generate_openai_json_response(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    image_base64: Optional[str] = None,
+    image_mime_type: Optional[str] = None,
+    max_output_tokens: int = 8192,
+    model_name: Optional[str] = None,
+) -> str:
+    user_content = user_prompt
+    normalized_image, normalized_mime = _normalize_image_payload(
+        image_base64, image_mime_type
+    )
+    if normalized_image and normalized_mime:
+        user_content = [
+            {"type": "text", "text": user_prompt},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{normalized_mime};base64,{normalized_image}"
+                },
+            },
+        ]
+
+    openai_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+    return await _call_openai_api(
+        openai_messages,
+        response_format={"type": "json_object"},
+        max_tokens=max_output_tokens,
+        require_complete=True,
+        model_name=model_name,
+    )
+
+
+async def _generate_openai_text_response(
+    system_instruction: str,
+    messages: List[Dict[str, str]],
+    *,
+    image_base64: Optional[str] = None,
+    image_mime_type: Optional[str] = None,
+) -> str:
+    openai_messages = [{"role": "system", "content": system_instruction}]
+    normalized_image, normalized_mime = _normalize_image_payload(
+        image_base64, image_mime_type
+    )
+
+    for i, msg in enumerate(messages):
+        content = msg["content"]
+        if (
+            i == len(messages) - 1
+            and msg["role"] == "user"
+            and normalized_image
+            and normalized_mime
+        ):
+            content = [
+                {"type": "text", "text": msg["content"]},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{normalized_mime};base64,{normalized_image}"
+                    },
+                },
+            ]
+        openai_messages.append({"role": msg["role"], "content": content})
+
+    return await _call_openai_api(
+        openai_messages,
+        require_complete=False,
+    )
+
+
 async def _generate_json_response(
     system_prompt: str,
     user_prompt: str,
@@ -1281,8 +1859,26 @@ async def _generate_json_response(
             max_output_tokens=max_output_tokens,
             model_name=model_name,
         )
+    elif provider == "vertex_agent_builder":
+        raw = await _generate_vertex_agent_builder_json_response(
+            system_prompt,
+            user_prompt,
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+            max_output_tokens=max_output_tokens,
+            model_name=model_name,
+        )
     elif provider == "qwen":
         raw = await _generate_qwen_json_response(
+            system_prompt,
+            user_prompt,
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+            max_output_tokens=max_output_tokens,
+            model_name=model_name,
+        )
+    elif provider == "openai":
+        raw = await _generate_openai_json_response(
             system_prompt,
             user_prompt,
             image_base64=image_base64,
@@ -1330,8 +1926,22 @@ async def _generate_text_response(
             image_base64=image_base64,
             image_mime_type=image_mime_type,
         )
+    elif provider == "vertex_agent_builder":
+        return await _generate_vertex_agent_builder_text_response(
+            system_instruction,
+            messages,
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+        )
     elif provider == "qwen":
         return await _generate_qwen_text_response(
+            system_instruction,
+            messages,
+            image_base64=image_base64,
+            image_mime_type=image_mime_type,
+        )
+    elif provider == "openai":
+        return await _generate_openai_text_response(
             system_instruction,
             messages,
             image_base64=image_base64,
@@ -1984,6 +2594,84 @@ You MUST strictly adhere to these guidelines and avoid the specified negative pa
             )
         else:
             session_generator_prompt = agent_block + "\n" + session_generator_prompt
+
+    if active_provider == "vertex_agent_builder":
+        user_prompt_parts = [f"USER PROMPT: '{request.text_prompt}'"]
+        if market_context_str:
+            user_prompt_parts.insert(0, market_context_str)
+        user_prompt_parts.append(
+            _build_tier_context_message(current_user, is_advisor=False)
+        )
+        if request.current_config_json:
+            user_prompt_parts.append(
+                "\n\n# CURRENT STRATEGY CONFIGURATION (modify this based on the new prompt):"
+            )
+            config_to_send = request.current_config_json.copy()
+            config_to_send.pop("id", None)
+            config_to_send.pop("user_id", None)
+            config_to_send.pop("created_at", None)
+            config_to_send.pop("updated_at", None)
+            user_prompt_parts.append(json.dumps(config_to_send, indent=2))
+
+        full_user_prompt = "\n".join(user_prompt_parts)
+
+        try:
+            raw_response_text = await _generate_vertex_agent_builder_json_response(
+                system_prompt=session_generator_prompt,
+                user_prompt=full_user_prompt,
+                image_base64=request.image_base64,
+                image_mime_type=request.image_mime_type,
+            )
+
+            clean_json_text = _extract_json_block(raw_response_text)
+            strategy_dict = json.loads(clean_json_text)
+
+            _sanitize_strategy_nulls(strategy_dict)
+            _ensure_default_params(strategy_dict)
+
+            if "config_data" in strategy_dict and isinstance(
+                strategy_dict["config_data"], dict
+            ):
+                config_data_to_validate = strategy_dict["config_data"]
+            elif "filters" in strategy_dict or "entryConditions" in strategy_dict:
+                config_data_to_validate = strategy_dict
+            else:
+                raise ValueError(
+                    "AI response does not contain valid strategy structure (missing 'config_data' or 'filters'/'entryConditions')."
+                )
+
+            for field in ("enabled", "strategy_name", "signal_source"):
+                if field not in config_data_to_validate:
+                    defaults = {
+                        "enabled": True,
+                        "strategy_name": "VisualBuilderStrategy",
+                        "signal_source": "internal",
+                    }
+                    config_data_to_validate[field] = defaults[field]
+
+            if "filters" in config_data_to_validate and isinstance(
+                config_data_to_validate["filters"], list
+            ):
+                config_data_to_validate["filters"] = {
+                    "type": "AND",
+                    "children": config_data_to_validate["filters"],
+                }
+
+            validated_config_data = schemas.StrategyV2ConfigData.model_validate(
+                config_data_to_validate
+            )
+            response_dict = validated_config_data.model_dump(exclude_unset=True)
+            response_dict.pop("unsupported_features", None)
+            _validate_generated_strategy_for_user(response_dict, current_user)
+            return response_dict
+        except Exception as e:
+            logger.error(
+                f"Error during vertex_agent_builder strategy generation: {e}",
+                exc_info=True,
+            )
+            raise ValueError(
+                f"Failed to generate a valid strategy from the prompt. Error: {e}"
+            )
 
     if active_provider in ("openrouter", "qwen"):
         user_prompt_parts = [f"USER PROMPT: '{request.text_prompt}'"]
@@ -2696,3 +3384,317 @@ You MUST strictly adhere to these guidelines and avoid the specified negative pa
             raise ValueError(
                 f"Failed to generate a valid strategy from the prompt. Please try to rephrase your request. Error: {e}"
             )
+
+
+# ==============================================================================
+# Dynamic AI Settings & Admin Helpers
+# ==============================================================================
+
+
+def get_ai_settings_for_admin() -> Dict[str, Any]:
+    dyn = _get_dynamic_settings()
+    active_provider = _get_active_ai_provider()
+    providers_masked = {}
+    for prov_name, prov_data in dyn.get("providers", {}).items():
+        prov_copy = dict(prov_data)
+        raw_key = prov_copy.get("api_key", "")
+        # Resolve real key from env if not in dynamic
+        if not raw_key:
+            if prov_name == "qwen":
+                raw_key = os.getenv("QWEN_API_KEY", "").strip()
+            elif prov_name == "google":
+                raw_key = os.getenv("GEMINI_API_KEY", "").strip()
+            elif prov_name == "openrouter":
+                raw_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            elif prov_name == "openai":
+                raw_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+        prov_copy["api_key_masked"] = _mask_key(raw_key)
+        prov_copy["is_configured"] = bool(raw_key)
+        # Don't send plaintext raw API key in GET
+        prov_copy["api_key"] = ""
+        providers_masked[prov_name] = prov_copy
+
+    return {
+        "active_provider": active_provider,
+        "supported_providers": sorted(list(SUPPORTED_AI_PROVIDERS)),
+        "providers": providers_masked,
+    }
+
+
+async def save_ai_settings_from_admin(
+    db: AsyncSession,
+    update_data: schemas.AdminAISettingsUpdate,
+    user_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    from sqlalchemy import select
+    from .models import SystemSetting
+
+    stmt = select(SystemSetting).where(SystemSetting.key == "ai_settings")
+    result = await db.execute(stmt)
+    setting = result.scalar_one_or_none()
+
+    existing_db_value = (
+        setting.value if setting and isinstance(setting.value, dict) else {}
+    )
+    dyn = _get_dynamic_settings()
+
+    new_active_provider = update_data.active_provider or dyn.get(
+        "active_provider", DEFAULT_AI_PROVIDER
+    )
+    if new_active_provider not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported provider '{new_active_provider}'. Supported: {', '.join(sorted(SUPPORTED_AI_PROVIDERS))}",
+        )
+
+    dyn["active_provider"] = new_active_provider
+
+    # For saving into DB, encrypt API keys
+    db_providers_data = existing_db_value.get("providers", {})
+    if update_data.providers:
+        for prov_name, incoming_prov in update_data.providers.items():
+            if prov_name not in dyn["providers"]:
+                dyn["providers"][prov_name] = {}
+            if prov_name not in db_providers_data:
+                db_providers_data[prov_name] = {}
+
+            for k, v in incoming_prov.items():
+                if k == "api_key":
+                    if v and not str(v).startswith("•") and "••••" not in str(v):
+                        # New plaintext key provided -> encrypt for DB and store in memory
+                        db_providers_data[prov_name]["api_key_encrypted"] = (
+                            encrypt_data(str(v).strip())
+                        )
+                        dyn["providers"][prov_name]["api_key"] = str(v).strip()
+                    # If empty or masked, keep existing
+                elif k not in ("api_key_masked", "is_configured"):
+                    db_providers_data[prov_name][k] = v
+                    dyn["providers"][prov_name][k] = v
+
+    db_save_value = {
+        "active_provider": new_active_provider,
+        "providers": db_providers_data,
+    }
+
+    if setting:
+        from sqlalchemy.orm.attributes import flag_modified
+
+        setting.value = db_save_value
+        setting.updated_by_user_id = user_id
+        flag_modified(setting, "value")
+    else:
+        setting = SystemSetting(
+            key="ai_settings",
+            value=db_save_value,
+            description="AI Provider, Model, and Endpoint configurations",
+            updated_by_user_id=user_id,
+        )
+        db.add(setting)
+
+    await db.commit()
+
+    # Reset client cache so new keys take effect immediately
+    global _CONFIGURED_GEMINI_CLIENT
+    _CONFIGURED_GEMINI_CLIENT = None
+
+    return get_ai_settings_for_admin()
+
+
+async def load_ai_settings_from_db(db: AsyncSession) -> bool:
+    try:
+        from sqlalchemy import select
+        from .models import SystemSetting
+
+        stmt = select(SystemSetting).where(SystemSetting.key == "ai_settings")
+        result = await db.execute(stmt)
+        setting = result.scalar_one_or_none()
+        if setting and isinstance(setting.value, dict):
+            dyn = _get_dynamic_settings()
+            val = setting.value
+            if val.get("active_provider"):
+                dyn["active_provider"] = val["active_provider"]
+            for prov_name, prov_dict in val.get("providers", {}).items():
+                if prov_name not in dyn["providers"]:
+                    dyn["providers"][prov_name] = {}
+                for k, v in prov_dict.items():
+                    if k == "api_key_encrypted":
+                        try:
+                            decrypted = decrypt_data(v)
+                            dyn["providers"][prov_name]["api_key"] = decrypted
+                        except Exception as ex:
+                            logger.error(
+                                "Failed to decrypt API key for provider %s: %s",
+                                prov_name,
+                                ex,
+                            )
+                    elif k != "api_key":
+                        dyn["providers"][prov_name][k] = v
+            logger.info("Loaded dynamic AI settings from system_settings DB table.")
+            return True
+    except Exception as e:
+        logger.warning(
+            "Could not load AI settings from DB (using .env fallback): %s", e
+        )
+    return False
+
+
+async def test_ai_provider_connection(
+    provider: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> schemas.AdminAITestResponse:
+    import time
+
+    start_time = time.time()
+    prov = provider.lower().strip()
+    if prov not in SUPPORTED_AI_PROVIDERS:
+        return schemas.AdminAITestResponse(
+            success=False,
+            provider=provider,
+            error=f"Unsupported provider '{provider}'. Supported: {', '.join(sorted(SUPPORTED_AI_PROVIDERS))}",
+        )
+
+    # Temporary override config if provided in test request
+    override_api_key = config.get("api_key") if config else None
+    override_model = config.get("model") if config else None
+    override_url = config.get("api_url") if config else None
+
+    # Check if masked
+    if override_api_key and (
+        "••••" in str(override_api_key) or str(override_api_key).startswith("•")
+    ):
+        override_api_key = None
+
+    try:
+        if prov == "qwen":
+            api_key = override_api_key or _get_qwen_api_key()
+            if not api_key:
+                raise ConnectionError("Qwen API key is not configured.")
+            model = override_model or _get_qwen_model_name()
+            url = override_url or _get_qwen_api_url()
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "Ping. Reply with 'OK'."}],
+                "max_tokens": 10,
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                text = _extract_qwen_response_text(data, require_complete=False)
+                latency = round((time.time() - start_time) * 1000, 1)
+                return schemas.AdminAITestResponse(
+                    success=True,
+                    provider=prov,
+                    model=model,
+                    latency_ms=latency,
+                    response=text.strip()[:100],
+                )
+
+        elif prov == "openrouter":
+            api_key = override_api_key or _get_openrouter_api_key()
+            if not api_key:
+                raise ConnectionError("OpenRouter API key is not configured.")
+            model = override_model or _get_openrouter_model_name()
+            url = override_url or _get_openrouter_api_url()
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "Ping. Reply with 'OK'."}],
+                "max_tokens": 10,
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                text = _extract_openrouter_response_text(data, require_complete=False)
+                latency = round((time.time() - start_time) * 1000, 1)
+                return schemas.AdminAITestResponse(
+                    success=True,
+                    provider=prov,
+                    model=model,
+                    latency_ms=latency,
+                    response=text.strip()[:100],
+                )
+
+        elif prov == "openai":
+            api_key = override_api_key or _get_openai_api_key()
+            if not api_key:
+                raise ConnectionError("OpenAI API key is not configured.")
+            model = override_model or _get_openai_model_name()
+            url = override_url or _get_openai_api_url()
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "Ping. Reply with 'OK'."}],
+                "max_tokens": 10,
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                res.raise_for_status()
+                data = res.json()
+                text = _extract_openrouter_response_text(data, require_complete=False)
+                latency = round((time.time() - start_time) * 1000, 1)
+                return schemas.AdminAITestResponse(
+                    success=True,
+                    provider=prov,
+                    model=model,
+                    latency_ms=latency,
+                    response=text.strip()[:100],
+                )
+
+        elif prov == "google":
+            if genai is None:
+                raise ConnectionError("google-genai package is not installed.")
+            api_key = override_api_key or _get_gemini_api_key()
+            model = override_model or _get_google_model_name()
+            client = genai.Client(api_key=api_key)
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents="Ping. Reply with 'OK'.",
+            )
+            text = _extract_google_response_text(response, require_complete=False)
+            latency = round((time.time() - start_time) * 1000, 1)
+            return schemas.AdminAITestResponse(
+                success=True,
+                provider=prov,
+                model=model,
+                latency_ms=latency,
+                response=text.strip()[:100],
+            )
+
+        elif prov == "vertex_agent_builder":
+            _ensure_vertex_agent_builder_configured()
+            model = override_model or _get_active_model_name("vertex_agent_builder")
+            latency = round((time.time() - start_time) * 1000, 1)
+            return schemas.AdminAITestResponse(
+                success=True,
+                provider=prov,
+                model=model,
+                latency_ms=latency,
+                response="Vertex Agent Builder verified credentials.",
+            )
+
+    except Exception as e:
+        latency = round((time.time() - start_time) * 1000, 1)
+        logger.warning(f"AI test connection failed for {prov}: {e}")
+        return schemas.AdminAITestResponse(
+            success=False,
+            provider=prov,
+            model=override_model
+            or (
+                _get_active_model_name(prov) if prov in SUPPORTED_AI_PROVIDERS else None
+            ),
+            latency_ms=latency,
+            error=str(e),
+        )

@@ -35,8 +35,10 @@ async def get_account_status(
     """
     Returns information on user's current plan and quota usage.
     """
+    await plans_config.load_from_db(db)
     user_plan_name = current_user.plan
     plan_config = plans_config.get_plan(user_plan_name)
+
     if not plan_config:
         raise HTTPException(status_code=404, detail="Plan not found")
 

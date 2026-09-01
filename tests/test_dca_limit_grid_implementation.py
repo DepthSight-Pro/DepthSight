@@ -189,7 +189,10 @@ async def test_tp_update_logic_in_main_loop(controller, mock_deps):
     # Mock strategy to return the same position
     mock_strat = MagicMock()
     mock_strat.manage_position = AsyncMock(return_value=(position, None))
-    controller.running_strategy_instances["test-cfg"] = (mock_strat, {})
+    controller.running_strategy_instances["test-cfg"] = (
+        mock_strat,
+        {"config_id": "test-cfg", "symbol_selection_mode": "DYNAMIC"},
+    )
     position.config_id = "test-cfg"
 
     # Mock _replace_take_profit

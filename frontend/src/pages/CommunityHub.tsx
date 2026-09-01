@@ -35,8 +35,10 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import { EquityCurveChart } from "@/components/research/EquityCurveChart";
+import { NodeLeaderboard } from "@/components/community/NodeLeaderboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Footer } from "@/components/layout/Footer";
 import {
 	Card,
 	CardContent,
@@ -66,6 +68,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { useSaveStrategyConfig } from "@/lib/api";
+import type { StrategyConfigCreatePayload } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 interface NewsItem {
@@ -124,7 +127,16 @@ interface HubNodeResponse {
 	latency_ms?: number;
 	version?: string;
 	is_master: boolean;
+	user_reward_share_percent?: number;
+	public_domain?: string;
+	uptime_percent?: number;
+	active_miners?: number;
+	total_mined?: number;
+	is_mining_server?: boolean;
+	created_at?: string;
+	public_plans?: Record<string, any>;
 }
+
 
 // Sparkline area chart for card preview
 const MiniEquityChart: React.FC<{ data: [number, number][] }> = ({ data }) => {
@@ -378,11 +390,9 @@ const NetworkMap: React.FC<{
 				? activeNodes.map((node, index) => {
 						const lat = node.latitude ?? 50.1109;
 						const lon = node.longitude ?? 8.6821;
-						const nodeName = node.is_master
-							? safeT("community:network.nodes.frankfurt") || node.name
-							: node.city
-								? `${node.name} (${node.city}, ${node.country || ""})`
-								: node.name;
+						const nodeName = node.city
+							? `${node.name} (${node.city}${node.country ? `, ${node.country}` : ""})`
+							: node.name;
 						const isOutdated =
 							!node.is_master && node.version && node.version !== masterVersion;
 						const displayName = `${nodeName} [v${node.version || "1.0.0"}]${isOutdated ? " (Outdated)" : ""}`;
@@ -570,7 +580,7 @@ const CommunityHub = () => {
 	const saveConfig = useSaveStrategyConfig();
 	const { user } = useAuth();
 	const hubApiUrl =
-		import.meta.env.VITE_HUB_API_URL || "https://app.depthsight.pro/api/v1/hub";
+		import.meta.env.VITE_HUB_API_URL || "/api/v1/hub";
 
 	// State
 	const [activeTab, setActiveTab] = useState("verified");
@@ -1004,16 +1014,15 @@ const CommunityHub = () => {
 			return;
 		}
 
-		const payload = {
+		const payload: StrategyConfigCreatePayload = {
 			name: name,
 			description: description,
-			config_data: config,
+			config_data: config as unknown as StrategyConfigCreatePayload["config_data"],
 			symbol_selection_mode:
-				(config.symbol_selection_mode as string) || ("STATIC" as const),
+				((config.symbol_selection_mode as string) as StrategyConfigCreatePayload["symbol_selection_mode"]) || ("STATIC" as const),
 			symbols: config.symbol ? [config.symbol as string] : ["BTCUSDT"],
 			use_ml_confirmation: (config.use_ml_confirmation as boolean) || false,
-			foundation_weights:
-				(config.foundation_weights as Record<string, unknown>) || null,
+			foundation_weights: ((config.foundation_weights as Record<string, number>) as StrategyConfigCreatePayload["foundation_weights"]) || null,
 		};
 
 		saveConfig.mutate(payload, {
@@ -1677,7 +1686,8 @@ const CommunityHub = () => {
 	};
 
 	return (
-		<div className="min-h-screen bg-background text-foreground pb-20">
+		<div className="min-h-screen bg-background text-foreground pb-20 flex flex-col">
+			<div className="flex-1">
 			{/* Banner Hero */}
 			<section className="relative overflow-hidden pt-12 pb-16 px-4 border-b border-border/40 bg-black/20">
 				<div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))]" />
@@ -1871,8 +1881,8 @@ const CommunityHub = () => {
 																	e.stopPropagation();
 																	handleImport(
 																		getTopicTitle(strategy, t),
-																		strategy.description,
-																		strategy.strategy_json,
+																		strategy.description as string,
+																		strategy.strategy_json as Record<string, unknown>,
 																	);
 																}}
 																disabled={saveConfig.isPending}
@@ -2393,6 +2403,9 @@ const CommunityHub = () => {
 								</Card>
 							</div>
 
+							{/* Node Leaderboard Table */}
+							<NodeLeaderboard activeNodes={activeNodes} isRu={isRu} t={t} />
+
 							{/* Node Map Canvas container */}
 							<Card className="border border-border/30 bg-card/25 backdrop-blur-sm overflow-hidden">
 								<CardHeader className="pb-3 border-b border-border/10">
@@ -2778,10 +2791,11 @@ const CommunityHub = () => {
 
 							<div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
 								{localFeedbackTickets.map((ticket) => {
-									const unreadCount = getHubTicketUnreadCount(ticket.id);
+									const ticketId = ticket.id as string;
+									const unreadCount = getHubTicketUnreadCount(ticketId);
 									return (
 										<Card
-											key={ticket.id}
+											key={ticketId}
 											onClick={() => setSelectedHubTicket(ticket)}
 											className="border border-border/20 bg-card/25 hover:bg-card/45 hover:border-primary/30 transition-all cursor-pointer p-3 group relative overflow-hidden"
 										>
@@ -2791,9 +2805,9 @@ const CommunityHub = () => {
 														variant="outline"
 														className="text-[9px] uppercase tracking-wider h-4 py-0"
 													>
-														{ticket.category === "bug"
+														{(ticket.category as string) === "bug"
 															? t("community:feedback.badges.bug")
-															: ticket.category === "idea"
+															: (ticket.category as string) === "idea"
 																? t("community:feedback.badges.idea")
 																: t("community:feedback.badges.question")}
 													</Badge>
@@ -2807,12 +2821,12 @@ const CommunityHub = () => {
 														day: "numeric",
 														hour: "2-digit",
 														minute: "2-digit",
-													}).format(new Date(ticket.createdAt))}
+													}).format(new Date(ticket.createdAt as string))}
 												</span>
 											</div>
 											<div className="flex items-center justify-between gap-2">
 												<p className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors flex-1">
-													{ticket.text}
+													{ticket.text as string}
 												</p>
 												{unreadCount > 0 && (
 													<Badge
@@ -3077,9 +3091,9 @@ const CommunityHub = () => {
 													className="h-8 gap-2 text-xs"
 													onClick={() =>
 														handleImport(
-															selectedTopic.title,
-															selectedTopic.description,
-															selectedTopic.strategy_json,
+															selectedTopic.title as string,
+															selectedTopic.description as string,
+															selectedTopic.strategy_json as Record<string, unknown>,
 														)
 													}
 													disabled={saveConfig.isPending}
@@ -3265,12 +3279,12 @@ const CommunityHub = () => {
 									) : newsComments.length > 0 ? (
 										newsComments.map((comment) => (
 											<div
-												key={comment.id}
+												key={comment.id as string}
 												className="p-3 rounded-lg bg-card border border-border/20 space-y-1"
 											>
 												<div className="flex justify-between text-xs">
 													<span className={cn("font-semibold text-foreground/80 flex items-center gap-1", (comment as any).is_admin && "text-purple-400 font-bold")}>
-														{comment.author_name}
+														{comment.author_name as string}
 														{(comment as any).is_admin && (
 															<Badge
 																variant="outline"
@@ -3281,13 +3295,13 @@ const CommunityHub = () => {
 														)}
 													</span>
 													<span className="text-[10px] text-muted-foreground font-mono">
-														{new Date(comment.created_at).toLocaleString(
+														{new Date(comment.created_at as string).toLocaleString(
 															isRu ? "ru-RU" : "en-US",
 														)}
 													</span>
 												</div>
 												<p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-													{comment.text}
+													{comment.text as string}
 												</p>
 											</div>
 										))
@@ -3416,7 +3430,7 @@ const CommunityHub = () => {
 									{hubTicketStatus}
 								</Badge>
 								<Badge variant="outline" className="capitalize text-[10px]">
-									{selectedHubTicket?.category}
+									{selectedHubTicket?.category as string}
 								</Badge>
 							</div>
 							{hubTicketStatus !== "CLOSED" &&
@@ -3438,7 +3452,7 @@ const CommunityHub = () => {
 						<DialogDescription className="text-xs text-muted-foreground">
 							ID:{" "}
 							<code className="font-mono text-[10px]">
-								{selectedHubTicket?.id}
+								{selectedHubTicket?.id as string}
 							</code>
 						</DialogDescription>
 					</DialogHeader>
@@ -3450,7 +3464,7 @@ const CommunityHub = () => {
 								{t("community:hubTicket.yourFeedback", "Your Feedback")}
 							</h4>
 							<p className="text-xs whitespace-pre-wrap leading-relaxed">
-								{selectedHubTicket?.text}
+								{selectedHubTicket?.text as string}
 							</p>
 						</div>
 
@@ -3472,38 +3486,45 @@ const CommunityHub = () => {
 										))}
 									</div>
 								) : hubTicketMessages.length > 0 ? (
-									hubTicketMessages.map((msg) => (
+									hubTicketMessages.map((m) => {
+										const msg = m as Record<string, unknown>;
+										const msgId = msg.id as string;
+										const msgIsAdmin = Boolean(msg.isAdmin);
+										const msgText = msg.text as string | undefined;
+										const msgImage = msg.image as string | undefined;
+										const msgCreatedAt = msg.createdAt as string;
+										return (
 										<div
-											key={msg.id}
+											key={msgId}
 											className={`flex flex-col max-w-[85%] ${
-												msg.isAdmin
+												msgIsAdmin
 													? "mr-auto items-start"
 													: "ml-auto items-end"
 											}`}
 										>
 											<div
 												className={`p-3 rounded-2xl text-xs leading-relaxed ${
-													msg.isAdmin
+													msgIsAdmin
 														? "bg-secondary text-secondary-foreground rounded-tl-none border border-border/30"
 														: "bg-primary text-primary-foreground rounded-tr-none"
 												}`}
 											>
-												{msg.text && (
-													<p className="whitespace-pre-wrap">{msg.text}</p>
+												{msgText && (
+													<p className="whitespace-pre-wrap">{msgText}</p>
 												)}
-												{msg.image && (
+												{msgImage && (
 													<div className="mt-2 rounded-xl overflow-hidden border border-border/20 max-h-[180px] bg-black/10 flex justify-center">
 														<img
-															src={msg.image}
+															src={msgImage}
 															alt="Attached"
 															className="max-w-full h-auto object-contain cursor-zoom-in hover:scale-[1.01] transition-transform"
-															onClick={() => window.open(msg.image, "_blank")}
+															onClick={() => window.open(msgImage, "_blank")}
 														/>
 													</div>
 												)}
 											</div>
 											<div className="flex items-center gap-1.5 mt-1 px-1 text-[10px] text-muted-foreground font-medium">
-												{msg.isAdmin ? (
+												{msgIsAdmin ? (
 													<span className="text-primary font-semibold">
 														{t(
 															"community:hubTicket.supportName",
@@ -3515,7 +3536,7 @@ const CommunityHub = () => {
 												)}
 												<span>•</span>
 												<span>
-													{new Date(msg.createdAt).toLocaleTimeString(
+													{new Date(msgCreatedAt).toLocaleTimeString(
 														isRu ? "ru-RU" : "en-US",
 														{
 															hour: "2-digit",
@@ -3525,7 +3546,8 @@ const CommunityHub = () => {
 												</span>
 											</div>
 										</div>
-									))
+										);
+									})
 								) : (
 									<div className="text-center py-6 text-xs text-muted-foreground bg-muted/20 border border-dashed rounded-xl">
 										{t("community:hubTicket.noReplies")}
@@ -3613,6 +3635,8 @@ const CommunityHub = () => {
 					)}
 				</DialogContent>
 			</Dialog>
+			</div>
+			<Footer className="mt-12 flex-shrink-0" />
 		</div>
 	);
 };

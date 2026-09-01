@@ -26,6 +26,7 @@ const SettingsScreen = () => {
 	const [backtestRiskManagement, setBacktestRiskManagement] = useState<
 		Partial<BacktestRiskManagementSettings>
 	>({});
+	const [shareTelemetry, setShareTelemetry] = useState<boolean>(false);
 
 	useEffect(() => {
 		const fetchConfig = async () => {
@@ -35,6 +36,7 @@ const SettingsScreen = () => {
 				setConfig(configData);
 				setRiskManagement(configData.riskManagement || {});
 				setBacktestRiskManagement(configData.backtestRiskManagement || {});
+				setShareTelemetry(configData.notifications?.shareTelemetry || false);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : String(err));
 			} finally {
@@ -339,6 +341,56 @@ const SettingsScreen = () => {
 		</SettingsSection>
 	);
 
+	const handleUpdateNotifications = async () => {
+		try {
+			const updatedConfig = await api.updateConfig({
+				notifications: {
+					...config?.notifications,
+					shareTelemetry,
+				}
+			});
+			setConfig(updatedConfig);
+			setShareTelemetry(updatedConfig.notifications?.shareTelemetry || false);
+		} catch {
+			// Handle error
+		}
+	};
+
+	const swarmIntelligenceContent = (
+		<SettingsSection
+			title="Swarm Intelligence & Mining"
+			description="Configure telemetry settings and earn mining rewards"
+			footerActions={
+				<button
+					onClick={handleUpdateNotifications}
+					className="bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-4 py-2 rounded-lg hover:opacity-90 transition"
+				>
+					{t("buttons.save")}
+				</button>
+			}
+		>
+			<div className="space-y-4">
+				<div className="flex items-start space-x-2">
+					<input
+						type="checkbox"
+						id="share-telemetry-pwa"
+						checked={shareTelemetry}
+						onChange={(e) => setShareTelemetry(e.target.checked)}
+						className="h-4 w-4 text-blue-600 border-gray-300 rounded bg-white dark:bg-gray-700 dark:border-gray-600 mt-1"
+					/>
+					<div className="space-y-1">
+						<label htmlFor="share-telemetry-pwa" className="block text-sm font-semibold text-gray-900 dark:text-gray-200">
+							Join Swarm Intelligence & Trade Mining
+						</label>
+						<p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+							Required while Trade Mining is active: your closed trades (symbol, entry/exit prices, volume, PnL, duration, order IDs) and strategy parameters (blocks, NATR, ADX) are shared with the Central Hub, linked to your node's wallet address and exchange UID. Your exchange API keys, passwords and asset balances are never transmitted. Deactivate Trade Mining to turn this off.
+						</p>
+					</div>
+				</div>
+			</div>
+		</SettingsSection>
+	);
+
 	if (loading || !config) {
 		return (
 			<div className="flex justify-center items-center min-h-screen">
@@ -367,6 +419,7 @@ const SettingsScreen = () => {
 				tabs={[
 					{ label: t("settings.liveTrading"), content: liveTradingContent },
 					{ label: t("settings.backtesting"), content: backtestingContent },
+					{ label: "Swarm Intelligence", content: swarmIntelligenceContent },
 				]}
 			/>
 		</div>

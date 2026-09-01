@@ -14,7 +14,9 @@ import type {
 	AdminUser,
 	AdminUserExtendedDetails,
 	AdminUserUpdatePayload,
+	AdminAffiliatePayout,
 	AffiliateDashboardStats,
+	AffiliatePayout,
 	AIChatMessage,
 	ApiKey,
 	AppConfig,
@@ -35,6 +37,8 @@ import type {
 	GeneticSearchRunDetailsData,
 	GeneticSearchRunListItemData,
 	GeneticSearchRunRequest,
+	HubMiningConfig,
+	HubMiningConfigUpdate,
 	ImpersonateToken,
 	LogEntry,
 	MarketScope,
@@ -42,6 +46,7 @@ import type {
 	ModelTrainingReport,
 	OptimizationRequest,
 	PaginatedAdminAffiliateCommissions,
+	PaginatedAdminAffiliatePayouts,
 	PaginatedAdminAffiliateReferrals,
 	PaginatedAdminUsers,
 	PaginatedAffiliateCommissions,
@@ -50,6 +55,7 @@ import type {
 	PaginatedPhantomTradesResponse,
 	PaperWalletData,
 	PayoutDetailsPayload,
+	ProcessPayoutRequest,
 	PortfolioBacktestRequest,
 	PortfolioBacktestRunDetailsData,
 	PortfolioBacktestRunListItemData,
@@ -76,6 +82,11 @@ import type {
 	UserAchievement,
 	UserGenesResponse,
 	AgentMemory,
+	AdminPlansConfig,
+	AdminAISettings,
+	AdminAISettingsUpdate,
+	AdminAITestRequest,
+	AdminAITestResponse,
 } from "@/types/api";
 import type {
 	AdminSupportTicket,
@@ -103,7 +114,15 @@ export interface Plan {
 	} | null;
 	description: string;
 	features: string[];
+	quotas?: Record<string, number>;
+	limits?: Record<string, any>;
+	permissions?: string[];
+	billing?: {
+		monthly?: { price_usd: number; period_days: number };
+		lifetime?: { enabled: boolean; price_usd: number; slot_limit: number };
+	};
 }
+
 
 export interface AIChatRequest {
 	text_prompt: string;
@@ -584,10 +603,11 @@ export const usePlans = (options?: { refetchInterval?: number | false }) => {
 	return useQuery<Plan[], Error>({
 		queryKey: ["plans"],
 		queryFn: () => apiClient<Plan[]>("/payments/plans"),
-		staleTime: 60 * 60 * 1000, // 1 hour
+		staleTime: 5 * 1000, // 5s fresh
 		refetchInterval: options?.refetchInterval,
 	});
 };
+
 
 export const useCreatePayment = () => {
 	const { toast } = useToast();
@@ -2215,6 +2235,73 @@ export const useAdminAffiliateReferrals = (
 	});
 };
 
+export const useAdminPayouts = (
+	page: number,
+	pageSize: number,
+	status?: string,
+) => {
+	return useQuery<PaginatedAdminAffiliatePayouts>({
+		queryKey: ["admin", "payouts", page, pageSize, status],
+		queryFn: () => {
+			const skip = (page - 1) * pageSize;
+			const statusParam = status && status !== "all" ? `&status=${status}` : "";
+			return apiClient<PaginatedAdminAffiliatePayouts>(
+				`/admin/payouts?skip=${skip}&limit=${pageSize}${statusParam}`,
+			);
+		},
+		placeholderData: keepPreviousData,
+	});
+};
+
+export const useAdminAffiliatePayouts = (
+	userId: number,
+	page: number,
+	pageSize: number,
+) => {
+	return useQuery<PaginatedAffiliatePayouts>({
+		queryKey: ["admin", "affiliates", "payouts", userId, page, pageSize],
+		queryFn: () => {
+			const skip = (page - 1) * pageSize;
+			return apiClient<PaginatedAffiliatePayouts>(
+				`/admin/affiliates/${userId}/payouts?skip=${skip}&limit=${pageSize}`,
+			);
+		},
+		placeholderData: keepPreviousData,
+		enabled: !!userId,
+	});
+};
+
+export const useProcessAdminPayout = () => {
+	const queryClient = useQueryClient();
+	const { toast } = useToast();
+	return useMutation<
+		AffiliatePayout,
+		Error,
+		{ payoutId: string; payload: ProcessPayoutRequest }
+	>({
+		mutationFn: ({ payoutId, payload }) =>
+			apiClient<AffiliatePayout>(`/admin/payouts/${payoutId}/process`, {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: (data) => {
+			toast({
+				title: "Payout Processed",
+				description: `Payout marked as ${data.status}.`,
+			});
+			queryClient.invalidateQueries({ queryKey: ["admin", "payouts"] });
+			queryClient.invalidateQueries({ queryKey: ["admin", "affiliates"] });
+		},
+		onError: (error) => {
+			toast({
+				variant: "destructive",
+				title: "Failed to process payout",
+				description: error.message,
+			});
+		},
+	});
+};
+
 // --- Affiliate Dashboard (Affiliate View) ---
 
 export const useAffiliateDashboardStats = () => {
@@ -2591,3 +2678,430 @@ export const useSendTicketMessage = () => {
 		},
 	});
 };
+
+export interface LocalMiningStatusResponse {
+	isMiningEnabled: boolean;
+	nodeUuid?: string;
+	nodeName?: string;
+	registeredOnHub?: boolean;
+	nodeReferralCode?: string;
+	referrerNodeUuid?: string;
+	referrerReferralCode?: string;
+	referrer_referral_code?: string;
+	hasWelcomeBonus: boolean;
+	totalMined: number;
+	config?: Record<string, any>;
+	stats?: Record<string, any>;
+	isGlobalMiningEnabled?: boolean;
+	userRewardSharePercent?: number;
+	userTradeVolume?: number;
+	userEstimatedRebate?: number;
+}
+
+export interface MiningActivatePayload {
+	referrerCode?: string;
+}
+
+export interface NodeMiningConfigUpdate {
+	isGlobalMiningEnabled: boolean;
+	userRewardSharePercent: number;
+}
+
+export const useGetMiningStatus = () => {
+	return useQuery<LocalMiningStatusResponse, Error>({
+		queryKey: authScopedQueryKey("miningStatus"),
+		queryFn: () => apiClient<LocalMiningStatusResponse>("/mining/status"),
+	});
+};
+
+export const useActivateMining = () => {
+	const queryClient = useQueryClient();
+	return useMutation<LocalMiningStatusResponse, Error, MiningActivatePayload>({
+		mutationFn: (payload) =>
+			apiClient<LocalMiningStatusResponse>("/mining/activate", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+		},
+	});
+};
+
+export interface WalletNoncePayload {
+	address: string;
+}
+
+export interface WalletNonceResponse {
+	nonce: string;
+	message: string;
+}
+
+export interface WalletVerifyPayload {
+	address: string;
+	signature: string;
+	nonce: string;
+	message?: string;
+}
+
+export interface WalletVerifyResponse {
+	walletAddress: string;
+	nodeUuid: string;
+	status: string;
+}
+
+export interface WalletStatusResponse {
+	walletAddress?: string;
+	nodeUuid?: string;
+	walletConfigured: boolean;
+}
+
+export const useWalletNonce = () => {
+	return useMutation<WalletNonceResponse, Error, WalletNoncePayload>({
+		mutationFn: (payload) =>
+			apiClient<WalletNonceResponse>("/node/wallet/nonce", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+	});
+};
+
+export const useWalletVerify = () => {
+	const queryClient = useQueryClient();
+	return useMutation<WalletVerifyResponse, Error, WalletVerifyPayload>({
+		mutationFn: (payload) =>
+			apiClient<WalletVerifyResponse>("/node/wallet/verify", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("walletStatus") });
+		},
+	});
+};
+
+export const useWalletStatus = () => {
+	return useQuery<WalletStatusResponse, Error>({
+		queryKey: authScopedQueryKey("walletStatus"),
+		queryFn: () => apiClient<WalletStatusResponse>("/node/wallet/status"),
+	});
+};
+
+export const useDisconnectWallet = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ success: boolean }, Error>({
+		mutationFn: () =>
+			apiClient<{ success: boolean }>("/node/wallet/disconnect", {
+				method: "POST",
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("walletStatus") });
+		},
+	});
+};
+
+
+export const useDeactivateMining = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ success: boolean; message: string }, Error>({
+		mutationFn: () =>
+			apiClient<{ success: boolean; message: string }>("/mining/deactivate", {
+				method: "POST",
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+		},
+	});
+};
+
+export const useGetNodeMiningConfig = () => {
+	return useQuery<NodeMiningConfigUpdate, Error>({
+		queryKey: authScopedQueryKey("nodeMiningConfig"),
+		queryFn: () => apiClient<NodeMiningConfigUpdate>("/mining/node-config"),
+	});
+};
+
+export const useUpdateNodeMiningConfig = () => {
+	const queryClient = useQueryClient();
+	return useMutation<NodeMiningConfigUpdate, Error, NodeMiningConfigUpdate>({
+		mutationFn: (payload) =>
+			apiClient<NodeMiningConfigUpdate>("/mining/node-config", {
+				method: "PUT",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("nodeMiningConfig") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+		},
+	});
+};
+
+export const useGetHubMiningConfig = (enabled: boolean = true) => {
+	return useQuery<HubMiningConfig, Error>({
+		queryKey: authScopedQueryKey("hubMiningConfig"),
+		queryFn: () => apiClient<HubMiningConfig>("/hub/mining/config"),
+		enabled,
+	});
+};
+
+export const useUpdateHubMiningConfig = () => {
+	const queryClient = useQueryClient();
+	return useMutation<any, Error, HubMiningConfigUpdate>({
+		mutationFn: (payload) =>
+			apiClient<any>("/hub/mining/config", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("hubMiningConfig") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+		},
+	});
+};
+
+export interface MiningReferralItem {
+	id: string;
+	name: string;
+	createdAt: string;
+	tradeVolumeUsdt: number;
+	totalMinedDepth: number;
+	referralBonusEarned: number;
+	hasWelcomeBonus: boolean;
+	status: "active" | "idle";
+}
+
+export interface MiningReferralsResponse {
+	totalInvited: number;
+	activeReferrals: number;
+	totalReferralRewardsDepth: number;
+	totalReferralVolumeUsdt: number;
+	referrals: MiningReferralItem[];
+}
+
+export const useGetMiningReferrals = (enabled: boolean = true) => {
+	return useQuery<MiningReferralsResponse, Error>({
+		queryKey: authScopedQueryKey("miningReferrals"),
+		queryFn: () => apiClient<MiningReferralsResponse>("/mining/referrals"),
+		enabled,
+	});
+};
+
+export interface MiningTradeItem {
+	id: string;
+	userId?: number;
+	username?: string;
+	nodeUuid: string;
+	symbol: string;
+	direction: string;
+	exchangeId?: string;
+	marketType?: string;
+	tradeVolumeUsdt: number;
+	verificationStatus: string;
+	verificationError?: string;
+	verifiedVolumeUsdt?: number;
+	isMiningEligible?: boolean;
+	isOwnTrade?: boolean;
+	score?: number;
+	rewardTokens: number;
+	createdAt: string;
+}
+
+export interface MiningTradesResponse {
+	total: number;
+	page: number;
+	limit: number;
+	totalPages: number;
+	items: MiningTradeItem[];
+}
+
+export interface MiningTradesParams {
+	page?: number;
+	limit?: number;
+	userId?: number;
+	status?: string;
+	exchange?: string;
+	search?: string;
+	scope?: "all" | "my" | "referrals";
+}
+
+export const useGetMiningTrades = (params: MiningTradesParams = {}, enabled: boolean = true) => {
+	const searchParams = new URLSearchParams();
+	if (params.page) searchParams.set("page", params.page.toString());
+	if (params.limit) searchParams.set("limit", params.limit.toString());
+	if (params.userId) searchParams.set("user_id", params.userId.toString());
+	if (params.status && params.status !== "ALL") searchParams.set("status", params.status);
+	if (params.exchange && params.exchange !== "all") searchParams.set("exchange", params.exchange);
+	if (params.search) searchParams.set("search", params.search);
+	if (params.scope && params.scope !== "all") searchParams.set("scope", params.scope);
+
+	const queryString = searchParams.toString();
+	const path = `/mining/trades${queryString ? `?${queryString}` : ""}`;
+
+	return useQuery<MiningTradesResponse, Error>({
+		queryKey: authScopedQueryKey("miningTrades", params),
+		queryFn: () => apiClient<MiningTradesResponse>(path),
+		enabled,
+	});
+};
+
+export const useTriggerMiningEpoch = () => {
+	const queryClient = useQueryClient();
+	return useMutation<any, Error, string | undefined>({
+		mutationFn: (epochDate) =>
+			apiClient<any>("/hub/mining/process-epoch", {
+				method: "POST",
+				body: epochDate ? JSON.stringify({ epoch_date: epochDate }) : undefined,
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("hubMiningConfig") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+		},
+	});
+};
+
+export interface ImportBybitXlsxResult {
+	success: boolean;
+	stats: {
+		total_rows: number;
+		matched_nodes: number;
+		verified_reports: number;
+		skipped_gated_reports: number;
+		total_rebate_distributed: number;
+		dates_processed: string[];
+	};
+	message: string;
+}
+
+export const useImportBybitXlsx = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		ImportBybitXlsxResult,
+		Error,
+		{ file: File; dryRun?: boolean }
+	>({
+		mutationFn: async ({ file, dryRun = false }) => {
+			const formData = new FormData();
+			formData.append("file", file);
+			formData.append("dry_run", String(dryRun));
+			return apiClient<ImportBybitXlsxResult>("/mining/admin/import-bybit-xlsx", {
+				method: "POST",
+				body: formData,
+			});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningTrades") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("hubMiningConfig") });
+		},
+	});
+};
+
+// --- Admin Plans & AI Configuration API Hooks ---
+
+export const useAdminPlansConfig = () => {
+	return useQuery<AdminPlansConfig, Error>({
+		queryKey: authScopedQueryKey("adminPlansConfig"),
+		queryFn: () => apiClient<AdminPlansConfig>("/admin/plans/config"),
+	});
+};
+
+export const useAdminUpdatePlansConfig = () => {
+	const queryClient = useQueryClient();
+	const { toast } = useToast();
+	return useMutation<AdminPlansConfig, Error, AdminPlansConfig>({
+		mutationFn: (payload) =>
+			apiClient<AdminPlansConfig>("/admin/plans/config", {
+				method: "PUT",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: () => {
+			toast({
+				title: "Plans Updated",
+				description: "Subscription plans and billing configuration successfully saved.",
+			});
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("adminPlansConfig") });
+			queryClient.invalidateQueries({ queryKey: ["plans"] });
+		},
+		onError: (error) => {
+			toast({
+				variant: "destructive",
+				title: "Error Saving Plans",
+				description: error.message,
+			});
+		},
+	});
+};
+
+export const useAdminResetPlansConfig = () => {
+	const queryClient = useQueryClient();
+	const { toast } = useToast();
+	return useMutation<AdminPlansConfig, Error, void>({
+		mutationFn: () =>
+			apiClient<AdminPlansConfig>("/admin/plans/reset-defaults", {
+				method: "POST",
+			}),
+		onSuccess: () => {
+			toast({
+				title: "Reset Successful",
+				description: "Plans configuration reset to baseline YAML defaults.",
+			});
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("adminPlansConfig") });
+			queryClient.invalidateQueries({ queryKey: ["plans"] });
+		},
+		onError: (error) => {
+			toast({
+				variant: "destructive",
+				title: "Reset Failed",
+				description: error.message,
+			});
+		},
+	});
+};
+
+export const useAdminAISettings = () => {
+	return useQuery<AdminAISettings, Error>({
+		queryKey: authScopedQueryKey("adminAISettings"),
+		queryFn: () => apiClient<AdminAISettings>("/admin/ai/settings"),
+	});
+};
+
+export const useAdminUpdateAISettings = () => {
+	const queryClient = useQueryClient();
+	const { toast } = useToast();
+	return useMutation<AdminAISettings, Error, AdminAISettingsUpdate>({
+		mutationFn: (payload) =>
+			apiClient<AdminAISettings>("/admin/ai/settings", {
+				method: "PUT",
+				body: JSON.stringify(payload),
+			}),
+		onSuccess: () => {
+			toast({
+				title: "AI Settings Saved",
+				description: "AI provider, model, and endpoint configuration successfully updated.",
+			});
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("adminAISettings") });
+		},
+		onError: (error) => {
+			toast({
+				variant: "destructive",
+				title: "Error Saving AI Settings",
+				description: error.message,
+			});
+		},
+	});
+};
+
+
+export const useAdminTestAIConnection = () => {
+	return useMutation<AdminAITestResponse, Error, AdminAITestRequest>({
+		mutationFn: (payload) =>
+			apiClient<AdminAITestResponse>("/admin/ai/test", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+	});
+};
+
+

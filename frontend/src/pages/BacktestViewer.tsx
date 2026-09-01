@@ -50,6 +50,7 @@ import type {
 	ProgressEventData,
 	ProgressInfoData,
 	ProgressKpiData,
+	StrategyConfigData,
 	TradeData,
 } from "@/types/api";
 import NotFound from "./NotFound";
@@ -236,8 +237,8 @@ const BacktestViewerPage = () => {
 	if (isLoading) {
 		return (
 			<PageLayout title={pageTitle} headerActions={headerActions}>
-				<div className="flex items-center justify-center h-full">
-					<AppLoader size="lg" fullLogo text={t("backtestViewer.loading")} />
+				<div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] h-full w-full">
+					<AppLoader size="xl" fullLogo text={t("backtestViewer.loading")} />
 				</div>
 			</PageLayout>
 		);

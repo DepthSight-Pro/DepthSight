@@ -87,6 +87,15 @@ async def bitcart_webhook(
             )
             raise HTTPException(status_code=404, detail="Payment not found.")
 
+        # Replay protection: a completed payment must never be processed again
+        # (Bitcart retries and captured replays would otherwise keep extending
+        # the subscription window).
+        if payment.status == "FINISHED":
+            logger.info(
+                f"Bitcart Webhook for already-finished payment '{payment.id}' — ignoring replay."
+            )
+            return {"status": "already_processed"}
+
         # Update status in our DB
         await crud.update_payment_status(db, payment_id=payment.id, status="FINISHED")
 

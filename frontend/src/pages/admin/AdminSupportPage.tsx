@@ -47,7 +47,7 @@ import {
 	useSendTicketMessage,
 	useTicketMessages,
 } from "@/lib/api";
-import type { AdminSupportTicket } from "@/types/support";
+import type { AdminSupportTicket, SupportTicketMessage } from "@/types/support";
 
 const AdminSupportPage: React.FC = () => {
 	const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -99,14 +99,14 @@ const AdminSupportPage: React.FC = () => {
 		const lastReadStr = lastReadMap[ticket.id];
 		if (!lastReadStr) {
 			return ticket.messages.filter(
-				(msg: Record<string, unknown>) => !msg.isAdmin,
+				(msg: SupportTicketMessage) => !msg.isAdmin,
 			).length;
 		}
 		const lastReadTime = new Date(lastReadStr).getTime();
 		return ticket.messages.filter(
-			(msg: Record<string, unknown>) =>
+			(msg: SupportTicketMessage) =>
 				!msg.isAdmin &&
-				new Date(msg.createdAt as string).getTime() > lastReadTime,
+				new Date(msg.createdAt).getTime() > lastReadTime,
 		).length;
 	};
 

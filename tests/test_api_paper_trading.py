@@ -1,6 +1,7 @@
 # tests/test_api_paper_trading.py
 
 import pytest
+import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from api import crud, models
 from datetime import datetime, timezone
@@ -44,7 +45,16 @@ async def test_start_strategy_paper_mode(
     data = response.json()["data"]
     assert data["mode"] == "paper"
     # Unified controller uses Redis for paper mode start now
-    mock_redis_client.publish.assert_called_once()
+    assert mock_redis_client.publish.call_count == 2
+    publish_calls = mock_redis_client.publish.call_args_list
+    start_strategy_call = None
+    for call_args in publish_calls:
+        channel, message_str = call_args[0]
+        message_data = json.loads(message_str)
+        if message_data.get("command") == "START_STRATEGY":
+            start_strategy_call = message_data
+            break
+    assert start_strategy_call is not None
 
 
 # Remove mocker from arguments
@@ -87,7 +97,16 @@ async def test_start_strategy_live_mode(
     data = response.json()["data"]
     assert data["mode"] == "live"
 
-    mock_redis_client.publish.assert_called_once()
+    assert mock_redis_client.publish.call_count == 2
+    publish_calls = mock_redis_client.publish.call_args_list
+    start_strategy_call = None
+    for call_args in publish_calls:
+        channel, message_str = call_args[0]
+        message_data = json.loads(message_str)
+        if message_data.get("command") == "START_STRATEGY":
+            start_strategy_call = message_data
+            break
+    assert start_strategy_call is not None
 
 
 # Correct path for patch

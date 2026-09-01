@@ -11,6 +11,9 @@ import {
 	ShieldAlert,
 	LifeBuoy,
 	HeartPulse,
+	Pickaxe,
+	Layers,
+	Brain,
 } from "lucide-react";
 import type React from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -22,7 +25,18 @@ const AdminLayout: React.FC = () => {
 			text: "Dashboard",
 			icon: <LayoutDashboard className="h-4 w-4" />,
 		},
+		{
+			to: "/admin/plans",
+			text: "Plans & Billing",
+			icon: <Layers className="h-4 w-4" />,
+		},
+		{
+			to: "/admin/ai-settings",
+			text: "AI & Neural Networks",
+			icon: <Brain className="h-4 w-4" />,
+		},
 		{ to: "/admin/users", text: "Users", icon: <Users className="h-4 w-4" /> },
+
 		{
 			to: "/admin/affiliates",
 			text: "Affiliates",
@@ -46,7 +60,12 @@ const AdminLayout: React.FC = () => {
 		{
 			to: "/admin/support",
 			text: "Support",
-			icon: <LifeBuoy className="h-4 w-4 text-orange-500" />,
+			icon: <LifeBuoy className="h-4 w-4" />,
+		},
+		{
+			to: "/admin/mining",
+			text: "Trade Mining",
+			icon: <Pickaxe className="h-4 w-4" />,
 		},
 		{
 			to: "/admin/health",
@@ -54,6 +73,9 @@ const AdminLayout: React.FC = () => {
 			icon: <HeartPulse className="h-4 w-4" />,
 		},
 	];
+
+
+
 
 	return (
 		<div className="flex flex-1 h-screen bg-background">
@@ -96,3 +118,4 @@ const AdminLayout: React.FC = () => {
 };
 
 export default AdminLayout;
+

@@ -2,10 +2,11 @@
 
 import { Copy, Link as LinkIcon, Loader2 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { Pagination } from "@/components/shared/Pagination";
+import { Footer } from "@/components/layout/Footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,10 +101,17 @@ const AffiliateDashboard: React.FC = () => {
 	const {
 		control,
 		handleSubmit,
+		reset,
 		formState: { errors },
 	} = useForm<PayoutDetailsPayload>({
 		defaultValues: { usdtTrc20Address: "" },
 	});
+
+	useEffect(() => {
+		if (stats?.payoutAddress) {
+			reset({ usdtTrc20Address: stats.payoutAddress });
+		}
+	}, [stats?.payoutAddress, reset]);
 
 	const referralLink = `${window.location.protocol}//${window.location.host}/r/${user?.referralCode}`;
 
@@ -128,11 +136,12 @@ const AffiliateDashboard: React.FC = () => {
 		new Date(dateString).toLocaleDateString();
 
 	return (
-		<div className="container mx-auto p-4 md:p-6">
-			<h1 className="text-3xl font-bold mb-6 flex items-center">
-				<LinkIcon className="mr-3 h-8 w-8 text-primary" />
-				{t("pageTitle")}
-			</h1>
+		<div className="container mx-auto p-4 md:p-6 flex flex-col min-h-full">
+			<div className="flex-1">
+				<h1 className="text-3xl font-bold mb-6 flex items-center">
+					<LinkIcon className="mr-3 h-8 w-8 text-primary" />
+					{t("pageTitle")}
+				</h1>
 
 			<Card className="mb-6">
 				<CardHeader>
@@ -340,7 +349,9 @@ const AffiliateDashboard: React.FC = () => {
 								<Button
 									onClick={() => requestPayout()}
 									disabled={
-										isRequestingPayout || (stats?.availableAmount ?? 0) <= 0
+										isRequestingPayout ||
+										(stats?.availableAmount ?? 0) < 50 ||
+										!stats?.payoutAddress
 									}
 								>
 									{isRequestingPayout ? (
@@ -352,6 +363,16 @@ const AffiliateDashboard: React.FC = () => {
 										t("payoutsSection.request.requestButton")
 									)}
 								</Button>
+								{!stats?.payoutAddress && (
+									<p className="text-xs text-amber-500">
+										Please specify and save your USDT TRC-20 payout address below first.
+									</p>
+								)}
+								{stats?.payoutAddress && (stats?.availableAmount ?? 0) < 50 && (
+									<p className="text-xs text-muted-foreground">
+										Minimum payout threshold: $50.00.
+									</p>
+								)}
 							</CardContent>
 						</Card>
 						<Card>
@@ -451,7 +472,9 @@ const AffiliateDashboard: React.FC = () => {
 						</CardContent>
 					</Card>
 				</TabsContent>
-			</Tabs>
+				</Tabs>
+			</div>
+			<Footer className="mt-8 flex-shrink-0" />
 		</div>
 	);
 };

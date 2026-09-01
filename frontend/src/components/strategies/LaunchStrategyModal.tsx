@@ -86,7 +86,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 	const activeApiKeys = useMemo(() => {
 		return (
 			config?.apiKeys?.filter(
-				(key) => key.isActive && key.status === "valid",
+				(key) => key.isActive && key.status !== "invalid",
 			) ?? []
 		);
 	}, [config?.apiKeys]);

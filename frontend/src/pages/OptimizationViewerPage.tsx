@@ -11,6 +11,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { AppLoader } from "@/components/shared/AppLoader";
 import { OptimizationHistoryChart } from "@/components/research/OptimizationHistoryChart";
 import { OptimizationKpiPanel } from "@/components/research/OptimizationKpiPanel";
 import { ParameterImportanceChart } from "@/components/research/ParameterImportanceChart";
@@ -150,11 +151,8 @@ const OptimizationViewerPage = () => {
 	if (isLoading && !run) {
 		return (
 			<PageLayout title={pageTitleWhileLoading} headerActions={headerActions}>
-				<div className="flex items-center justify-center h-full">
-					<Loader2 className="w-8 h-8 animate-spin text-primary" />
-					<span className="ml-4 text-lg">
-						{t("optimizationViewer.loading")}
-					</span>
+				<div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] h-full w-full">
+					<AppLoader size="xl" fullLogo text={t("optimizationViewer.loading")} />
 				</div>
 			</PageLayout>
 		);

@@ -2,8 +2,8 @@
 
 import type React from "react";
 import { useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { Footer } from "./Footer";
 
 interface PageLayoutProps {
 	title: string;
@@ -20,7 +20,6 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
 	children,
 	headerActions,
 }) => {
-	const { t } = useTranslation(["common"]);
 	useEffect(() => {
 		document.title = `DepthSight - ${title}`;
 	}, [title]);
@@ -28,7 +27,7 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
 	const { isMobile } = useSidebar();
 
 	return (
-		<div className="p-4 sm:p-6 lg:p-8 h-full flex flex-col">
+		<div className="p-4 sm:p-6 lg:p-8 min-h-full flex flex-col">
 			<header className="mb-6 flex items-start justify-between flex-shrink-0">
 				<div className="flex items-center gap-3">
 					{isMobile && <SidebarTrigger />}
@@ -45,23 +44,8 @@ export const PageLayout: React.FC<PageLayoutProps> = ({
 				<div className="flex items-center space-x-4">{headerActions}</div>
 			</header>
 			<div className="flex-grow min-h-0">{children}</div>
-			<footer className="mt-8 py-4 text-center text-sm text-muted-foreground border-t">
-				© 2026 DepthSight |{" "}
-				<a
-					href={`${import.meta.env.VITE_APP_URL || "https://depthsight.pro"}/privacy-policy`}
-					className="hover:underline"
-				>
-					{t("privacyPolicy")}
-				</a>{" "}
-				|{" "}
-				<a
-					href={`${import.meta.env.VITE_APP_URL || "https://depthsight.pro"}/terms-of-service`}
-					className="hover:underline"
-				>
-					{t("termsOfService")}
-				</a>{" "}
-				| <a href="/?view_mode=mobile">{t("switchToMobile")}</a>
-			</footer>
+			<Footer className="mt-8 flex-shrink-0" />
 		</div>
 	);
 };
+
