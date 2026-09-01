@@ -3,7 +3,7 @@
 import pytest
 import pandas as pd
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 from bot_module.portfolio_backtester import PortfolioBacktester
 from bot_module.strategy import (
@@ -117,13 +117,14 @@ def mock_market_data():
 
 
 # --- The test now needs to be async to call the async run_backtest ---
-@patch("bot_module.portfolio_backtester.download_klines", new_callable=AsyncMock)
+@patch("bot_module.portfolio_backtester.download_klines")
 async def test_portfolio_backtester_initialization(
     mock_download, sample_contracts_config, sample_risk_limits, mock_market_data
 ):
-    mock_download.side_effect = lambda symbol, timeframe, **kwargs: (
-        mock_market_data.get((symbol, timeframe))
-    )
+    async def mock_download_klines(symbol, timeframe, **kwargs):
+        return mock_market_data.get((symbol, timeframe))
+
+    mock_download.side_effect = mock_download_klines
 
     pb = PortfolioBacktester(
         initial_balance=10000.0,
@@ -144,13 +145,14 @@ async def test_portfolio_backtester_initialization(
     assert "atr" in pb.market_data[("BTCUSDT", "1h")].columns
 
 
-@patch("bot_module.portfolio_backtester.download_klines", new_callable=AsyncMock)
+@patch("bot_module.portfolio_backtester.download_klines")
 async def test_run_backtest_and_generate_trades(
     mock_download, sample_contracts_config, sample_risk_limits, mock_market_data
 ):
-    mock_download.side_effect = lambda symbol, timeframe, **kwargs: (
-        mock_market_data.get((symbol, timeframe))
-    )
+    async def mock_download_klines(symbol, timeframe, **kwargs):
+        return mock_market_data.get((symbol, timeframe))
+
+    mock_download.side_effect = mock_download_klines
 
     mock_btc_signal = StrategySignal(
         "VolumeBreakoutStrategy",
@@ -173,6 +175,8 @@ async def test_run_backtest_and_generate_trades(
 
     def btc_check_signal_sync_side_effect(*args, **kwargs):
         kline = kwargs.get("kline")
+        if kline is None and len(args) > 0 and isinstance(args[0], (dict, pd.Series)):
+            kline = args[0]
         if (
             kline is not None
             and isinstance(kline.get("close"), (int, float))
@@ -183,6 +187,8 @@ async def test_run_backtest_and_generate_trades(
 
     def eth_check_signal_sync_side_effect(*args, **kwargs):
         kline = kwargs.get("kline")
+        if kline is None and len(args) > 0 and isinstance(args[0], (dict, pd.Series)):
+            kline = args[0]
         if (
             kline is not None
             and isinstance(kline.get("close"), (int, float))
@@ -192,12 +198,14 @@ async def test_run_backtest_and_generate_trades(
         return []
 
     with (
-        patch(
-            "bot_module.strategy.VolumeBreakoutStrategy.check_signal_sync",
+        patch.object(
+            VolumeBreakoutStrategy,
+            "check_signal_sync",
             side_effect=btc_check_signal_sync_side_effect,
         ),
-        patch(
-            "bot_module.strategy.FakeBreakoutStrategy.check_signal_sync",
+        patch.object(
+            FakeBreakoutStrategy,
+            "check_signal_sync",
             side_effect=eth_check_signal_sync_side_effect,
         ),
     ):
@@ -225,13 +233,14 @@ async def test_run_backtest_and_generate_trades(
         assert len(pb.equity_curve) > 2
 
 
-@patch("bot_module.portfolio_backtester.download_klines", new_callable=AsyncMock)
+@patch("bot_module.portfolio_backtester.download_klines")
 async def test_l2_impact_changes_fill_price(
     mock_download, sample_contracts_config, sample_risk_limits, mock_market_data
 ):
-    mock_download.side_effect = lambda symbol, timeframe, **kwargs: (
-        mock_market_data.get((symbol, timeframe))
-    )
+    async def mock_download_klines(symbol, timeframe, **kwargs):
+        return mock_market_data.get((symbol, timeframe))
+
+    mock_download.side_effect = mock_download_klines
 
     mock_l2_reader = MagicMock()
 
@@ -263,6 +272,12 @@ async def test_l2_impact_changes_fill_price(
         def __call__(self, *args, **kwargs):
             kline = kwargs.get("kline")
             if (
+                kline is None
+                and len(args) > 0
+                and isinstance(args[0], (dict, pd.Series))
+            ):
+                kline = args[0]
+            if (
                 self.emitted_count == 0
                 and kline is not None
                 and isinstance(kline.get("close"), (int, float))
@@ -272,12 +287,12 @@ async def test_l2_impact_changes_fill_price(
                 return [self.signal_to_emit]
             return []
 
-    with patch(
-        "bot_module.strategy.VolumeBreakoutStrategy.check_signal_sync"
-    ) as mock_vb_check_signal_sync:
-        emitter_no_l2 = SingleSignalEmitter(mock_signal, 20100.0)
-        mock_vb_check_signal_sync.side_effect = emitter_no_l2
-
+    emitter_no_l2 = SingleSignalEmitter(mock_signal, 20100.0)
+    with patch.object(
+        VolumeBreakoutStrategy,
+        "check_signal_sync",
+        side_effect=emitter_no_l2,
+    ):
         pb_no_l2 = PortfolioBacktester(
             initial_balance=10000.0,
             start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
@@ -288,9 +303,12 @@ async def test_l2_impact_changes_fill_price(
         )
         await pb_no_l2.run_backtest()
 
-        emitter_with_l2 = SingleSignalEmitter(mock_signal, 20100.0)
-        mock_vb_check_signal_sync.side_effect = emitter_with_l2
-
+    emitter_with_l2 = SingleSignalEmitter(mock_signal, 20100.0)
+    with patch.object(
+        VolumeBreakoutStrategy,
+        "check_signal_sync",
+        side_effect=emitter_with_l2,
+    ):
         pb_with_l2 = PortfolioBacktester(
             initial_balance=10000.0,
             start_date=datetime(2023, 1, 1, tzinfo=timezone.utc),
