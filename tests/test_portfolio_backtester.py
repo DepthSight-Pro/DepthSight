@@ -1,5 +1,6 @@
 # FILE: tests/test_portfolio_backtester.py
 
+import copy
 import pytest
 import pandas as pd
 from datetime import datetime, timezone
@@ -23,11 +24,18 @@ STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
 
 @pytest.fixture(autouse=True)
 def register_test_strategies():
+    from bot_module import strategy as strat_mod
+
+    strat_mod.STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
+    strat_mod.STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
     STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
     STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
     yield
+    strat_mod.STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
+    strat_mod.STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
     STRATEGIES["VolumeBreakout"] = VolumeBreakoutStrategy
     STRATEGIES["FakeBreakout"] = FakeBreakoutStrategy
+
 
 # --- Fixtures ---
 
@@ -40,6 +48,14 @@ def sample_contracts_config():
             "strategy_name": "VolumeBreakout",
             "symbol": "BTCUSDT",
             "market_type": "spot",
+            "exchange_rules": {
+                "symbol": "BTCUSDT",
+                "tick_size": 0.01,
+                "step_size": 0.00001,
+                "min_qty": 0.00001,
+                "max_qty": 1000.0,
+                "min_notional": 5.0,
+            },
             "params": {
                 "tf": "1h",
                 "stop_loss_atr_multiplier": 1.0,
@@ -53,6 +69,14 @@ def sample_contracts_config():
             "strategy_name": "FakeBreakout",
             "symbol": "ETHUSDT",
             "market_type": "spot",
+            "exchange_rules": {
+                "symbol": "ETHUSDT",
+                "tick_size": 0.01,
+                "step_size": 0.0001,
+                "min_qty": 0.0001,
+                "max_qty": 1000.0,
+                "min_notional": 5.0,
+            },
             "params": {
                 "tf": "1h",
                 "lookback_candles": 10,
@@ -77,11 +101,11 @@ def sample_risk_limits():
 def mock_market_data():
     btc_data = pd.DataFrame(
         {
-            "open": [20000, 20100, 20050, 20200],
-            "high": [20200, 20150, 20100, 20300],
-            "low": [19900, 20000, 20000, 20150],
-            "close": [20100, 20050, 20080, 20250],
-            "volume": [100, 110, 120, 130],
+            "open": [20000.0, 20100.0, 20050.0, 20200.0],
+            "high": [20200.0, 20150.0, 20100.0, 20300.0],
+            "low": [19900.0, 20000.0, 20000.0, 20150.0],
+            "close": [20100.0, 20050.0, 20080.0, 20250.0],
+            "volume": [100.0, 110.0, 120.0, 130.0],
         },
         index=pd.to_datetime(
             [
@@ -96,11 +120,11 @@ def mock_market_data():
 
     eth_data = pd.DataFrame(
         {
-            "open": [1500, 1510, 1505, 1520],
-            "high": [1520, 1515, 1510, 1530],
-            "low": [1490, 1500, 1500, 1515],
-            "close": [1510, 1505, 1508, 1525],
-            "volume": [200, 210, 220, 230],
+            "open": [1500.0, 1510.0, 1505.0, 1520.0],
+            "high": [1520.0, 1515.0, 1510.0, 1530.0],
+            "low": [1490.0, 1500.0, 1500.0, 1515.0],
+            "close": [1510.0, 1505.0, 1508.0, 1525.0],
+            "volume": [200.0, 210.0, 220.0, 230.0],
         },
         index=pd.to_datetime(
             [
@@ -173,40 +197,55 @@ async def test_run_backtest_and_generate_trades(
         mode=OrderMode.MARKET,
     )
 
-    def btc_check_signal_sync_side_effect(*args, **kwargs):
+    def extract_close_from_args(*args, **kwargs):
         kline = kwargs.get("kline")
-        if kline is None and len(args) > 0 and isinstance(args[0], (dict, pd.Series)):
-            kline = args[0]
-        if (
-            kline is not None
-            and isinstance(kline.get("close"), (int, float))
-            and abs(kline["close"] - 20100.0) < 1e-9
-        ):
-            return [mock_btc_signal]
-        return []
+        if kline is None and len(args) > 0:
+            for arg in args:
+                if isinstance(arg, (dict, pd.Series)) and (
+                    "close" in arg or hasattr(arg, "get")
+                ):
+                    kline = arg
+                    break
+        try:
+            if kline is not None:
+                return float(kline["close"])
+        except Exception:
+            pass
+        return 0.0
 
-    def eth_check_signal_sync_side_effect(*args, **kwargs):
-        kline = kwargs.get("kline")
-        if kline is None and len(args) > 0 and isinstance(args[0], (dict, pd.Series)):
-            kline = args[0]
-        if (
-            kline is not None
-            and isinstance(kline.get("close"), (int, float))
-            and abs(kline["close"] - 1510.0) < 1e-9
+    def check_signal_sync_dispatcher(self, *args, **kwargs):
+        strat_name = getattr(self, "NAME", "") or getattr(
+            self, "strategy_name", ""
+        )
+        close_price = extract_close_from_args(*args, **kwargs)
+
+        if strat_name == "VolumeBreakout" or "BTC" in getattr(
+            self, "contract_id", ""
         ):
-            return [mock_eth_signal]
+            if abs(close_price - 20100.0) < 1e-4:
+                return [copy.deepcopy(mock_btc_signal)]
+        elif strat_name == "FakeBreakout" or "ETH" in getattr(
+            self, "contract_id", ""
+        ):
+            if abs(close_price - 1510.0) < 1e-4:
+                return [copy.deepcopy(mock_eth_signal)]
         return []
 
     with (
         patch.object(
+            BaseStrategy,
+            "check_signal_sync",
+            check_signal_sync_dispatcher,
+        ),
+        patch.object(
             VolumeBreakoutStrategy,
             "check_signal_sync",
-            side_effect=btc_check_signal_sync_side_effect,
+            check_signal_sync_dispatcher,
         ),
         patch.object(
             FakeBreakoutStrategy,
             "check_signal_sync",
-            side_effect=eth_check_signal_sync_side_effect,
+            check_signal_sync_dispatcher,
         ),
     ):
         pb = PortfolioBacktester(
@@ -271,27 +310,46 @@ async def test_l2_impact_changes_fill_price(
 
         def __call__(self, *args, **kwargs):
             kline = kwargs.get("kline")
-            if (
-                kline is None
-                and len(args) > 0
-                and isinstance(args[0], (dict, pd.Series))
-            ):
-                kline = args[0]
+            if kline is None and len(args) > 0:
+                for arg in args:
+                    if isinstance(arg, (dict, pd.Series)) and (
+                        "close" in arg or hasattr(arg, "get")
+                    ):
+                        kline = arg
+                        break
+            try:
+                kline_close = (
+                    float(kline["close"]) if kline is not None else 0.0
+                )
+            except Exception:
+                kline_close = 0.0
+
             if (
                 self.emitted_count == 0
-                and kline is not None
-                and isinstance(kline.get("close"), (int, float))
-                and abs(kline["close"] - self.trigger_kline_close_price) < 1e-9
+                and abs(kline_close - self.trigger_kline_close_price) < 1e-4
             ):
                 self.emitted_count += 1
-                return [self.signal_to_emit]
+                return [copy.deepcopy(self.signal_to_emit)]
             return []
 
+    def make_emitter_dispatcher(emitter):
+        def _dispatcher(self, *args, **kwargs):
+            return emitter(*args, **kwargs)
+
+        return _dispatcher
+
     emitter_no_l2 = SingleSignalEmitter(mock_signal, 20100.0)
-    with patch.object(
-        VolumeBreakoutStrategy,
-        "check_signal_sync",
-        side_effect=emitter_no_l2,
+    with (
+        patch.object(
+            BaseStrategy,
+            "check_signal_sync",
+            make_emitter_dispatcher(emitter_no_l2),
+        ),
+        patch.object(
+            VolumeBreakoutStrategy,
+            "check_signal_sync",
+            make_emitter_dispatcher(emitter_no_l2),
+        ),
     ):
         pb_no_l2 = PortfolioBacktester(
             initial_balance=10000.0,
@@ -304,10 +362,17 @@ async def test_l2_impact_changes_fill_price(
         await pb_no_l2.run_backtest()
 
     emitter_with_l2 = SingleSignalEmitter(mock_signal, 20100.0)
-    with patch.object(
-        VolumeBreakoutStrategy,
-        "check_signal_sync",
-        side_effect=emitter_with_l2,
+    with (
+        patch.object(
+            BaseStrategy,
+            "check_signal_sync",
+            make_emitter_dispatcher(emitter_with_l2),
+        ),
+        patch.object(
+            VolumeBreakoutStrategy,
+            "check_signal_sync",
+            make_emitter_dispatcher(emitter_with_l2),
+        ),
     ):
         pb_with_l2 = PortfolioBacktester(
             initial_balance=10000.0,
