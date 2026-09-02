@@ -88,6 +88,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 		initializeAuth();
 	}, []);
 
+	useEffect(() => {
+		const handleTokenRefreshed = (e: Event) => {
+			const customEvent = e as CustomEvent<{ token: string }>;
+			if (customEvent.detail?.token) {
+				setToken(customEvent.detail.token);
+			}
+		};
+
+		window.addEventListener("auth:token-refreshed", handleTokenRefreshed);
+		return () => {
+			window.removeEventListener("auth:token-refreshed", handleTokenRefreshed);
+		};
+	}, []);
+
 	const login = async (data: {
 		token: { access_token: string; refresh_token: string };
 		user: User;

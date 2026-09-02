@@ -1090,7 +1090,7 @@
 	"mining": {
 		"nodeSharingPolicy": "Node Sharing Policy",
 		"nodeSharePercentage": "Node Share Percentage",
-		"yourVolumeShare": "Your Volume Share",
+		"yourVolumeShare": "Your Volume Share (Today)",
 		"yourTotalVolume": "Your Total Volume",
 		"subtitle": "Share your trade telemetry and earn $DEPTH tokens on every trade.",
 		"privacyTitle": "What data is shared",
@@ -1104,7 +1104,7 @@
 		"dailyEmission": "Daily Emission",
 		"welcomeBonus": "Welcome Bonus",
 		"welcomeBonusClaimedBadge": "Claimed",
-		"welcomeBonusDesc": "Generate at least $5.0 of cumulative rebate to claim your 1000 $DEPTH welcome bonus.",
+		"welcomeBonusDesc": "Generate at least $1.0 of cumulative rebate to claim your 1000 $DEPTH welcome bonus.",
 		"welcomeBonusClaimed": "Welcome Bonus Claimed!",
 		"welcomeBonusClaimedDesc": "1000 $DEPTH credited to balance.",
 		"welcomeBonusProgress": "Rebate: ${{current}} / ${{target}}",

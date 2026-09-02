@@ -1398,6 +1398,20 @@ async def format_mining_status_response(
     res_vol = await db.execute(stmt_vol)
     user_vol = float(res_vol.scalar() or 0.0)
 
+    # 1b. Today's volume for the user (since midnight UTC)
+    stmt_daily_vol = select(
+        func.sum(models.HubTelemetryReport.trade_volume_usdt)
+    ).where(
+        models.HubTelemetryReport.node_uuid == target_node,
+        models.HubTelemetryReport.created_at >= today_start,
+    )
+    if is_central:
+        stmt_daily_vol = stmt_daily_vol.where(
+            models.HubTelemetryReport.is_mining_eligible.is_(True)
+        )
+    res_daily_vol = await db.execute(stmt_daily_vol)
+    user_daily_vol = float(res_daily_vol.scalar() or 0.0)
+
     # 2. Today's rebates for the user (since midnight UTC)
     stmt_rebate = select(
         func.sum(models.HubTelemetryReport.estimated_rebate_usdt)
@@ -1412,7 +1426,20 @@ async def format_mining_status_response(
     res_rebate = await db.execute(stmt_rebate)
     user_rebate = float(res_rebate.scalar() or 0.0)
 
-    # 3. All-time volume for all nodes on this server
+    # 3. Today's volume for all nodes on this server (since midnight UTC)
+    stmt_total_daily_vol = select(
+        func.sum(models.HubTelemetryReport.trade_volume_usdt)
+    ).where(
+        models.HubTelemetryReport.created_at >= today_start,
+    )
+    if is_central:
+        stmt_total_daily_vol = stmt_total_daily_vol.where(
+            models.HubTelemetryReport.is_mining_eligible.is_(True)
+        )
+    res_total_daily_vol = await db.execute(stmt_total_daily_vol)
+    total_daily_node_vol = float(res_total_daily_vol.scalar() or 0.0)
+
+    # 3b. All-time volume for all nodes on this server
     stmt_total_vol = select(func.sum(models.HubTelemetryReport.trade_volume_usdt))
     if is_central:
         stmt_total_vol = stmt_total_vol.where(
@@ -1430,13 +1457,22 @@ async def format_mining_status_response(
             total_node_vol = float(hub_data.get("serverTotalVolume") or 0.0)
         if hub_data.get("yourEpochRebates") is not None:
             user_rebate = float(hub_data.get("yourEpochRebates") or 0.0)
+        if hub_data.get("yourDailyVolume") is not None:
+            user_daily_vol = float(hub_data.get("yourDailyVolume") or 0.0)
+        if hub_data.get("serverDailyVolume") is not None:
+            total_daily_node_vol = float(hub_data.get("serverDailyVolume") or 0.0)
 
-    user_ratio = (user_vol / total_node_vol) if total_node_vol > 0.0 else 0.0
+    # Daily volume percentage: user's trade volume today / total trade volume today
+    user_ratio = (
+        (user_daily_vol / total_daily_node_vol)
+        if total_daily_node_vol > 0.0
+        else 0.0
+    )
     if not is_central and hub_data and hub_data.get("yourVolumeShare") is not None:
         user_ratio = float(hub_data.get("yourVolumeShare") or 0.0)
 
-    if current_user.role == "admin" and total_node_vol == 0.0:
-        user_ratio = 1.0
+    if current_user.role == "admin" and total_daily_node_vol == 0.0:
+        user_ratio = 1.0 if user_daily_vol > 0.0 else 0.0
 
     total_node_mined = hub_data.get("yourTotalMined", 0.0) if hub_data else 0.0
     config_data = hub_data.get("config") if hub_data else None
@@ -1548,6 +1584,10 @@ async def format_mining_status_response(
         else:
             server_total_vol = total_node_vol
         hub_data["serverTotalVolume"] = server_total_vol
+        hub_data["serverDailyVolume"] = total_daily_node_vol
+        hub_data["yourDailyVolume"] = user_daily_vol
+        hub_data["yourVolumeShare"] = user_ratio
+        hub_data["userRatio"] = user_ratio
 
         # For central hub wallet nodes, the user IS the node, so they get exactly what the ledger says for total mined.
         # The live estimate (your_epoch_reward) is already NET (node commission deducted
@@ -1635,6 +1675,9 @@ async def format_mining_status_response(
             user_stats["epochTotalRebates"] = user_rebate
 
         user_stats["userRatio"] = user_ratio
+        user_stats["yourVolumeShare"] = user_ratio
+        user_stats["yourDailyVolume"] = user_daily_vol
+        user_stats["serverDailyVolume"] = total_daily_node_vol
         user_stats["totalNodeMined"] = total_node_mined
 
         return {

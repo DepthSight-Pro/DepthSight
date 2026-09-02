@@ -14,8 +14,24 @@ import { useWebSocketStatus } from "@/context/WebSocketProvider";
 import { cn } from "@/lib/utils";
 
 export const ConnectionStatusIndicator: React.FC = () => {
-	const { readyState } = useWebSocketStatus();
+	const { readyState, reconnect } = useWebSocketStatus();
 	const { t } = useTranslation(["index", "common"]); // Load 'index' and 'common' namespaces
+	const [isReconnecting, setIsReconnecting] = React.useState(false);
+
+	const isDisconnected =
+		readyState === ReadyState.CLOSED ||
+		readyState === ReadyState.UNINSTANTIATED;
+
+	const handleManualReconnect = async () => {
+		if (isDisconnected && !isReconnecting) {
+			setIsReconnecting(true);
+			try {
+				await reconnect();
+			} finally {
+				setTimeout(() => setIsReconnecting(false), 1200);
+			}
+		}
+	};
 
 	const statusConfig = React.useMemo(
 		() => ({
@@ -38,19 +54,27 @@ export const ConnectionStatusIndicator: React.FC = () => {
 				tooltip: t("index:connectionStatus.tooltipClosing"),
 			},
 			[ReadyState.CLOSED]: {
-				text: t("index:connectionStatus.disconnected"), // 'disconnected' is used for CLOSED state
-				icon: <WifiOff className="h-3 w-3" />,
+				text: isReconnecting
+					? t("index:connectionStatus.connecting")
+					: t("index:connectionStatus.disconnected"), // 'disconnected' is used for CLOSED state
+				icon: isReconnecting ? (
+					<Loader2 className="h-3 w-3 animate-spin" />
+				) : (
+					<WifiOff className="h-3 w-3" />
+				),
 				color: "bg-loss/20 text-loss border-loss/30",
 				tooltip: t("index:connectionStatus.tooltipDisconnected"),
 			},
 			[ReadyState.UNINSTANTIATED]: {
-				text: t("index:connectionStatus.initializing"), // 'initializing' for UNINSTANTIATED
+				text: isReconnecting
+					? t("index:connectionStatus.connecting")
+					: t("index:connectionStatus.initializing"),
 				icon: <Loader2 className="h-3 w-3 animate-spin" />,
 				color: "bg-gray-500/20 text-gray-500 border-gray-500/30",
 				tooltip: t("index:connectionStatus.tooltipInitializing"),
 			},
 		}),
-		[t],
+		[t, isReconnecting],
 	);
 
 	const currentStatus =
@@ -61,7 +85,12 @@ export const ConnectionStatusIndicator: React.FC = () => {
 			<TooltipTrigger asChild>
 				<Badge
 					variant="outline"
-					className={cn("transition-all duration-300", currentStatus.color)}
+					onClick={handleManualReconnect}
+					className={cn(
+						"transition-all duration-300 select-none",
+						currentStatus.color,
+						isDisconnected && "cursor-pointer hover:opacity-85 active:scale-95",
+					)}
 				>
 					{currentStatus.icon}
 					<span className="ml-1.5">{currentStatus.text}</span>

@@ -1946,11 +1946,28 @@ async def get_mining_status(
     res_vol = await db.execute(stmt_vol)
     your_total_volume = float(res_vol.scalar() or 0.0)
 
+    stmt_daily_vol = select(func.sum(models.HubTelemetryReport.trade_volume_usdt)).where(
+        models.HubTelemetryReport.node_uuid == node.node_uuid,
+        models.HubTelemetryReport.created_at >= today_start,
+        models.HubTelemetryReport.is_mining_eligible.is_(True),
+    )
+    res_daily_vol = await db.execute(stmt_daily_vol)
+    your_daily_volume = float(res_daily_vol.scalar() or 0.0)
+
     stmt_server_vol = select(
         func.sum(models.HubTelemetryReport.trade_volume_usdt)
     ).where(models.HubTelemetryReport.is_mining_eligible.is_(True))
     res_server_vol = await db.execute(stmt_server_vol)
     server_total_volume = float(res_server_vol.scalar() or 0.0)
+
+    stmt_server_daily_vol = select(
+        func.sum(models.HubTelemetryReport.trade_volume_usdt)
+    ).where(
+        models.HubTelemetryReport.created_at >= today_start,
+        models.HubTelemetryReport.is_mining_eligible.is_(True),
+    )
+    res_server_daily_vol = await db.execute(stmt_server_daily_vol)
+    server_daily_volume = float(res_server_daily_vol.scalar() or 0.0)
 
     stmt_epoch_rebates = select(
         func.sum(models.HubTelemetryReport.estimated_rebate_usdt)
@@ -1962,8 +1979,9 @@ async def get_mining_status(
     res_epoch_rebates = await db.execute(stmt_epoch_rebates)
     your_epoch_rebates = float(res_epoch_rebates.scalar() or 0.0)
 
+    # Daily volume percentage: user's trade volume today / total trade volume today
     your_volume_share = (
-        your_total_volume / server_total_volume if server_total_volume > 0.0 else 0.0
+        your_daily_volume / server_daily_volume if server_daily_volume > 0.0 else 0.0
     )
 
     # 5. Live estimate of expected daily reward for today
@@ -1994,6 +2012,8 @@ async def get_mining_status(
         total_operator_fee_collected=cfg.total_operator_fee_collected or 0.0,
         your_total_volume=your_total_volume,
         server_total_volume=server_total_volume,
+        your_daily_volume=your_daily_volume,
+        server_daily_volume=server_daily_volume,
         your_epoch_rebates=your_epoch_rebates,
         your_volume_share=your_volume_share,
     )

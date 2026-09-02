@@ -223,7 +223,7 @@ const MiningScreen: React.FC = () => {
       .finally(() => setIsDeactivating(false));
   };
 
-  const welcomeProgress = Math.min((epochTotalRebates / 5.0) * 100, 100);
+  const welcomeProgress = Math.min((epochTotalRebates / 1.0) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${miningStatus?.nodeReferralCode || ""}`;
 
   return (
@@ -308,7 +308,7 @@ const MiningScreen: React.FC = () => {
           </div>
           {stats?.userRatio !== undefined && (
             <div className="flex justify-between items-center text-xs">
-              <span className="text-[hsl(var(--muted-foreground))]">{t("mining.yourVolumeShare", "Your Volume Share:")}</span>
+              <span className="text-[hsl(var(--muted-foreground))]">{t("mining.yourVolumeShare", "Your Volume Share (Today):")}</span>
               <span className="font-bold text-[hsl(var(--foreground))]">{(stats.userRatio * 100).toFixed(2)}%</span>
             </div>
           )}
@@ -371,7 +371,7 @@ const MiningScreen: React.FC = () => {
           )}
         </div>
         <p className="text-xs text-[hsl(var(--muted-foreground))] leading-normal">
-          {t("mining.welcomeBonusDesc", "Generate at least $5.0 of cumulative rebate to claim your 1000 $DEPTH welcome bonus.")}
+          {t("mining.welcomeBonusDesc", "Generate at least $1.0 of cumulative rebate to claim your 1000 $DEPTH welcome bonus.")}
         </p>
 
         {miningStatus?.hasWelcomeBonus ? (
@@ -385,7 +385,7 @@ const MiningScreen: React.FC = () => {
         ) : (
           <div className="space-y-2 pt-1">
             <div className="flex justify-between text-[10px] font-bold text-[hsl(var(--muted-foreground))]">
-              <span>{t("mining.welcomeBonusProgress", { current: epochTotalRebates.toFixed(2), target: "5.00" })}</span>
+              <span>{t("mining.welcomeBonusProgress", { current: epochTotalRebates.toFixed(2), target: "1.00" })}</span>
               <span>{Math.round(welcomeProgress)}%</span>
             </div>
             <div className="h-1.5 w-full bg-[hsl(var(--secondary))] rounded-full overflow-hidden">

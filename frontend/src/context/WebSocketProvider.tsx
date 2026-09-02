@@ -10,9 +10,11 @@ import {
 	useEffect,
 	useMemo,
 	useRef,
+	useState,
 } from "react";
-import useBaseWebSocket, { type ReadyState } from "react-use-websocket";
+import useBaseWebSocket, { ReadyState } from "react-use-websocket";
 import { authScopedQueryKey } from "@/lib/queryKeys";
+import { refreshAuthToken } from "@/lib/apiClient";
 import type { LogEntry } from "@/types/api";
 import { useAuth } from "./AuthContext";
 
@@ -24,9 +26,23 @@ interface WebSocketContextType {
 	readyState: ReadyState;
 	subscribe: (channel: string, callback: WebSocketCallback) => void;
 	unsubscribe: (channel: string, callback: WebSocketCallback) => void;
+	reconnect: () => Promise<void>;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
+
+const isTokenExpired = (token: string | null): boolean => {
+	if (!token) return true;
+	try {
+		const parts = token.split(".");
+		if (parts.length !== 3) return false;
+		const payload = JSON.parse(atob(parts[1]));
+		if (!payload.exp) return false;
+		return Date.now() >= payload.exp * 1000 - 60000;
+	} catch {
+		return false;
+	}
+};
 
 const protectedUserTopicPatterns = [
 	/^user_logs:(\d+)$/,
@@ -95,28 +111,150 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 	const { token: authToken, user } = useAuth();
 	const subscriptions = useRef<SubscriptionMap>(new Map());
 
-	const socketUrl = useMemo(() => getSocketUrl(authToken), [authToken]);
+	const [currentToken, setCurrentToken] = useState<string | null>(() => {
+		return (
+			authToken ||
+			(typeof window !== "undefined"
+				? localStorage.getItem("authToken")
+				: null)
+		);
+	});
+	const [reconnectKey, setReconnectKey] = useState<number>(0);
+	const isHandlingAuthClose = useRef<boolean>(false);
+
+	// Synchronize when authToken from useAuth() updates
+	useEffect(() => {
+		if (authToken && authToken !== currentToken) {
+			setCurrentToken(authToken);
+		}
+	}, [authToken, currentToken]);
+
+	// Listen for auth:token-refreshed event across the app
+	useEffect(() => {
+		const handleTokenRefreshed = (e: Event) => {
+			const customEvent = e as CustomEvent<{ token: string }>;
+			if (customEvent.detail?.token) {
+				setCurrentToken(customEvent.detail.token);
+			}
+		};
+		window.addEventListener("auth:token-refreshed", handleTokenRefreshed);
+		return () => {
+			window.removeEventListener("auth:token-refreshed", handleTokenRefreshed);
+		};
+	}, []);
+
+	// Proactive reconnect function (also callable manually or on auth failure)
+	const reconnect = useCallback(async () => {
+		console.log("[WS] Reconnecting WebSocket...");
+		const latestToken = localStorage.getItem("authToken");
+		if (isTokenExpired(latestToken)) {
+			console.log("[WS] Token expired or invalid, refreshing before reconnect...");
+			const newToken = await refreshAuthToken();
+			if (newToken) {
+				setCurrentToken(newToken);
+			}
+		} else if (latestToken && latestToken !== currentToken) {
+			setCurrentToken(latestToken);
+		}
+		setReconnectKey((k) => k + 1);
+	}, [currentToken]);
+
+	// Re-check token before building URL
+	const socketUrl = useMemo(() => {
+		const tokenToUse = currentToken || localStorage.getItem("authToken");
+		return getSocketUrl(tokenToUse);
+	}, [currentToken, reconnectKey]);
 
 	const { lastMessage, readyState, sendMessage } = useBaseWebSocket(
 		socketUrl,
 		{
 			shouldReconnect: () => true,
-			reconnectInterval: 5000,
+			reconnectInterval: 3000,
 			retryOnError: true,
+			onOpen: () => {
+				console.log("[WS] Connection established, restoring active subscriptions...");
+				isHandlingAuthClose.current = false;
+				// Resubscribe to all active channels
+				subscriptions.current.forEach((callbacks, channel) => {
+					if (callbacks.size > 0) {
+						console.log(`[WS] Resubscribing to channel: ${channel}`);
+						sendMessage(JSON.stringify({ action: "subscribe", channel }));
+					}
+				});
+			},
+			onClose: async (event) => {
+				console.warn(`[WS] Connection closed with code: ${event.code}`);
+				// Code 1008 is WS_1008_POLICY_VIOLATION, thrown on token expiration/invalid credentials
+				if ((event.code === 1008 || event.code === 4401) && !isHandlingAuthClose.current) {
+					isHandlingAuthClose.current = true;
+					console.log("[WS] Auth error code 1008 received. Refreshing token...");
+					const freshToken = await refreshAuthToken();
+					if (freshToken) {
+						setCurrentToken(freshToken);
+						setReconnectKey((k) => k + 1);
+					}
+				}
+			},
 		},
-		!!socketUrl, // Only connect when socketUrl is fully built with a token
+		!!socketUrl,
 	);
+
+	// Heartbeat ping every 25 seconds to keep connection alive through Caddy/proxies
+	useEffect(() => {
+		if (readyState !== ReadyState.OPEN) return;
+
+		const interval = setInterval(() => {
+			try {
+				sendMessage(JSON.stringify({ action: "ping" }));
+			} catch (e) {
+				console.warn("[WS] Error sending ping heartbeat:", e);
+			}
+		}, 25000);
+
+		return () => clearInterval(interval);
+	}, [readyState, sendMessage]);
+
+	// Tab visibility and online network recovery
+	useEffect(() => {
+		const handleVisibilityOrOnline = async () => {
+			if (document.visibilityState === "visible") {
+				const token = localStorage.getItem("authToken");
+				if (isTokenExpired(token)) {
+					console.log("[WS] Tab returned and token expired, refreshing token...");
+					const newToken = await refreshAuthToken();
+					if (newToken) {
+						setCurrentToken(newToken);
+						setReconnectKey((k) => k + 1);
+						return;
+					}
+				}
+				if (readyState === ReadyState.CLOSED || readyState === ReadyState.UNINSTANTIATED) {
+					console.log("[WS] Tab returned and socket is closed, attempting reconnect...");
+					reconnect();
+				}
+			}
+		};
+
+		document.addEventListener("visibilitychange", handleVisibilityOrOnline);
+		window.addEventListener("online", handleVisibilityOrOnline);
+		return () => {
+			document.removeEventListener("visibilitychange", handleVisibilityOrOnline);
+			window.removeEventListener("online", handleVisibilityOrOnline);
+		};
+	}, [readyState, reconnect]);
 
 	const subscribe = useCallback(
 		(channel: string, callback: WebSocketCallback) => {
 			if (!subscriptions.current.has(channel)) {
 				subscriptions.current.set(channel, new Set());
-				console.log(`[WS] Subscribing to channel: ${channel}`);
-				sendMessage(JSON.stringify({ action: "subscribe", channel }));
+				if (readyState === ReadyState.OPEN) {
+					console.log(`[WS] Subscribing to channel: ${channel}`);
+					sendMessage(JSON.stringify({ action: "subscribe", channel }));
+				}
 			}
 			subscriptions.current.get(channel)?.add(callback);
 		},
-		[sendMessage],
+		[readyState, sendMessage],
 	);
 
 	const unsubscribe = useCallback(
@@ -127,12 +265,14 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 
 				if (channelCallbacks.size === 0) {
 					console.log(`[WS] Unsubscribing from channel: ${channel}`);
-					sendMessage(JSON.stringify({ action: "unsubscribe", channel }));
+					if (readyState === ReadyState.OPEN) {
+						sendMessage(JSON.stringify({ action: "unsubscribe", channel }));
+					}
 					subscriptions.current.delete(channel);
 				}
 			}
 		},
-		[sendMessage],
+		[readyState, sendMessage],
 	);
 
 	// Auth token sync is now handled by useAuth() and React re-rendering
@@ -175,6 +315,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 		if (lastMessage !== null) {
 			try {
 				const message = JSON.parse(lastMessage.data);
+				if (message && message.action === "pong") {
+					return;
+				}
 				const { topic, payload } = message;
 
 				if (!isCurrentUserTopic(topic, payload)) {
@@ -241,7 +384,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 	}, [lastMessage, queryClient, user?.id]);
 
 	return (
-		<WebSocketContext.Provider value={{ readyState, subscribe, unsubscribe }}>
+		<WebSocketContext.Provider
+			value={{ readyState, subscribe, unsubscribe, reconnect }}
+		>
 			{children}
 		</WebSocketContext.Provider>
 	);
@@ -269,5 +414,5 @@ export const useWebSocketStatus = () => {
 			"useWebSocketStatus must be used within a WebSocketProvider",
 		);
 	}
-	return { readyState: context.readyState };
+	return { readyState: context.readyState, reconnect: context.reconnect };
 };

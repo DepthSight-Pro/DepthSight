@@ -1103,7 +1103,7 @@
 	"mining": {
 		"nodeSharingPolicy": "Политика распределения наград",
 		"nodeSharePercentage": "Процент распределения наград",
-		"yourVolumeShare": "Ваша доля объема торгов",
+		"yourVolumeShare": "Ваша доля объема (сегодня)",
 		"yourTotalVolume": "Ваш общий объем торгов",
 		"subtitle": "Передавайте телеметрию сделок и зарабатывайте токены $DEPTH на каждой сделке.",
 		"privacyTitle": "Какие данные передаются",
@@ -1117,7 +1117,7 @@
 		"dailyEmission": "Суточная эмиссия",
 		"welcomeBonus": "Приветственный бонус",
 		"welcomeBonusClaimedBadge": "Получен",
-		"welcomeBonusDesc": "Сгенерируйте не менее $5.0 кумулятивного рибейта, чтобы получить приветственный бонус 1000 $DEPTH.",
+		"welcomeBonusDesc": "Сгенерируйте не менее $1.0 кумулятивного рибейта, чтобы получить приветственный бонус 1000 $DEPTH.",
 		"welcomeBonusClaimed": "Приветственный бонус получен!",
 		"welcomeBonusClaimedDesc": "1000 $DEPTH зачислено на баланс.",
 		"welcomeBonusProgress": "Рибейты: ${{current}} / ${{target}}",

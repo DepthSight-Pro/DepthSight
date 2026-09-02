@@ -2854,6 +2854,8 @@ class MiningStatusResponse(BaseModel):
     total_operator_fee_collected: float = 0.0
     your_total_volume: float = 0.0
     server_total_volume: float = 0.0
+    your_daily_volume: float = 0.0
+    server_daily_volume: float = 0.0
     your_epoch_rebates: float = 0.0
     your_volume_share: float = 0.0
 
@@ -2925,6 +2927,7 @@ class LocalMiningStatusResponse(BaseModel):
     is_global_mining_enabled: bool = False
     user_reward_share_percent: float = 75.0
     user_trade_volume: float = 0.0
+    user_daily_volume: float = 0.0
     user_estimated_rebate: float = 0.0
 
     model_config = ConfigDict(

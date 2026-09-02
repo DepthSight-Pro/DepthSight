@@ -666,7 +666,7 @@ def _get_dynamic_settings() -> Dict[str, Any]:
                     "agent_id": os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip(),
                     "endpoint": os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip(),
                     "model": os.getenv(
-                        "VERTEX_AGENT_BUILDER_MODEL", "gemini-3.7-flash"
+                        "VERTEX_AGENT_BUILDER_MODEL", "gemini-3.1-flash-lite"
                     ).strip(),
                     "gcp_project_id": os.getenv("GCP_PROJECT_ID", "").strip(),
                     "gcp_location": os.getenv("GCP_LOCATION", "global").strip(),
@@ -849,7 +849,7 @@ def _get_active_model_name(provider: Optional[str] = None) -> str:
             "vertex_agent_builder",
             "model",
             "VERTEX_AGENT_BUILDER_MODEL",
-            "gemini-1.5-flash",
+            "gemini-3.1-flash-lite",
         )
     raise ConnectionError(f"Unsupported AI provider: {active_provider}")
 
@@ -984,72 +984,70 @@ async def _generate_vertex_agent_builder_json_response(
     max_output_tokens: int = 8192,
     model_name: Optional[str] = None,
 ) -> str:
-    try:
-        token, project_id = _get_gcp_bearer_token()
-        location = os.getenv("GCP_LOCATION", "global")
-        agent_id = os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip()
-        if not agent_id:
-            raise ValueError("VERTEX_AGENT_BUILDER_AGENT_ID is not configured in .env")
-        session_id = str(uuid.uuid4())
+    if os.getenv("AUTOPILOT_DISABLE_IMAGES", "false").lower() == "true":
+        image_base64 = None
+        image_mime_type = None
 
-        endpoint = (
-            os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip()
-            or f"https://dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
-        )
+    token, project_id = _get_gcp_bearer_token()
+    location = os.getenv("GCP_LOCATION", "global")
+    agent_id = os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip()
+    if not agent_id:
+        raise ValueError("VERTEX_AGENT_BUILDER_AGENT_ID is not configured in .env")
+    session_id = str(uuid.uuid4())
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        if system_prompt:
-            full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}\n\nRespond with the complete JSON configuration according to the system instructions above."
-        else:
-            full_prompt = user_prompt
-
-        payload = {
-            "queryInput": {
-                "text": {"text": full_prompt},
-                "languageCode": "en",
-            }
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(endpoint, headers=headers, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                query_result = data.get("queryResult", {})
-                response_messages = query_result.get("responseMessages", [])
-                text_parts = []
-                for msg in response_messages:
-                    if "text" in msg and "text" in msg["text"]:
-                        text_parts.extend(msg["text"]["text"])
-                grounded_text = "\n".join(text_parts).strip()
-
-                if grounded_text:
-                    logger.info(
-                        "Successfully generated JSON via Conversational Agent (GenAI App Builder) API"
-                    )
-                    return grounded_text
-            else:
-                logger.warning(
-                    f"Conversational Agent API returned status {response.status_code}: {response.text}. "
-                    "Falling back to standard Google Gemini / Vertex AI call..."
-                )
-    except Exception as e:
-        logger.warning(
-            f"Conversational Agent API request failed: {e}. Falling back to standard Google Gemini / Vertex AI call..."
-        )
-
-    # Fallback to standard Google Gemini / Vertex AI
-    return await _generate_google_json_response(
-        system_prompt,
-        user_prompt,
-        image_base64=image_base64,
-        image_mime_type=image_mime_type,
-        max_output_tokens=max_output_tokens,
-        model_name=model_name,
+    endpoint = (
+        os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip()
+        or f"https://dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
     )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    if system_prompt:
+        full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}\n\nRespond with the complete JSON configuration according to the system instructions above."
+    else:
+        full_prompt = user_prompt
+
+    payload = {
+        "queryInput": {
+            "text": {"text": full_prompt},
+            "languageCode": "en",
+        }
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(endpoint, headers=headers, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            query_result = data.get("queryResult", {})
+            response_messages = query_result.get("responseMessages", [])
+            text_parts = []
+            for msg in response_messages:
+                if "text" in msg and "text" in msg["text"]:
+                    text_parts.extend(msg["text"]["text"])
+            grounded_text = "\n".join(text_parts).strip()
+
+            if grounded_text:
+                logger.info(
+                    "Successfully generated JSON via Conversational Agent (GenAI App Builder) API"
+                )
+                return grounded_text
+            else:
+                logger.error(
+                    f"Conversational Agent API returned 200 OK but text was empty. queryResult: {query_result}"
+                )
+                raise RuntimeError(
+                    f"Conversational Agent (Dialogflow) returned empty text response: {query_result}"
+                )
+        else:
+            logger.error(
+                f"Conversational Agent API returned error status {response.status_code}: {response.text}"
+            )
+            raise RuntimeError(
+                f"Conversational Agent (Dialogflow) API error {response.status_code}: {response.text}"
+            )
 
 
 async def _generate_vertex_agent_builder_text_response(
@@ -1059,71 +1057,72 @@ async def _generate_vertex_agent_builder_text_response(
     image_base64: Optional[str] = None,
     image_mime_type: Optional[str] = None,
 ) -> str:
-    try:
-        token, project_id = _get_gcp_bearer_token()
-        location = os.getenv("GCP_LOCATION", "global")
-        agent_id = os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip()
-        if not agent_id:
-            raise ValueError("VERTEX_AGENT_BUILDER_AGENT_ID is not configured in .env")
-        session_id = str(uuid.uuid4())
+    if os.getenv("AUTOPILOT_DISABLE_IMAGES", "false").lower() == "true":
+        image_base64 = None
+        image_mime_type = None
 
-        endpoint = (
-            os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip()
-            or f"https://dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
-        )
+    token, project_id = _get_gcp_bearer_token()
+    location = os.getenv("GCP_LOCATION", "global")
+    agent_id = os.getenv("VERTEX_AGENT_BUILDER_AGENT_ID", "").strip()
+    if not agent_id:
+        raise ValueError("VERTEX_AGENT_BUILDER_AGENT_ID is not configured in .env")
+    session_id = str(uuid.uuid4())
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        formatted_text = ""
-        if system_instruction:
-            formatted_text += f"[System]: {system_instruction}\n\n"
-        for msg in messages:
-            role = "User" if msg["role"] == "user" else "Assistant"
-            formatted_text += f"[{role}]: {msg['content']}\n\n"
-
-        payload = {
-            "queryInput": {
-                "text": {"text": formatted_text.strip()},
-                "languageCode": "en",
-            }
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(endpoint, headers=headers, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                query_result = data.get("queryResult", {})
-                response_messages = query_result.get("responseMessages", [])
-                text_parts = []
-                for msg in response_messages:
-                    if "text" in msg and "text" in msg["text"]:
-                        text_parts.extend(msg["text"]["text"])
-                grounded_text = "\n".join(text_parts).strip()
-
-                if grounded_text:
-                    logger.info(
-                        "Successfully generated text via Conversational Agent (GenAI App Builder) API"
-                    )
-                    return grounded_text
-            else:
-                logger.warning(
-                    f"Conversational Agent API returned status {response.status_code}: {response.text}. "
-                    "Falling back to standard Google Gemini / Vertex AI call..."
-                )
-    except Exception as e:
-        logger.warning(
-            f"Conversational Agent API request failed: {e}. Falling back to standard Google Gemini / Vertex AI call..."
-        )
-
-    return await _generate_google_text_response(
-        system_instruction,
-        messages,
-        image_base64=image_base64,
-        image_mime_type=image_mime_type,
+    endpoint = (
+        os.getenv("VERTEX_AGENT_BUILDER_ENDPOINT", "").strip()
+        or f"https://dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
     )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    formatted_text = ""
+    if system_instruction:
+        formatted_text += f"[System]: {system_instruction}\n\n"
+    for msg in messages:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        formatted_text += f"[{role}]: {msg['content']}\n\n"
+
+    payload = {
+        "queryInput": {
+            "text": {"text": formatted_text.strip()},
+            "languageCode": "en",
+        }
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(endpoint, headers=headers, json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            query_result = data.get("queryResult", {})
+            response_messages = query_result.get("responseMessages", [])
+            text_parts = []
+            for msg in response_messages:
+                if "text" in msg and "text" in msg["text"]:
+                    text_parts.extend(msg["text"]["text"])
+            grounded_text = "\n".join(text_parts).strip()
+
+            if grounded_text:
+                logger.info(
+                    "Successfully generated text via Conversational Agent (GenAI App Builder) API"
+                )
+                return grounded_text
+            else:
+                logger.error(
+                    f"Conversational Agent API returned 200 OK but text was empty. queryResult: {query_result}"
+                )
+                raise RuntimeError(
+                    f"Conversational Agent (Dialogflow) returned empty text response: {query_result}"
+                )
+        else:
+            logger.error(
+                f"Conversational Agent API returned error status {response.status_code}: {response.text}"
+            )
+            raise RuntimeError(
+                f"Conversational Agent (Dialogflow) API error {response.status_code}: {response.text}"
+            )
 
 
 def _ensure_ai_provider_configured() -> str:

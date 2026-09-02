@@ -9,7 +9,7 @@
 		"tooltipConnecting": "Attempting to connect to the server.",
 		"tooltipLive": "Connection is stable and receiving live data.",
 		"tooltipClosing": "Closing the connection.",
-		"tooltipDisconnected": "Connection lost. The app will attempt to reconnect automatically.",
+		"tooltipDisconnected": "Connection lost. Click to reconnect (or wait for auto-retry).",
 		"tooltipInitializing": "The WebSocket connection has not been initiated yet."
 	},
 	"dailyPnl": {

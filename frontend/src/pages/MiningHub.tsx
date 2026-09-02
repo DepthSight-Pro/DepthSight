@@ -345,7 +345,7 @@ const MiningHub: React.FC = () => {
   const yourEpochReward = statusAny?.yourEpochReward ?? stats?.your_epoch_reward ?? stats?.yourEpochReward ?? 0.0;
   const epochTotalRebates = statusAny?.epochTotalRebates ?? stats?.epoch_total_rebates ?? stats?.epochTotalRebates ?? 0.0;
 
-  const welcomeProgress = Math.min((epochTotalRebates / 5.0) * 100, 100);
+  const welcomeProgress = Math.min((epochTotalRebates / 1.0) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${status?.nodeReferralCode || ""}`;
 
   return (
@@ -965,7 +965,7 @@ const MiningHub: React.FC = () => {
             </div>
             {stats?.userRatio !== undefined && (
               <div className="p-3 border rounded-lg bg-background/30">
-                <span className="text-xs text-muted-foreground block">{t("yourVolumeShare", "Your Volume Share")}</span>
+                <span className="text-xs text-muted-foreground block">{t("yourVolumeShare", "Your Volume Share (Today)")}</span>
                 <span className="text-lg font-black">{(stats.userRatio * 100).toFixed(2)}%</span>
               </div>
             )}
@@ -1044,7 +1044,7 @@ const MiningHub: React.FC = () => {
               )}
             </div>
             <CardDescription className="text-sm">
-              {t("welcomeBonusDesc", "Generate at least $5.0 of cumulative rebate to claim your welcome bonus.")}
+              {t("welcomeBonusDesc", "Generate at least $1.0 of cumulative rebate to claim your welcome bonus.")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1061,7 +1061,7 @@ const MiningHub: React.FC = () => {
             ) : (
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-                  <span>{t("welcomeBonusProgress", { current: epochTotalRebates.toFixed(2), target: "5.00" })}</span>
+                  <span>{t("welcomeBonusProgress", { current: epochTotalRebates.toFixed(2), target: "1.00" })}</span>
                   <span>{Math.round(welcomeProgress)}%</span>
                 </div>
                 <Progress value={welcomeProgress} className="h-2 bg-muted border border-border/50" />

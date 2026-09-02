@@ -14,6 +14,65 @@ const onRefreshed = (token: string) => {
 	refreshSubscribers = [];
 };
 
+export const refreshAuthToken = async (): Promise<string | null> => {
+	const refreshToken = localStorage.getItem("refreshToken");
+	if (!refreshToken) {
+		return null;
+	}
+
+	if (isRefreshing) {
+		return new Promise<string>((resolve) => {
+			subscribeTokenRefresh((token: string) => {
+				resolve(token);
+			});
+		});
+	}
+
+	isRefreshing = true;
+	try {
+		const refreshResponse = await fetch(`${API_BASE_URL}/refresh`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ refresh_token: refreshToken }),
+		});
+
+		if (refreshResponse.ok) {
+			const tokenData = await refreshResponse.json();
+			localStorage.setItem("authToken", tokenData.access_token);
+			if (tokenData.refresh_token) {
+				localStorage.setItem("refreshToken", tokenData.refresh_token);
+			}
+			onRefreshed(tokenData.access_token);
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("auth:token-refreshed", {
+						detail: {
+							token: tokenData.access_token,
+							refreshToken: tokenData.refresh_token,
+						},
+					}),
+				);
+			}
+			return tokenData.access_token;
+		} else {
+			// Refresh failed
+			localStorage.removeItem("authToken");
+			localStorage.removeItem("refreshToken");
+			localStorage.removeItem("originalAuthToken");
+			localStorage.removeItem("originalRefreshToken");
+			window.location.href = "/login";
+			return null;
+		}
+	} catch (error) {
+		console.error("Token refresh failed:", error);
+		return null;
+	} finally {
+		isRefreshing = false;
+	}
+};
+
 export const apiClient = async <T>(
 	endpoint: string,
 	options: RequestInit = {},
@@ -36,50 +95,8 @@ export const apiClient = async <T>(
 		!endpoint.includes("/token") &&
 		!endpoint.includes("/refresh")
 	) {
-		const refreshToken = localStorage.getItem("refreshToken");
-		if (refreshToken) {
-			if (!isRefreshing) {
-				isRefreshing = true;
-				try {
-					const refreshResponse = await fetch(`${API_BASE_URL}/refresh`, {
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify({ refresh_token: refreshToken }),
-					});
-
-					if (refreshResponse.ok) {
-						const tokenData = await refreshResponse.json();
-						localStorage.setItem("authToken", tokenData.access_token);
-						if (tokenData.refresh_token) {
-							localStorage.setItem("refreshToken", tokenData.refresh_token);
-						}
-						onRefreshed(tokenData.access_token);
-					} else {
-						// Refresh failed
-						localStorage.removeItem("authToken");
-						localStorage.removeItem("refreshToken");
-						localStorage.removeItem("originalAuthToken");
-						localStorage.removeItem("originalRefreshToken");
-						window.location.href = "/login";
-					}
-				} catch {
-					localStorage.removeItem("authToken");
-					localStorage.removeItem("refreshToken");
-					window.location.href = "/login";
-				} finally {
-					isRefreshing = false;
-				}
-			}
-
-			// Wait for the refresh to complete
-			const newAccessToken = await new Promise<string>((resolve) => {
-				subscribeTokenRefresh((token: string) => {
-					resolve(token);
-				});
-			});
-
+		const newAccessToken = await refreshAuthToken();
+		if (newAccessToken) {
 			// Retry original request with new token
 			const retryHeaders = new Headers(options.headers);
 			retryHeaders.set("Cache-Control", "no-cache");

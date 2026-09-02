@@ -358,6 +358,10 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(
                         )
                     )
 
+            elif action == "ping":
+                await websocket.send_json({"action": "pong"})
+                continue
+
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for user: {username}")
     except Exception as e:
