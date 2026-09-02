@@ -32,6 +32,11 @@ class AuditEventType(str, Enum):
     PERMISSION_DENIED = "PERMISSION_DENIED"
     RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED"
     SUSPICIOUS_ACTIVITY = "SUSPICIOUS_ACTIVITY"
+    TWO_FACTOR_ENABLED = "2FA_ENABLED"
+    TWO_FACTOR_DISABLED = "2FA_DISABLED"
+    TWO_FACTOR_LOGIN_SUCCESS = "2FA_LOGIN_SUCCESS"
+    TWO_FACTOR_LOGIN_FAILED = "2FA_LOGIN_FAILED"
+    TWO_FACTOR_BACKUP_USED = "2FA_BACKUP_USED"
 
 
 class AuditLogger:
@@ -291,6 +296,85 @@ class AuditLogger:
             success=False,
             details={"key_id": key_id},
             severity="CRITICAL",
+        )
+
+    def totp_enabled(
+        self,
+        user_id: int,
+        username: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ):
+        """Logs successful activation of Two-Factor Authentication."""
+        self.log_event(
+            event_type=AuditEventType.TWO_FACTOR_ENABLED,
+            user_id=user_id,
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True,
+            severity="INFO",
+        )
+
+    def totp_disabled(
+        self,
+        user_id: int,
+        username: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ):
+        """Logs deactivation of Two-Factor Authentication."""
+        self.log_event(
+            event_type=AuditEventType.TWO_FACTOR_DISABLED,
+            user_id=user_id,
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True,
+            severity="WARNING",
+        )
+
+    def totp_login_success(
+        self,
+        user_id: int,
+        username: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        via_backup_code: bool = False,
+    ):
+        """Logs successful 2FA verification during login."""
+        event_type = (
+            AuditEventType.TWO_FACTOR_BACKUP_USED
+            if via_backup_code
+            else AuditEventType.TWO_FACTOR_LOGIN_SUCCESS
+        )
+        self.log_event(
+            event_type=event_type,
+            user_id=user_id,
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=True,
+            details={"method": "backup_code" if via_backup_code else "totp"},
+            severity="INFO",
+        )
+
+    def totp_login_failed(
+        self,
+        username: str,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        reason: str = "Invalid 2FA code",
+    ):
+        """Logs failed 2FA verification during login."""
+        self.log_event(
+            event_type=AuditEventType.TWO_FACTOR_LOGIN_FAILED,
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            success=False,
+            details={"reason": reason},
+            severity="WARNING",
         )
 
 

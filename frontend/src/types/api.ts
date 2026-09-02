@@ -751,6 +751,43 @@ export interface User {
 	role: "admin" | "user" | "affiliate";
 	xp: number;
 	level: number;
+	isTotpEnabled?: boolean;
+}
+
+export interface TotpStatusResponse {
+	isTotpEnabled: boolean;
+	remainingBackupCodesCount: number;
+}
+
+export interface TotpSetupResponse {
+	secret: string;
+	qrCode: string;
+	manualEntryKey: string;
+	otpauthUrl: string;
+}
+
+export interface TotpConfirmResponse {
+	success: boolean;
+	message: string;
+	backupCodes: string[];
+}
+
+export interface TotpVerifyLoginPayload {
+	tempToken: string;
+	code: string;
+}
+
+export interface TotpDisablePayload {
+	code?: string;
+	password?: string;
+}
+
+export interface TotpRegenerateBackupCodesPayload {
+	code: string;
+}
+
+export interface TotpBackupCodesResponse {
+	backupCodes: string[];
 }
 
 export interface QuotaStatus {

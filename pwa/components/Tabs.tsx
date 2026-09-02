@@ -18,7 +18,7 @@ const Tabs: React.FC<TabsProps> = ({ tabs, activeTab, setActiveTab }) => {
 				{tabs.map((tab, index) => (
 					<button
 						key={index}
-						className={`py-2 px-4 text-sm font-medium transition-colors w-1/2 ${
+						className={`py-2 px-3 text-xs sm:text-sm font-medium transition-colors flex-1 text-center truncate ${
 							activeTab === index
 								? "border-b-2 border-[hsl(var(--primary))] text-[hsl(var(--primary))]"
 								: "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"

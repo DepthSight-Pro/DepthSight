@@ -63,6 +63,8 @@ pytest-mock>=3.10.0 # Added for mocker fixture
 gevent
 dnspython
 aiofiles
+pyotp>=2.9.0
+qrcode>=7.4.2
 
 # Notifications
 python-telegram-bot

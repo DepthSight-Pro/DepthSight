@@ -7,6 +7,7 @@ import {
 	Copy,
 	Dna,
 	Gift,
+	Shield,
 	Terminal,
 	User,
 	Wallet,
@@ -16,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Achievements from "@/components/research/Achievements";
+import { SecuritySettings } from "@/components/account/SecuritySettings";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { Footer } from "@/components/layout/Footer";
 import { PricingModal } from "@/components/shared/PricingModal";
@@ -180,6 +182,10 @@ const AccountPage: React.FC = () => {
 					<TabsTrigger value="account">
 						<User className="mr-2 h-4 w-4" />
 						{t("accountTab")}
+					</TabsTrigger>
+					<TabsTrigger value="security">
+						<Shield className="mr-2 h-4 w-4" />
+						{t("securityTab", "Security")}
 					</TabsTrigger>
 					<TabsTrigger value="achievements">
 						<Award className="mr-2 h-4 w-4" />
@@ -445,6 +451,11 @@ const AccountPage: React.FC = () => {
 								</div>
 							</CardContent>
 						</Card>
+					</div>
+				</TabsContent>
+				<TabsContent value="security">
+					<div className="mt-4">
+						<SecuritySettings />
 					</div>
 				</TabsContent>
 				<TabsContent value="achievements">

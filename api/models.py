@@ -52,6 +52,14 @@ class User(Base):
     # SYMBOL SELECTION CONFIG
     symbol_selection_config = Column(JSON, nullable=True)
 
+    # 2FA / TOTP
+    totp_secret = Column(String, nullable=True)
+    is_totp_enabled = Column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    totp_backup_codes = Column(JSON, nullable=True)
+    totp_last_used_step = Column(Integer, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     referral_code = Column(String, unique=True, index=True, nullable=True)
     tradingview_webhook_token = Column(String, unique=True, index=True, nullable=True)

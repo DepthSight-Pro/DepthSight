@@ -9,13 +9,13 @@ import {
 	useState,
 } from "react";
 import { api } from "../services/api";
-import type { Token, User } from "../types";
+import type { LoginResponse, Token, User } from "../types";
 
 interface AuthContextType {
 	user: User | null;
 	token: Token | null;
 	isLoading: boolean;
-	login: (formData: FormData) => Promise<void>;
+	login: (formData: FormData) => Promise<LoginResponse>;
 	logout: () => void;
 	setAuthToken: (tokenData: Token) => void;
 	loginWithTokenAndUser: (tokenData: Token, userData: User) => void;
@@ -61,9 +61,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 		localStorage.setItem("authToken", JSON.stringify(tokenData));
 	};
 
-	const login = async (formData: FormData) => {
-		const { token: tokenData, user: userData } = await api.login(formData);
-		handleAuthSuccess(tokenData, userData);
+	const login = async (formData: FormData): Promise<LoginResponse> => {
+		const res = await api.login(formData);
+		if (res.requires_2fa && res.temp_token) {
+			return res;
+		}
+		if (res.token && res.user) {
+			handleAuthSuccess(res.token, res.user);
+		}
+		return res;
 	};
 
 	const logout = () => {

@@ -107,6 +107,47 @@ def validate_token(token: str, credentials_exception: HTTPException) -> str:
     return username
 
 
+# --- Two-Factor Authentication (2FA) Temporary Pre-Auth Tokens ---
+TWO_FACTOR_TEMP_TOKEN_EXPIRE_MINUTES = 5
+
+
+def create_temp_2fa_token(
+    username: str, expires_delta: Optional[timedelta] = None
+) -> str:
+    """
+    Creates a short-lived token (5 minutes) issued during login when 2FA is required.
+    Allows access ONLY to the /2fa/verify-login endpoint.
+    """
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(
+            minutes=TWO_FACTOR_TEMP_TOKEN_EXPIRE_MINUTES
+        )
+    to_encode = {"sub": username, "exp": expire, "type": "2fa_pending"}
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def validate_temp_2fa_token(token: str) -> str:
+    """
+    Validates a temporary 2FA token and returns the username.
+    Raises HTTPException(401) if invalid or expired.
+    """
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Invalid or expired 2FA session token. Please log in again.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None or payload.get("type") != "2fa_pending":
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return username
+
+
 # --- Encryption for API Keys ---
 
 # Load encryption key from environment variable

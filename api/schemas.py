@@ -81,6 +81,7 @@ class User(UserBase):
     level: int
     referral_code: Optional[str] = None
     affiliate_commission_rate: Optional[float] = None  # Added field
+    is_totp_enabled: bool = False
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -120,8 +121,68 @@ class Token(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    token: Token
-    user: User
+    token: Optional[Token] = None
+    user: Optional[User] = None
+    requires_2fa: bool = False
+    temp_token: Optional[str] = None
+
+
+# --- 2FA / TOTP Schemas ---
+class TotpSetupResponse(BaseModel):
+    secret: str
+    qr_code: str
+    manual_entry_key: str
+    otpauth_url: str
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpConfirmRequest(BaseModel):
+    secret: str
+    code: str
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpConfirmResponse(BaseModel):
+    success: bool
+    message: str
+    backup_codes: List[str]
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpVerifyLoginRequest(BaseModel):
+    temp_token: str
+    code: str
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpDisableRequest(BaseModel):
+    code: str
+    password: Optional[str] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpRegenerateBackupCodesRequest(BaseModel):
+    code: str
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpBackupCodesResponse(BaseModel):
+    backup_codes: List[str]
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class TotpStatusResponse(BaseModel):
+    is_totp_enabled: bool
+    remaining_backup_codes_count: int = 0
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
 class GoogleLoginRequest(BaseModel):

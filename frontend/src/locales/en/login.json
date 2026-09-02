@@ -27,5 +27,14 @@
 	"resetPassword": "Reset Password",
 	"passwordResetSuccess": "Your password has been reset. You can now log in.",
 	"passwordMismatch": "Passwords do not match",
-	"invalidResetLink": "This reset link is invalid or has expired."
+	"invalidResetLink": "This reset link is invalid or has expired.",
+	"twoFactorTitle": "Two-Factor Authentication",
+	"twoFactorCodeDesc": "Enter the 6-digit code from your authenticator app.",
+	"twoFactorBackupDesc": "Enter one of your 8-character single-use recovery codes.",
+	"backupCodeLabel": "Backup Recovery Code",
+	"verifyButton": "Verify & Continue",
+	"useAuthenticatorApp": "Use authenticator app instead",
+	"useBackupCode": "Lost device? Use backup recovery code",
+	"backToLogin": "Back to username and password",
+	"twoFactorError": "Invalid or expired verification code."
 }

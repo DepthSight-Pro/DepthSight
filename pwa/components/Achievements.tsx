@@ -23,6 +23,7 @@ const iconMap: { [key: string]: React.ElementType } = {
 	used_ai_assistant: ICONS.Star,
 	first_optimization: ICONS.Settings,
 	first_api_key: ICONS.Key,
+	two_factor_enabled: ICONS.Shield,
 	first_paper_trade: ICONS.Star,
 	reset_paper: ICONS.History,
 	// Grinding

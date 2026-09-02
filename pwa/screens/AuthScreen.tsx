@@ -1,12 +1,11 @@
-// pwa/screens/AuthScreen.tsx
-
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { Input } from "../components/ui/Input";
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../services/api";
 import ForgotPasswordScreen from "./ForgotPasswordScreen";
 import { GoogleLogin } from "@react-oauth/google";
 
@@ -15,6 +14,11 @@ const AuthScreen: React.FC = () => {
 	const { login, loginWithTokenAndUser } = useAuth();
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(false);
+	const [twoFactorPending, setTwoFactorPending] = useState(false);
+	const [tempToken, setTempToken] = useState<string | null>(null);
+	const [otpCode, setOtpCode] = useState("");
+	const [useBackupCode, setUseBackupCode] = useState(false);
+	const [backupCode, setBackupCode] = useState("");
 	const [registrationSuccess, setRegistrationSuccess] = useState(false);
 	const [registeredEmail, setRegisteredEmail] = useState("");
 	const [resendTimer, setResendTimer] = useState(0);
@@ -55,7 +59,16 @@ const AuthScreen: React.FC = () => {
 		try {
 			if (isLogin) {
 				// For login, the API expects x-www-form-urlencoded, which FormData provides.
-				await login(formData);
+				const res = await login(formData);
+				if (res?.requires_2fa && res?.temp_token) {
+					setTempToken(res.temp_token);
+					setTwoFactorPending(true);
+					setOtpCode("");
+					setBackupCode("");
+					setUseBackupCode(false);
+					setLoading(false);
+					return;
+				}
 			} else {
 				// For register, we need to construct a JSON object
 				const registerData = Object.fromEntries(formData.entries());
@@ -147,6 +160,15 @@ const AuthScreen: React.FC = () => {
 			}
 
 			const data = await response.json();
+			if (data.requires_2fa && data.temp_token) {
+				setTempToken(data.temp_token);
+				setTwoFactorPending(true);
+				setOtpCode("");
+				setBackupCode("");
+				setUseBackupCode(false);
+				setLoading(false);
+				return;
+			}
 			loginWithTokenAndUser(data.token, data.user);
 			toast.success("Logged in successfully");
 		} catch (err) {
@@ -239,6 +261,156 @@ const AuthScreen: React.FC = () => {
 							className="w-full py-3 rounded-lg border-none text-base font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] transition hover:opacity-90"
 						>
 							{t("auth.backToLogin")}
+						</button>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
+	const handleVerify2FADirect = async (codeToVerify: string) => {
+		if (!tempToken || !codeToVerify) return;
+		setLoading(true);
+		setError("");
+		try {
+			const { token: tokenData, user: userData } = await api.verifyTotpLogin({
+				tempToken,
+				code: codeToVerify,
+			});
+			loginWithTokenAndUser(tokenData, userData);
+			toast.success(t("auth.loginSuccess") || "Logged in successfully");
+		} catch (err: any) {
+			setError(err.message || t("twoFactor.invalidCode") || "Invalid verification code");
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	const handleVerify2FA = async (e?: React.FormEvent) => {
+		if (e) e.preventDefault();
+		const code = useBackupCode ? backupCode.trim() : otpCode.trim();
+		handleVerify2FADirect(code);
+	};
+
+	if (twoFactorPending) {
+		return (
+			<div className="flex flex-col items-center justify-center min-h-[100dvh] bg-[hsl(var(--background))] p-4 overflow-y-auto py-8">
+				<div className="w-full max-w-md p-6 sm:p-8 space-y-6 bg-[hsl(var(--card))] rounded-3xl shadow-xl border border-[hsl(var(--border))] my-auto">
+					<div className="text-center space-y-2">
+						<div className="mx-auto w-14 h-14 rounded-2xl bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 flex items-center justify-center text-[hsl(var(--primary))] mb-3">
+							<ShieldCheck className="w-7 h-7" />
+						</div>
+						<h2 className="text-2xl font-bold text-[hsl(var(--foreground))]">
+							{t("twoFactor.cardTitle", "Two-Factor Authentication")}
+						</h2>
+						<p className="text-sm text-[hsl(var(--muted-foreground))]">
+							{useBackupCode
+								? t(
+										"twoFactor.enterBackupCode",
+										"Enter one of your 8-character single-use recovery codes",
+									)
+								: t(
+										"twoFactor.enterAuthenticatorCode",
+										"Enter the 6-digit verification code from your authenticator app",
+									)}
+						</p>
+					</div>
+
+					{error && (
+						<div className="p-3 text-sm text-[hsl(var(--loss))] bg-[hsl(var(--loss))]/10 rounded-xl border border-[hsl(var(--loss))]/20 text-center">
+							{error}
+						</div>
+					)}
+
+					<form onSubmit={handleVerify2FA} className="space-y-4">
+						{useBackupCode ? (
+							<div>
+								<label className="text-sm text-[hsl(var(--muted-foreground))] mb-2 block font-medium">
+									{t("twoFactor.backupCodeLabel", "Backup Recovery Code")}
+								</label>
+								<Input
+									type="text"
+									value={backupCode}
+									onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+									placeholder="XXXX-XXXX"
+									className="w-full text-center font-mono text-lg tracking-widest uppercase"
+								/>
+							</div>
+						) : (
+							<div>
+								<label className="text-sm text-[hsl(var(--muted-foreground))] mb-2 block text-center font-medium">
+									{t("twoFactor.enterCodeLabel", "6-digit Authenticator Code")}
+								</label>
+								<Input
+									type="text"
+									inputMode="numeric"
+									pattern="[0-9]*"
+									maxLength={6}
+									value={otpCode}
+									onChange={(e) => {
+										const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+										setOtpCode(val);
+										if (val.length === 6) {
+											setTimeout(() => {
+												handleVerify2FADirect(val);
+											}, 50);
+										}
+									}}
+									placeholder="••••••"
+									className="w-full text-center font-mono text-2xl tracking-[0.4em] h-14"
+								/>
+							</div>
+						)}
+
+						<button
+							type="submit"
+							disabled={
+								loading ||
+								(useBackupCode ? !backupCode.trim() : otpCode.length !== 6)
+							}
+							className="w-full py-3 px-4 bg-[hsl(var(--primary))] hover:opacity-90 disabled:opacity-50 text-[hsl(var(--primary-foreground))] font-semibold rounded-xl transition duration-200 flex items-center justify-center shadow-lg shadow-[hsl(var(--primary))]/20"
+						>
+							{loading ? (
+								<Loader2 className="w-5 h-5 animate-spin" />
+							) : (
+								t("twoFactor.verifyAndLogin", "Verify & Log In")
+							)}
+						</button>
+					</form>
+
+					<div className="flex flex-col items-center space-y-3 pt-2 text-sm">
+						<button
+							type="button"
+							onClick={() => {
+								setUseBackupCode(!useBackupCode);
+								setOtpCode("");
+								setBackupCode("");
+								setError("");
+							}}
+							className="text-[hsl(var(--primary))] hover:underline"
+						>
+							{useBackupCode
+								? t(
+										"twoFactor.useAuthenticatorCode",
+										"Use authenticator app code instead",
+									)
+								: t(
+										"twoFactor.useBackupCode",
+										"Lost device? Use recovery backup code",
+									)}
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								setTwoFactorPending(false);
+								setTempToken(null);
+								setOtpCode("");
+								setBackupCode("");
+								setError("");
+							}}
+							className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline flex items-center gap-1 text-xs pt-1"
+						>
+							← {t("auth.backToLogin", "Back to username and password")}
 						</button>
 					</div>
 				</div>

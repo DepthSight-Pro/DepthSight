@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSwipeable } from "react-swipeable";
 import Achievements from "../components/Achievements";
+import { SecuritySettingsPwa } from "../components/SecuritySettingsPwa";
 import {
 	Card,
 	CardContent,
@@ -342,8 +343,8 @@ const ProfileScreen = () => {
 	const [activeTab, setActiveTab] = useState(0);
 
 	const swipeHandlers = useSwipeable({
-		onSwipedLeft: () => setActiveTab(1),
-		onSwipedRight: () => setActiveTab(0),
+		onSwipedLeft: () => setActiveTab((prev) => Math.min(prev + 1, 2)),
+		onSwipedRight: () => setActiveTab((prev) => Math.max(prev - 1, 0)),
 		preventScrollOnSwipe: true,
 		trackMouse: true,
 	});
@@ -668,6 +669,10 @@ const ProfileScreen = () => {
 				setActiveTab={setActiveTab}
 				tabs={[
 					{ label: t("profile.accountTab"), content: accountContent },
+					{
+						label: t("profile.securityTab", "Security"),
+						content: <SecuritySettingsPwa />,
+					},
 					{ label: t("profile.achievementsTab"), content: <Achievements /> },
 				]}
 			/>

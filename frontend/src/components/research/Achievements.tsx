@@ -80,6 +80,7 @@ const iconMap: { [key: string]: React.ElementType } = {
 	used_ai_assistant: WandSparkles,
 	first_optimization: SlidersHorizontal,
 	first_api_key: KeyRound,
+	two_factor_enabled: ShieldCheck,
 	first_paper_trade: Paperclip,
 	reset_paper: RefreshCw,
 	// Grinding

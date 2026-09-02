@@ -78,6 +78,7 @@ export const ICONS = {
 	Close: XCircle,
 	Profile: User,
 	Key: Key,
+	Shield: Shield,
 	Settings: Settings,
 	Logout: LogOut,
 	Play: Play,

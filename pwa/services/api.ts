@@ -31,6 +31,14 @@ import type {
 	User,
 	UserAchievement,
 	UserGenesResponse,
+	LoginResponse,
+	TotpStatusResponse,
+	TotpSetupResponse,
+	TotpConfirmResponse,
+	TotpVerifyLoginPayload,
+	TotpDisablePayload,
+	TotpRegenerateBackupCodesPayload,
+	TotpBackupCodesResponse,
 } from "../types";
 
 export const API_BASE_URL = ""; // The proxy will handle the full URL
@@ -139,7 +147,7 @@ const apiFetch = async <T = unknown>(
 	}
 
 	if (!response.ok) {
-		let errorData;
+		let errorData: any;
 		try {
 			errorData = await response.json();
 		} catch {
@@ -147,7 +155,7 @@ const apiFetch = async <T = unknown>(
 		}
 		console.error(`API Error on ${endpoint}:`, errorData);
 		throw new Error(
-			errorData.error || `Request failed with status ${response.status}`,
+			errorData.detail || errorData.error || `Request failed with status ${response.status}`,
 		);
 	}
 
@@ -190,12 +198,54 @@ interface AiChatResponse {
 
 export const api = {
 	// --- Auth ---
-	login: (formData: FormData): Promise<{ token: Token; user: User }> => {
+	login: (formData: FormData): Promise<LoginResponse> => {
 		return fetch(`${API_BASE_URL}/api/v1/token`, {
 			method: "POST",
 			body: formData,
 		}).then((res) => (res.ok ? res.json() : Promise.reject(res)));
 	},
+	verifyTotpLogin: (
+		payload: TotpVerifyLoginPayload,
+	): Promise<{ token: Token; user: User }> =>
+		fetch(`${API_BASE_URL}/api/v1/auth/2fa/verify-login`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+		}).then(async (res) => {
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(err.detail || "2FA verification failed");
+			}
+			return res.json();
+		}),
+	getTotpStatus: (): Promise<TotpStatusResponse> =>
+		apiFetch<any>("/auth/2fa/status").then((r) =>
+			r && r.data !== undefined ? r.data : r,
+		),
+	setupTotp: (): Promise<TotpSetupResponse> =>
+		apiFetch<any>("/auth/2fa/setup", {
+			method: "POST",
+		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+	confirmTotp: (payload: {
+		secret: string;
+		code: string;
+	}): Promise<TotpConfirmResponse> =>
+		apiFetch<any>("/auth/2fa/confirm", {
+			method: "POST",
+			body: JSON.stringify(payload),
+		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+	disableTotp: (payload: TotpDisablePayload): Promise<{ message: string }> =>
+		apiFetch<any>("/auth/2fa/disable", {
+			method: "POST",
+			body: JSON.stringify(payload),
+		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+	regenerateBackupCodes: (
+		payload: TotpRegenerateBackupCodesPayload,
+	): Promise<TotpBackupCodesResponse> =>
+		apiFetch<any>("/auth/2fa/regenerate-backup-codes", {
+			method: "POST",
+			body: JSON.stringify(payload),
+		}).then((r) => (r && r.data !== undefined ? r.data : r)),
 	register: (userData: Record<string, unknown>): Promise<{ token: Token; user: User }> =>
 		apiFetch("/register", {
 			method: "POST",

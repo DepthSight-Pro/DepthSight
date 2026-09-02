@@ -87,6 +87,12 @@ import type {
 	AdminAISettingsUpdate,
 	AdminAITestRequest,
 	AdminAITestResponse,
+	TotpStatusResponse,
+	TotpSetupResponse,
+	TotpConfirmResponse,
+	TotpDisablePayload,
+	TotpRegenerateBackupCodesPayload,
+	TotpBackupCodesResponse,
 } from "@/types/api";
 import type {
 	AdminSupportTicket,
@@ -3101,6 +3107,81 @@ export const useAdminTestAIConnection = () => {
 				method: "POST",
 				body: JSON.stringify(payload),
 			}),
+	});
+};
+
+// =========================================================================
+// Two-Factor Authentication (2FA) Hooks
+// =========================================================================
+
+export const useTotpStatus = () => {
+	return useQuery<TotpStatusResponse, Error>({
+		queryKey: authScopedQueryKey("totpStatus"),
+		queryFn: async () => {
+			const res = await apiClient<any>("/auth/2fa/status");
+			return res?.data || res;
+		},
+	});
+};
+
+export const useSetupTotp = () => {
+	return useMutation<TotpSetupResponse, Error>({
+		mutationFn: async () => {
+			const res = await apiClient<any>("/auth/2fa/setup", {
+				method: "POST",
+			});
+			return res?.data || res;
+		},
+	});
+};
+
+export const useConfirmTotp = () => {
+	const queryClient = useQueryClient();
+	return useMutation<TotpConfirmResponse, Error, { secret: string; code: string }>({
+		mutationFn: async (payload) => {
+			const res = await apiClient<any>("/auth/2fa/confirm", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+			return res?.data || res;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("totpStatus") });
+			queryClient.invalidateQueries({ queryKey: ["user"] });
+		},
+	});
+};
+
+export const useDisableTotp = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ message: string }, Error, TotpDisablePayload>({
+		mutationFn: async (payload) => {
+			const res = await apiClient<any>("/auth/2fa/disable", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+			return res?.data || res;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("totpStatus") });
+			queryClient.invalidateQueries({ queryKey: ["user"] });
+		},
+	});
+};
+
+export const useRegenerateBackupCodes = () => {
+	const queryClient = useQueryClient();
+	return useMutation<TotpBackupCodesResponse, Error, TotpRegenerateBackupCodesPayload>({
+		mutationFn: async (payload) => {
+			const res = await apiClient<any>("/auth/2fa/regenerate-backup-codes", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+			return res?.data || res;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("totpStatus") });
+		},
 	});
 };
 

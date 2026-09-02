@@ -1804,6 +1804,13 @@ async def login_for_access_token(
             detail="Inactive user. Please confirm your email.",
         )
 
+    if user_db.is_totp_enabled:
+        temp_token = security.create_temp_2fa_token(user_db.username)
+        return schemas.LoginResponse(
+            requires_2fa=True,
+            temp_token=temp_token,
+        )
+
     access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         data={"sub": user_db.username}, expires_delta=access_token_expires

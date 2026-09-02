@@ -1,6 +1,7 @@
 {
 	"pageTitle": "My Account",
 	"accountTab": "Account",
+	"securityTab": "Security",
 	"achievementsTab": "Achievements",
 	"myPlanCard.title": "My Plan",
 	"myPlanCard.description": "Current subscription plan.",
@@ -67,6 +68,46 @@
 			"locked": "Locked"
 		}
 	},
+	"twoFactor": {
+		"cardTitle": "Two-Factor Authentication (2FA)",
+		"cardDescription": "Protect your exchange keys and account with an extra layer of security using Google Authenticator or any TOTP app.",
+		"badgeEnabled": "Active",
+		"badgeDisabled": "Not Enabled",
+		"recommendationTitle": "Highly Recommended",
+		"recommendationText": "Enabling 2FA safeguards your trading bots, exchange balances, and withdrawal settings against unauthorized access even if your password is stolen.",
+		"btnEnable": "Enable 2FA Authentication",
+		"recoveryCodesCountLabel": "Available Backup Codes:",
+		"remaining": "remaining",
+		"lowCodesWarning": "You have very few backup codes left. Consider regenerating them.",
+		"btnRegenerateCodes": "Regenerate Backup Codes",
+		"btnDisable": "Disable 2FA",
+		"modalSetupTitle": "Set Up Two-Factor Authentication",
+		"modalSetupDesc": "Scan the QR code with your authenticator app (Google Authenticator, Aegis, 1Password), then enter the 6-digit verification code.",
+		"generatingSetup": "Generating QR code and key...",
+		"manualKeyLabel": "Can't scan? Enter this key manually:",
+		"btnCopyKey": "Copy",
+		"copied": "Copied!",
+		"clickToCopy": "Click to copy",
+		"manualKeyHelp": "Enter this key into Google Authenticator or Aegis if you cannot scan the QR code.",
+		"keyCopiedTitle": "Key Copied",
+		"keyCopiedDesc": "Setup key copied to clipboard successfully.",
+		"enterCodeLabel": "Enter 6-digit code from app",
+		"btnConfirmAndEnable": "Confirm & Enable",
+		"modalBackupCodesTitle": "Save Your Recovery Codes",
+		"modalBackupCodesDesc": "If you lose access to your phone or authenticator app, these one-time codes are the ONLY way to regain access to your DepthSight account.",
+		"backupWarningTitle": "Important Warning",
+		"backupWarningText": "These codes are shown only ONCE and cannot be recovered if lost. Store them in a secure password manager or offline file.",
+		"btnCopyCodes": "Copy All Codes",
+		"btnSavedDone": "I've Saved Them",
+		"modalDisableTitle": "Disable Two-Factor Authentication",
+		"modalDisableDesc": "To disable 2FA, enter your current 6-digit authenticator code (or account password).",
+		"codeOrBackupLabel": "Authenticator or Backup Code",
+		"accountPasswordLabel": "Account Password",
+		"btnConfirmDisable": "Confirm Disable",
+		"modalRegenTitle": "Regenerate Backup Codes",
+		"modalRegenDesc": "This will invalidate all previously generated backup recovery codes. Enter your current 6-digit TOTP code to confirm.",
+		"btnRegenConfirm": "Generate New Codes"
+	},
 	"rank": {
 		"grandmaster": "Grandmaster",
 		"legend": "Legend",
@@ -104,6 +145,10 @@
 	"first_api_key": {
 		"name": "Keymaster",
 		"description": "Add your first API key for trading"
+	},
+	"two_factor_enabled": {
+		"name": "Security Champion",
+		"description": "Enable Two-Factor Authentication (2FA)"
 	},
 	"first_paper_trade": {
 		"name": "Paper Tiger",
