@@ -36,6 +36,8 @@
   "todayEstRewardSubtitle": "Ожидается из текущего суточного пула",
   "todayRebatesSubtitle": "USDT комиссионные рибейты за сегодня",
   "dailyEmissionSubtitle": "Общий суточный пул эмиссии",
+  "totalDistributed": "Всего распределено",
+  "totalDistributedSubtitle": "Общая эмиссия за все эпохи",
   "welcomeBonusClaimedDesc": "1000 $DEPTH было зачислено на баланс вашей ноды.",
   "referralProgramDesc": "Приглашайте друзей запускать ноды и получайте +10% ежедневного буста, а также приветственные награды!",
   "inviteLink": "Реферальная ссылка",

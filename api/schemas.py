@@ -2919,6 +2919,8 @@ class MiningStatusResponse(BaseModel):
     server_daily_volume: float = 0.0
     your_epoch_rebates: float = 0.0
     your_volume_share: float = 0.0
+    total_distributed: float = 0.0
+    server_total_mined: float = 0.0
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -2983,6 +2985,7 @@ class LocalMiningStatusResponse(BaseModel):
     referrer_referral_code: Optional[str] = None
     has_welcome_bonus: bool = False
     total_mined: float = 0.0
+    total_distributed: float = 0.0
     config: Optional[Dict[str, Any]] = None
     stats: Optional[Dict[str, Any]] = None
     is_global_mining_enabled: bool = False

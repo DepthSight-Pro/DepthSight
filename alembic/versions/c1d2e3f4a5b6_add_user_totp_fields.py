@@ -23,10 +23,14 @@ def upgrade() -> None:
     op.add_column("users", sa.Column("totp_secret", sa.String(), nullable=True))
     op.add_column(
         "users",
-        sa.Column("is_totp_enabled", sa.Boolean(), server_default="false", nullable=False),
+        sa.Column(
+            "is_totp_enabled", sa.Boolean(), server_default="false", nullable=False
+        ),
     )
     op.add_column("users", sa.Column("totp_backup_codes", sa.JSON(), nullable=True))
-    op.add_column("users", sa.Column("totp_last_used_step", sa.Integer(), nullable=True))
+    op.add_column(
+        "users", sa.Column("totp_last_used_step", sa.Integer(), nullable=True)
+    )
 
     # Seed achievement
     try:

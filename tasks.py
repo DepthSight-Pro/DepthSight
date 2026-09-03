@@ -4031,6 +4031,61 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
             logger.info(
                 f"[MINING] Successfully processed epoch {yesterday}. Total distributed: {total_distributed} $DEPTH."
             )
+
+            # --- Check & grant mining achievements for all participating nodes ---
+            try:
+                from api.gamification import (
+                    check_and_grant_mining_achievements,
+                    grant_achievement,
+                )
+
+                sorted_nodes = sorted(
+                    node_rewards.items(),
+                    key=lambda item: (
+                        item[1].get("base_reward", 0.0)
+                        + item[1].get("referral_bonus", 0.0)
+                    ),
+                    reverse=True,
+                )
+
+                is_halving = (
+                    days_since_launch > 0
+                    and days_since_launch % config.halving_interval_days == 0
+                )
+
+                checked_users = set()
+                for rank_idx, (n_id, rew) in enumerate(sorted_nodes):
+                    u_id = wallet_owner_by_node.get(n_id)
+                    if not u_id:
+                        continue
+
+                    # Top miners of the day
+                    if rank_idx == 0 and rew.get("base_reward", 0.0) > 0:
+                        await grant_achievement(session, u_id, "mining_daily_top_miner")
+                        await grant_achievement(
+                            session, u_id, "mining_daily_top5_miner"
+                        )
+                    elif rank_idx < 5 and rew.get("base_reward", 0.0) > 0:
+                        await grant_achievement(
+                            session, u_id, "mining_daily_top5_miner"
+                        )
+
+                    # Halving survivor
+                    if is_halving:
+                        await grant_achievement(
+                            session, u_id, "mining_halving_survivor"
+                        )
+
+                    if u_id not in checked_users:
+                        checked_users.add(u_id)
+                        await check_and_grant_mining_achievements(session, u_id)
+
+                await session.commit()
+            except Exception as ach_exc:
+                logger.error(
+                    f"[MINING] Error awarding achievements after epoch {yesterday}: {ach_exc}",
+                    exc_info=True,
+                )
         except Exception as e:
             logger.error(
                 f"[MINING] Error processing epoch {yesterday}: {e}", exc_info=True

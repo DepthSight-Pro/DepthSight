@@ -984,9 +984,10 @@ async def _generate_vertex_agent_builder_json_response(
     max_output_tokens: int = 8192,
     model_name: Optional[str] = None,
 ) -> str:
-    if os.getenv("AUTOPILOT_DISABLE_IMAGES", "false").lower() == "true":
-        image_base64 = None
-        image_mime_type = None
+    if image_base64 or image_mime_type:
+        logger.debug(
+            "Dialogflow Conversational Agent API only supports text input; image payload is omitted."
+        )
 
     token, project_id = _get_gcp_bearer_token()
     location = os.getenv("GCP_LOCATION", "global")
@@ -1057,9 +1058,10 @@ async def _generate_vertex_agent_builder_text_response(
     image_base64: Optional[str] = None,
     image_mime_type: Optional[str] = None,
 ) -> str:
-    if os.getenv("AUTOPILOT_DISABLE_IMAGES", "false").lower() == "true":
-        image_base64 = None
-        image_mime_type = None
+    if image_base64 or image_mime_type:
+        logger.debug(
+            "Dialogflow Conversational Agent API only supports text input; image payload is omitted."
+        )
 
     token, project_id = _get_gcp_bearer_token()
     location = os.getenv("GCP_LOCATION", "global")
@@ -1914,6 +1916,10 @@ async def _generate_text_response(
     image_base64: Optional[str] = None,
     image_mime_type: Optional[str] = None,
 ) -> str:
+    if os.getenv("AUTOPILOT_DISABLE_IMAGES", "false").lower() == "true":
+        image_base64 = None
+        image_mime_type = None
+
     provider = _ensure_ai_provider_configured()
     logger.info(
         f"Generating AI text via provider '{provider}' using model '{_get_active_model_name(provider)}'"
@@ -2522,6 +2528,10 @@ async def generate_strategy_json_from_prompt(
     Processes user request, interacts with Gemini, and returns strategy JSON.
     """
     global CACHED_GENERATOR_PROMPT
+    if os.getenv("AUTOPILOT_DISABLE_IMAGES", "false").lower() == "true":
+        request.image_base64 = None
+        request.image_mime_type = None
+
     active_provider = _ensure_ai_provider_configured()
 
     market_context_str = await enrich_market_context_for_ai(request.text_prompt)

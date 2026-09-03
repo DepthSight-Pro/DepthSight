@@ -208,6 +208,7 @@ const MiningScreen: React.FC = () => {
   const dailyEmission = miningStatus?.dailyEmission ?? stats?.daily_emission ?? stats?.dailyEmission ?? 547945;
   const yourEpochReward = miningStatus?.yourEpochReward ?? stats?.your_epoch_reward ?? stats?.yourEpochReward ?? 0.0;
   const epochTotalRebates = miningStatus?.epochTotalRebates ?? stats?.epoch_total_rebates ?? stats?.epochTotalRebates ?? 0.0;
+  const totalDistributed = miningStatus?.totalDistributed ?? stats?.totalDistributed ?? stats?.serverTotalMined ?? (miningStatus as any)?.serverTotalMined ?? 0.0;
 
   const handleDeactivate = () => {
     setIsDeactivating(true);
@@ -295,6 +296,21 @@ const MiningScreen: React.FC = () => {
           </span>
           <div className="text-lg font-bold truncate">
             {dailyEmission.toLocaleString()}
+          </div>
+        </div>
+
+        {/* Total Distributed Card */}
+        <div className="col-span-2 rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3.5 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-bold text-[hsl(var(--muted-foreground))] uppercase tracking-wider block">
+              {t("mining.totalDistributed", "Total Distributed")}
+            </span>
+            <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
+              {t("mining.totalDistributedSubtitle", "Distributed across all epochs")}
+            </span>
+          </div>
+          <div className="text-base font-bold text-[hsl(var(--foreground))]">
+            {totalDistributed >= 1000 ? Math.round(totalDistributed).toLocaleString("en-US").replace(/,/g, " ") : totalDistributed.toFixed(2)} <span className="text-xs text-[hsl(var(--muted-foreground))]">$DEPTH</span>
           </div>
         </div>
       </div>

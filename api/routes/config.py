@@ -22,6 +22,7 @@ from ..database import get_db
 from ..federation import get_federation_hub_url
 from ..redis_client import get_redis_client
 from ..plans import plans_config
+from ..gamification import grant_achievement
 
 try:
     from bot_module import config as bot_config
@@ -1464,9 +1465,7 @@ async def format_mining_status_response(
 
     # Daily volume percentage: user's trade volume today / total trade volume today
     user_ratio = (
-        (user_daily_vol / total_daily_node_vol)
-        if total_daily_node_vol > 0.0
-        else 0.0
+        (user_daily_vol / total_daily_node_vol) if total_daily_node_vol > 0.0 else 0.0
     )
     if not is_central and hub_data and hub_data.get("yourVolumeShare") is not None:
         user_ratio = float(hub_data.get("yourVolumeShare") or 0.0)
@@ -1475,6 +1474,31 @@ async def format_mining_status_response(
         user_ratio = 1.0 if user_daily_vol > 0.0 else 0.0
 
     total_node_mined = hub_data.get("yourTotalMined", 0.0) if hub_data else 0.0
+
+    if is_central:
+        ledger_all_res = await db.execute(
+            select(func.sum(models.MiningLedger.total_reward))
+        )
+        ledger_all_mined = float(ledger_all_res.scalar() or 0.0)
+
+        total_all_mined_res = await db.execute(
+            select(func.sum(models.HubNode.total_mined))
+        )
+        server_total_mined = max(
+            float(total_all_mined_res.scalar() or 0.0), ledger_all_mined
+        )
+    else:
+        server_total_mined = (
+            float(
+                hub_data.get("totalDistributed")
+                or hub_data.get("total_distributed")
+                or hub_data.get("serverTotalMined")
+                or hub_data.get("server_total_mined")
+                or 0.0
+            )
+            if hub_data
+            else total_node_mined
+        )
     config_data = hub_data.get("config") if hub_data else None
     node_referral_code = hub_data.get("nodeReferralCode") if hub_data else None
     if node_referral_code and current_user.referral_code != node_referral_code:
@@ -1566,14 +1590,8 @@ async def format_mining_status_response(
         hub_data["operatorFeeBalance"] = total_operator_fee
         hub_data["totalOperatorFeeCollected"] = total_operator_fee
 
-        if is_central:
-            total_all_mined_res = await db.execute(
-                select(func.sum(models.HubNode.total_mined))
-            )
-            server_total_mined = float(total_all_mined_res.scalar() or 0.0)
-        else:
-            server_total_mined = total_node_mined
         hub_data["serverTotalMined"] = server_total_mined
+        hub_data["totalDistributed"] = server_total_mined
         hub_data["totalNodeMined"] = total_node_mined
 
         if is_central:
@@ -1637,6 +1655,7 @@ async def format_mining_status_response(
                 referrer_referral_code=referrer_referral_code,
                 has_welcome_bonus=has_welcome_bonus,
                 total_mined=user_share_mined,
+                total_distributed=server_total_mined,
                 config=config_data,
                 stats=hub_data,
                 is_global_mining_enabled=node_config.is_global_mining_enabled,
@@ -1679,6 +1698,8 @@ async def format_mining_status_response(
         user_stats["yourDailyVolume"] = user_daily_vol
         user_stats["serverDailyVolume"] = total_daily_node_vol
         user_stats["totalNodeMined"] = total_node_mined
+        user_stats["serverTotalMined"] = server_total_mined
+        user_stats["totalDistributed"] = server_total_mined
 
         return {
             "data": schemas.LocalMiningStatusResponse(
@@ -1691,6 +1712,7 @@ async def format_mining_status_response(
                 referrer_referral_code=referrer_referral_code,
                 has_welcome_bonus=has_welcome_bonus,
                 total_mined=user_share_mined,
+                total_distributed=server_total_mined,
                 config=config_data,
                 stats=user_stats,
                 is_global_mining_enabled=node_config.is_global_mining_enabled,
@@ -1715,6 +1737,24 @@ async def get_local_mining_status(
     import json
     import aiohttp
     from sqlalchemy import select
+
+    # 0. Fire background achievement check with cooldown (non-blocking, zero request delay)
+    async def _bg_mining_ach_check(uid: int):
+        from ..database import async_session_factory
+        from ..gamification import check_and_grant_mining_achievements
+
+        try:
+            async with async_session_factory() as bg_db:
+                await check_and_grant_mining_achievements(bg_db, uid)
+                await bg_db.commit()
+        except Exception as ach_bg_err:
+            logger.debug(
+                f"Background mining achievements check for user {uid}: {ach_bg_err}"
+            )
+
+    import asyncio
+
+    asyncio.create_task(_bg_mining_ach_check(current_user.id))
 
     # 1. Fetch user's AppConfig to see if mining is enabled
     config = await crud.get_config_model(db, current_user.id)
@@ -2806,6 +2846,10 @@ async def verify_evm_wallet_signature(
         .values(exchange_settings=settings, is_mining_enabled=True)
     )
     await db.commit()
+    try:
+        await grant_achievement(db, current_user.id, "mining_wallet_linked")
+    except Exception:
+        pass
 
     # On a local node, register the wallet-bound mining node with the hub using the
     # ownership signature just verified. This creates the node (preventing
@@ -3122,6 +3166,13 @@ async def activate_local_mining(
         if resolved_uid or resolved_okx or resolved_bybit:
             await db.commit()
 
+        try:
+            await grant_achievement(db, current_user.id, "mining_activated")
+            if wallet_configured:
+                await grant_achievement(db, current_user.id, "mining_wallet_linked")
+        except Exception:
+            pass
+
         return await get_local_mining_status(db=db, current_user=current_user)
 
     # 1. Update local AppConfig to enable mining
@@ -3240,6 +3291,13 @@ async def activate_local_mining(
         "X-Node-UUID": mining_node_uuid,
         "X-Node-Secret": mining_node_secret,
     }
+
+    try:
+        await grant_achievement(db, current_user.id, "mining_activated")
+        if wallet_configured:
+            await grant_achievement(db, current_user.id, "mining_wallet_linked")
+    except Exception:
+        pass
 
     try:
         async with aiohttp.ClientSession() as session:

@@ -112,6 +112,7 @@ def _is_channel_allowed(channel: str, user_id: int) -> bool:
         r"^depthsight:events:strategies:(\d+)$",
         r"^depthsight:events:portfolio:(\d+)$",
         r"^log_history:(\d+)$",
+        r"^user:(\d+):notifications$",
         # HFT Channels are currently global for the singleton engine
     ]
 

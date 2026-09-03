@@ -36,6 +36,8 @@
   "todayEstRewardSubtitle": "Expected from current daily pool",
   "todayRebatesSubtitle": "USDT commission rebates today",
   "dailyEmissionSubtitle": "Shared daily emission pool",
+  "totalDistributed": "Total Distributed",
+  "totalDistributedSubtitle": "Distributed across all epochs",
   "welcomeBonusClaimedDesc": "1000 $DEPTH has been credited to your node balance.",
   "referralProgramDesc": "Invite friends to run nodes and earn a +10% daily boost plus matching welcome rewards!",
   "inviteLink": "Invite Link",

@@ -576,6 +576,154 @@
 			"diamond_hands": {
 				"name": "Алмазные руки",
 				"description": "Назвать стратегию 'HODL' и запустить с ней бэктест"
+			},
+			"mining_activated": {
+				"name": "Генезис",
+				"description": "Активировать Trade Mining и принять условия передачи телеметрии"
+			},
+			"mining_wallet_linked": {
+				"name": "Web3-гражданин",
+				"description": "Привязать и верифицировать EVM-кошелек для майнинга"
+			},
+			"mining_first_trade": {
+				"name": "Первая искра",
+				"description": "Совершить первую сделку, успешно верифицированную в пуле майнинга"
+			},
+			"welcome_bonus_claimed": {
+				"name": "Золотой билет",
+				"description": "Сгенерировать $1.0 комиссии и забрать Welcome Bonus (1,000 $DEPTH)"
+			},
+			"mining_volume_1k": {
+				"name": "Проходчик",
+				"description": "Достичь $1,000 суммарного торгового объема в майнинге"
+			},
+			"mining_volume_10k": {
+				"name": "Горный мастер",
+				"description": "Достичь $10,000 суммарного объема в майнинге"
+			},
+			"mining_volume_100k": {
+				"name": "Карьерный гигант",
+				"description": "Достичь $100,000 суммарного объема в майнинге"
+			},
+			"mining_volume_1m": {
+				"name": "Крипто-кит",
+				"description": "Достичь $1,000,000 суммарного объема в майнинге"
+			},
+			"mining_volume_10m": {
+				"name": "Маркет-мейкер",
+				"description": "Достичь $10,000,000 суммарного объема в майнинге"
+			},
+			"mining_daily_volume_10k": {
+				"name": "Ударник труда",
+				"description": "Наторговать $10,000 объема за одну 24-часовую эпоху"
+			},
+			"mining_daily_volume_100k": {
+				"name": "Шторм на бирже",
+				"description": "Наторговать $100,000 объема за сутки"
+			},
+			"mining_daily_top_miner": {
+				"name": "Царь горы",
+				"description": "Занять 1-е место по объему среди всех нод по итогам эпохи"
+			},
+			"mining_daily_top5_miner": {
+				"name": "Высшая лига",
+				"description": "Войти в топ-5 майнеров дня по торговому объему"
+			},
+			"mining_first_referral": {
+				"name": "Партнер сети",
+				"description": "Пригласить первого пользователя, активировавшего майнинг"
+			},
+			"mining_5_referrals": {
+				"name": "Лидер звена",
+				"description": "Пригласить 5 активных майнеров"
+			},
+			"mining_10_referrals": {
+				"name": "Бригадир",
+				"description": "Пригласить 10 активных майнеров"
+			},
+			"mining_50_referrals": {
+				"name": "Синдикат",
+				"description": "Построить сеть из 50 активных нод"
+			},
+			"mining_active_squad": {
+				"name": "Спящих нет",
+				"description": "Иметь как минимум 5 рефералов, торгующих одновременно в один день"
+			},
+			"mining_mentor_bonus": {
+				"name": "Наставник",
+				"description": "Твой реферал впервые заклеймил свой Welcome Bonus"
+			},
+			"mining_ref_volume_100k": {
+				"name": "Голос сети",
+				"description": "Совокупный торговый объем рефералов превысил $100,000"
+			},
+			"mining_ref_earnings_100k": {
+				"name": "Пассивный доход",
+				"description": "Заработать суммарно 100,000 $DEPTH на 10% реферальных бонусах"
+			},
+			"mining_streak_7d": {
+				"name": "Недельный марафон",
+				"description": "Участвовать в распределении эмиссии 7 эпох подряд"
+			},
+			"mining_streak_30d": {
+				"name": "Железная дисциплина",
+				"description": "Непрерывный майнинг на протяжении 30 эпох подряд"
+			},
+			"mining_epochs_100": {
+				"name": "Ветеран сети",
+				"description": "Принять участие в 100 дневных эпохах суммарно"
+			},
+			"mining_halving_survivor": {
+				"name": "Свидетель халвинга",
+				"description": "Быть активным майнером в момент наступления халвинга пула"
+			},
+			"mining_depth_1k": {
+				"name": "Первая тысяча",
+				"description": "Добыть суммарно 1,000 $DEPTH"
+			},
+			"mining_depth_10k": {
+				"name": "Золотой запас",
+				"description": "Добыть суммарно 10,000 $DEPTH"
+			},
+			"mining_depth_100k": {
+				"name": "Крипто-магнат",
+				"description": "Добыть суммарно 100,000 $DEPTH"
+			},
+			"mining_jackpot_epoch": {
+				"name": "Сорвать куш",
+				"description": "Получить более 5,000 $DEPTH за одну дневную эпоху"
+			},
+			"mining_flawless_telemetry": {
+				"name": "Идеальный поток",
+				"description": "50 сделок подряд без единого отклонения верификатором"
+			},
+			"mining_high_speed_turnover": {
+				"name": "Высокая частота",
+				"description": "Совершить 50+ верифицированных сделок за один день"
+			},
+			"mining_profitable": {
+				"name": "Плюс на плюс",
+				"description": "10 закрытых майнинговых сделок подряд с положительным PnL"
+			},
+			"mining_multi_exchange": {
+				"name": "Арбитражер",
+				"description": "Промайнить сделки на 2+ разных биржах за одну неделю"
+			},
+			"mining_all_exchanges": {
+				"name": "Вездесущий",
+				"description": "Привязать UID и майнить на всех поддерживаемых биржах"
+			},
+			"mining_node_operator": {
+				"name": "Свой дата-центр",
+				"description": "Запустить серверную ноду, обслуживающую других майнеров"
+			},
+			"mining_boost_active": {
+				"name": "Форсаж",
+				"description": "Активировать любой повышающий множитель майнинга"
+			},
+			"mining_diamond_staker": {
+				"name": "Алмазный стейкер",
+				"description": "Залочить $DEPTH на 360 дней под максимальный множитель 2.0x"
 			}
 		}
 	},
@@ -1178,6 +1326,8 @@
 		"todayEstReward": "Ожидаемая награда",
 		"todayRebates": "Суточные рибейты",
 		"dailyEmission": "Суточная эмиссия",
+		"totalDistributed": "Всего распределено",
+		"totalDistributedSubtitle": "Общая эмиссия за все эпохи",
 		"welcomeBonus": "Приветственный бонус",
 		"welcomeBonusClaimedBadge": "Получен",
 		"welcomeBonusDesc": "Сгенерируйте не менее $1.0 кумулятивного рибейта, чтобы получить приветственный бонус 1000 $DEPTH.",

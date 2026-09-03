@@ -1118,6 +1118,28 @@ async def _bind_referrer_once(
 
     node.referrer_node_uuid = target_uuid
 
+    # Check and grant referral achievements to the referrer user
+    try:
+        t_res = await db.execute(
+            select(models.HubNode).where(models.HubNode.node_uuid == target_uuid)
+        )
+        target_obj = t_res.scalars().first()
+        if target_obj and target_obj.node_referral_code:
+            u_res = await db.execute(
+                select(models.User).where(
+                    models.User.referral_code == target_obj.node_referral_code
+                )
+            )
+            referrer_user = u_res.scalars().first()
+            if referrer_user:
+                from .gamification import check_and_grant_mining_achievements
+
+                await check_and_grant_mining_achievements(db, referrer_user.id)
+    except Exception as ref_ach_exc:
+        logger.warning(
+            f"Failed to check achievements for referrer upon binding: {ref_ach_exc}"
+        )
+
 
 async def _upsert_server_config(
     db: AsyncSession, node_uuid: str, share_percent: float
@@ -1938,6 +1960,17 @@ async def get_mining_status(
     res_total_mined = await db.execute(stmt_total_mined)
     your_total_mined = float(res_total_mined.scalar() or 0.0)
 
+    # 4a. Total distributed coins across all epochs for all nodes
+    stmt_all_ledger = select(func.sum(models.MiningLedger.total_reward))
+    res_all_ledger = await db.execute(stmt_all_ledger)
+    ledger_all_distributed = float(res_all_ledger.scalar() or 0.0)
+
+    stmt_all_nodes = select(func.sum(models.HubNode.total_mined))
+    res_all_nodes = await db.execute(stmt_all_nodes)
+    nodes_all_distributed = float(res_all_nodes.scalar() or 0.0)
+
+    total_distributed = max(ledger_all_distributed, nodes_all_distributed)
+
     # 4b. Volume stats for the node (used by local nodes to mirror hub display)
     stmt_vol = select(func.sum(models.HubTelemetryReport.trade_volume_usdt)).where(
         models.HubTelemetryReport.node_uuid == node.node_uuid,
@@ -1946,7 +1979,9 @@ async def get_mining_status(
     res_vol = await db.execute(stmt_vol)
     your_total_volume = float(res_vol.scalar() or 0.0)
 
-    stmt_daily_vol = select(func.sum(models.HubTelemetryReport.trade_volume_usdt)).where(
+    stmt_daily_vol = select(
+        func.sum(models.HubTelemetryReport.trade_volume_usdt)
+    ).where(
         models.HubTelemetryReport.node_uuid == node.node_uuid,
         models.HubTelemetryReport.created_at >= today_start,
         models.HubTelemetryReport.is_mining_eligible.is_(True),
@@ -2016,6 +2051,8 @@ async def get_mining_status(
         server_daily_volume=server_daily_volume,
         your_epoch_rebates=your_epoch_rebates,
         your_volume_share=your_volume_share,
+        total_distributed=total_distributed,
+        server_total_mined=total_distributed,
     )
 
 

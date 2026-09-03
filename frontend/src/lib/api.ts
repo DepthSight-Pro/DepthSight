@@ -2696,6 +2696,7 @@ export interface LocalMiningStatusResponse {
 	referrer_referral_code?: string;
 	hasWelcomeBonus: boolean;
 	totalMined: number;
+	totalDistributed?: number;
 	config?: Record<string, any>;
 	stats?: Record<string, any>;
 	isGlobalMiningEnabled?: boolean;

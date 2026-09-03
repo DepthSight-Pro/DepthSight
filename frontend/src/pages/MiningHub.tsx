@@ -31,7 +31,8 @@ import {
   Info,
   KeyRound,
   UserCheck,
-  User
+  User,
+  Award
 } from "lucide-react";
 import { AppLoader } from "@/components/shared/AppLoader";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -344,6 +345,7 @@ const MiningHub: React.FC = () => {
   const dailyEmission = statusAny?.dailyEmission ?? stats?.daily_emission ?? stats?.dailyEmission ?? 547945;
   const yourEpochReward = statusAny?.yourEpochReward ?? stats?.your_epoch_reward ?? stats?.yourEpochReward ?? 0.0;
   const epochTotalRebates = statusAny?.epochTotalRebates ?? stats?.epoch_total_rebates ?? stats?.epochTotalRebates ?? 0.0;
+  const totalDistributed = status?.totalDistributed ?? statusAny?.totalDistributed ?? stats?.totalDistributed ?? stats?.serverTotalMined ?? statusAny?.serverTotalMined ?? 0.0;
 
   const welcomeProgress = Math.min((epochTotalRebates / 1.0) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${status?.nodeReferralCode || ""}`;
@@ -921,7 +923,7 @@ const MiningHub: React.FC = () => {
       ) : (
         <>
           {/* Grid Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           title={t("totalMined", "Total Mined")}
           value={`${status?.totalMined?.toFixed(2) || "0.00"} $DEPTH`}
@@ -947,7 +949,14 @@ const MiningHub: React.FC = () => {
           title={t("dailyEmission", "Daily Emission Pool")}
           value={`${dailyEmission.toLocaleString()} $DEPTH`}
           subtitle={t("dailyEmissionSubtitle", "Shared daily emission pool")}
-          icon={Coins}
+          icon={Sparkles}
+          isLoading={isLoading}
+        />
+        <StatCard
+          title={t("totalDistributed", "Total Distributed")}
+          value={`${totalDistributed >= 1000 ? Math.round(totalDistributed).toLocaleString("en-US").replace(/,/g, " ") : totalDistributed.toFixed(2)} $DEPTH`}
+          subtitle={t("totalDistributedSubtitle", "Distributed across all epochs")}
+          icon={Award}
           isLoading={isLoading}
         />
       </div>
