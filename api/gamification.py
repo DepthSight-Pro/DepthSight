@@ -494,24 +494,25 @@ MINING_CHECK_COOLDOWN_SEC = 180.0  # 3 minutes cooldown
 
 
 async def check_and_grant_mining_achievements(
-    db: AsyncSession, user_id: int, force: bool = False
+    db: AsyncSession, user_id: int, use_cooldown: bool = False
 ):
     """
     Checks and awards trade mining achievements for a user.
     Called on user login/retroactive check and mining events.
-    Includes a 3-minute cooldown and short-circuit checks to ensure near-zero database load.
+    Optionally enforces a 3-minute cooldown (used during high-frequency polling).
     """
     try:
         import time
 
         now_ts = time.time()
         if (
-            not force
+            use_cooldown
             and (now_ts - _LAST_MINING_CHECK.get(user_id, 0.0))
             < MINING_CHECK_COOLDOWN_SEC
         ):
             return
-        _LAST_MINING_CHECK[user_id] = now_ts
+        if use_cooldown:
+            _LAST_MINING_CHECK[user_id] = now_ts
 
         user_achievements_result = await db.execute(
             select(models.UserAchievement.achievement_id).where(

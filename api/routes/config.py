@@ -1745,7 +1745,7 @@ async def get_local_mining_status(
 
         try:
             async with async_session_factory() as bg_db:
-                await check_and_grant_mining_achievements(bg_db, uid)
+                await check_and_grant_mining_achievements(bg_db, uid, use_cooldown=True)
                 await bg_db.commit()
         except Exception as ach_bg_err:
             logger.debug(
