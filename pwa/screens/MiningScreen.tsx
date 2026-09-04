@@ -340,9 +340,14 @@ const MiningScreen: React.FC = () => {
       {/* Supported Exchanges Card */}
       {((stats?.eligibleExchanges || stats?.eligible_exchanges || []).length > 0) && (
         <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Globe className="w-5 h-5 text-[hsl(var(--primary))]" />
-            <h3 className="text-sm font-semibold">{t("mining.supportedExchanges", "Supported Exchanges")}</h3>
+          <div>
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-[hsl(var(--primary))]" />
+              <h3 className="text-sm font-semibold">{t("mining.supportedExchanges", "Supported Exchanges & Rebates")}</h3>
+            </div>
+            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
+              {t("mining.supportedExchangesDesc", "Trade mining rewards are calculated for live trades executed on the following exchanges:")}
+            </p>
           </div>
           <div className="space-y-1.5 pt-1">
             {(stats?.eligibleExchanges || stats?.eligible_exchanges || []).map((ex: string) => {
@@ -369,6 +374,12 @@ const MiningScreen: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+          <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2.5 text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--background))]/50 p-2.5 rounded-xl">
+            <ShieldCheck className="w-4 h-4 text-[hsl(var(--primary))] shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              {t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.")}
+            </p>
           </div>
         </div>
       )}

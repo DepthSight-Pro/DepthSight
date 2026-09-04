@@ -1307,7 +1307,7 @@ async def _ensure_node_secret(
         await db.commit()
 
     secret_hash = hashlib.sha256(node_secret.encode()).hexdigest()
-    if hub_node.secret_hash != secret_hash:
+    if not hub_node.secret_hash:
         hub_node.secret_hash = secret_hash
         await db.commit()
 
@@ -1994,8 +1994,7 @@ async def get_local_mining_status(
                 or settings.get("mining_node_secret")
             )
             node_secret = security.decrypt_node_secret(raw_sec)
-            ref_suf = node_uuid[:6].lower()
-            node_name = f"DepthSightNode-{ref_suf}"
+            node_name = f"DepthSightNode-{node_uuid[:8]}"
 
     if not node_uuid:
         identity_path = Path("/app/data/node_identity.json")
@@ -2518,7 +2517,7 @@ async def _transfer_node_data(db: AsyncSession, src_uuid: str, dst_uuid: str) ->
     if not dst:
         dst = models.HubNode(
             node_uuid=dst_uuid,
-            name=f"DepthSightNode-{dst_uuid[:6]}",
+            name=f"DepthSightNode-{dst_uuid[:8]}",
             secret_hash=src.secret_hash if src else "",
             total_mined=0.0,
             has_welcome_bonus=False,
@@ -2859,10 +2858,8 @@ async def verify_evm_wallet_signature(
     hub_reg_error = None
     if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true" and owner_signature:
         try:
-            from pathlib import Path
             import aiohttp
 
-            is_server_admin = current_user.role == "admin"
             share_pct = None
             try:
                 from ..depthsight_api import _get_local_share_percent
@@ -2877,7 +2874,7 @@ async def verify_evm_wallet_signature(
                 "node_secret": node_secret,
                 "version": "1.0.0",
                 "referrer_code": payload.referrer_code,
-                "is_mining_server": is_server_admin,
+                "is_mining_server": False,
                 "user_reward_share_percent": share_pct,
                 "wallet_address": clean_addr,
                 "owner_signature": owner_signature,
@@ -2902,23 +2899,6 @@ async def verify_evm_wallet_signature(
                         logger.info(
                             f"Wallet node {node_uuid} registered on hub after wallet bind."
                         )
-                        if is_server_admin:
-                            srv_identity_path = Path("/app/data/server_identity.json")
-                            if not srv_identity_path.parent.exists():
-                                srv_identity_path = Path("server_identity.json")
-                            try:
-                                with open(srv_identity_path, "w") as f:
-                                    json.dump(
-                                        {
-                                            "node_uuid": node_uuid,
-                                            "node_secret": node_secret,
-                                        },
-                                        f,
-                                    )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to write server identity file: {e}"
-                                )
                     else:
                         err_text = await resp.text()
                         logger.error(
@@ -3023,21 +3003,40 @@ async def disconnect_evm_wallet(
     current_user: models.User = Depends(get_current_user),
 ):
     from sqlalchemy import update
+    from pathlib import Path
 
     config = await crud.get_config_model(db, current_user.id)
     if config and config.exchange_settings:
         settings = dict(config.exchange_settings)
-        weex_settings = dict(settings.get("weex") or {})
-        weex_settings.pop("wallet_address", None)
-        weex_settings["wallet_configured"] = False
-        settings["weex"] = weex_settings
+        for ex_key in ("weex", "bybit", "okx", "binance"):
+            ex_settings = dict(settings.get(ex_key) or {})
+            ex_settings.pop("wallet_address", None)
+            ex_settings.pop("wallet_configured", None)
+            ex_settings.pop("mining_node_uuid", None)
+            ex_settings.pop("mining_node_secret", None)
+            settings[ex_key] = ex_settings
+        settings.pop("wallet_address", None)
+        settings.pop("wallet_configured", None)
+        settings.pop("mining_node_uuid", None)
+        settings.pop("mining_node_secret", None)
 
         await db.execute(
             update(models.AppConfig)
             .where(models.AppConfig.user_id == current_user.id)
-            .values(exchange_settings=settings)
+            .values(exchange_settings=settings, is_mining_enabled=False)
         )
         await db.commit()
+
+        # Clean any legacy server_identity.json file if admin disconnected
+        for s_p in (
+            Path("/app/data/server_identity.json"),
+            Path("server_identity.json"),
+        ):
+            if s_p.exists():
+                try:
+                    s_p.unlink()
+                except Exception:
+                    pass
 
     return {"data": {"success": True}}
 

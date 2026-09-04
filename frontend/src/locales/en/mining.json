@@ -44,6 +44,7 @@
   "stakingBoostDetail": "Stake $DEPTH for 30, 90 or 360 days to unlock up to 2.0x multiplier on all daily trade mining emission awards.",
   "supportedExchanges": "Supported Mining Exchanges & Rebates",
   "supportedExchangesDesc": "Trade mining rewards are calculated for live trades executed on the following exchanges:",
+  "supportedExchangesRebateNote": "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.",
   "subtabOverview": "Overview & Pools",
   "subtabReferrals": "My Referrals Network",
   "totalInvited": "Total Invited Nodes",

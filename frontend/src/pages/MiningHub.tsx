@@ -1033,6 +1033,12 @@ const MiningHub: React.FC = () => {
               );
             })}
           </div>
+          <div className="pt-2 border-t border-border/40 flex items-start gap-2.5 text-xs text-muted-foreground bg-background/30 p-2.5 rounded-lg">
+            <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              {t("supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.")}
+            </p>
+          </div>
         </Card>
       )}
 

@@ -1684,7 +1684,9 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
         stmt = select(models.HubNode).where(
-            models.HubNode.last_ping >= cutoff, models.HubNode.is_banned.is_(False)
+            models.HubNode.last_ping >= cutoff,
+            models.HubNode.is_banned.is_(False),
+            models.HubNode.wallet_address.is_(None),
         )
         res = await db.execute(stmt)
         nodes = res.scalars().all()
@@ -1958,7 +1960,8 @@ async def get_mining_status(
         models.MiningLedger.node_uuid == node.node_uuid
     )
     res_total_mined = await db.execute(stmt_total_mined)
-    your_total_mined = float(res_total_mined.scalar() or 0.0)
+    ledger_mined = float(res_total_mined.scalar() or 0.0)
+    your_total_mined = max(ledger_mined, float(node.total_mined or 0.0))
 
     # 4a. Total distributed coins across all epochs for all nodes
     stmt_all_ledger = select(func.sum(models.MiningLedger.total_reward))

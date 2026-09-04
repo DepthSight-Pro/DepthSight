@@ -1350,6 +1350,8 @@
 		"nodeDeployCommand": "Node One-Line Deploy Command",
 		"commandCopied": "Deploy command copied to clipboard!",
 		"supportedExchanges": "Supported Exchanges & Rebates",
+		"supportedExchangesDesc": "Trade mining rewards are calculated for live trades executed on the following exchanges:",
+		"supportedExchangesRebateNote": "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.",
 		"okxRebateTip": "Base rate (30%), under 3rd-party referral only 7.5%. Stacks under our link (+7.5%) for 5x token yield.",
 		"bybitRebateTip": "Base rate (50%), under 3rd-party referral only 10%. Stacks under our link (+10%) for maximum yield."
 	}
