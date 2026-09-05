@@ -1489,6 +1489,12 @@ async def lifespan(app: FastAPI):
                 )
                 await conn.execute(
                     text(
+                        "ALTER TABLE mining_config "
+                        "ADD COLUMN IF NOT EXISTS quality_gate_operator VARCHAR(10) DEFAULT 'AND'"
+                    )
+                )
+                await conn.execute(
+                    text(
                         "ALTER TABLE hub_nodes "
                         "ADD COLUMN IF NOT EXISTS weex_uid VARCHAR(50)"
                     )

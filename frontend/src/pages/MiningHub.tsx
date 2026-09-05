@@ -345,9 +345,11 @@ const MiningHub: React.FC = () => {
   const dailyEmission = statusAny?.dailyEmission ?? stats?.daily_emission ?? stats?.dailyEmission ?? 547945;
   const yourEpochReward = statusAny?.yourEpochReward ?? stats?.your_epoch_reward ?? stats?.yourEpochReward ?? 0.0;
   const epochTotalRebates = statusAny?.epochTotalRebates ?? stats?.epoch_total_rebates ?? stats?.epochTotalRebates ?? 0.0;
+  const userCumulativeRebate = status?.userCumulativeRebate ?? statusAny?.userCumulativeRebate ?? stats?.your_cumulative_rebates ?? stats?.yourCumulativeRebates ?? stats?.user_cumulative_rebate ?? stats?.userCumulativeRebate ?? stats?.cumulativeRebates ?? epochTotalRebates;
   const totalDistributed = status?.totalDistributed ?? statusAny?.totalDistributed ?? stats?.totalDistributed ?? stats?.serverTotalMined ?? statusAny?.serverTotalMined ?? 0.0;
 
-  const welcomeProgress = Math.min((epochTotalRebates / 1.0) * 100, 100);
+  const welcomeTarget = 1.0;
+  const welcomeProgress = Math.min((userCumulativeRebate / welcomeTarget) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${status?.nodeReferralCode || ""}`;
 
   return (
@@ -1076,7 +1078,7 @@ const MiningHub: React.FC = () => {
             ) : (
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-                  <span>{t("welcomeBonusProgress", { current: epochTotalRebates.toFixed(2), target: "1.00" })}</span>
+                  <span>{t("welcomeBonusProgress", { current: userCumulativeRebate.toFixed(2), target: welcomeTarget.toFixed(2) })}</span>
                   <span>{Math.round(welcomeProgress)}%</span>
                 </div>
                 <Progress value={welcomeProgress} className="h-2 bg-muted border border-border/50" />

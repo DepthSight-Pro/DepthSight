@@ -224,7 +224,9 @@ const MiningScreen: React.FC = () => {
       .finally(() => setIsDeactivating(false));
   };
 
-  const welcomeProgress = Math.min((epochTotalRebates / 1.0) * 100, 100);
+  const welcomeTarget = 1.0;
+  const userCumulativeRebate = (miningStatus as any)?.userCumulativeRebate ?? stats?.your_cumulative_rebates ?? stats?.yourCumulativeRebates ?? stats?.user_cumulative_rebate ?? stats?.userCumulativeRebate ?? stats?.cumulativeRebates ?? epochTotalRebates;
+  const welcomeProgress = Math.min((userCumulativeRebate / welcomeTarget) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${miningStatus?.nodeReferralCode || ""}`;
 
   return (
@@ -412,7 +414,7 @@ const MiningScreen: React.FC = () => {
         ) : (
           <div className="space-y-2 pt-1">
             <div className="flex justify-between text-[10px] font-bold text-[hsl(var(--muted-foreground))]">
-              <span>{t("mining.welcomeBonusProgress", { current: epochTotalRebates.toFixed(2), target: "1.00" })}</span>
+              <span>{t("mining.welcomeBonusProgress", { current: userCumulativeRebate.toFixed(2), target: welcomeTarget.toFixed(2) })}</span>
               <span>{Math.round(welcomeProgress)}%</span>
             </div>
             <div className="h-1.5 w-full bg-[hsl(var(--secondary))] rounded-full overflow-hidden">

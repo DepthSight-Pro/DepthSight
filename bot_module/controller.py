@@ -327,6 +327,7 @@ class LivePosition(BasePosition):
     accumulated_realized_pnl_from_exchange: float = 0.0
 
     _is_averaging_down: bool = False
+    is_adopted: bool = False
 
     @property
     def has_partial_tp(self) -> bool:
@@ -2865,7 +2866,9 @@ class TradingController:
                     if last_trade.trade_uuid and last_trade.trade_uuid.startswith(
                         "x-entry-"
                     ):
-                        entry_client_id = last_trade.trade_uuid
+                        entry_client_id = (
+                            f"{last_trade.trade_uuid}_orphan_{uuid.uuid4().hex[:6]}"
+                        )
                     break
         except Exception as e:
             logger.error(f"Adopt:{symbol}: DB error: {e}")
@@ -2886,6 +2889,7 @@ class TradingController:
             market_type=market_type,
             api_key_id=self.api_key_id,
             current_sl_price=0.0,
+            is_adopted=True,
         )
 
         # SL lookup (API call)
@@ -4992,6 +4996,40 @@ class TradingController:
         current_cumulative_deviation = 0.0
         current_step = step_value
 
+        # Fetch current market price to prevent placing limit orders that would fill as takers
+        current_market_price: Optional[float] = None
+        if pair_info and pair_info.get("last_price"):
+            try:
+                current_market_price = float(pair_info["last_price"])
+            except (ValueError, TypeError):
+                current_market_price = None
+
+        if current_market_price is None or current_market_price <= 0:
+            if hasattr(self, "data_consumer") and self.data_consumer:
+                try:
+                    current_market_price = self.data_consumer.get_last_price(
+                        position.symbol
+                    )
+                except Exception:
+                    current_market_price = None
+
+        if current_market_price is None or current_market_price <= 0:
+            try:
+                ticker_data = await executor.get_ticker_price(position.symbol)
+                if ticker_data and "price" in ticker_data:
+                    current_market_price = float(ticker_data["price"])
+            except Exception as e_tick:
+                logger.debug(
+                    f"{log_prefix} Could not fetch ticker price from executor: {e_tick}"
+                )
+
+        is_adopted_pos = getattr(position, "is_adopted", False)
+        if is_adopted_pos:
+            logger.warning(
+                f"{log_prefix} DCA grid initialized for ADOPTED position. "
+                f"initial_quantity={position.initial_quantity}, remaining_quantity={position.remaining_quantity}"
+            )
+
         for i in range(max_sos):
             # Calculating deviation for current SO
             # SO 1: deviation = step_value
@@ -5060,12 +5098,44 @@ class TradingController:
                     )
                     continue
 
+            # Checking if the SO price is beyond current market price (would fill as taker)
+            if current_market_price is not None and current_market_price > 0:
+                if (
+                    position.direction == SignalDirection.LONG
+                    and rounded_price >= current_market_price
+                ):
+                    logger.warning(
+                        f"{log_prefix} Skipping SO #{i + 1} at {rounded_price} because it is at or above "
+                        f"current market price ({current_market_price}). Would fill as taker."
+                    )
+                    continue
+                elif (
+                    position.direction == SignalDirection.SHORT
+                    and rounded_price <= current_market_price
+                ):
+                    logger.warning(
+                        f"{log_prefix} Skipping SO #{i + 1} at {rounded_price} because it is at or below "
+                        f"current market price ({current_market_price}). Would fill as taker."
+                    )
+                    continue
+
             # Calculating the volume for this step based on the initial quantity (initial_quantity)
             # This prevents volume "explosion" when the price approaches the stop-loss.
             # The first safety order should already apply the multiplier.
-            # SO 1 (i=0): quantity = initial_quantity * (vol_mult^1)
-            # SO 2 (i=1): quantity = initial_quantity * (vol_mult^2)
-            base_qty = position.initial_quantity
+            # For adopted positions, cap base_qty to remaining_quantity to prevent runaway grid sizing
+            if (
+                is_adopted_pos
+                and position.initial_quantity > position.remaining_quantity
+            ):
+                logger.warning(
+                    f"{log_prefix} Adopted position initial_quantity ({position.initial_quantity}) "
+                    f"> remaining_quantity ({position.remaining_quantity}). "
+                    f"Capping base_qty to {position.remaining_quantity} to prevent volume explosion."
+                )
+                base_qty = position.remaining_quantity
+            else:
+                base_qty = position.initial_quantity
+
             target_qty_raw = base_qty * (vol_mult ** (i + 1))
 
             new_quantity = self.rm._adjust_and_round_quantity(
@@ -9944,6 +10014,41 @@ class TradingController:
             )
             logger.info(f"{log_prefix} _place_stop_loss returned: {place_success}")
 
+            if not place_success:
+                max_retries = 3
+                delays = [2.0, 4.0, 8.0]
+                for attempt in range(1, max_retries + 1):
+                    current_pos = self._active_position_get(symbol, market_type)
+                    if not current_pos or current_pos.status != "OPEN":
+                        logger.warning(
+                            f"{log_prefix} Position {symbol} is no longer OPEN during SL retry. Aborting retries."
+                        )
+                        break
+
+                    delay = delays[attempt - 1]
+                    logger.warning(
+                        f"{log_prefix} SL placement failed. Retrying ({attempt}/{max_retries}) in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+
+                    current_pos = self._active_position_get(symbol, market_type)
+                    if not current_pos or current_pos.status != "OPEN":
+                        logger.warning(
+                            f"{log_prefix} Position {symbol} is no longer OPEN after wait. Aborting retries."
+                        )
+                        break
+
+                    current_pos.sl_placement_initiated = False
+                    place_success = await self._place_stop_loss(
+                        current_pos, skip_preflight_check=True
+                    )
+                    logger.info(
+                        f"{log_prefix} SL retry ({attempt}/{max_retries}) returned: {place_success}"
+                    )
+                    if place_success:
+                        position_ref_for_new_sl = current_pos
+                        break
+
             if place_success:
                 logger.info(
                     f"{log_prefix} New SL successfully placed (or placement initiated by _place_stop_loss)."
@@ -9969,17 +10074,33 @@ class TradingController:
                     f"{log_prefix} --- EXITING _replace_stop_loss (SUCCESS) ---"
                 )
             else:
-                logger.error(
-                    f"{log_prefix} Failed to place new SL (returned by _place_stop_loss)."
+                logger.critical(
+                    f"{log_prefix} CRITICAL: Failed to place new SL after retries. Position is UNPROTECTED! Initiating emergency market close."
                 )
+
                 self.trade_logger.log_event(
                     event_type="SL_ORDER_MOVED_FAILED",
                     data={
                         "symbol": symbol,
                         "new_sl_price": new_sl_price,
-                        "reason": "Failed to place new SL order (via _place_stop_loss)",
+                        "reason": "Failed to place new SL order (via _place_stop_loss) after 3 retries. Emergency close initiated.",
                         "entry_client_order_id": entry_cid_for_log_at_replace,
                     },
+                )
+                if self.telegram_notifier:
+                    self.telegram_notifier.bot_error(
+                        f"🚨 <b>CRITICAL: SL PLACEMENT FAILED ({symbol})</b>\n"
+                        f"Failed to place new SL at {new_sl_price:.4f} after 3 retries!\n"
+                        f"Position is UNPROTECTED. Emergency closing position at market!",
+                        chat_id=self.user_telegram_chat_id,
+                    )
+                self.loop.create_task(
+                    self.close_position(
+                        symbol,
+                        reason="EMERGENCY_SL_REPLACE_FAILED",
+                        market_type=market_type,
+                    ),
+                    name=f"EmergencyClose_SLReplaceFailed_{symbol}",
                 )
                 logger.error(
                     f"{log_prefix} --- EXITING _replace_stop_loss (FAILURE) ---"
@@ -12580,23 +12701,73 @@ class TradingController:
                                 f"{log_prefix} SL FILLED: Added final rp={realized_pnl_from_exchange:.4f} to accumulated. Total accumulated={position.accumulated_realized_pnl_from_exchange:.4f}"
                             )
 
-                        self.loop.create_task(
-                            self._handle_final_exit(
-                                symbol,
-                                "STOP_LOSS_BE"
-                                if position.is_stop_at_be
-                                else "STOP_LOSS",
-                                exit_price_sl_fill,
-                                commission,
-                                commission_asset,
-                                order_id,
-                                client_order_id,
-                                realized_pnl_from_exchange=0.0,  # Already added to accumulated above
-                                exchange_pnl_available=exchange_pnl_available,
-                                market_type=event_market_type,
-                            ),
-                            name=f"HandleExit_SLFill_{symbol}_{order_id}",
+                        sl_filled_qty = quantity_filled_cumulative
+                        is_partial_sl = (
+                            position.remaining_quantity > 0
+                            and sl_filled_qty > 0
+                            and sl_filled_qty < (position.remaining_quantity - 1e-6)
                         )
+
+                        if is_partial_sl:
+                            unfilled_remainder = (
+                                position.remaining_quantity - sl_filled_qty
+                            )
+                            logger.critical(
+                                f"{log_prefix} CRITICAL: PARTIAL SL DETECTED! SL filled {sl_filled_qty:.8f}, "
+                                f"but position remaining_quantity is {position.remaining_quantity:.8f}. "
+                                f"Remainder {unfilled_remainder:.8f} will be closed immediately at market!"
+                            )
+                            position.remaining_quantity = unfilled_remainder
+                            position.current_sl_order_id = None
+                            position.current_sl_client_order_id = None
+                            position.sl_placement_initiated = False
+
+                            self.trade_logger.log_event(
+                                event_type="SL_PARTIAL_FILL_DETECTED",
+                                data={
+                                    "symbol": symbol,
+                                    "sl_filled_qty": sl_filled_qty,
+                                    "unfilled_remainder": unfilled_remainder,
+                                    "exit_price": exit_price_sl_fill,
+                                    "order_id": order_id,
+                                    "client_order_id": client_order_id,
+                                },
+                            )
+
+                            if self.telegram_notifier:
+                                self.telegram_notifier.bot_error(
+                                    f"🚨 <b>PARTIAL SL DETECTED ({symbol})</b>\n"
+                                    f"SL filled {sl_filled_qty:.6f}, remaining pos was {position.remaining_quantity + sl_filled_qty:.6f}.\n"
+                                    f"Emergency closing remainder {unfilled_remainder:.6f} at market!",
+                                    chat_id=self.user_telegram_chat_id,
+                                )
+
+                            self.loop.create_task(
+                                self.close_position(
+                                    symbol,
+                                    reason="SL_PARTIAL_REMAINDER",
+                                    market_type=event_market_type,
+                                ),
+                                name=f"ClosePartialRemainder_{symbol}_{order_id}",
+                            )
+                        else:
+                            self.loop.create_task(
+                                self._handle_final_exit(
+                                    symbol,
+                                    "STOP_LOSS_BE"
+                                    if position.is_stop_at_be
+                                    else "STOP_LOSS",
+                                    exit_price_sl_fill,
+                                    commission,
+                                    commission_asset,
+                                    order_id,
+                                    client_order_id,
+                                    realized_pnl_from_exchange=0.0,  # Already added to accumulated above
+                                    exchange_pnl_available=exchange_pnl_available,
+                                    market_type=event_market_type,
+                                ),
+                                name=f"HandleExit_SLFill_{symbol}_{order_id}",
+                            )
                     else:
                         logger.warning(
                             f"{log_prefix} SL order FILLED, but PosStatus is '{position.status}'. Likely already handled or race condition."

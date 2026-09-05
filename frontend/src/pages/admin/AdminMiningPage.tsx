@@ -131,6 +131,7 @@ const AdminMiningPage: React.FC = () => {
 	const [dailyEmission, setDailyEmission] = useState(547945.21);
 	const [minTradeDuration, setMinTradeDuration] = useState(30);
 	const [minPriceMovement, setMinPriceMovement] = useState(0.15);
+	const [qualityGateOperator, setQualityGateOperator] = useState<"AND" | "OR">("AND");
 	const [referralBoost, setReferralBoost] = useState(0.10);
 	const [rebateRates, setRebateRates] = useState<Record<string, number>>({
 		weex_futures: 0.60,
@@ -164,6 +165,9 @@ const AdminMiningPage: React.FC = () => {
 			}
 			if (hubConfig.minPriceMovementPercent !== undefined) {
 				setMinPriceMovement(hubConfig.minPriceMovementPercent);
+			}
+			if (hubConfig.qualityGateOperator) {
+				setQualityGateOperator(hubConfig.qualityGateOperator.toUpperCase() as "AND" | "OR");
 			}
 			if (hubConfig.referralMiningBoost !== undefined) {
 				setReferralBoost(hubConfig.referralMiningBoost);
@@ -208,6 +212,7 @@ const AdminMiningPage: React.FC = () => {
 				dailyEmissionBase: dailyEmission,
 				minTradeDurationSec: minTradeDuration,
 				minPriceMovementPercent: minPriceMovement,
+				qualityGateOperator: qualityGateOperator,
 				referralMiningBoost: referralBoost,
 				rebateRates,
 			},
@@ -405,6 +410,43 @@ const AdminMiningPage: React.FC = () => {
 												className="font-mono font-bold"
 											/>
 											<span className="text-[10px] text-muted-foreground">Anti-instant-exit: minimum |entry→exit| move; re-checked against real exchange prices</span>
+										</div>
+
+										<div className="space-y-2 p-4 border rounded-xl bg-card/40 flex flex-col justify-between">
+											<div>
+												<label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+													{t("qualityGateOperatorLabel", "Condition Logic (Duration / Movement)")}
+												</label>
+												<div className="grid grid-cols-2 gap-2 pt-2">
+													<button
+														type="button"
+														onClick={() => setQualityGateOperator("AND")}
+														className={`py-2 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+															qualityGateOperator === "AND"
+																? "bg-primary text-primary-foreground border-primary shadow-sm"
+																: "bg-card/60 text-muted-foreground border-border hover:border-primary/40"
+														}`}
+													>
+														<span>{t("qualityGateOperatorAnd", "AND (Both)")}</span>
+													</button>
+													<button
+														type="button"
+														onClick={() => setQualityGateOperator("OR")}
+														className={`py-2 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+															qualityGateOperator === "OR"
+																? "bg-primary text-primary-foreground border-primary shadow-sm"
+																: "bg-card/60 text-muted-foreground border-border hover:border-primary/40"
+														}`}
+													>
+														<span>{t("qualityGateOperatorOr", "OR (Either)")}</span>
+													</button>
+												</div>
+											</div>
+											<span className="text-[10px] text-muted-foreground block mt-1">
+												{qualityGateOperator === "AND"
+													? t("qualityGateOperatorDescAnd", "Trade must meet BOTH duration and price movement")
+													: t("qualityGateOperatorDescOr", "Trade qualifies if EITHER duration OR price movement is met")}
+											</span>
 										</div>
 
 										<div className="space-y-2 p-4 border rounded-xl bg-card/40">

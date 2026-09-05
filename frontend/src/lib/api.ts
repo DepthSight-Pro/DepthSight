@@ -2703,6 +2703,7 @@ export interface LocalMiningStatusResponse {
 	userRewardSharePercent?: number;
 	userTradeVolume?: number;
 	userEstimatedRebate?: number;
+	userCumulativeRebate?: number;
 }
 
 export interface MiningActivatePayload {

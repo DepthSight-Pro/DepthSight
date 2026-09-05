@@ -2918,6 +2918,7 @@ class MiningStatusResponse(BaseModel):
     your_daily_volume: float = 0.0
     server_daily_volume: float = 0.0
     your_epoch_rebates: float = 0.0
+    your_cumulative_rebates: float = 0.0
     your_volume_share: float = 0.0
     total_distributed: float = 0.0
     server_total_mined: float = 0.0
@@ -2947,6 +2948,7 @@ class MiningConfigPublic(BaseModel):
     eligible_exchanges: List[str]
     min_trade_duration_sec: int
     min_price_movement_percent: float = 0.15
+    quality_gate_operator: str = "AND"
     referral_mining_boost: float
     daily_emission_base: float = 547945.21
     rebate_rates: Dict[str, float] = Field(default_factory=dict)
@@ -2966,8 +2968,19 @@ class MiningConfigUpdate(BaseModel):
     min_trade_duration_sec: Optional[int] = None
     min_trade_pnl_abs: Optional[float] = None
     min_price_movement_percent: Optional[float] = None
+    quality_gate_operator: Optional[str] = None
     referral_mining_boost: Optional[float] = None
     rebate_rates: Optional[Dict[str, float]] = None
+
+    @field_validator("quality_gate_operator", mode="before")
+    @classmethod
+    def validate_quality_gate_operator(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            val = str(v).strip().upper()
+            if val not in ("AND", "OR"):
+                raise ValueError("quality_gate_operator must be either 'AND' or 'OR'")
+            return val
+        return v
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -2993,6 +3006,7 @@ class LocalMiningStatusResponse(BaseModel):
     user_trade_volume: float = 0.0
     user_daily_volume: float = 0.0
     user_estimated_rebate: float = 0.0
+    user_cumulative_rebate: float = 0.0
 
     model_config = ConfigDict(
         alias_generator=to_camel,

@@ -1862,6 +1862,7 @@ async def get_mining_config(db: AsyncSession = Depends(get_db)):
         eligible_exchanges=cfg.eligible_exchanges,
         min_trade_duration_sec=cfg.min_trade_duration_sec,
         min_price_movement_percent=cfg.min_price_movement_percent,
+        quality_gate_operator=getattr(cfg, "quality_gate_operator", "AND") or "AND",
         referral_mining_boost=cfg.referral_mining_boost,
         daily_emission_base=cfg.daily_emission_base,
         rebate_rates=cfg.rebate_rates or {},
@@ -2017,6 +2018,25 @@ async def get_mining_status(
     res_epoch_rebates = await db.execute(stmt_epoch_rebates)
     your_epoch_rebates = float(res_epoch_rebates.scalar() or 0.0)
 
+    stmt_ledger_rebates = select(func.sum(models.MiningLedger.total_rebate_usdt)).where(
+        models.MiningLedger.node_uuid == node.node_uuid
+    )
+    res_ledger_rebates = await db.execute(stmt_ledger_rebates)
+    ledger_rebates = float(res_ledger_rebates.scalar() or 0.0)
+
+    stmt_all_reports_rebates = select(
+        func.sum(models.HubTelemetryReport.estimated_rebate_usdt)
+    ).where(
+        models.HubTelemetryReport.node_uuid == node.node_uuid,
+        models.HubTelemetryReport.is_mining_eligible.is_(True),
+    )
+    res_all_reports = await db.execute(stmt_all_reports_rebates)
+    all_reports_rebate = float(res_all_reports.scalar() or 0.0)
+
+    your_cumulative_rebates = max(
+        ledger_rebates + your_epoch_rebates, all_reports_rebate
+    )
+
     # Daily volume percentage: user's trade volume today / total trade volume today
     your_volume_share = (
         your_daily_volume / server_daily_volume if server_daily_volume > 0.0 else 0.0
@@ -2053,6 +2073,7 @@ async def get_mining_status(
         your_daily_volume=your_daily_volume,
         server_daily_volume=server_daily_volume,
         your_epoch_rebates=your_epoch_rebates,
+        your_cumulative_rebates=your_cumulative_rebates,
         your_volume_share=your_volume_share,
         total_distributed=total_distributed,
         server_total_mined=total_distributed,
@@ -2810,24 +2831,7 @@ def score_trade_with_reason(
     if report.trade_mode != "LIVE":
         return 0.0, "trade is not LIVE"
 
-    # 2. Minimum hold time (anti-wash trading). A MISSING duration is treated
-    # as a failure too — otherwise bots could bypass the gate by omitting it.
-    if (
-        not report.trade_duration_sec
-        or report.trade_duration_sec < config.min_trade_duration_sec
-    ):
-        if not report.trade_duration_sec:
-            return (
-                0.0,
-                f"missing trade duration (min {config.min_trade_duration_sec}s)",
-            )
-        return (
-            0.0,
-            f"hold time {report.trade_duration_sec}s < min "
-            f"{config.min_trade_duration_sec}s",
-        )
-
-    # 3. Must have valid entry/exit prices
+    # 2. Must have valid entry/exit prices
     if (
         not report.entry_price
         or not report.exit_price
@@ -2836,18 +2840,56 @@ def score_trade_with_reason(
     ):
         return 0.0, "invalid entry/exit prices"
 
-    # 4. Minimum absolute price movement (anti-instant-exit): flat trades that
-    # open and close at ~the same price do not qualify for mining.
-    if config.min_price_movement_percent and config.min_price_movement_percent > 0:
-        movement_percent = (
-            abs(report.exit_price - report.entry_price) / report.entry_price * 100
-        )
-        if movement_percent < config.min_price_movement_percent:
-            return (
-                0.0,
-                f"price movement {movement_percent:.3f}% < min "
-                f"{config.min_price_movement_percent}%",
-            )
+    # 3. Quality gate evaluation (hold time & price movement)
+    operator = (getattr(config, "quality_gate_operator", "AND") or "AND").upper()
+
+    # Duration check (anti-wash trading)
+    min_dur = getattr(config, "min_trade_duration_sec", 0) or 0
+    if min_dur > 0:
+        if not report.trade_duration_sec:
+            dur_ok = False
+            dur_reason = f"missing trade duration (min {min_dur}s)"
+        elif report.trade_duration_sec < min_dur:
+            dur_ok = False
+            dur_reason = f"hold time {report.trade_duration_sec}s < min {min_dur}s"
+        else:
+            dur_ok = True
+            dur_reason = None
+    else:
+        dur_ok = True
+        dur_reason = None
+
+    # Price movement check (anti-instant-exit)
+    min_move = getattr(config, "min_price_movement_percent", 0.0) or 0.0
+    movement_percent = (
+        abs(report.exit_price - report.entry_price) / report.entry_price * 100
+    )
+    if min_move > 0:
+        if movement_percent < min_move:
+            move_ok = False
+            move_reason = f"price movement {movement_percent:.3f}% < min {min_move}%"
+        else:
+            move_ok = True
+            move_reason = None
+    else:
+        move_ok = True
+        move_reason = None
+
+    if operator == "OR":
+        # At least one condition must be satisfied.
+        # Fails only if both active conditions fail.
+        if not dur_ok and not move_ok:
+            return 0.0, f"{dur_reason} and {move_reason}"
+        if not dur_ok and min_move <= 0:
+            return 0.0, dur_reason
+        if not move_ok and min_dur <= 0:
+            return 0.0, move_reason
+    else:
+        # Default "AND": both conditions must be satisfied.
+        if not dur_ok:
+            return 0.0, dur_reason
+        if not move_ok:
+            return 0.0, move_reason
 
     # Weight: longer duration gets a higher score up to 1.0 (cap at 1h)
     score = 1.0

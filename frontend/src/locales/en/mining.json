@@ -127,5 +127,10 @@
   "myTrades": "My Trades",
   "referralTrades": "Referral Trades",
   "ownTradeBadge": "My Trade",
-  "referralTradeBadge": "Referral"
+  "referralTradeBadge": "Referral",
+  "qualityGateOperatorLabel": "Condition Logic (Duration / Movement)",
+  "qualityGateOperatorAnd": "AND (Both)",
+  "qualityGateOperatorOr": "OR (Either)",
+  "qualityGateOperatorDescAnd": "Trade must meet BOTH duration and price movement",
+  "qualityGateOperatorDescOr": "Trade qualifies if EITHER duration OR price movement is met"
 }

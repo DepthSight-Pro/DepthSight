@@ -25,6 +25,7 @@ def _cfg(**overrides) -> models.MiningConfig:
         eligible_exchanges=["weex"],
         min_trade_duration_sec=30,
         min_price_movement_percent=0.15,
+        quality_gate_operator="AND",
     )
     params.update(overrides)
     return models.MiningConfig(**params)
@@ -196,3 +197,119 @@ async def test_local_save_untouched_on_regular_node(db_session, monkeypatch):
 
     assert row.verification_status == "LOCAL_ONLY"
     assert row.is_mining_eligible is False
+
+
+def test_score_trade_or_operator_duration_passes_movement_fails():
+    """In OR mode, meeting duration threshold alone qualifies the trade."""
+    cfg = _cfg(quality_gate_operator="OR")
+    rep = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=300,
+        entry_price=100.0,
+        exit_price=100.05,  # 0.05% < 0.15%
+    )
+    score, reason = score_trade_with_reason(rep, cfg)
+    assert score > 0
+    assert reason is None
+
+
+def test_score_trade_or_operator_movement_passes_duration_fails():
+    """In OR mode, meeting price movement threshold alone qualifies the trade."""
+    cfg = _cfg(quality_gate_operator="OR")
+    rep = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=10,  # 10s < 30s
+        entry_price=100.0,
+        exit_price=101.0,  # 1.0% >= 0.15%
+    )
+    score, reason = score_trade_with_reason(rep, cfg)
+    assert score > 0
+    assert reason is None
+
+
+def test_score_trade_or_operator_movement_passes_duration_missing():
+    """In OR mode, missing duration passes if price movement meets threshold."""
+    cfg = _cfg(quality_gate_operator="OR")
+    rep = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=None,
+        entry_price=100.0,
+        exit_price=101.0,  # 1.0% >= 0.15%
+    )
+    score, reason = score_trade_with_reason(rep, cfg)
+    assert score > 0
+    assert reason is None
+
+
+def test_score_trade_or_operator_both_fail():
+    """In OR mode, failing both duration and movement rejects with combined reason."""
+    cfg = _cfg(quality_gate_operator="OR")
+    rep = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=10,  # 10s < 30s
+        entry_price=100.0,
+        exit_price=100.05,  # 0.05% < 0.15%
+    )
+    score, reason = score_trade_with_reason(rep, cfg)
+    assert score == 0.0
+    assert reason is not None
+    assert "10s < min 30s" in reason
+    assert "movement 0.050%" in reason
+
+
+def test_score_trade_or_operator_both_fail_missing_duration():
+    """In OR mode, missing duration + flat movement rejects with combined reason."""
+    cfg = _cfg(quality_gate_operator="OR")
+    rep = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=None,
+        entry_price=100.0,
+        exit_price=100.05,  # 0.05% < 0.15%
+    )
+    score, reason = score_trade_with_reason(rep, cfg)
+    assert score == 0.0
+    assert reason is not None
+    assert "missing trade duration" in reason
+    assert "movement 0.050%" in reason
+
+
+def test_score_trade_and_operator_requires_both():
+    """In AND mode, failing either duration or movement rejects the trade."""
+    cfg = _cfg(quality_gate_operator="AND")
+    # Duration passes, movement fails -> reject
+    rep_flat = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=300,
+        entry_price=100.0,
+        exit_price=100.05,
+    )
+    score1, reason1 = score_trade_with_reason(rep_flat, cfg)
+    assert score1 == 0.0
+    assert reason1 and "movement" in reason1
+
+    # Movement passes, duration fails -> reject
+    rep_short = SimpleNamespace(
+        trade_mode="LIVE",
+        trade_duration_sec=10,
+        entry_price=100.0,
+        exit_price=101.0,
+    )
+    score2, reason2 = score_trade_with_reason(rep_short, cfg)
+    assert score2 == 0.0
+    assert reason2 and "10s < min 30s" in reason2
+
+
+def test_mining_config_update_schema_operator_validation():
+    from api.schemas import MiningConfigUpdate
+
+    u1 = MiningConfigUpdate(quality_gate_operator="OR")
+    assert u1.quality_gate_operator == "OR"
+
+    u2 = MiningConfigUpdate(quality_gate_operator="or")
+    assert u2.quality_gate_operator == "OR"
+
+    u3 = MiningConfigUpdate(quality_gate_operator="and")
+    assert u3.quality_gate_operator == "AND"
+
+    with pytest.raises(ValueError):
+        MiningConfigUpdate(quality_gate_operator="INVALID")

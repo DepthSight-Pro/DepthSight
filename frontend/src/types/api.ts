@@ -1377,6 +1377,7 @@ export interface HubMiningConfig {
 	eligibleExchanges: string[];
 	minTradeDurationSec: number;
 	minPriceMovementPercent?: number;
+	qualityGateOperator?: "AND" | "OR";
 	referralMiningBoost: number;
 	dailyEmissionBase?: number;
 	rebateRates?: Record<string, number>;
@@ -1387,6 +1388,7 @@ export interface HubMiningConfigUpdate {
 	eligibleExchanges?: string[];
 	minTradeDurationSec?: number;
 	minPriceMovementPercent?: number;
+	qualityGateOperator?: "AND" | "OR";
 	referralMiningBoost?: number;
 	dailyEmissionBase?: number;
 	rebateRates?: Record<string, number>;

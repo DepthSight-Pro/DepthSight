@@ -506,3 +506,100 @@ async def test_telemetry_insights_aggregation(
     )
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+async def test_mining_status_cumulative_rebates(
+    test_client: AsyncClient,
+    authenticated_client_factory,
+    db_session: AsyncSession,
+):
+    """Cumulative rebates include past finalized epochs plus current epoch reports."""
+    user = models.User(
+        username="cum-user",
+        email="cum-user@example.com",
+        hashed_password="hash",
+        is_active=True,
+        role="user",
+        referral_code="CUM-REF",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    node_uuid = "node-cum-rebate-test"
+    secret = "secret-123"
+    node = models.HubNode(
+        node_uuid=node_uuid,
+        name="CumNode",
+        secret_hash=hashlib.sha256(secret.encode()).hexdigest(),
+        node_referral_code="CUM-REF",
+    )
+    db_session.add(node)
+
+    # Past epoch in MiningLedger: $0.45 rebate
+    db_session.add(
+        models.MiningLedger(
+            node_uuid=node_uuid,
+            epoch_date=datetime.date.today() - datetime.timedelta(days=1),
+            base_reward=10.0,
+            referral_bonus=0.0,
+            welcome_bonus=0.0,
+            boost_multiplier=1.0,
+            total_reward=10.0,
+            total_rebate_usdt=0.45,
+            verified_trades_count=1,
+        )
+    )
+
+    # Today's telemetry report in HubTelemetryReport: $0.15 rebate
+    now = datetime.datetime.now(datetime.timezone.utc)
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=100.0,
+            exit_price=101.0,
+            trade_mode="LIVE",
+            node_uuid=node_uuid,
+            trade_volume_usdt=1000.0,
+            estimated_rebate_usdt=0.15,
+            is_mining_eligible=True,
+            created_at=now,
+        )
+    )
+
+    # Setup AppConfig for user
+    cfg = models.AppConfig(
+        user_id=user.id,
+        is_mining_enabled=True,
+        risk_management={},
+        notifications={},
+        data_sources={},
+        exchange_settings={
+            "bybit": {
+                "mining_node_uuid": node_uuid,
+                "mining_node_secret": secret,
+                "wallet_address": "0x1234567890123456789012345678901234567890",
+            }
+        },
+    )
+    db_session.add(cfg)
+    await db_session.commit()
+
+    # 1. Hub endpoint /mining/status
+    hub_headers = {"X-Node-UUID": node_uuid, "X-Node-Secret": secret}
+    hub_resp = await test_client.get("/api/v1/hub/mining/status", headers=hub_headers)
+    assert hub_resp.status_code == 200
+    hub_data = hub_resp.json()
+    assert hub_data["yourEpochRebates"] == pytest.approx(0.15, abs=1e-3)
+    # Cumulative = 0.45 (past ledger) + 0.15 (today) = 0.60
+    assert hub_data["yourCumulativeRebates"] == pytest.approx(0.60, abs=1e-3)
+
+    # 2. Local endpoint /mining/status
+    client = await authenticated_client_factory(user)
+    local_resp = await client.get("/api/v1/mining/status")
+    assert local_resp.status_code == 200
+    local_data = local_resp.json()["data"]
+    assert local_data["userEstimatedRebate"] > 0
+    assert local_data["userCumulativeRebate"] == pytest.approx(0.60, abs=1e-3)
+    assert local_data["stats"]["yourCumulativeRebates"] == pytest.approx(0.60, abs=1e-3)

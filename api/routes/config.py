@@ -1427,6 +1427,25 @@ async def format_mining_status_response(
     res_rebate = await db.execute(stmt_rebate)
     user_rebate = float(res_rebate.scalar() or 0.0)
 
+    # 2b. Cumulative rebates across all time for the node
+    stmt_ledger_rebates = select(func.sum(models.MiningLedger.total_rebate_usdt)).where(
+        models.MiningLedger.node_uuid == target_node
+    )
+    res_ledger_rebates = await db.execute(stmt_ledger_rebates)
+    ledger_rebates = float(res_ledger_rebates.scalar() or 0.0)
+
+    stmt_all_reports_rebates = select(
+        func.sum(models.HubTelemetryReport.estimated_rebate_usdt)
+    ).where(models.HubTelemetryReport.node_uuid == target_node)
+    if is_central:
+        stmt_all_reports_rebates = stmt_all_reports_rebates.where(
+            models.HubTelemetryReport.is_mining_eligible.is_(True)
+        )
+    res_all_reports = await db.execute(stmt_all_reports_rebates)
+    all_reports_rebate = float(res_all_reports.scalar() or 0.0)
+
+    user_cum_rebate = max(ledger_rebates + user_rebate, all_reports_rebate)
+
     # 3. Today's volume for all nodes on this server (since midnight UTC)
     stmt_total_daily_vol = select(
         func.sum(models.HubTelemetryReport.trade_volume_usdt)
@@ -1462,6 +1481,23 @@ async def format_mining_status_response(
             user_daily_vol = float(hub_data.get("yourDailyVolume") or 0.0)
         if hub_data.get("serverDailyVolume") is not None:
             total_daily_node_vol = float(hub_data.get("serverDailyVolume") or 0.0)
+        hub_cum = (
+            hub_data.get("yourCumulativeRebates")
+            or hub_data.get("your_cumulative_rebates")
+            or hub_data.get("userCumulativeRebate")
+            or hub_data.get("user_cumulative_rebate")
+        )
+        if hub_cum is not None:
+            user_cum_rebate = max(user_cum_rebate, float(hub_cum))
+
+    if not is_central:
+        local_stats_res = await db.execute(
+            select(models.LocalUserMiningStats.estimated_rebate_usdt).where(
+                models.LocalUserMiningStats.user_id == current_user.id
+            )
+        )
+        local_cum = float(local_stats_res.scalar() or 0.0)
+        user_cum_rebate = max(user_cum_rebate, local_cum)
 
     # Daily volume percentage: user's trade volume today / total trade volume today
     user_ratio = (
@@ -1643,6 +1679,10 @@ async def format_mining_status_response(
         hub_data["yourEpochReward"] = your_epoch_reward_val
         hub_data["epoch_total_rebates"] = user_rebate
         hub_data["epochTotalRebates"] = user_rebate
+        hub_data["your_cumulative_rebates"] = user_cum_rebate
+        hub_data["yourCumulativeRebates"] = user_cum_rebate
+        hub_data["user_cumulative_rebate"] = user_cum_rebate
+        hub_data["userCumulativeRebate"] = user_cum_rebate
 
         return {
             "data": schemas.LocalMiningStatusResponse(
@@ -1662,6 +1702,7 @@ async def format_mining_status_response(
                 user_reward_share_percent=node_config.user_reward_share_percent,
                 user_trade_volume=user_vol,
                 user_estimated_rebate=user_rebate * share_pct,
+                user_cumulative_rebate=user_cum_rebate,
             )
         }
     else:
@@ -1692,6 +1733,10 @@ async def format_mining_status_response(
 
             user_stats["epoch_total_rebates"] = user_rebate
             user_stats["epochTotalRebates"] = user_rebate
+            user_stats["your_cumulative_rebates"] = user_cum_rebate
+            user_stats["yourCumulativeRebates"] = user_cum_rebate
+            user_stats["user_cumulative_rebate"] = user_cum_rebate
+            user_stats["userCumulativeRebate"] = user_cum_rebate
 
         user_stats["userRatio"] = user_ratio
         user_stats["yourVolumeShare"] = user_ratio
@@ -1719,6 +1764,7 @@ async def format_mining_status_response(
                 user_reward_share_percent=node_config.user_reward_share_percent,
                 user_trade_volume=user_vol,
                 user_estimated_rebate=user_rebate * share_pct,
+                user_cumulative_rebate=user_cum_rebate,
             )
         }
 

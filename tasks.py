@@ -3688,7 +3688,7 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 os.getenv("WELCOME_BONUS_MAX_POOL", "100000000.0")
             )
             MAX_NODES_PER_UID = int(os.getenv("MAX_NODES_PER_UID", "1"))
-            min_welcome_threshold = float(os.getenv("MIN_WELCOME_REBATE_USDT", "5.0"))
+            min_welcome_threshold = float(os.getenv("MIN_WELCOME_REBATE_USDT", "1.0"))
 
             # Running in-memory counters seeded from committed DB state. The ledger
             # is written once per epoch below, so we must NOT re-read

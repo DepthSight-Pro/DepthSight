@@ -1406,6 +1406,8 @@ def mock_binance_server():
     """
     server_process = subprocess.Popen(
         [
+            sys.executable,
+            "-m",
             "uvicorn",
             "tests.e2e.mock_binance_server:app",
             "--host",
@@ -1415,21 +1417,36 @@ def mock_binance_server():
         ]
     )
 
-    time.sleep(2)
+    # Wait for server to start with readiness polling
+    started = False
+    for _ in range(20):
+        time.sleep(0.5)
+        try:
+            response = requests.get("http://127.0.0.1:9999/docs", timeout=1.0)
+            if response.status_code == 200:
+                started = True
+                print("\nMock Binance server is up and running.")
+                break
+        except (requests.ConnectionError, requests.HTTPError, requests.Timeout):
+            continue
 
-    try:
-        response = requests.get("http://127.0.0.1:9999/docs")
-        response.raise_for_status()
-        print("\nMock Binance server is up and running.")
-    except (requests.ConnectionError, requests.HTTPError) as e:
+    if not started:
         server_process.terminate()
-        pytest.fail(f"Mock Binance server did not start correctly: {e}")
+        try:
+            server_process.wait(timeout=3)
+        except Exception:
+            pass
+        pytest.fail("Mock Binance server did not start correctly within timeout")
 
     yield "http://127.0.0.1:9999"
 
     print("\nShutting down mock Binance server...")
     server_process.terminate()
-    server_process.wait()
+    try:
+        server_process.wait(timeout=5)
+    except Exception:
+        server_process.kill()
+    time.sleep(0.5)
     print("Mock Binance server shut down.")
 
 

@@ -127,5 +127,10 @@
   "myTrades": "Мои сделки",
   "referralTrades": "Сделки рефералов",
   "ownTradeBadge": "Моя сделка",
-  "referralTradeBadge": "Реферал"
+  "referralTradeBadge": "Реферал",
+  "qualityGateOperatorLabel": "Логика условий проверки (Время / Движение)",
+  "qualityGateOperatorAnd": "И (Оба условия)",
+  "qualityGateOperatorOr": "ИЛИ (Достаточно одного)",
+  "qualityGateOperatorDescAnd": "Сделка должна удовлетворять И минимальному времени, И движению цены",
+  "qualityGateOperatorDescOr": "Сделка принимается, если выполнено время ИЛИ движение цены"
 }

@@ -1254,6 +1254,11 @@ class MiningConfig(Base):
     min_price_movement_percent = Column(
         Float, default=0.15, nullable=False, server_default="0.15"
     )
+    # Quality gate condition operator: "AND" (both duration & movement required)
+    # or "OR" (at least one condition must be met).
+    quality_gate_operator = Column(
+        String(10), default="AND", nullable=False, server_default="AND"
+    )
     referral_mining_boost = Column(Float, default=0.10, nullable=False)
     rebate_rates = Column(JSON, default=dict, nullable=False, server_default="{}")
     total_operator_fee_collected = Column(
