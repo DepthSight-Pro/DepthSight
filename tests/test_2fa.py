@@ -285,9 +285,9 @@ class TestTwoFactorAuthAPI:
         initial_codes = confirm_resp.json()["data"]["backupCodes"]
 
         # Advance to next time step to avoid replay detection
-        import time
-
-        future_code = totp.at(time.time() + 35)
+        await db_session.refresh(pro_user)
+        last_step = pro_user.totp_last_used_step
+        future_code = totp.at((last_step + 1) * 30)
         regen_resp = await authenticated_client.post(
             "/api/v1/auth/2fa/regenerate-backup-codes",
             json={"code": future_code},
