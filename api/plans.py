@@ -82,7 +82,16 @@ class PlansConfig:
 
     def get_plan(self, plan_name: str) -> dict:
         self._reload_if_changed()
-        return self._plans.get(plan_name, {"permissions": [], "quotas": {}})
+        plan = self._plans.get(plan_name, {"permissions": [], "quotas": {}})
+        if plan_name == "free":
+            limits = plan.setdefault("limits", {})
+            if (
+                limits.get("allow_free_bybit_trading")
+                or limits.get("allow_free_weex_trading")
+            ) and "allow_free_okx_trading" not in limits:
+                limits["allow_free_okx_trading"] = True
+                limits.setdefault("max_free_okx_live_strategies", 5)
+        return plan
 
     def get_all_plans(self) -> dict:
         self._reload_if_changed()
@@ -223,18 +232,126 @@ class PlansConfig:
 
         return self.get_full_config()
 
+    def _load_raw_yaml(self) -> dict:
+        try:
+            with open(self._config_path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(
+                f"Could not load raw YAML plans config from {self._config_path}: {e}"
+            )
+            return {}
+
+    def _deep_merge_defaults(self, db_config: dict) -> tuple[dict, bool]:
+        """
+        Deep-merges DB-stored config with base defaults from YAML and platform defaults.
+        Ensures newly added default limits (e.g. allow_free_okx_trading), quotas, or plans
+        are not lost when an older DB snapshot is loaded.
+        Returns a tuple of (merged_config, changed).
+        """
+        import copy
+
+        if not isinstance(db_config, dict):
+            return {}, False
+
+        merged = copy.deepcopy(db_config)
+        changed = False
+
+        base_yaml = self._load_raw_yaml()
+
+        # Top-level sections to preserve/backfill
+        for section in [
+            "registration_trial",
+            "block_restrictions",
+            "billing",
+            "referral_program",
+            "affiliate_program",
+        ]:
+            if section not in merged or not merged[section]:
+                if section in base_yaml and base_yaml[section]:
+                    merged[section] = copy.deepcopy(base_yaml[section])
+                    changed = True
+
+        merged_plans = merged.setdefault("plans", {})
+        base_plans = base_yaml.get("plans", {})
+
+        for plan_key, base_plan in base_plans.items():
+            if plan_key not in merged_plans:
+                merged_plans[plan_key] = copy.deepcopy(base_plan)
+                changed = True
+                continue
+
+            db_plan = merged_plans[plan_key]
+            if not isinstance(db_plan, dict):
+                continue
+
+            # Check limits
+            db_limits = db_plan.setdefault("limits", {})
+            base_limits = base_plan.get("limits", {})
+            for l_key, l_val in base_limits.items():
+                if l_key not in db_limits:
+                    db_limits[l_key] = l_val
+                    changed = True
+
+            # Check quotas
+            db_quotas = db_plan.setdefault("quotas", {})
+            base_quotas = base_plan.get("quotas", {})
+            for q_key, q_val in base_quotas.items():
+                if q_key not in db_quotas:
+                    db_quotas[q_key] = q_val
+                    changed = True
+
+            # Dedicated check for partner free trading exchanges on free plan
+            if plan_key == "free":
+                free_exchange_defaults = {
+                    "allow_free_bybit_trading": True,
+                    "max_free_bybit_live_strategies": 5,
+                    "allow_free_weex_trading": True,
+                    "max_free_weex_live_strategies": 5,
+                    "allow_free_okx_trading": True,
+                    "max_free_okx_live_strategies": 5,
+                }
+                for f_key, f_val in free_exchange_defaults.items():
+                    if f_key not in db_limits:
+                        db_limits[f_key] = f_val
+                        changed = True
+
+                # Ensure features list mentions OKX if Bybit is present
+                features = db_plan.setdefault("features", [])
+                if isinstance(features, list) and not any(
+                    "okx" in str(f).lower() for f in features
+                ):
+                    features.append("5 live strategies on OKX")
+                    changed = True
+
+        return merged, changed
+
     async def load_from_db(self, db) -> bool:
         """Loads plans configuration from the system_settings table if present."""
         try:
             from sqlalchemy import select
+            from sqlalchemy.orm.attributes import flag_modified
             from .models import SystemSetting
 
             stmt = select(SystemSetting).where(SystemSetting.key == "plans_config")
             result = await db.execute(stmt)
             setting = result.scalar_one_or_none()
             if setting and isinstance(setting.value, dict):
+                merged_value, changed = self._deep_merge_defaults(setting.value)
+                if changed:
+                    setting.value = merged_value
+                    flag_modified(setting, "value")
+                    try:
+                        await db.commit()
+                        logger.info(
+                            "Persisted merged default plan configuration keys into DB system_settings."
+                        )
+                    except Exception as commit_err:
+                        logger.warning(
+                            f"Could not persist merged plans config to DB: {commit_err}"
+                        )
                 self._has_db_override = True
-                self.update_full_config(setting.value, write_to_file=True)
+                self.update_full_config(merged_value, write_to_file=True)
                 logger.info("Loaded plans configuration from system_settings DB table.")
                 return True
         except Exception as e:

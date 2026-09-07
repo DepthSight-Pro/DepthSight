@@ -328,6 +328,7 @@ class LivePosition(BasePosition):
 
     _is_averaging_down: bool = False
     is_adopted: bool = False
+    auto_started_strategy_id: Optional[str] = None
 
     @property
     def has_partial_tp(self) -> bool:
@@ -546,7 +547,14 @@ class TradingController:
             self.redis_key_strategies = (
                 config.REDIS_STATE_KEY_STRATEGIES
             )  # Key for strategies
-            self.redis_key_runtime_state = f"depthsight:controller:runtime_state:{self.user_id}"  # Key for full state
+            if self.api_key_id is not None:
+                self.redis_key_runtime_state = (
+                    f"depthsight:controller:runtime_state:{self.user_id}:{self.api_key_id}"
+                )
+            else:
+                self.redis_key_runtime_state = (
+                    f"depthsight:controller:runtime_state:{self.user_id}"
+                )
             logger.info(
                 "TradingController initialized Redis client for state publishing."
             )
@@ -2850,28 +2858,156 @@ class TradingController:
         assigned_config_id = None
         entry_client_id = f"adopted-{uuid.uuid4().hex[:8]}"
 
-        # DB lookup
-        try:
-            async for db in self.get_db_session():
-                last_trade = await crud.get_last_open_trade_for_symbol(
-                    db, self.user_id, symbol
-                )
-                if last_trade:
+        # 1. Look up currently running strategy instances that cover this symbol
+        async with self.instances_lock:
+            for cfg_id, (instance, cfg_dict) in self.running_strategy_instances.items():
+                if self._instance_covers_symbol(cfg_dict, symbol):
+                    assigned_config_id = self._source_config_id(cfg_dict) or cfg_id
                     assigned_strategy_name = (
-                        last_trade.strategy_config.name
-                        if last_trade.strategy_config
-                        else str(last_trade.strategy_config_id)
+                        instance.NAME
+                        or cfg_dict.get("name")
+                        or "VisualBuilderStrategy"
                     )
-                    assigned_config_id = last_trade.strategy_config_id
-                    if last_trade.trade_uuid and last_trade.trade_uuid.startswith(
-                        "x-entry-"
-                    ):
-                        entry_client_id = (
-                            f"{last_trade.trade_uuid}_orphan_{uuid.uuid4().hex[:6]}"
-                        )
+                    logger.info(
+                        f"Adopt:{symbol}: Matched running strategy instance '{assigned_strategy_name}' (config_id={assigned_config_id})."
+                    )
                     break
-        except Exception as e:
-            logger.error(f"Adopt:{symbol}: DB error: {e}")
+            else:
+                logger.info(
+                    f"Adopt:{symbol}: No running strategy instance covers symbol {symbol} (running_count={len(self.running_strategy_instances)})."
+                )
+
+        # 2. If not running in memory, check active StrategyConfig in DB for this user
+        if not assigned_config_id:
+            try:
+                async for db in self.get_db_session():
+                    user_configs = await crud.get_strategy_configs_by_user(
+                        db, user_id=self.user_id
+                    )
+
+                    def _norm(s: str) -> str:
+                        return (
+                            str(s).upper()
+                            .replace("/", "")
+                            .replace(":USDT", "")
+                            .replace("-", "")
+                        )
+
+                    norm_symbol = _norm(symbol)
+                    matched_config = None
+
+                    # Pass 1: exact normalized symbol match, prioritize matching api_key_id
+                    for sc in user_configs:
+                        symbols = sc.symbols if isinstance(sc.symbols, list) else []
+                        sc_syms = [_norm(s) for s in symbols if s]
+                        if norm_symbol in sc_syms:
+                            cfg_data = sc.config_data if isinstance(sc.config_data, dict) else {}
+                            cfg_api_key_id = cfg_data.get("api_key_id")
+                            if cfg_api_key_id is not None and self.api_key_id is not None:
+                                if str(cfg_api_key_id) == str(self.api_key_id):
+                                    matched_config = sc
+                                    break
+                            elif matched_config is None:
+                                matched_config = sc
+
+                    # Pass 2: DYNAMIC mode configs
+                    if not matched_config:
+                        for sc in user_configs:
+                            mode = (sc.symbol_selection_mode or "STATIC").upper()
+                            if mode == "DYNAMIC":
+                                cfg_data = sc.config_data if isinstance(sc.config_data, dict) else {}
+                                cfg_api_key_id = cfg_data.get("api_key_id")
+                                if cfg_api_key_id is not None and self.api_key_id is not None:
+                                    if str(cfg_api_key_id) == str(self.api_key_id):
+                                        matched_config = sc
+                                        break
+                                elif matched_config is None:
+                                    matched_config = sc
+
+                    # Pass 3: Single config fallback
+                    if not matched_config and len(user_configs) == 1:
+                        matched_config = user_configs[0]
+                        logger.info(
+                            f"Adopt:{symbol}: Single StrategyConfig found for user '{matched_config.name}' (id={matched_config.id}). Selecting as fallback."
+                        )
+
+                    if matched_config:
+                        assigned_config_id = matched_config.id
+                        assigned_strategy_name = matched_config.name
+                        logger.info(
+                            f"Adopt:{symbol}: Matched StrategyConfig '{matched_config.name}' (id={matched_config.id}) from DB."
+                        )
+                        break
+                    else:
+                        logger.info(
+                            f"Adopt:{symbol}: Found {len(user_configs)} StrategyConfigs in DB, but none matched symbol {symbol}."
+                        )
+            except Exception as e_sc:
+                logger.warning(
+                    f"Adopt:{symbol}: Error looking up StrategyConfig in DB: {e_sc}",
+                    exc_info=True,
+                )
+
+        # 3. Fallback: check last trade in DB
+        if not assigned_config_id:
+            try:
+                async for db in self.get_db_session():
+                    last_trade = await crud.get_last_open_trade_for_symbol(
+                        db, self.user_id, symbol, api_key_id=self.api_key_id
+                    )
+                    if not last_trade and self.api_key_id is not None:
+                        last_trade = await crud.get_last_open_trade_for_symbol(
+                            db, self.user_id, symbol, api_key_id=None
+                        )
+                    if last_trade:
+                        assigned_strategy_name = (
+                            last_trade.strategy_config.name
+                            if getattr(last_trade, "strategy_config", None)
+                            else str(last_trade.strategy_config_id)
+                        )
+                        assigned_config_id = last_trade.strategy_config_id
+                        if last_trade.trade_uuid:
+                            entry_client_id = (
+                                f"{last_trade.trade_uuid}_orphan_{uuid.uuid4().hex[:6]}"
+                            )
+                        logger.info(
+                            f"Adopt:{symbol}: Matched last trade {last_trade.trade_uuid} "
+                            f"(config_id={assigned_config_id}, name={assigned_strategy_name})."
+                        )
+                        break
+                    else:
+                        logger.info(
+                            f"Adopt:{symbol}: No recent trade found in DB for user_id={self.user_id}, symbol={symbol}."
+                        )
+            except Exception as e:
+                logger.error(
+                    f"Adopt:{symbol}: DB error in last trade lookup: {e}", exc_info=True
+                )
+
+        # 4. Resolve real entry order ID and timestamp from recent exchange trades
+        entry_timestamp = time.time()
+        if hasattr(executor, "get_my_trades"):
+            try:
+                recent_trades = await executor.get_my_trades(symbol, limit=10)
+                target_side = "buy" if direction == SignalDirection.LONG else "sell"
+                for tr in reversed(recent_trades or []):
+                    if str(tr.get("side") or "").lower() == target_side:
+                        tr_info = tr.get("info") or {}
+                        tr_cid = (
+                            tr_info.get("clientOrderId")
+                            or tr_info.get("clOrdId")
+                            or tr_info.get("client_order_id")
+                            or tr.get("order")
+                        )
+                        if tr_cid:
+                            entry_client_id = str(tr_cid)
+                        if tr.get("timestamp"):
+                            entry_timestamp = float(tr["timestamp"]) / 1000.0
+                        break
+            except Exception as e_trades:
+                logger.debug(
+                    f"Adopt:{symbol}: Could not fetch recent trades from exchange: {e_trades}"
+                )
 
         adopted_pos = LivePosition(
             symbol=symbol,
@@ -2879,7 +3015,7 @@ class TradingController:
             entry_price=entry_price,
             initial_quantity=abs(qty),
             remaining_quantity=abs(qty),
-            entry_time=time.time(),
+            entry_time=entry_timestamp,
             strategy=assigned_strategy_name,
             status="OPEN",
             entry_client_order_id=entry_client_id,
@@ -2890,33 +3026,260 @@ class TradingController:
             api_key_id=self.api_key_id,
             current_sl_price=0.0,
             is_adopted=True,
+            signal_details={
+                "adopted": True,
+                "symbol": symbol,
+                "direction": direction.name,
+                "entry_price": entry_price,
+            },
         )
 
-        # SL lookup (API call)
+        # Open orders and SL/TP/DCA lookup (API call)
+        orders_to_check: List[Dict[str, Any]] = []
         try:
             open_orders = await executor.get_open_orders(symbol)
-            for o in open_orders:
-                o_type = o.get("type")
-                o_side = o.get("side")
-                o_price = float(o.get("stopPrice") or o.get("price") or 0)
-                o_id = o.get("orderId")
-                o_cid = o.get("clientOrderId")
-
-                is_sl = False
-                if (direction == SignalDirection.LONG and o_side == "SELL") or (
-                    direction == SignalDirection.SHORT and o_side == "BUY"
-                ):
-                    if o_type in ["STOP_MARKET", "STOP_LOSS", "STOP_LOSS_LIMIT"]:
-                        is_sl = True
-
-                if is_sl:
-                    adopted_pos.current_sl_price = o_price
-                    adopted_pos.current_sl_order_id = o_id
-                    adopted_pos.current_sl_client_order_id = o_cid
-                    adopted_pos.initial_stop_loss = o_price
-                    break
+            if open_orders:
+                orders_to_check.extend(open_orders)
         except Exception as e:
-            logger.error(f"Adopt:{symbol}: API error: {e}")
+            logger.error(f"Adopt:{symbol}: API error fetching open orders: {e}")
+
+        if hasattr(executor, "get_open_algo_orders"):
+            try:
+                algo_orders = await executor.get_open_algo_orders(symbol)
+                if algo_orders:
+                    orders_to_check.extend(algo_orders)
+            except Exception as e:
+                logger.error(f"Adopt:{symbol}: API error fetching algo orders: {e}")
+
+        # Deduplicate orders by orderId
+        seen_order_ids = set()
+        unique_orders = []
+        for o in orders_to_check:
+            oid = str(o.get("orderId") or o.get("id") or "")
+            if oid and oid in seen_order_ids:
+                continue
+            if oid:
+                seen_order_ids.add(oid)
+            unique_orders.append(o)
+
+        found_sl_orders: List[Tuple[Any, str, float, float, bool]] = []  # (order_id, client_order_id, stop_price, qty, is_algo)
+
+        for o in unique_orders:
+            o_type = str(o.get("type") or "").upper()
+            o_side = str(o.get("side") or "").upper()
+            o_id = o.get("orderId") or o.get("id")
+            o_cid = str(o.get("clientOrderId") or "")
+            o_qty = float(o.get("origQty") or o.get("amount") or 0)
+            is_reduce_only = bool(o.get("reduceOnly"))
+
+            # Safely extract limit price and trigger price (avoiding string "0" truthiness bug)
+            limit_price = 0.0
+            for pk in ("price", "avgPrice"):
+                val = o.get(pk)
+                if val is not None:
+                    try:
+                        p = float(val)
+                        if p > 0:
+                            limit_price = p
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+            trigger_price = 0.0
+            o_info = o.get("info") if isinstance(o.get("info"), dict) else {}
+            for spk in (
+                "stopPrice",
+                "triggerPrice",
+                "stopLossPrice",
+                "slTriggerPx",
+                "triggerPx",
+                "tpTriggerPx",
+            ):
+                val = o.get(spk) if o.get(spk) is not None else o_info.get(spk)
+                if val is not None:
+                    try:
+                        p = float(val)
+                        if p > 0:
+                            trigger_price = p
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+            # Primary order price: trigger price if trigger/stop order, else limit price
+            o_price = trigger_price if trigger_price > 0 else limit_price
+
+            is_exit_side = (
+                (direction == SignalDirection.LONG and o_side == "SELL")
+                or (direction == SignalDirection.SHORT and o_side == "BUY")
+            )
+            is_entry_side = (
+                (direction == SignalDirection.LONG and o_side == "BUY")
+                or (direction == SignalDirection.SHORT and o_side == "SELL")
+            )
+
+            cid_lower = o_cid.lower()
+
+            # Check if this is a Stop Loss order
+            is_sl = False
+            is_algo = False
+            if is_exit_side:
+                is_worse_price_than_entry = (
+                    (direction == SignalDirection.LONG and 0 < o_price < entry_price)
+                    or (direction == SignalDirection.SHORT and o_price > entry_price)
+                )
+                if (
+                    o_type
+                    in [
+                        "STOP_MARKET",
+                        "STOP_LOSS",
+                        "STOP_LOSS_LIMIT",
+                        "STOP",
+                        "CONDITIONAL",
+                        "TRIGGER",
+                    ]
+                    or "STOP" in o_type
+                    or "x-sl-" in o_cid
+                    or "xsl" in cid_lower
+                    or (
+                        trigger_price > 0
+                        and "TAKE_PROFIT" not in o_type
+                        and is_worse_price_than_entry
+                    )
+                    or (o.get("is_algo_order") and is_worse_price_than_entry)
+                    or (
+                        trigger_price > 0
+                        and "TAKE_PROFIT" not in o_type
+                        and not is_reduce_only
+                    )
+                ):
+                    is_sl = True
+                    is_algo = bool(
+                        o.get("is_algo_order")
+                        or o_type
+                        in [
+                            "STOP_MARKET",
+                            "STOP_LOSS",
+                            "STOP_LOSS_LIMIT",
+                            "STOP",
+                            "CONDITIONAL",
+                            "TRIGGER",
+                        ]
+                        or "STOP" in o_type
+                        or trigger_price > 0
+                        or getattr(executor, "supports_positions", False)
+                        or market_type in ["futures_usdtm", "futures"]
+                    )
+
+            if is_sl:
+                found_sl_orders.append((o_id, o_cid, o_price, o_qty, is_algo))
+                continue
+
+            # Check if this is an existing Take Profit order
+            is_tp = False
+            if is_exit_side:
+                if (
+                    "TAKE_PROFIT" in o_type
+                    or "x-ptp-" in o_cid
+                    or "x-tp-" in o_cid
+                    or "xptp" in cid_lower
+                    or "xtp" in cid_lower
+                    or (
+                        (o_type == "LIMIT" or not is_sl)
+                        and (
+                            is_reduce_only
+                            or (direction == SignalDirection.LONG and o_price > entry_price)
+                            or (direction == SignalDirection.SHORT and 0 < o_price < entry_price)
+                        )
+                    )
+                ):
+                    is_tp = True
+
+            if is_tp:
+                ptp = PartialTpOrderInfo(
+                    target_price=o_price,
+                    orig_fraction=1.0,
+                    quantity=o_qty,
+                    order_id=o_id,
+                    client_order_id=o_cid,
+                    status="NEW",
+                )
+                adopted_pos.partial_tp_orders.append(ptp)
+                if not adopted_pos.initial_take_profit or adopted_pos.initial_take_profit <= 0:
+                    adopted_pos.initial_take_profit = o_price
+                logger.info(
+                    f"Adopt:{symbol}: Adopted existing TP order {o_id} (CliID: {o_cid}) @ {o_price} (Qty: {o_qty})"
+                )
+                continue
+
+            # Check if this is an existing DCA / Scale-in / Grid limit order
+            is_dca = False
+            if is_entry_side:
+                has_dca_tag = any(
+                    k in cid_lower
+                    for k in ("scalein", "scale-in", "dca", "grid")
+                )
+                is_averaging_limit = (
+                    o_type == "LIMIT"
+                    and (
+                        (direction == SignalDirection.LONG and 0 < o_price < entry_price)
+                        or (direction == SignalDirection.SHORT and o_price > entry_price)
+                    )
+                )
+                if has_dca_tag or is_averaging_limit:
+                    is_dca = True
+
+            if is_dca:
+                dca_info = DcaOrderInfo(
+                    target_price=o_price,
+                    quantity=o_qty,
+                    order_id=o_id,
+                    client_order_id=o_cid,
+                    status="NEW",
+                )
+                adopted_pos.dca_orders.append(dca_info)
+                adopted_pos.dca_order_ids.append(str(o_id))
+                logger.info(
+                    f"Adopt:{symbol}: Adopted existing DCA order {o_id} (CliID: {o_cid}) @ {o_price} (Qty: {o_qty})"
+                )
+
+        if found_sl_orders:
+            # Sort by closest quantity to remaining_quantity so we pick the SL matching current position size
+            found_sl_orders.sort(key=lambda x: abs(x[3] - abs(qty)))
+            primary_sl = found_sl_orders[0]
+            adopted_pos.current_sl_order_id = primary_sl[0]
+            adopted_pos.current_sl_client_order_id = primary_sl[1]
+            adopted_pos.current_sl_price = primary_sl[2]
+            adopted_pos.initial_stop_loss = primary_sl[2]
+            adopted_pos.is_sl_algo_order = primary_sl[4]
+            logger.info(
+                f"Adopt:{symbol}: Adopted primary SL order {primary_sl[0]} (CliID: {primary_sl[1]}) @ {primary_sl[2]} (Qty: {primary_sl[3]}, Algo={primary_sl[4]})"
+            )
+
+            # Cancel redundant duplicate SL orders on exchange
+            if len(found_sl_orders) > 1:
+                for dup_sl in found_sl_orders[1:]:
+                    dup_id, dup_cid, dup_price, dup_qty, dup_is_algo = dup_sl
+                    logger.warning(
+                        f"Adopt:{symbol}: Cancelling redundant duplicate SL order {dup_id} (CliID: {dup_cid}) @ {dup_price} (Algo={dup_is_algo})"
+                    )
+                    try:
+                        await executor.cancel_order(
+                            symbol,
+                            orderId=dup_id,
+                            origClientOrderId=dup_cid,
+                            is_algo_order=dup_is_algo,
+                        )
+                    except Exception as e_canc:
+                        logger.error(
+                            f"Adopt:{symbol}: Failed to cancel duplicate SL order {dup_id}: {e_canc}"
+                        )
+
+        if adopted_pos.dca_orders:
+            adopted_pos.dca_grid_init_triggered = True
+            adopted_pos.dca_active_sos = len(adopted_pos.dca_orders)
+            logger.info(
+                f"Adopt:{symbol}: Adopted {len(adopted_pos.dca_orders)} existing DCA orders. Prevented duplicate grid initialization."
+            )
 
         return adopted_pos
 
@@ -2942,7 +3305,7 @@ class TradingController:
             # 1. Getting real positions from the exchange (NO LOCK)
             exchange_positions_raw = await executor.get_open_positions()
             exchange_positions_map = {
-                p["symbol"]: p
+                str(p["symbol"]).upper(): p
                 for p in exchange_positions_raw
                 if float(p.get("positionAmt", 0)) != 0
             }
@@ -2963,33 +3326,55 @@ class TradingController:
             to_update = []  # (symbol, exch_data) pairs to update
 
             for position_key, internal_pos in internal_snapshot.items():
-                symbol = internal_pos.symbol
-                if symbol not in exchange_positions_map:
-                    to_close.append((position_key, symbol))
+                sym_upper = str(internal_pos.symbol).upper()
+                if sym_upper not in exchange_positions_map:
+                    to_close.append((position_key, internal_pos.symbol))
                 else:
-                    to_update.append((symbol, exchange_positions_map.pop(symbol)))
+                    to_update.append((internal_pos.symbol, exchange_positions_map.pop(sym_upper)))
 
             # exchange_positions_map now contains only ORPHANS
             to_adopt = list(exchange_positions_map.items())
 
             # 4. Apply updates and closures under per-symbol locks
+            positions_to_finalize = []
             for position_key, symbol in to_close:
                 symbol_lock = self._get_lock_for_position(symbol, reconcile_market_type)
                 async with symbol_lock:
-                    # Re-check if it's still in the dict and status is OPEN
+                    # Re-check if it's still in the dict and status is OPEN or CLOSING
                     current_pos = self._active_position_get(
                         symbol, reconcile_market_type
                     )
                     if current_pos and current_pos.status in {"OPEN", "CLOSING"}:
                         logger.warning(
-                            f"{log_prefix} Position {symbol} exists internally but NOT on exchange. Marking as CLOSED."
+                            f"{log_prefix} Position {symbol} exists internally but NOT on exchange. Finalizing via _handle_final_exit."
                         )
-                        current_pos.status = "CLOSED"
-                        current_pos.exit_reason = "CLOSED_WHILE_OFFLINE"
-                        current_pos.closed_time = time.time()
-                        current_pos.remaining_quantity = 0.0
-                        async with self._positions_dict_lock:
-                            self._active_position_pop(symbol, reconcile_market_type)
+                        positions_to_finalize.append((symbol, copy.deepcopy(current_pos)))
+
+            for symbol, pos_to_fin in positions_to_finalize:
+                try:
+                    approx_exit_price = pos_to_fin.entry_price or 0.0
+                    if executor and hasattr(executor, "get_ticker_price"):
+                        try:
+                            price_info = await executor.get_ticker_price(symbol)
+                            if price_info and "price" in price_info:
+                                approx_exit_price = float(price_info["price"])
+                        except Exception:
+                            pass
+                    await self._handle_final_exit(
+                        symbol=symbol,
+                        reason="CLOSED_ON_EXCHANGE",
+                        exit_price=approx_exit_price,
+                        commission=0.0,
+                        commission_asset="USDT",
+                        order_id=None,
+                        client_order_id=None,
+                        market_type=reconcile_market_type,
+                    )
+                except Exception as e_fin:
+                    logger.error(
+                        f"{log_prefix} Error finalizing missing position {symbol}: {e_fin}",
+                        exc_info=True,
+                    )
 
             for symbol, exch_data in to_update:
                 symbol_lock = self._get_lock_for_position(symbol, reconcile_market_type)
@@ -3013,6 +3398,25 @@ class TradingController:
                         )
                         internal_pos.direction = exch_direction
 
+                    # If internal position was in PENDING_ENTRY, but exchange reports active position:
+                    if internal_pos.status == "PENDING_ENTRY" and abs(exch_qty) > 0:
+                        logger.info(
+                            f"{log_prefix} Position {symbol} was PENDING_ENTRY, but exchange reports active position (qty={exch_qty}). Marking as OPEN."
+                        )
+                        internal_pos.status = "OPEN"
+                        if not internal_pos.time_status_open:
+                            internal_pos.time_status_open = time.time()
+                        if (
+                            not internal_pos.sl_placement_initiated
+                            and internal_pos.current_sl_order_id is None
+                            and not self._position_is_intentional_no_sl_mode(internal_pos)
+                            and internal_pos.current_sl_price
+                        ):
+                            self.loop.create_task(
+                                self._place_stop_loss(internal_pos),
+                                name=f"PlaceSL_Reconcile_{symbol}",
+                            )
+
                     # Update quantity and price
                     internal_pos.remaining_quantity = abs(exch_qty)
                     if internal_pos.initial_quantity < internal_pos.remaining_quantity:
@@ -3020,7 +3424,8 @@ class TradingController:
                     internal_pos.entry_price = exch_entry_price
 
             # 5. Adopt orphans (Heavy operations like DB queries and API calls done without global lock)
-            for symbol, exch_data in to_adopt:
+            for _sym_key, exch_data in to_adopt:
+                symbol = exch_data.get("symbol") or _sym_key
                 logger.warning(f"{log_prefix} Adopting orphan: {symbol}")
                 adopted_pos = await self._build_adopted_position(
                     symbol, exch_data, reconcile_market_type, executor
@@ -3029,6 +3434,10 @@ class TradingController:
                     async with self._positions_dict_lock:
                         self._active_position_set(adopted_pos)
                     self._monitored_symbols.add(symbol)
+
+            if to_adopt:
+                self.loop.create_task(self._publish_state_to_redis())
+                self.loop.create_task(self._save_runtime_state())
 
             # 6. Auto-start strategies for active positions if not already running
             async with self._positions_dict_lock:
@@ -3099,6 +3508,7 @@ class TradingController:
                                     "foundation_weights": strat_config.foundation_weights,
                                     "api_key_id": self.api_key_id,
                                 }
+                                pos.auto_started_strategy_id = instance_id
                                 await self._handle_start_strategy_command(
                                     launch_payload
                                 )
@@ -3188,9 +3598,18 @@ class TradingController:
         log_prefix = "[LoadRuntimeState]"
         try:
             raw_data = await self.redis_client.get(self.redis_key_runtime_state)
+            is_from_legacy_key = False
+            if not raw_data and self.api_key_id is not None:
+                legacy_key = f"depthsight:controller:runtime_state:{self.user_id}"
+                raw_data = await self.redis_client.get(legacy_key)
+                if raw_data:
+                    is_from_legacy_key = True
+                    logger.info(
+                        f"{log_prefix} Found saved runtime state in legacy key {legacy_key} for user {self.user_id}."
+                    )
             if not raw_data:
                 logger.info(
-                    f"{log_prefix} No saved runtime state found for user {self.user_id}. Starting fresh."
+                    f"{log_prefix} No saved runtime state found for user {self.user_id} (key={self.redis_key_runtime_state}). Starting fresh."
                 )
                 return
 
@@ -3246,8 +3665,8 @@ class TradingController:
                     try:
                         pos = LivePosition.from_dict(v)
 
-                        # Backfill api_key_id if missing
-                        if getattr(pos, "api_key_id", None) is None:
+                        # Backfill api_key_id if missing and not from legacy key
+                        if getattr(pos, "api_key_id", None) is None and not is_from_legacy_key:
                             pos.api_key_id = self.api_key_id
 
                         restored_positions_objects[k] = pos
@@ -3276,6 +3695,24 @@ class TradingController:
                                 except Exception:
                                     continue
 
+                            # Filter positions by api_key_id to prevent cross-account restoration
+                            if self.api_key_id is not None:
+                                pos_api_key_id = getattr(pos, "api_key_id", None)
+                                if is_from_legacy_key:
+                                    if pos_api_key_id is None or str(pos_api_key_id) != str(self.api_key_id):
+                                        logger.info(
+                                            f"{log_prefix} Skipping position {symbol} from legacy key: "
+                                            f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
+                                        )
+                                        continue
+                                else:
+                                    if pos_api_key_id is not None and str(pos_api_key_id) != str(self.api_key_id):
+                                        logger.warning(
+                                            f"{log_prefix} Skipping position {symbol}: "
+                                            f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
+                                        )
+                                        continue
+
                             if symbol in exchange_symbols:
                                 validated_positions[
                                     self._position_key_for_position(pos)
@@ -3288,8 +3725,16 @@ class TradingController:
                                     f"{log_prefix} Position {symbol} NOT found on exchange. Skipping restoration."
                                 )
                     else:
-                        # If no live executor, we can't verify, so we just restore all
-                        validated_positions = restored_positions_objects
+                        # If no live executor, we can't verify, so we filter by api_key_id
+                        for _position_key, pos in restored_positions_objects.items():
+                            if self.api_key_id is not None:
+                                pos_api_key_id = getattr(pos, "api_key_id", None)
+                                if is_from_legacy_key:
+                                    if pos_api_key_id is None or str(pos_api_key_id) != str(self.api_key_id):
+                                        continue
+                                elif pos_api_key_id is not None and str(pos_api_key_id) != str(self.api_key_id):
+                                    continue
+                            validated_positions[_position_key] = pos
 
                 except Exception as exch_err:
                     logger.error(
@@ -3313,6 +3758,22 @@ class TradingController:
                     f"{log_prefix} Found {len(saved_strategies)} running strategies in saved state. Restoring..."
                 )
                 for strat_payload in saved_strategies:
+                    if self.api_key_id is not None:
+                        strat_api_key_id = strat_payload.get("api_key_id")
+                        if is_from_legacy_key:
+                            if strat_api_key_id is None or str(strat_api_key_id) != str(self.api_key_id):
+                                logger.info(
+                                    f"{log_prefix} Skipping strategy {strat_payload.get('id')} from legacy key: "
+                                    f"strat api_key_id ({strat_api_key_id}) != controller ({self.api_key_id})"
+                                )
+                                continue
+                        else:
+                            if strat_api_key_id is not None and str(strat_api_key_id) != str(self.api_key_id):
+                                logger.warning(
+                                    f"{log_prefix} Skipping strategy {strat_payload.get('id')}: "
+                                    f"strat api_key_id ({strat_api_key_id}) != controller ({self.api_key_id})"
+                                )
+                                continue
                     try:
                         await self._handle_start_strategy_command(strat_payload)
                     except Exception as strat_err:
@@ -4529,14 +4990,21 @@ class TradingController:
                                 if (
                                     real_pos
                                     and not real_pos.dca_order_ids
+                                    and not getattr(real_pos, "dca_orders", None)
                                     and not getattr(
                                         real_pos, "dca_grid_init_in_progress", False
                                     )
+                                    and not getattr(real_pos, "is_adopted", False)
                                 ):
                                     real_pos.dca_grid_init_triggered = None
                                     real_pos.dca_grid_init_in_progress = True
                                     position_to_manage = LivePosition(**vars(real_pos))
                                     should_schedule_dca_grid = True
+                                elif real_pos and getattr(real_pos, "is_adopted", False):
+                                    real_pos.dca_grid_init_triggered = None
+                                    logger.info(
+                                        f"{log_prefix_pm} Position is ADOPTED. Discarded DCA_GRID_INIT signal."
+                                    )
                             if should_schedule_dca_grid:
                                 logger.info(
                                     f"{log_prefix_pm} Strategy signaled DCA_GRID_INIT. Params: {dca_params}"
@@ -4930,6 +5398,25 @@ class TradingController:
                     pos.dca_grid_init_triggered = None
             return
 
+        is_adopted_pos = getattr(position, "is_adopted", False)
+        has_existing_dca = bool(getattr(position, "dca_orders", None)) or bool(
+            getattr(position, "dca_order_ids", None)
+        )
+        if is_adopted_pos and has_existing_dca:
+            logger.info(
+                f"{log_prefix} Position is ADOPTED with existing DCA orders (count={len(getattr(position, 'dca_orders', []) or [])}). "
+                f"Skipping upfront DCA grid placement to protect against duplicate orders."
+            )
+            symbol_lock_dca = self._get_lock_for_position(
+                position.symbol, position_market_type
+            )
+            async with symbol_lock_dca:
+                pos = self._active_position_get(position.symbol, position_market_type)
+                if pos:
+                    pos.dca_grid_init_in_progress = False
+                    pos.dca_grid_init_triggered = None
+            return
+
         logger.info(
             f"{log_prefix} Initializing {max_sos} DCA Limit Safety Orders upfront."
         )
@@ -4997,12 +5484,16 @@ class TradingController:
         current_step = step_value
 
         # Fetch current market price to prevent placing limit orders that would fill as takers
+        # Query live executor ticker price first to avoid stale candle close prices
         current_market_price: Optional[float] = None
-        if pair_info and pair_info.get("last_price"):
-            try:
-                current_market_price = float(pair_info["last_price"])
-            except (ValueError, TypeError):
-                current_market_price = None
+        try:
+            ticker_data = await executor.get_ticker_price(position.symbol)
+            if ticker_data and "price" in ticker_data:
+                current_market_price = float(ticker_data["price"])
+        except Exception as e_tick:
+            logger.debug(
+                f"{log_prefix} Could not fetch fresh ticker price from executor: {e_tick}"
+            )
 
         if current_market_price is None or current_market_price <= 0:
             if hasattr(self, "data_consumer") and self.data_consumer:
@@ -5014,21 +5505,11 @@ class TradingController:
                     current_market_price = None
 
         if current_market_price is None or current_market_price <= 0:
-            try:
-                ticker_data = await executor.get_ticker_price(position.symbol)
-                if ticker_data and "price" in ticker_data:
-                    current_market_price = float(ticker_data["price"])
-            except Exception as e_tick:
-                logger.debug(
-                    f"{log_prefix} Could not fetch ticker price from executor: {e_tick}"
-                )
-
-        is_adopted_pos = getattr(position, "is_adopted", False)
-        if is_adopted_pos:
-            logger.warning(
-                f"{log_prefix} DCA grid initialized for ADOPTED position. "
-                f"initial_quantity={position.initial_quantity}, remaining_quantity={position.remaining_quantity}"
-            )
+            if pair_info and pair_info.get("last_price"):
+                try:
+                    current_market_price = float(pair_info["last_price"])
+                except (ValueError, TypeError):
+                    current_market_price = None
 
         for i in range(max_sos):
             # Calculating deviation for current SO
@@ -7221,6 +7702,10 @@ class TradingController:
 
             final_initial_quantity = initial_quantity_adj
             entry_client_order_id = f"x-entry-{uuid.uuid4().hex[:14]}"
+            if executor and hasattr(executor, "format_client_order_id"):
+                formatted_cid = executor.format_client_order_id(entry_client_order_id)
+                if formatted_cid:
+                    entry_client_order_id = formatted_cid
 
             if self.realtime_ml_logger and getattr(
                 config, "LOG_REALTIME_ML_DATA", False
@@ -7574,6 +8059,9 @@ class TradingController:
                 if position:
                     position.entry_order_id = entry_order_id_resp
                     position.entry_order_status = entry_order_status_resp
+                    resp_cid = entry_order_response.get("clientOrderId")
+                    if resp_cid and position.entry_client_order_id != str(resp_cid):
+                        position.entry_client_order_id = str(resp_cid)
 
                     # Only update status from PENDING_ENTRY. If WS already set it to OPEN/CLOSED, don't revert.
                     if position.status == "PENDING_ENTRY":
@@ -7808,6 +8296,8 @@ class TradingController:
                     name=f"HandleImmediateFill_{signal.symbol}",
                 )
 
+            self.loop.create_task(self._save_runtime_state())
+            self.loop.create_task(self._publish_state_to_redis())
             logger.info(f"{log_prefix} --- END PROCESSING SIGNAL ---")
 
         except Exception as e_proc_sig:
@@ -8682,15 +9172,38 @@ class TradingController:
             # Collect order IDs for cancellation BEFORE the position is deleted or its status changes such that,
             # that _cancel_all_exit_orders will not be able to find them.
             # Exclude the order that has already been filled and triggered this exit (order_id).
-            if position.current_sl_order_id is not None and str(
-                position.current_sl_order_id
-            ) != str(order_id):
+            if position.current_sl_order_id is not None and (
+                order_id is None
+                or str(position.current_sl_order_id) != str(order_id)
+            ):
+                executor_cancel_early = (
+                    self._executor_for_market_type(
+                        self._market_type_for_position(position), mode=position.mode
+                    )
+                    or self.executors.get("live")
+                )
+                is_okx_or_weex = any(
+                    x in str(getattr(self, "api_key_name", "")).lower()
+                    or x in str(getattr(executor_cancel_early, "exchange_id", "")).lower()
+                    for x in ["weex", "okx"]
+                )
+                is_sl_algo = bool(
+                    position.is_sl_algo_order
+                    or (
+                        is_okx_or_weex
+                        and (
+                            getattr(position, "market_type", None)
+                            in ["futures_usdtm", "futures"]
+                            or market_type in ["futures_usdtm", "futures"]
+                        )
+                    )
+                )
                 orders_to_cancel_after_lock.append(
                     (
                         symbol,
                         position.current_sl_order_id,
                         position.current_sl_client_order_id,
-                        position.is_sl_algo_order,
+                        is_sl_algo,
                     )
                 )
 
@@ -8848,12 +9361,44 @@ class TradingController:
                 )
 
         # Operations after releasing lock
-        executor_for_cancel = self.executors.get(
-            position_to_process_copy.mode if position_to_process_copy else "live",
-            self.executors.get("live"),
+        resolved_market = (
+            self._market_type_for_position(position_to_process_copy)
+            if position_to_process_copy
+            else market_type
+        )
+        resolved_mode = (
+            position_to_process_copy.mode if position_to_process_copy else "live"
+        )
+        executor_for_cancel = (
+            self._executor_for_market_type(resolved_market, mode=resolved_mode)
+            or self.executors.get(resolved_mode)
+            or self.executors.get("live")
         )
 
-        if orders_to_cancel_after_lock:
+        if orders_to_cancel_after_lock and executor_for_cancel:
+            is_okx_or_weex = any(
+                x in str(getattr(self, "api_key_name", "")).lower()
+                or x in str(getattr(executor_for_cancel, "exchange_id", "")).lower()
+                for x in ["weex", "okx"]
+            )
+            if is_okx_or_weex and getattr(executor_for_cancel, "supports_positions", False):
+                # On OKX/WEEX futures, SL orders are trigger/algo orders
+                orders_to_cancel_after_lock = [
+                    (
+                        sym,
+                        oid,
+                        cid,
+                        True
+                        if (
+                            position_to_process_copy
+                            and str(oid)
+                            == str(position_to_process_copy.current_sl_order_id)
+                        )
+                        else is_algo,
+                    )
+                    for sym, oid, cid, is_algo in orders_to_cancel_after_lock
+                ]
+
             logger.info(
                 f"{log_prefix} Scheduling cancellation of {len(orders_to_cancel_after_lock)} associated exit orders for {symbol}."
             )
@@ -8894,30 +9439,31 @@ class TradingController:
 
         # HARD RESET: Cancel ALL open orders for this symbol to be 100% safe
         # This should ALWAYS happen when closing a position, even if the orders_to_cancel_after_lock list is empty
-        logger.info(
-            f"{log_prefix} Triggering symbol-wide 'Hard Reset' order cancellation for {symbol}."
-        )
-        try:
-            await asyncio.wait_for(
-                executor_for_cancel.cancel_all_open_orders(symbol),
-                timeout=10.0,
-            )
+        if executor_for_cancel:
             logger.info(
-                f"{log_prefix} Hard Reset: All open orders for {symbol} cancelled successfully."
+                f"{log_prefix} Triggering symbol-wide 'Hard Reset' order cancellation for {symbol}."
             )
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"{log_prefix} Hard Reset: Timeout cancelling open orders for {symbol}. Scheduling background retry."
-            )
-            self.loop.create_task(
-                executor_for_cancel.cancel_all_open_orders(symbol),
-                name=f"FinalExitHardCancelRetry_{symbol}",
-            )
-        except Exception as e:
-            logger.error(
-                f"{log_prefix} Hard Reset: Error cancelling open orders: {e}",
-                exc_info=True,
-            )
+            try:
+                await asyncio.wait_for(
+                    executor_for_cancel.cancel_all_open_orders(symbol),
+                    timeout=10.0,
+                )
+                logger.info(
+                    f"{log_prefix} Hard Reset: All open orders for {symbol} cancelled successfully."
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"{log_prefix} Hard Reset: Timeout cancelling open orders for {symbol}. Scheduling background retry."
+                )
+                self.loop.create_task(
+                    executor_for_cancel.cancel_all_open_orders(symbol),
+                    name=f"FinalExitHardCancelRetry_{symbol}",
+                )
+            except Exception as e:
+                logger.error(
+                    f"{log_prefix} Hard Reset: Error cancelling open orders: {e}",
+                    exc_info=True,
+                )
 
         if position_to_process_copy:
             await self.rm.update_trade_result(
@@ -9664,6 +10210,22 @@ class TradingController:
                 self.loop.create_task(
                     self.consumer.remove_all_subscriptions_for_symbol(symbol),
                     name=f"FinalUnsubscribeManagedClose_{symbol}",
+                )
+
+            # If this position was adopted and had an auto-started strategy to manage it,
+            # stop that strategy now so it doesn't open new unwanted positions.
+            auto_strat_id = getattr(
+                position_to_process_copy, "auto_started_strategy_id", None
+            )
+            if auto_strat_id:
+                logger.info(
+                    f"{log_prefix} Position was adopted. Stopping auto-started strategy '{auto_strat_id}' to prevent re-opening."
+                )
+                self.loop.create_task(
+                    self._handle_stop_strategy_command(
+                        {"strategy_id": auto_strat_id, "user_id": self.user_id}
+                    ),
+                    name=f"StopAutoStrat_{auto_strat_id}_{symbol}",
                 )
 
         else:
@@ -11036,14 +11598,31 @@ class TradingController:
         # Stage 3: Processing the response and updating the state under lock
         if sl_resp and not sl_resp.get("error"):
             # Algo Order API returns 'algoId' and 'clientAlgoId' instead of 'orderId' and 'clientOrderId'
-            order_id_resp = sl_resp.get("orderId") or sl_resp.get("algoId")
+            order_id_resp = (
+                sl_resp.get("orderId") or sl_resp.get("algoId") or sl_resp.get("id")
+            )
             client_id_resp = sl_resp.get("clientOrderId") or sl_resp.get(
                 "clientAlgoId", new_sl_client_id
             )
-            is_algo_order = "algoId" in sl_resp or (
-                executor
-                and getattr(executor, "exchange_id", "") == "bitget"
-                and not getattr(executor, "supports_positions", True)
+            sl_info = sl_resp.get("info") if isinstance(sl_resp.get("info"), dict) else {}
+            if not order_id_resp:
+                order_id_resp = (
+                    sl_info.get("algoId")
+                    or sl_info.get("orderId")
+                    or sl_info.get("ordId")
+                )
+            is_algo_order = bool(
+                "algoId" in sl_resp
+                or "algoId" in sl_info
+                or order_type_for_sl_api
+                in ["STOP_MARKET", "STOP_LOSS", "STOP_LOSS_LIMIT", "STOP"]
+                or getattr(executor, "supports_positions", False)
+                or (
+                    executor
+                    and getattr(executor, "exchange_id", "") == "bitget"
+                    and not getattr(executor, "supports_positions", True)
+                )
+                or position_market_type in ["futures_usdtm", "futures"]
             )  # Remember that this is an Algo Order for subsequent cancellation
 
             symbol_lock_after_place = self._get_lock_for_position(
@@ -11751,13 +12330,13 @@ class TradingController:
         self,
         symbol: str,
         reason: str,
-        exclude_order_id: Optional[int] = None,
+        exclude_order_id: Optional[Union[int, str]] = None,
         market_type: Optional[str] = None,
     ):
-        """Cancels ALL active exit orders (SL and partial TPs) for the position."""
+        """Cancels ALL active exit orders (SL, partial TPs, and DCA orders) for the position."""
         log_prefix = f"[_CancelAllExits:{symbol}:{reason}]"
         # List of tuples: (order_id, client_order_id, is_algo_order)
-        orders_to_cancel_details: List[Tuple[Optional[int], Optional[str], bool]] = []
+        orders_to_cancel_details: List[Tuple[Optional[Union[int, str]], Optional[str], bool]] = []
 
         symbol_lock_cancel_all = self._get_lock_for_position(symbol, market_type)
         async with symbol_lock_cancel_all:
@@ -11771,14 +12350,32 @@ class TradingController:
 
             # Collect SL order if it exists and is not excluded
             if (
-                position.current_sl_order_id
-                and position.current_sl_order_id != exclude_order_id
+                position.current_sl_order_id is not None
+                and (
+                    exclude_order_id is None
+                    or str(position.current_sl_order_id) != str(exclude_order_id)
+                )
             ):
+                is_okx_or_weex = any(
+                    x in str(getattr(self, "api_key_name", "")).lower()
+                    for x in ["weex", "okx"]
+                )
+                is_sl_algo = bool(
+                    position.is_sl_algo_order
+                    or (
+                        is_okx_or_weex
+                        and (
+                            getattr(position, "market_type", None)
+                            in ["futures_usdtm", "futures"]
+                            or market_type in ["futures_usdtm", "futures"]
+                        )
+                    )
+                )
                 orders_to_cancel_details.append(
                     (
                         position.current_sl_order_id,
                         position.current_sl_client_order_id,
-                        position.is_sl_algo_order,
+                        is_sl_algo,
                     )
                 )
                 # Clear from position object to prevent re-cancellation attempts
@@ -11792,8 +12389,11 @@ class TradingController:
             for ptp in position.partial_tp_orders:
                 if (
                     ptp.status == "PENDING"
-                    and ptp.order_id
-                    and ptp.order_id != exclude_order_id
+                    and ptp.order_id is not None
+                    and (
+                        exclude_order_id is None
+                        or str(ptp.order_id) != str(exclude_order_id)
+                    )
                 ):
                     orders_to_cancel_details.append(
                         (ptp.order_id, ptp.client_order_id, False)
@@ -11801,6 +12401,33 @@ class TradingController:
                     ptp.status = "CANCELLED"  # Mark as cancelled in the position object
                 new_ptp_list_after_cancel.append(ptp)
             position.partial_tp_orders = new_ptp_list_after_cancel
+
+            # Collect DCA orders if present
+            if hasattr(position, "dca_orders") and position.dca_orders:
+                for dca in position.dca_orders:
+                    if (
+                        dca.status in {"PENDING", "NEW"}
+                        and dca.order_id is not None
+                        and (
+                            exclude_order_id is None
+                            or str(dca.order_id) != str(exclude_order_id)
+                        )
+                    ):
+                        orders_to_cancel_details.append(
+                            (dca.order_id, dca.client_order_id, False)
+                        )
+                        dca.status = "CANCELLED"
+
+            if hasattr(position, "dca_order_ids") and position.dca_order_ids:
+                for dca_id in position.dca_order_ids:
+                    if (
+                        exclude_order_id is None
+                        or str(dca_id) != str(exclude_order_id)
+                    ):
+                        if not any(
+                            str(o[0]) == str(dca_id) for o in orders_to_cancel_details
+                        ):
+                            orders_to_cancel_details.append((dca_id, None, False))
 
         if not orders_to_cancel_details:
             logger.debug(
@@ -11810,10 +12437,31 @@ class TradingController:
 
         executor = await self._get_executor_for_symbol(symbol, market_type=market_type)
         if not executor:
+            normalized_mtype = (
+                self._normalize_market_type(market_type) if market_type else None
+            )
+            executor = (
+                self._executor_for_market_type(normalized_mtype)
+                or self.executors.get("live")
+                or self.executors.get("paper")
+            )
+        if not executor:
             logger.warning(
                 f"{log_prefix} Could not determine executor for {symbol}. Cannot cancel orders."
             )
             return
+
+        is_okx_or_weex = any(
+            x in str(getattr(self, "api_key_name", "")).lower()
+            or x in str(getattr(executor, "exchange_id", "")).lower()
+            for x in ["weex", "okx"]
+        )
+        if is_okx_or_weex and getattr(executor, "supports_positions", False):
+            # On OKX/WEEX futures, ensure any SL cancel requests use is_algo_order=True
+            orders_to_cancel_details = [
+                (oid, cid, True if is_algo else False)
+                for oid, cid, is_algo in orders_to_cancel_details
+            ]
 
         logger.info(
             f"{log_prefix} Attempting to cancel {len(orders_to_cancel_details)} exit orders for {symbol}..."
@@ -12283,6 +12931,61 @@ class TradingController:
                 client_order_id=client_order_id,
             )
 
+    @staticmethod
+    def _strip_broker_prefix(cid: str) -> str:
+        s = cid.lower().strip()
+        for prefix in ("b-weex111159-", "b-weex111159", "b-broker-", "b-broker"):
+            if s.startswith(prefix):
+                s = s[len(prefix) :]
+                break
+        if s.startswith("bb39c7c267cfbcde"):
+            s = s[len("bb39c7c267cfbcde") :]
+        return s.lstrip("-_")
+
+    @staticmethod
+    def _extract_order_tag(cid: str) -> Optional[str]:
+        s = cid.lower()
+        for tag in ("entry", "ptp", "tp", "sl", "close", "scalein", "dca"):
+            if f"-{tag}-" in s or f"x{tag}" in s or f"x-{tag}" in s:
+                return "tp" if tag in ("ptp", "tp") else tag
+        return None
+
+    @staticmethod
+    def _client_order_ids_match(
+        pos_cid: Optional[str], event_cid: Optional[str]
+    ) -> bool:
+        if not pos_cid or not event_cid:
+            return False
+        pos_cid_str = str(pos_cid).strip()
+        event_cid_str = str(event_cid).strip()
+        if pos_cid_str == event_cid_str:
+            return True
+
+        # Check role/tag conflict: entry vs ptp/tp/sl/close/scalein can NEVER match!
+        tag_pos = TradingController._extract_order_tag(pos_cid_str)
+        tag_event = TradingController._extract_order_tag(event_cid_str)
+        if tag_pos and tag_event and tag_pos != tag_event:
+            return False
+
+        # Strip broker prefixes (e.g. b-WEEX111159- or bb39c7c267cfBCDE)
+        stripped_pos = TradingController._strip_broker_prefix(pos_cid_str)
+        stripped_event = TradingController._strip_broker_prefix(event_cid_str)
+
+        clean_pos = "".join(c for c in stripped_pos if c.isalnum()).lower()
+        clean_event = "".join(c for c in stripped_event if c.isalnum()).lower()
+        if not clean_pos or not clean_event:
+            return False
+        if clean_pos == clean_event:
+            return True
+        if clean_pos in clean_event or clean_event in clean_pos:
+            return True
+        # Check partial overlap for truncated client order IDs (at least 8 chars of stripped ID)
+        if len(clean_pos) >= 8 and len(clean_event) >= 8:
+            for i in range(len(clean_pos) - 7):
+                if clean_pos[i : i + 8] in clean_event:
+                    return True
+        return False
+
     async def _handle_order_update(self, data: Dict[str, Any]):
         raw_event_type = data.get("e")
         raw_symbol = data.get("s")  # Can be None for ACCOUNT_UPDATE
@@ -12520,13 +13223,24 @@ class TradingController:
                 f"{log_prefix} Found active position. Initial PosStatus='{initial_pos_status_log}', OrderID being processed: {order_id}."
             )
 
+            # Side check: entry side must match position direction (BUY for LONG, SELL for SHORT)
+            is_entry_side = (
+                (position.direction == SignalDirection.LONG and str(side).upper() == "BUY")
+                or (
+                    position.direction == SignalDirection.SHORT
+                    and str(side).upper() == "SELL"
+                )
+            )
+
             # 1. Processing the ENTRY order
-            is_entry_order_event = (
-                position.entry_order_id is not None
-                and str(position.entry_order_id) == str(order_id)
-            ) or (
-                position.entry_client_order_id == client_order_id
-                and position.entry_client_order_id is not None
+            is_entry_order_event = is_entry_side and (
+                (
+                    position.entry_order_id is not None
+                    and str(position.entry_order_id) == str(order_id)
+                )
+                or self._client_order_ids_match(
+                    position.entry_client_order_id, client_order_id
+                )
             )
 
             if is_entry_order_event:
@@ -12656,15 +13370,10 @@ class TradingController:
                     position.current_sl_order_id is not None
                     and str(position.current_sl_order_id) == str(order_id)
                 )
-                or (
-                    position.current_sl_client_order_id is not None
-                    and client_order_id is not None
-                    and (
-                        position.current_sl_client_order_id in client_order_id
-                        or client_order_id in position.current_sl_client_order_id
-                    )
+                or self._client_order_ids_match(
+                    position.current_sl_client_order_id, client_order_id
                 )
-                or (client_order_id is not None and "x-sl-" in client_order_id)
+                or (client_order_id is not None and "x-sl-" in str(client_order_id))
             )
 
             if is_sl_order_event:
@@ -12853,13 +13562,8 @@ class TradingController:
                 if (
                     ptp_item.order_id is not None
                     and str(ptp_item.order_id) == str(order_id)
-                ) or (
-                    ptp_item.client_order_id is not None
-                    and client_order_id is not None
-                    and (
-                        ptp_item.client_order_id in client_order_id
-                        or client_order_id in ptp_item.client_order_id
-                    )
+                ) or self._client_order_ids_match(
+                    ptp_item.client_order_id, client_order_id
                 ):
                     ptp_match_idx = idx
                     ptp_info_object = ptp_item
@@ -12952,12 +13656,31 @@ class TradingController:
                 return
 
             # 3.5 Processing the Scaling order (Scale-In / DCA)
+            cid_lower = (client_order_id or "").lower()
             is_scale_in_event = (
-                client_order_id is not None and "x-scalein-" in client_order_id
+                any(k in cid_lower for k in ("scalein", "scale-in", "dca", "grid"))
+                or (
+                    order_id is not None
+                    and (
+                        str(order_id) in getattr(position, "dca_order_ids", [])
+                        or str(order_id) in getattr(position, "grid_order_ids", [])
+                        or any(
+                            str(getattr(dca, "order_id", "")) == str(order_id)
+                            for dca in getattr(position, "dca_orders", [])
+                        )
+                    )
+                )
+                or (
+                    client_order_id is not None
+                    and any(
+                        self._client_order_ids_match(client_order_id, getattr(dca, "client_order_id", ""))
+                        for dca in getattr(position, "dca_orders", [])
+                    )
+                )
             )
             if is_scale_in_event:
                 logger.info(
-                    f"{log_prefix} Matches SCALE-IN/DCA order (ClientOrderID: {client_order_id})."
+                    f"{log_prefix} Matches SCALE-IN/DCA order (ClientOrderID: {client_order_id}, OrderID: {order_id})."
                 )
                 if hasattr(position, "dca_orders") and position.dca_orders:
                     for dca_item in position.dca_orders:
@@ -12968,7 +13691,8 @@ class TradingController:
                             dca_item.client_order_id is not None
                             and client_order_id is not None
                             and (
-                                dca_item.client_order_id in client_order_id
+                                self._client_order_ids_match(client_order_id, dca_item.client_order_id)
+                                or dca_item.client_order_id in client_order_id
                                 or client_order_id in dca_item.client_order_id
                             )
                         ):

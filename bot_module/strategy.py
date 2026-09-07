@@ -8998,8 +8998,10 @@ class BaseStrategy:
         if is_live_mode and step_type in ["percentage", "atr"]:
             if (
                 not getattr(position, "dca_order_ids", [])
+                and not getattr(position, "dca_orders", [])
                 and not getattr(position, "dca_grid_init_triggered", None)
                 and not getattr(position, "dca_grid_init_in_progress", False)
+                and not getattr(position, "is_adopted", False)
             ):
                 logger.info(
                     f"{log_prefix} Initializing proactive DCA Limit Order Grid..."

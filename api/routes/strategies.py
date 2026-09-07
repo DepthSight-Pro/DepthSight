@@ -495,6 +495,9 @@ async def start_strategy_instance(
         request.api_key_id = active_keys[0].id
         api_key = active_keys[0]
 
+    # Ensure plans config is synchronized from database
+    await plans_config.load_from_db(db)
+
     # --- Live/Paper Trading Permission Checks ---
     user_plan = plans_config.get_plan(current_user.plan)
     limits = user_plan.get("limits", {})
@@ -503,7 +506,11 @@ async def start_strategy_instance(
         allow_free_weex = limits.get("allow_free_weex_trading", False)
         allow_free_okx = limits.get("allow_free_okx_trading", False)
         if allow_free_bybit or allow_free_weex or allow_free_okx:
-            exch = api_key.exchange.lower() if (api_key and api_key.exchange) else ""
+            exch = (
+                api_key.exchange.strip().lower()
+                if (api_key and api_key.exchange)
+                else ""
+            )
             is_valid = False
             if allow_free_bybit and (exch == "bybit" or exch.startswith("bybit")):
                 is_valid = True
@@ -580,9 +587,13 @@ async def start_strategy_instance(
 
     _enforce_strategy_plan_restrictions(config_data_dict, current_user)
 
-    # The controller expects a payload with all necessary details.
-    # 'id' is a per-launch unique instance id (multiple instances of the same
-    # config may run on disjoint symbol sets); 'config_id' keeps the source config.
+    # Resolve target_api_key_id for multi-account support
+    target_api_key_id = request.api_key_id
+    if target_api_key_id is None:
+        active_key = await crud.get_active_api_key_for_user(db, current_user.id)
+        if active_key:
+            target_api_key_id = active_key.id
+
     instance_id = f"{config_id}:{uuid.uuid4().hex[:8]}"
     payload = {
         "user_id": current_user.id,
@@ -597,17 +608,12 @@ async def start_strategy_instance(
         "description": config_to_run.description,
         "use_ml_confirmation": config_to_run.use_ml_confirmation,
         "foundation_weights": config_to_run.foundation_weights,
-        "api_key_id": request.api_key_id,  # Multi-account support
+        "api_key_id": target_api_key_id,  # Multi-account support
     }
 
     command = {"command": "START_STRATEGY", "payload": payload}
 
     # 5. Publish the command to Redis
-    target_api_key_id = request.api_key_id
-    if target_api_key_id is None:
-        active_key = await crud.get_active_api_key_for_user(db, current_user.id)
-        if active_key:
-            target_api_key_id = active_key.id
 
     try:
         if target_api_key_id:

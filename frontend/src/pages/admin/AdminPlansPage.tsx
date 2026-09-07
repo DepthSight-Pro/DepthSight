@@ -134,6 +134,12 @@ export const AdminPlansPage: React.FC = () => {
 				max_backtest_duration_days: 180,
 				celery_task_priority: 7,
 				max_concurrent_tasks: 2,
+				allow_free_bybit_trading: false,
+				max_free_bybit_live_strategies: 5,
+				allow_free_weex_trading: false,
+				max_free_weex_live_strategies: 5,
+				allow_free_okx_trading: false,
+				max_free_okx_live_strategies: 5,
 			},
 			billing: {
 				monthly: { price_usd: 50, period_days: 30 },
@@ -1125,6 +1131,108 @@ export const AdminPlansPage: React.FC = () => {
 														limits: {
 															...editingPlanData.limits,
 															max_concurrent_tasks: parseInt(e.target.value) || 1,
+														},
+													})
+												}
+											/>
+										</div>
+
+										{/* Free Bybit Trading */}
+										<div className="flex items-center justify-between p-3 border rounded-lg">
+											<div>
+												<Label className="font-semibold block">Free Bybit Trading</Label>
+												<span className="text-xs text-muted-foreground">Allow live trading on Bybit without paid subscription</span>
+											</div>
+											<Switch
+												checked={Boolean(editingPlanData.limits?.allow_free_bybit_trading)}
+												onCheckedChange={(val) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: { ...editingPlanData.limits, allow_free_bybit_trading: val },
+													})
+												}
+											/>
+										</div>
+
+										<div className="space-y-1.5 p-3 border rounded-lg">
+											<Label className="text-xs font-semibold block">Max Free Bybit Strategies</Label>
+											<Input
+												type="number"
+												value={editingPlanData.limits?.max_free_bybit_live_strategies ?? 5}
+												onChange={(e) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: {
+															...editingPlanData.limits,
+															max_free_bybit_live_strategies: parseInt(e.target.value) || 0,
+														},
+													})
+												}
+											/>
+										</div>
+
+										{/* Free WEEX Trading */}
+										<div className="flex items-center justify-between p-3 border rounded-lg">
+											<div>
+												<Label className="font-semibold block">Free WEEX Trading</Label>
+												<span className="text-xs text-muted-foreground">Allow live trading on WEEX without paid subscription</span>
+											</div>
+											<Switch
+												checked={Boolean(editingPlanData.limits?.allow_free_weex_trading)}
+												onCheckedChange={(val) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: { ...editingPlanData.limits, allow_free_weex_trading: val },
+													})
+												}
+											/>
+										</div>
+
+										<div className="space-y-1.5 p-3 border rounded-lg">
+											<Label className="text-xs font-semibold block">Max Free WEEX Strategies</Label>
+											<Input
+												type="number"
+												value={editingPlanData.limits?.max_free_weex_live_strategies ?? 5}
+												onChange={(e) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: {
+															...editingPlanData.limits,
+															max_free_weex_live_strategies: parseInt(e.target.value) || 0,
+														},
+													})
+												}
+											/>
+										</div>
+
+										{/* Free OKX Trading */}
+										<div className="flex items-center justify-between p-3 border rounded-lg">
+											<div>
+												<Label className="font-semibold block">Free OKX Trading</Label>
+												<span className="text-xs text-muted-foreground">Allow live trading on OKX without paid subscription</span>
+											</div>
+											<Switch
+												checked={Boolean(editingPlanData.limits?.allow_free_okx_trading)}
+												onCheckedChange={(val) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: { ...editingPlanData.limits, allow_free_okx_trading: val },
+													})
+												}
+											/>
+										</div>
+
+										<div className="space-y-1.5 p-3 border rounded-lg">
+											<Label className="text-xs font-semibold block">Max Free OKX Strategies</Label>
+											<Input
+												type="number"
+												value={editingPlanData.limits?.max_free_okx_live_strategies ?? 5}
+												onChange={(e) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: {
+															...editingPlanData.limits,
+															max_free_okx_live_strategies: parseInt(e.target.value) || 0,
 														},
 													})
 												}

@@ -653,6 +653,33 @@ class CcxtExecutor:
             logger.error(f"Error fetching exchange info: {e}", exc_info=True)
             return None
 
+    def format_client_order_id(self, cid: Optional[str]) -> Optional[str]:
+        """Formats client order ID to respect exchange requirements and broker ID tagging."""
+        if cid is None:
+            return None
+        cid_str = str(cid)
+        if self.exchange_id == "okx":
+            broker_id = getattr(config, "OKX_BROKER_ID", None)
+            clean_cid = "".join(c for c in cid_str if c.isalnum())
+            if broker_id and not clean_cid.startswith(broker_id):
+                clean_cid = f"{broker_id}{clean_cid}"
+            if len(clean_cid) > 32:
+                clean_cid = clean_cid[:32]
+            return clean_cid
+        elif self.exchange_id == "weex":
+            broker_id = getattr(config, "WEEX_BROKER_ID", None)
+            if broker_id:
+                pure_broker_id = (
+                    broker_id[2:] if broker_id.startswith("b-") else broker_id
+                )
+                prefix = f"b-{pure_broker_id}-"
+                if not cid_str.startswith(prefix):
+                    cid_str = f"{prefix}{cid_str}"
+            if len(cid_str) > 32:
+                cid_str = cid_str[:32]
+            return cid_str
+        return cid_str
+
     async def place_order(
         self, symbol: str, side: str, order_type: str, **kwargs: Any
     ) -> Dict[str, Any]:
@@ -742,25 +769,7 @@ class CcxtExecutor:
             or params.get("clientOrderId")
         )
         if raw_cid is not None:
-            cid = str(raw_cid)
-            if self.exchange_id == "okx":
-                broker_id = getattr(config, "OKX_BROKER_ID", None)
-                cid = "".join(c for c in cid if c.isalnum())
-                if broker_id and not cid.startswith(broker_id):
-                    cid = f"{broker_id}{cid}"
-                if len(cid) > 32:
-                    cid = cid[:32]
-            elif self.exchange_id == "weex":
-                broker_id = getattr(config, "WEEX_BROKER_ID", None)
-                if broker_id:
-                    pure_broker_id = (
-                        broker_id[2:] if broker_id.startswith("b-") else broker_id
-                    )
-                    prefix = f"b-{pure_broker_id}-"
-                    if not cid.startswith(prefix):
-                        cid = f"{prefix}{cid}"
-                if len(cid) > 32:
-                    cid = cid[:32]
+            cid = self.format_client_order_id(raw_cid)
             params["clientOrderId"] = cid
             params.pop("newClientOrderId", None)
 
@@ -1120,13 +1129,22 @@ class CcxtExecutor:
                     params["orderFilter"] = "StopOrder"
                 else:
                     params["orderFilter"] = "tpslOrder"
-            if (
-                self.exchange_id == "bitget"
-                and not self.supports_positions
-                and is_algo_order
-            ):
-                params["stop"] = True
+            if self.exchange_id == "bitget":
+                if self.supports_positions:
+                    params["productType"] = "usdt-futures"
+                if is_algo_order:
+                    params["stop"] = True
+                    params["trigger"] = True
+            if self.exchange_id == "okx" and is_algo_order:
                 params["trigger"] = True
+                params["stop"] = True
+            if self.exchange_id == "weex":
+                if self.supports_positions:
+                    params["type"] = "swap"
+                    if is_algo_order:
+                        params["trigger"] = True
+                else:
+                    params["type"] = "spot"
             if (
                 self.exchange_id == "gateio"
                 and self.supports_positions
@@ -1144,9 +1162,13 @@ class CcxtExecutor:
                 params["type"] = "spot"
 
             if origClientOrderId:
-                params["clientOrderId"] = origClientOrderId
                 if not order_id_to_use:
                     order_id_to_use = origClientOrderId
+                    params["clientOrderId"] = origClientOrderId
+                elif self.exchange_id not in {"okx", "weex"}:
+                    # On OKX and WEEX, passing clientOrderId in params causes CCXT
+                    # to override/discard orderId (algoId), breaking trigger order cancellation.
+                    params["clientOrderId"] = origClientOrderId
 
             if not order_id_to_use:
                 raise ValueError(
@@ -1311,19 +1333,29 @@ class CcxtExecutor:
 
         if self.exchange_id == "okx":
             ccxt_symbol = self._normalize_symbol(symbol) if symbol else None
-            try:
-                trigger_orders = await self._exchange.fetch_open_orders(
-                    ccxt_symbol,
-                    params={"stop": True},
-                )
-                return [
-                    self._map_ccxt_order_to_binance(o) for o in trigger_orders or []
-                ]
-            except Exception as e:
-                logger.warning(
-                    f"Could not fetch OKX open trigger orders for {symbol or 'all symbols'}: {e}"
-                )
-                return []
+            all_okx_algo_orders: List[Dict[str, Any]] = []
+            seen_ids = set()
+            for okx_param in ({"stop": True}, {"ordType": "conditional"}, {"ordType": "oco"}):
+                try:
+                    orders_batch = await self._exchange.fetch_open_orders(
+                        ccxt_symbol,
+                        params=okx_param,
+                    )
+                    if isinstance(orders_batch, list):
+                        for o in orders_batch:
+                            oid = str(o.get("id") or (o.get("info") or {}).get("algoId") or "")
+                            if oid and oid not in seen_ids:
+                                seen_ids.add(oid)
+                                all_okx_algo_orders.append(o)
+                            elif not oid:
+                                all_okx_algo_orders.append(o)
+                except Exception as e:
+                    logger.warning(
+                        f"Could not fetch OKX open algo orders with {okx_param} for {symbol or 'all symbols'}: {e}"
+                    )
+            return [
+                self._map_ccxt_order_to_binance(o) for o in all_okx_algo_orders
+            ]
 
         if self.exchange_id == "bybit":
             ccxt_symbol = self._normalize_symbol(symbol) if symbol else None
@@ -1339,6 +1371,22 @@ class CcxtExecutor:
             except Exception as e:
                 logger.warning(
                     f"Could not fetch Bybit open trigger orders for {symbol or 'all symbols'}: {e}"
+                )
+                return []
+
+        if self.exchange_id == "weex" and self.supports_positions:
+            ccxt_symbol = self._normalize_symbol(symbol) if symbol else None
+            try:
+                trigger_orders = await self._exchange.fetch_open_orders(
+                    ccxt_symbol,
+                    params={"type": "swap", "trigger": True},
+                )
+                return [
+                    self._map_ccxt_order_to_binance(o) for o in trigger_orders or []
+                ]
+            except Exception as e:
+                logger.warning(
+                    f"Could not fetch Weex open trigger orders for {symbol or 'all symbols'}: {e}"
                 )
                 return []
 
@@ -1359,10 +1407,44 @@ class CcxtExecutor:
     async def cancel_all_open_orders(self, symbol: str) -> Dict[str, Any]:
         ccxt_symbol = self._normalize_symbol(symbol)
         try:
+            bulk_params = {}
+            if self.exchange_id in {"bingx", "weex"} and self.supports_positions:
+                bulk_params["type"] = "swap"
+
             cancel_all_orders = getattr(self._exchange, "cancel_all_orders", None)
             if callable(cancel_all_orders) and self.exchange_id != "gateio":
                 try:
-                    response = await cancel_all_orders(ccxt_symbol)
+                    response = await cancel_all_orders(ccxt_symbol, params=bulk_params)
+                    # For WEEX swap, bulk cancel with {"type": "swap"} only cancels regular limit orders.
+                    # We must ALSO cancel trigger/stop orders with {"type": "swap", "trigger": True}!
+                    if self.exchange_id == "weex" and self.supports_positions:
+                        try:
+                            await cancel_all_orders(
+                                ccxt_symbol, params={"type": "swap", "trigger": True}
+                            )
+                        except Exception as weex_trigger_err:
+                            logger.warning(
+                                f"Could not bulk cancel Weex trigger orders: {weex_trigger_err}"
+                            )
+                    # For OKX, cancel_all_orders only cancels regular orders.
+                    # We must also fetch and cancel all open algo/trigger orders!
+                    if self.exchange_id == "okx":
+                        seen_cancel_ids = set()
+                        for okx_param in ({"stop": True}, {"ordType": "conditional"}, {"ordType": "oco"}):
+                            try:
+                                trigger_orders = await self._exchange.fetch_open_orders(
+                                    ccxt_symbol,
+                                    params=okx_param,
+                                )
+                                for o in trigger_orders or []:
+                                    oid = o.get("id") or (o.get("info") or {}).get("algoId")
+                                    if oid and str(oid) not in seen_cancel_ids:
+                                        seen_cancel_ids.add(str(oid))
+                                        await self.cancel_order(symbol, orderId=oid, is_algo_order=True)
+                            except Exception as okx_algo_err:
+                                logger.warning(
+                                    f"Could not cancel OKX algo orders with {okx_param}: {okx_algo_err}"
+                                )
                     return {
                         "symbol": symbol.upper(),
                         "status": "OK",
@@ -1377,6 +1459,8 @@ class CcxtExecutor:
             fetch_params = {}
             if self.exchange_id == "gateio" and self.supports_positions:
                 fetch_params = {"type": "swap", "settle": "usdt"}
+            elif self.exchange_id in {"bingx", "weex"} and self.supports_positions:
+                fetch_params = {"type": "swap"}
             if fetch_params:
                 orders = await self._exchange.fetch_open_orders(
                     ccxt_symbol, params=fetch_params
@@ -1437,17 +1521,18 @@ class CcxtExecutor:
                         f"Could not fetch Gate.io spot trigger orders for cancellation: {te}"
                     )
             if self.exchange_id == "okx":
-                try:
-                    trigger_orders = await self._exchange.fetch_open_orders(
-                        ccxt_symbol,
-                        params={"stop": True},
-                    )
-                    if isinstance(trigger_orders, list):
-                        orders.extend(trigger_orders)
-                except Exception as te:
-                    logger.warning(
-                        f"Could not fetch OKX trigger orders for cancellation: {te}"
-                    )
+                for okx_param in ({"stop": True}, {"ordType": "conditional"}, {"ordType": "oco"}):
+                    try:
+                        trigger_orders = await self._exchange.fetch_open_orders(
+                            ccxt_symbol,
+                            params=okx_param,
+                        )
+                        if isinstance(trigger_orders, list):
+                            orders.extend(trigger_orders)
+                    except Exception as te:
+                        logger.warning(
+                            f"Could not fetch OKX trigger orders with {okx_param} for cancellation: {te}"
+                        )
             if self.exchange_id == "bybit":
                 try:
                     filter_val = "StopOrder" if self.supports_positions else "tpslOrder"
@@ -1506,8 +1591,25 @@ class CcxtExecutor:
                         ):
                             cancel_params["trigger"] = True
                     if self.exchange_id == "okx":
-                        if order.get("type") == "trigger" or order.get("stopPrice"):
+                        info = order.get("info") or {}
+                        order_type = str(order.get("type") or info.get("ordType") or "").lower()
+                        if (
+                            order_type in {"trigger", "conditional", "oco", "move_order_stop"}
+                            or order.get("stopPrice")
+                            or info.get("slTriggerPx")
+                            or info.get("triggerPx")
+                        ):
                             cancel_params["stop"] = True
+                            cancel_params["trigger"] = True
+                    if self.exchange_id == "weex" and self.supports_positions:
+                        cancel_params["type"] = "swap"
+                        info = order.get("info") or {}
+                        if (
+                            order.get("stopPrice")
+                            or (info.get("triggerPrice") or info.get("triggerPx"))
+                            or str(order.get("type") or "").upper() in {"STOP_MARKET", "STOP", "TRIGGER"}
+                        ):
+                            cancel_params["trigger"] = True
                     if self.exchange_id == "bybit":
                         if (
                             order.get("triggerPrice")
@@ -1713,6 +1815,30 @@ class CcxtExecutor:
                 exc_info=True,
             )
             return []
+
+    async def get_my_trades(
+        self, symbol: str, limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Fetches recent user trades from exchange via CCXT."""
+        if not hasattr(self, "_exchange") or self._exchange is None:
+            return []
+        try:
+            ccxt_symbol = self._normalize_symbol(symbol)
+            params = {}
+            if self.exchange_id in {"bingx", "weex"}:
+                params["type"] = "swap"
+            if self.exchange_id == "bitget" and self.supports_positions:
+                params["productType"] = "usdt-futures"
+            if getattr(self._exchange, "has", {}).get("fetchMyTrades"):
+                trades = await self._exchange.fetch_my_trades(
+                    ccxt_symbol, limit=limit, params=params
+                )
+                return trades or []
+        except Exception as e:
+            logger.warning(
+                f"Error fetching trades for {symbol} on {self.exchange_id}: {e}"
+            )
+        return []
 
     async def fetch_ohlcv(
         self,
@@ -2160,9 +2286,26 @@ class CcxtExecutor:
         trigger_price = (
             ccxt_order.get("triggerPrice")
             or ccxt_order.get("stopPrice")
+            or ccxt_order.get("stopLossPrice")
             or info.get("stopPrice")
             or info.get("triggerPrice")
+            or info.get("stopLossPrice")
         )
+        info_order_type = str(info.get("orderType") or "").upper()
+        if info_order_type in (
+            "STOP_MARKET",
+            "STOP_LOSS",
+            "STOP",
+            "STOP_LOSS_LIMIT",
+            "TAKE_PROFIT",
+            "TAKE_PROFIT_MARKET",
+        ):
+            raw_type = info_order_type
+        elif trigger_price and self._safe_float(trigger_price) > 0:
+            if raw_type == "MARKET":
+                raw_type = "STOP_MARKET"
+            elif raw_type == "LIMIT":
+                raw_type = "STOP_LOSS_LIMIT"
         raw_side = ccxt_order.get("side") or info.get("side") or ""
         side_upper = str(raw_side).upper()
         raw_symbol = ccxt_order.get("symbol") or info.get("symbol") or ""

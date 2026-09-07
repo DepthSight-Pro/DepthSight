@@ -524,3 +524,76 @@ class TestUserPlans:
         payload["api_key_id"] = okx_key.id
         response = await free_user_client.post("/api/v1/strategies", json=payload)
         assert response.status_code == 202
+
+    async def test_free_user_okx_trading_with_outdated_db_config(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mock_redis_client,
+        mock_celery_tasks,
+    ):
+        """
+        Verifies that even if system_settings has an older plans_config snapshot
+        missing allow_free_okx_trading, plans_config automatically backfills it
+        and allows free OKX strategy execution without 403 error.
+        """
+        from api import models
+
+        # 1. Simulate an older plans_config saved in DB without allow_free_okx_trading
+        outdated_plans = {
+            "plans": {
+                "free": {
+                    "name": "Free",
+                    "permissions": ["view_dashboard", "run_backtest"],
+                    "limits": {
+                        "allow_real_trading": False,
+                        "allow_free_bybit_trading": True,
+                        "max_free_bybit_live_strategies": 5,
+                        "allow_free_weex_trading": True,
+                        "max_free_weex_live_strategies": 5,
+                        # allow_free_okx_trading is explicitly missing
+                    },
+                    "quotas": {"run_vector_backtest_per_day": 20},
+                }
+            }
+        }
+        setting = models.SystemSetting(
+            key="plans_config",
+            value=outdated_plans,
+            description="Outdated platform settings",
+        )
+        db_session.add(setting)
+        await db_session.commit()
+
+        # 2. Add an OKX key for free user
+        okx_key = models.ApiKey(
+            user_id=free_user.id,
+            name="OKX Legacy Test Key",
+            exchange="okx",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="okx...5678",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(okx_key)
+        await db_session.commit()
+        await db_session.refresh(okx_key)
+
+        # 3. Start strategy with the OKX key - should succeed (202) because load_from_db backfills OKX
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": okx_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202, (
+            f"Failed starting strategy with OKX key with outdated DB: {response.text}"
+        )
+
+        # 4. Verify DB was updated with the backfilled allow_free_okx_trading
+        await db_session.refresh(setting)
+        assert (
+            setting.value["plans"]["free"]["limits"]["allow_free_okx_trading"] is True
+        )

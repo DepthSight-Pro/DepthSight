@@ -1955,26 +1955,56 @@ async def create_trade(
 
 
 async def get_last_open_trade_for_symbol(
-    db: AsyncSession, user_id: int, symbol: str
+    db: AsyncSession, user_id: int, symbol: str, api_key_id: Optional[int] = None
 ) -> Optional[models.Trade]:
     """
     Retrieves the most recent trade for a symbol that looks like an 'ENTRY' (based on entry_client_order_id pattern or simple timestamp).
     Used for reconciling orphaned positions.
     """
-    # Try to find the latest trade that looks like an entry (x-entry)
+    entry_patterns = or_(
+        models.Trade.trade_uuid.like("x-entry-%"),
+        models.Trade.trade_uuid.like("%xentry%"),
+        models.Trade.trade_uuid.like("%x-entry%"),
+        models.Trade.trade_uuid.like("adopted-%"),
+    )
+    conditions = [
+        models.Trade.user_id == user_id,
+        models.Trade.symbol == symbol,
+        entry_patterns,
+    ]
+    if api_key_id is not None:
+        conditions.append(models.Trade.api_key_id == api_key_id)
+
     stmt = (
         select(models.Trade)
-        .filter(
-            models.Trade.user_id == user_id,
-            models.Trade.symbol == symbol,
-            models.Trade.trade_uuid.like("x-entry-%"),  # Filter for entry orders logic
-        )
+        .options(selectinload(models.Trade.strategy_config))
+        .filter(*conditions)
         .order_by(desc(models.Trade.timestamp_close))
         .limit(1)
     )
 
     result = await db.execute(stmt)
-    return result.scalars().first()
+    trade = result.scalars().first()
+    if trade:
+        return trade
+
+    # Fallback: if no trade matched entry patterns, get the most recent trade for user + symbol (+ api_key_id)
+    fallback_conditions = [
+        models.Trade.user_id == user_id,
+        models.Trade.symbol == symbol,
+    ]
+    if api_key_id is not None:
+        fallback_conditions.append(models.Trade.api_key_id == api_key_id)
+
+    stmt_fallback = (
+        select(models.Trade)
+        .options(selectinload(models.Trade.strategy_config))
+        .filter(*fallback_conditions)
+        .order_by(desc(models.Trade.timestamp_close))
+        .limit(1)
+    )
+    result_fallback = await db.execute(stmt_fallback)
+    return result_fallback.scalars().first()
 
 
 # --- CRUD for SymbolStrategyPerformance ---
@@ -2237,6 +2267,9 @@ async def get_strategy_configs_by_user(
         .order_by(models.StrategyConfig.name)
     )
     return result.scalars().all()
+
+
+get_strategy_configs = get_strategy_configs_by_user
 
 
 async def get_strategy_config(

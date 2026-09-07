@@ -28,42 +28,22 @@ billing:
 plans:
   free:
     name: Free
-    price_usd: 0
-    active: true
-    description: Basic capabilities and standard strategy blocks.
-    features:
-    - 20 fast backtests per day
-    - Standard blocks (Logic, Indicators, Proximity)
-    - Limited history (90 days)
-    - Limited trading pairs list
-    - 10 AI Assistant queries per day
     permissions:
     - view_dashboard
     - run_backtest
-    - view_strategies
-    - use_ai_assistant
-    allowed_symbols:
-    - 0GUSDT
-    - ADAUSDT
-    - AIAUSDT
-    - AVNTUSDT
-    - BTCUSDT
-    - COAIUSDT
-    - DASHUSDT
-    - DOGEUSDT
-    - ETHUSDT
-    - EVAAUSDT
-    - FARTCOINUSDT
-    - HIFIUSDT
-    - HYPEUSDT
-    - IPUSDT
-    - JELLYJELLYUSDT
-    - LINKUSDT
-    - MYXUSDT
-    - PUMPUSDT
-    - SOLUSDT
-    - SOONUSDT
-    - TRUTHUSDT
+    limits:
+      allow_real_trading: false
+      allow_free_bybit_trading: true
+      max_free_bybit_live_strategies: 5
+      allow_free_weex_trading: true
+      max_free_weex_live_strategies: 5
+      max_live_strategies: 0
+      allow_intracandle_triggers: false
+      max_backtest_duration_days: 90
+      celery_task_priority: 9
+      max_concurrent_tasks: 1
+      allow_free_okx_trading: true
+      max_free_okx_live_strategies: 5
     quotas:
       run_vector_backtest_per_day: 20
       run_kline_backtest_per_day: 0
@@ -73,19 +53,8 @@ plans:
       run_genetic_search_per_month: 0
       generate_dataset_per_month: 0
       train_model_per_month: 0
-    limits:
-      allow_real_trading: false
-      max_live_strategies: 0
-      allow_intracandle_triggers: false
-      max_backtest_duration_days: 90
-      celery_task_priority: 9
-      max_concurrent_tasks: 1
-      allow_free_bybit_trading: true
-      max_free_bybit_live_strategies: 5
-      allow_free_weex_trading: true
-      max_free_weex_live_strategies: 5
-      allow_free_okx_trading: true
-      max_free_okx_live_strategies: 5
+    features:
+    - 5 live strategies on OKX
   standard:
     name: Standard
     price_usd: 45

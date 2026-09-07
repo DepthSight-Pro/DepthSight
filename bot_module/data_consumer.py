@@ -2676,7 +2676,7 @@ class DataConsumer:
         while self._running:
             websocket = None
             if not getattr(config, "ENABLE_MAIN_APP_WS", True):
-                logger.info(
+                logger.debug(
                     "Auto-connection to screener/main app WS is disabled (ENABLE_SCREENER_AUTO_CONNECT=false). Loop paused."
                 )
                 await asyncio.sleep(15)
