@@ -1,6 +1,6 @@
 amqp==5.3.1
 asyncpg==0.30.0
-billiard==4.2.1
+billiard==4.2.4
 celery==5.5.3
 certifi==2025.6.15
 slowapi>=0.1.9
