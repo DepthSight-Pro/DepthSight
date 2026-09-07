@@ -52,7 +52,7 @@
 		"dagre": "^0.8.5",
 		"date-fns": "^4.1.0",
 		"embla-carousel-react": "^8.6.0",
-		"framer-motion": "^12.38.0",
+		"framer-motion": "^13.2.0",
 		"html2canvas": "^1.4.1",
 		"i18next": "23.15.1",
 		"i18next-browser-languagedetector": "8.2.1",
