@@ -45,7 +45,7 @@
 		"@tanstack/react-virtual": "^3.13.23",
 		"@types/dagre": "^0.7.54",
 		"@xyflow/react": "^12.10.2",
-		"caniuse-lite": "^1.0.30001787",
+		"caniuse-lite": "^1.0.30001810",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
