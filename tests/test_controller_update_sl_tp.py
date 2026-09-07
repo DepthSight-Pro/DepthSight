@@ -629,3 +629,78 @@ class TestReplaceStopLoss:
         call_args = mock_place_sl.call_args
         # _place_stop_loss accepts position_obj_ref and skip_preflight_check
         assert call_args.kwargs.get("skip_preflight_check")
+
+    @pytest.mark.asyncio
+    async def test_place_stop_loss_resolves_websocket_early_match(
+        self, controller, mock_executor
+    ):
+        """Checks that _place_stop_loss does not cancel SL if WebSocket set current_sl_order_id first."""
+        position = create_test_position()
+        position.current_sl_price = 49000.0
+        position.current_sl_order_id = None
+        position.current_sl_client_order_id = None
+        position.status = "OPEN"
+        controller._active_position_set(position)
+        controller.rm._adjust_and_round_quantity = MagicMock(return_value=0.01)
+
+        placed_order_id = 998877
+        placed_client_id = "x-sl-early"
+
+        # Simulate place_order setting position.current_sl_order_id early (as if WS update arrived)
+        async def fake_place_order(*args, **kwargs):
+            pos = controller._active_position_get("BTCUSDT")
+            pos.current_sl_order_id = placed_order_id
+            pos.current_sl_client_order_id = placed_client_id
+            return {
+                "orderId": placed_order_id,
+                "clientOrderId": placed_client_id,
+                "status": "NEW",
+            }
+
+        mock_executor.place_order = AsyncMock(side_effect=fake_place_order)
+        mock_executor.cancel_order = AsyncMock()
+
+        success = await controller._place_stop_loss(position, skip_preflight_check=True)
+
+        assert success is True
+        mock_executor.cancel_order.assert_not_called()
+        updated = controller._active_position_get("BTCUSDT")
+        assert updated.current_sl_order_id == placed_order_id
+        assert updated.sl_placement_initiated is False
+
+    @pytest.mark.asyncio
+    async def test_handle_order_update_clears_sl_if_current_sl_cancelled_during_replacement(
+        self, controller, mock_executor
+    ):
+        """Checks that _handle_order_update resets current_sl_order_id to None if the cancelled order is the current SL."""
+        position = create_test_position()
+        position.current_sl_order_id = 998877
+        position.current_sl_client_order_id = "x-sl-early"
+        position.sl_replacement_in_progress = True
+        position.status = "OPEN"
+        controller._active_position_set(position)
+
+        cancel_report = {
+            "e": "ORDER_TRADE_UPDATE",
+            "o": {
+                "s": "BTCUSDT",
+                "c": "x-sl-early",
+                "i": 998877,
+                "S": "SELL",
+                "ot": "STOP_MARKET",
+                "x": "CANCELED",
+                "X": "CANCELED",
+                "q": "0.01",
+                "z": "0.0",
+                "l": "0.0",
+                "L": "0.0",
+                "ap": "0.0",
+            },
+        }
+
+        await controller._handle_order_update(cancel_report)
+
+        updated = controller._active_position_get("BTCUSDT")
+        assert updated.current_sl_order_id is None
+        assert updated.current_sl_client_order_id is None
+

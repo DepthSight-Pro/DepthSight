@@ -3376,6 +3376,7 @@ class TradingController:
                         exc_info=True,
                     )
 
+            positions_to_verify_sl = []
             for symbol, exch_data in to_update:
                 symbol_lock = self._get_lock_for_position(symbol, reconcile_market_type)
                 async with symbol_lock:
@@ -3422,6 +3423,118 @@ class TradingController:
                     if internal_pos.initial_quantity < internal_pos.remaining_quantity:
                         internal_pos.initial_quantity = internal_pos.remaining_quantity
                     internal_pos.entry_price = exch_entry_price
+
+                    if (
+                        internal_pos.status == "OPEN"
+                        and not self._position_is_intentional_no_sl_mode(internal_pos)
+                        and not internal_pos.sl_placement_initiated
+                        and not internal_pos.sl_replacement_in_progress
+                    ):
+                        positions_to_verify_sl.append(
+                            (
+                                symbol,
+                                internal_pos.current_sl_order_id,
+                                internal_pos.current_sl_client_order_id,
+                                internal_pos.direction,
+                            )
+                        )
+
+            # 4.1 Verify open SL orders on exchange for existing open positions
+            for (
+                v_sym,
+                v_sl_oid,
+                v_sl_cid,
+                v_dir,
+            ) in positions_to_verify_sl:
+                try:
+                    orders_to_check = []
+                    try:
+                        open_orders = await executor.get_open_orders(v_sym)
+                        if open_orders:
+                            orders_to_check.extend(open_orders)
+                    except Exception as e_oo:
+                        logger.debug(f"{log_prefix} Reconcile open orders fetch for {v_sym}: {e_oo}")
+
+                    if hasattr(executor, "get_open_algo_orders"):
+                        try:
+                            algo_orders = await executor.get_open_algo_orders(v_sym)
+                            if algo_orders:
+                                orders_to_check.extend(algo_orders)
+                        except Exception as e_ao:
+                            logger.debug(f"{log_prefix} Reconcile algo orders fetch for {v_sym}: {e_ao}")
+
+                    has_active_sl = False
+                    found_sl_id = None
+                    found_sl_cid = None
+                    for o in orders_to_check:
+                        o_id = o.get("orderId") or o.get("id")
+                        o_cid = str(o.get("clientOrderId") or "")
+                        if (
+                            v_sl_oid is not None and str(o_id) == str(v_sl_oid)
+                        ) or (
+                            v_sl_cid and o_cid and str(v_sl_cid) == o_cid
+                        ):
+                            has_active_sl = True
+                            found_sl_id = o_id
+                            found_sl_cid = o_cid
+                            break
+
+                        o_type = str(o.get("type") or "").upper()
+                        o_side = str(o.get("side") or "").upper()
+                        is_exit_side = (
+                            (v_dir == SignalDirection.LONG and o_side == "SELL")
+                            or (v_dir == SignalDirection.SHORT and o_side == "BUY")
+                        )
+                        if is_exit_side and (
+                            "STOP" in o_type
+                            or "CONDITIONAL" in o_type
+                            or "x-sl-" in o_cid
+                            or "xsl" in o_cid.lower()
+                        ):
+                            has_active_sl = True
+                            found_sl_id = o_id
+                            found_sl_cid = o_cid
+                            break
+
+                    if not has_active_sl:
+                        v_symbol_lock = self._get_lock_for_position(v_sym, reconcile_market_type)
+                        async with v_symbol_lock:
+                            cur_p = self._active_position_get(v_sym, reconcile_market_type)
+                            if (
+                                cur_p
+                                and cur_p.status == "OPEN"
+                                and not cur_p.sl_placement_initiated
+                                and not cur_p.sl_replacement_in_progress
+                            ):
+                                if cur_p.current_sl_order_id is not None:
+                                    logger.warning(
+                                        f"{log_prefix} Position {v_sym} had current_sl_order_id={cur_p.current_sl_order_id} in memory, "
+                                        f"but NO matching SL order exists on exchange! Clearing phantom SL ID."
+                                    )
+                                    cur_p.current_sl_order_id = None
+                                    cur_p.current_sl_client_order_id = None
+
+                                if cur_p.current_sl_price and cur_p.current_sl_price > 0:
+                                    logger.info(
+                                        f"{log_prefix} Triggering stop-loss placement for unprotected position {v_sym}."
+                                    )
+                                    self.loop.create_task(
+                                        self._place_stop_loss(cur_p),
+                                        name=f"PlaceSL_ReconcileMissing_{v_sym}",
+                                    )
+                    elif found_sl_id and v_sl_oid is None:
+                        v_symbol_lock = self._get_lock_for_position(v_sym, reconcile_market_type)
+                        async with v_symbol_lock:
+                            cur_p = self._active_position_get(v_sym, reconcile_market_type)
+                            if cur_p and cur_p.status == "OPEN" and cur_p.current_sl_order_id is None:
+                                cur_p.current_sl_order_id = found_sl_id
+                                if found_sl_cid:
+                                    cur_p.current_sl_client_order_id = found_sl_cid
+                                logger.info(
+                                    f"{log_prefix} Synced active SL order {found_sl_id} from exchange for position {v_sym}."
+                                )
+                except Exception as e_sl_rec:
+                    logger.error(f"{log_prefix} Error reconciling SL orders for {v_sym}: {e_sl_rec}")
 
             # 5. Adopt orphans (Heavy operations like DB queries and API calls done without global lock)
             for _sym_key, exch_data in to_adopt:
@@ -10600,6 +10713,8 @@ class TradingController:
                         )
                         break
 
+                    current_pos.current_sl_order_id = None
+                    current_pos.current_sl_client_order_id = None
                     current_pos.sl_placement_initiated = False
                     place_success = await self._place_stop_loss(
                         current_pos, skip_preflight_check=True
@@ -11633,14 +11748,27 @@ class TradingController:
                     symbol_to_use, position_market_type
                 )
                 if pos_after_place and pos_after_place.status == "OPEN":
-                    if pos_after_place.current_sl_order_id is None:
+                    # Check if the existing SL ID matches the one just placed (e.g. WebSocket update arrived before REST response)
+                    is_same_order = (
+                        (
+                            pos_after_place.current_sl_order_id is not None
+                            and order_id_resp is not None
+                            and str(pos_after_place.current_sl_order_id) == str(order_id_resp)
+                        )
+                        or (
+                            pos_after_place.current_sl_client_order_id is not None
+                            and client_id_resp is not None
+                            and str(pos_after_place.current_sl_client_order_id) == str(client_id_resp)
+                        )
+                    )
+                    if pos_after_place.current_sl_order_id is None or is_same_order:
                         pos_after_place.current_sl_order_id = order_id_resp
                         pos_after_place.current_sl_client_order_id = client_id_resp
                         # Save the flag that this is an Algo Order (for correct cancellation)
                         pos_after_place.is_sl_algo_order = is_algo_order
                         pos_after_place.sl_placement_initiated = False
                         logger.info(
-                            f"{log_prefix} SL order PLACED. ID={order_id_resp} (AlgoOrder={is_algo_order}). Position object updated."
+                            f"{log_prefix} SL order PLACED. ID={order_id_resp} (AlgoOrder={is_algo_order}, WS_EarlyMatch={is_same_order}). Position object updated."
                         )
                         return True
                     else:
@@ -13509,10 +13637,32 @@ class TradingController:
                 elif order_status in ["CANCELED", "REJECTED", "EXPIRED"]:
                     logger.warning(f"{log_prefix} SL order is {order_status}.")
                     if position.status == "OPEN":  # Only if the position is still OPEN
-                        if position.sl_replacement_in_progress:
+                        is_current_sl_cancelled = (
+                            (
+                                order_id is not None
+                                and position.current_sl_order_id is not None
+                                and str(position.current_sl_order_id) == str(order_id)
+                            )
+                            or (
+                                client_order_id is not None
+                                and position.current_sl_client_order_id is not None
+                                and str(position.current_sl_client_order_id) == str(client_order_id)
+                            )
+                        )
+                        if is_current_sl_cancelled:
+                            position.current_sl_order_id = None
+                            position.current_sl_client_order_id = None
+                            position.sl_placement_initiated = False
+
+                        if position.sl_replacement_in_progress and not is_current_sl_cancelled:
                             logger.info(
                                 f"{log_prefix} SL replacement already in progress. "
                                 f"Ignoring {order_status} event for old SL (intentionally cancelled during replacement)."
+                            )
+                        elif position.sl_replacement_in_progress and is_current_sl_cancelled:
+                            logger.warning(
+                                f"{log_prefix} SL replacement in progress, but current SL (ID: {order_id}) was {order_status}! "
+                                f"Cleared SL in memory. Active replacement routine will handle new placement."
                             )
                         else:
                             logger.critical(
