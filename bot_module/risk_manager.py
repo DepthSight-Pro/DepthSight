@@ -240,6 +240,7 @@ class RiskManager:
             )
 
         self._is_trading_allowed = True
+        self._last_disabled_balance_check_ts: float = 0.0
         self._balance_lock = asyncio.Lock()
         self._reset_time_utc = dt_time(0, 1, 0, tzinfo=timezone.utc)
 
@@ -515,6 +516,7 @@ class RiskManager:
             self.max_concurrent_trades,
             self.risk_per_trade,
         )
+        self._check_risk_limits()
 
     async def initialize(self):
         """Asynchronously loads state from the DB and initializes the balance."""
@@ -566,6 +568,44 @@ class RiskManager:
             logger.warning(
                 "[InitializeBalance] Trading disabled: failed to fetch balance."
             )
+
+    async def refresh_balance_and_limits(self) -> bool:
+        """
+        Refreshes live balance from the executor and re-evaluates risk limits.
+        Self-healing mechanism when account was funded after initial key setup
+        or after balance dropped and was replenished.
+        """
+        log_prefix = "[RiskManager:RefreshBalanceAndLimits]"
+        logger.info(f"{log_prefix} Refreshing live balance and risk limits...")
+        fetch_success = await self.update_balance()
+        if not fetch_success:
+            logger.warning(f"{log_prefix} Failed to fetch balance from executor.")
+            return False
+
+        current_balance = self.stats.current_balance
+        if current_balance >= self.min_balance_threshold:
+            if self.stats.start_of_day_balance <= 1e-9:
+                self.stats.start_of_day_balance = current_balance
+                logger.info(
+                    f"{log_prefix} Updated start_of_day_balance to ${current_balance:.2f}."
+                )
+            self._check_risk_limits()
+            if self._is_trading_allowed:
+                logger.info(
+                    f"{log_prefix} Trading is ALLOWED. Balance: ${current_balance:.2f} >= Min: ${self.min_balance_threshold:.2f}."
+                )
+                return True
+            else:
+                logger.warning(
+                    f"{log_prefix} Balance refreshed (${current_balance:.2f}), but risk limits still prevent trading."
+                )
+                return False
+        else:
+            logger.warning(
+                f"{log_prefix} Current balance (${current_balance:.2f}) is below min threshold (${self.min_balance_threshold:.2f}). Trading remains disabled."
+            )
+            self._is_trading_allowed = False
+            return False
 
     async def update_balance(self) -> bool:
         """Updates the current USDT balance from the executor (thread-safe)."""
@@ -918,8 +958,24 @@ class RiskManager:
         """
         # 1. Check global flag (drawdown, consecutive losses, etc.)
         if not self._is_trading_allowed:
-            logger.debug(f"[Blacklist:{symbol}] Trading globally disabled")
-            return False
+            # Self-healing: if trading was disabled (e.g. balance was 0 on startup, but topped up later),
+            # attempt to refresh balance and re-evaluate limits (throttled to at most once every 30 seconds).
+            now = time.time()
+            if now - self._last_disabled_balance_check_ts > 30.0:
+                self._last_disabled_balance_check_ts = now
+                logger.info(
+                    f"[Blacklist:{symbol}] Trading is currently disabled. Checking if balance has been replenished..."
+                )
+                try:
+                    await self.refresh_balance_and_limits()
+                except Exception as e:
+                    logger.error(
+                        f"[Blacklist:{symbol}] Error during balance refresh check: {e}"
+                    )
+
+            if not self._is_trading_allowed:
+                logger.debug(f"[Blacklist:{symbol}] Trading globally disabled")
+                return False
 
         # 2. Checking the blacklist (on-the-fly from the DB)
         if self.db_session and crud and self.user_id:
@@ -1252,6 +1308,11 @@ class RiskManager:
                 if daily_loss_pct >= self.daily_max_loss_threshold:
                     should_be_allowed = False
                     disable_reason = f"Daily loss ({daily_loss_pct * 100:.2f}%) >= limit ({self.daily_max_loss_threshold * 100:.2f}%)"
+            else:
+                self.stats.start_of_day_balance = self.stats.current_balance
+                logger.info(
+                    f"Initialized start_of_day_balance to ${self.stats.current_balance:.2f} after balance deposit."
+                )
             if self.stats.consecutive_losses >= self.max_consecutive_losses:
                 should_be_allowed = False
                 disable_reason = f"Max consec losses ({self.stats.consecutive_losses}) >= limit ({self.max_consecutive_losses})"

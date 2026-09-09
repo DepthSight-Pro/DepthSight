@@ -703,4 +703,3 @@ class TestReplaceStopLoss:
         updated = controller._active_position_get("BTCUSDT")
         assert updated.current_sl_order_id is None
         assert updated.current_sl_client_order_id is None
-

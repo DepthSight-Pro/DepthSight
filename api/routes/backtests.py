@@ -459,6 +459,7 @@ async def create_shareable_backtest_link(
     share_data: schemas.ShareCreate,
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
+    request: Request = None,
 ):
     from ..depthsight_api import _validate_backtest_for_leaderboard
 
@@ -521,7 +522,39 @@ async def create_shareable_backtest_link(
     await grant_achievement(db, current_user.id, "show_off")
 
     # 5. Form URL
-    frontend_url = os.getenv("FRONTEND_BASE_URL", "http://localhost:5173")
+    configured_frontend = os.getenv("FRONTEND_BASE_URL", "").strip()
+    if configured_frontend and not (
+        "localhost" in configured_frontend or "127.0.0.1" in configured_frontend
+    ):
+        frontend_url = configured_frontend.rstrip("/")
+    elif request:
+        origin = request.headers.get("origin")
+        if origin and not ("localhost" in origin or "127.0.0.1" in origin):
+            frontend_url = origin.rstrip("/")
+        else:
+            host = request.headers.get("x-forwarded-host") or request.headers.get(
+                "host"
+            )
+            proto = (
+                request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+            )
+            if host and not (
+                "localhost" in host or "127.0.0.1" in host or "api:8000" in host
+            ):
+                frontend_url = f"{proto}://{host}"
+            else:
+                frontend_url = (
+                    configured_frontend.rstrip("/")
+                    if configured_frontend
+                    else "http://localhost:5173"
+                )
+    else:
+        frontend_url = (
+            configured_frontend.rstrip("/")
+            if configured_frontend
+            else "http://localhost:5173"
+        )
+
     share_url = f"{frontend_url}/s/{shared_backtest.public_slug}"
 
     # 6. Return response

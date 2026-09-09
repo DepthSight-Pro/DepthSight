@@ -1,5 +1,6 @@
 import type React from "react";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Play, Square, Terminal as TerminalIcon, ArrowRight, Activity, Image as ImageIcon, X } from "lucide-react";
 import type { StrategyConfig } from "../../types";
 import ReactMarkdown from "react-markdown";
@@ -70,6 +71,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 	setIsAutopilotRunning,
 	setActiveIteration,
 }) => {
+	const { t } = useTranslation("pwa-common");
 	const [prompt, setPrompt] = useState(() => {
 		return localStorage.getItem("autopilot_prompt") || "Mean-reversion strategy using RSI and Bollinger Bands";
 	});
@@ -146,7 +148,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 	}, [maxIterations]);
 
 	const wsRef = useRef<WebSocket | null>(null);
-	const terminalEndRef = useRef<HTMLDivElement>(null);
+	const terminalContainerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
@@ -187,8 +189,11 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		return () => window.removeEventListener("paste", handlePaste);
 	}, [attachImageFile]);
 
+	// Auto-scroll ONLY terminal container, preserving page position
 	useEffect(() => {
-		terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+		if (terminalContainerRef.current) {
+			terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
+		}
 	}, [logs]);
 
 	const addLog = (message: string, type: LogEntry["type"] = "info") => {
@@ -345,7 +350,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 	const chr = (code: number) => String.fromCharCode(code);
 
 	return (
-		<div className="flex flex-col h-full bg-card border border-border rounded-2xl overflow-hidden shadow-2xl p-3 sm:p-4">
+		<div className="flex flex-col h-auto xl:h-full bg-card border border-border rounded-2xl shadow-2xl p-3 sm:p-4 shrink-0 xl:shrink">
 			{/* Input Header */}
 			<div className="mb-4 border-b border-border pb-4">
 				<div className="flex flex-col">
@@ -435,7 +440,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 			)}
 
 			{/* Terminal Display */}
-			<div className="flex-1 flex flex-col min-h-[200px] bg-black/60 border border-border rounded-xl overflow-hidden font-mono text-xs">
+			<div className="h-[200px] sm:h-[240px] xl:h-auto xl:flex-1 min-h-[160px] flex flex-col bg-black/60 border border-border rounded-xl overflow-hidden font-mono text-xs">
 				<div className="bg-background/80 border-b border-slate-950 px-3 py-2 flex items-center justify-between">
 					<div className="flex items-center gap-2">
 						<TerminalIcon className="w-4 h-4 text-profit shrink-0" />
@@ -449,7 +454,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 					)}
 				</div>
 
-				<div className="flex-1 p-2 sm:p-3 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 break-words">
+				<div ref={terminalContainerRef} className="flex-1 p-2 sm:p-3 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 break-words">
 					{logs.length === 0 && (
 						<div className="text-slate-600 text-center py-8 sm:py-12 flex flex-col items-center gap-1.5 px-4">
 							<TerminalIcon className="w-8 h-8 opacity-40 animate-pulse text-primary mb-2" />
@@ -493,7 +498,6 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 							</div>
 						</div>
 					))}
-					<div ref={terminalEndRef} />
 				</div>
 			</div>
 
@@ -526,49 +530,51 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 
 			{/* Final Success Card */}
 			{finalStrategy && (
-				<div className="mt-4 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/30 rounded-xl p-3 sm:p-4 animate-fade-in relative overflow-hidden shadow-primary/5">
-					<div className="absolute top-0 right-0 w-24 h-24 bg-primary/10 rounded-full blur-2xl" />
-					<div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-						
-						<div className="flex items-center gap-3">
-							<div className="bg-primary/20 p-2 sm:p-2.5 rounded-lg border border-primary/30 shrink-0">
-								<Activity className="w-5 h-5 text-primary/80 animate-pulse" />
+				<div className="mt-3 bg-card border border-primary/40 rounded-xl p-3 sm:p-4 shadow-xl relative overflow-hidden shrink-0">
+					<div className="flex flex-col gap-3">
+						<div className="flex items-center justify-between gap-2">
+							<div className="flex items-center gap-2.5 min-w-0">
+								<div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shrink-0">
+									<Activity className="w-4 h-4 text-primary animate-pulse" />
+								</div>
+								<div className="min-w-0">
+									<h3 className="font-semibold text-foreground text-xs sm:text-sm truncate">
+										{t("editor.bestStrategyConfigured", "Best Strategy Configured")}
+									</h3>
+									<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+										{(finalStrategy as any).strategy_name || "VisualBuilderStrategy"} • Standard Engine
+									</p>
+								</div>
 							</div>
-							<div className="min-w-0">
-								<h3 className="font-semibold text-foreground text-sm truncate">
-									Best Strategy Configured
-								</h3>
-								<p className="text-[10px] sm:text-xs text-muted-foreground/80 mt-0.5 truncate">
-									{(finalStrategy as any).strategy_name || "VisualBuilderStrategy"} • Standard Engine
-								</p>
+
+							<div className="flex items-center gap-3 sm:gap-4 font-mono shrink-0">
+								<div className="text-right">
+									<div className="text-[9px] text-muted-foreground">PnL</div>
+									<div className={`text-xs sm:text-sm font-bold ${finalKpis?.pnl > 0 ? "text-profit" : "text-loss"}`}>
+										{finalKpis?.pnl > 0 ? "+" : ""}{finalKpis?.pnl?.toFixed(2)}%
+									</div>
+								</div>
+								<div className="text-right">
+									<div className="text-[9px] text-muted-foreground">WR</div>
+									<div className="text-xs sm:text-sm font-bold text-foreground">
+										{finalKpis?.win_rate?.toFixed(1)}%
+									</div>
+								</div>
+								<div className="text-right">
+									<div className="text-[9px] text-muted-foreground">DD</div>
+									<div className="text-xs sm:text-sm font-bold text-foreground">
+										-{finalKpis?.max_dd?.toFixed(1)}%
+									</div>
+								</div>
 							</div>
 						</div>
-						<div className="flex gap-4 sm:gap-6 font-mono w-full lg:w-auto justify-between lg:justify-start">
-							<div>
-								<div className="text-[9px] text-muted-foreground">PnL</div>
-								<div className={`text-sm font-bold ${finalKpis?.pnl > 0 ? "text-profit" : "text-loss"}`}>
-									{finalKpis?.pnl > 0 ? "+" : ""}{finalKpis?.pnl?.toFixed(2)}%
-								</div>
-							</div>
-							<div>
-								<div className="text-[9px] text-muted-foreground">Win Rate</div>
-								<div className="text-sm font-bold text-foreground">
-									{finalKpis?.win_rate?.toFixed(1)}%
-								</div>
-							</div>
-							<div>
-								<div className="text-[9px] text-muted-foreground">Max DD</div>
-								<div className="text-sm font-bold text-foreground">
-									-{finalKpis?.max_dd?.toFixed(1)}%
-								</div>
-							</div>
-						</div>
+
 						<button
 							onClick={() => onStrategyGenerated(finalStrategy?.config_data || finalStrategy)}
-							className="w-full lg:w-auto bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2.5 sm:py-2 text-xs font-semibold flex items-center justify-center gap-1 shadow-lg transition shrink-0"
+							className="w-full bg-primary hover:bg-primary/90 active:scale-[0.98] text-white rounded-lg py-2.5 px-4 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-primary/25 transition cursor-pointer"
 							type="button"
 						>
-							HITL Checkpoint: Approve <ArrowRight className="w-4 h-4 ml-1" />
+							{t("aiChat.loadToEditor", "Approve & Load to Editor")} <ArrowRight className="w-4 h-4 shrink-0" />
 						</button>
 					</div>
 				</div>

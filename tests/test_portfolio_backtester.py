@@ -214,19 +214,13 @@ async def test_run_backtest_and_generate_trades(
         return 0.0
 
     def check_signal_sync_dispatcher(self, *args, **kwargs):
-        strat_name = getattr(self, "NAME", "") or getattr(
-            self, "strategy_name", ""
-        )
+        strat_name = getattr(self, "NAME", "") or getattr(self, "strategy_name", "")
         close_price = extract_close_from_args(*args, **kwargs)
 
-        if strat_name == "VolumeBreakout" or "BTC" in getattr(
-            self, "contract_id", ""
-        ):
+        if strat_name == "VolumeBreakout" or "BTC" in getattr(self, "contract_id", ""):
             if abs(close_price - 20100.0) < 1e-4:
                 return [copy.deepcopy(mock_btc_signal)]
-        elif strat_name == "FakeBreakout" or "ETH" in getattr(
-            self, "contract_id", ""
-        ):
+        elif strat_name == "FakeBreakout" or "ETH" in getattr(self, "contract_id", ""):
             if abs(close_price - 1510.0) < 1e-4:
                 return [copy.deepcopy(mock_eth_signal)]
         return []
@@ -318,9 +312,7 @@ async def test_l2_impact_changes_fill_price(
                         kline = arg
                         break
             try:
-                kline_close = (
-                    float(kline["close"]) if kline is not None else 0.0
-                )
+                kline_close = float(kline["close"]) if kline is not None else 0.0
             except Exception:
                 kline_close = 0.0
 

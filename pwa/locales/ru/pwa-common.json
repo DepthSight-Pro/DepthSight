@@ -251,6 +251,7 @@
 		"aiAssistantGreeting": "Привет! Я ваш AI-ассистент. Как я могу помочь с этой стратегией?",
 		"errorLoadingStrategy": "Ошибка загрузки стратегии.",
 		"strategyGenerated": "Стратегия сгенерирована и загружена в конструктор.",
+		"bestStrategyConfigured": "Лучшая стратегия настроена",
 		"backtestStarted": "Бэктест запущен.",
 		"strategySaved": "Стратегия '{{strategyName}}' успешно сохранена.",
 		"errorSavingStrategy": "Ошибка сохранения стратегии.",

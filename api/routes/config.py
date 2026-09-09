@@ -1552,6 +1552,22 @@ async def format_mining_status_response(
         ref_user_res = await db.execute(ref_user_stmt)
         referrer_referral_code = ref_user_res.scalar()
 
+    if not referrer_referral_code:
+        if hub_data and (
+            hub_data.get("referrerReferralCode")
+            or hub_data.get("referrer_referral_code")
+        ):
+            referrer_referral_code = hub_data.get(
+                "referrerReferralCode"
+            ) or hub_data.get("referrer_referral_code")
+        elif referrer_node_uuid:
+            rn_res = await db.execute(
+                select(models.HubNode.node_referral_code).where(
+                    models.HubNode.node_uuid == referrer_node_uuid
+                )
+            )
+            referrer_referral_code = rn_res.scalar()
+
     if current_user.role == "admin":
         if is_central:
             stmt = select(
@@ -3197,6 +3213,43 @@ async def activate_local_mining(
 
             await _bind_referrer_once(db, db_node, payload.referrer_code)
             await db.commit()
+
+            if not current_user.referred_by_user_id:
+                # Link user-level referrer relationship so the invitee appears in the inviter's referral network
+                ref_user_stmt = select(models.User).where(
+                    models.User.referral_code == payload.referrer_code
+                )
+                ref_user_res = await db.execute(ref_user_stmt)
+                ref_user_obj = ref_user_res.scalars().first()
+                if not ref_user_obj:
+                    # Check if the code was a node referral code
+                    ref_node_stmt = select(models.HubNode).where(
+                        models.HubNode.node_referral_code == payload.referrer_code
+                    )
+                    ref_node_res = await db.execute(ref_node_stmt)
+                    ref_node_obj = ref_node_res.scalars().first()
+                    if ref_node_obj and ref_node_obj.node_referral_code:
+                        ref_u_stmt = select(models.User).where(
+                            models.User.referral_code == ref_node_obj.node_referral_code
+                        )
+                        ref_user_obj = (await db.execute(ref_u_stmt)).scalars().first()
+
+                if ref_user_obj and ref_user_obj.id != current_user.id:
+                    # Guard against direct cycles (A -> B and B -> A)
+                    if ref_user_obj.referred_by_user_id != current_user.id:
+                        current_user.referred_by_user_id = ref_user_obj.id
+                        db.add(current_user)
+                        await db.commit()
+                        try:
+                            from ..gamification import (
+                                check_and_grant_mining_achievements,
+                            )
+
+                            await check_and_grant_mining_achievements(
+                                db, ref_user_obj.id
+                            )
+                        except Exception:
+                            pass
 
         # Auto-resolve and save Weex, OKX, and Bybit UIDs
         resolved_uid = await auto_resolve_weex_uid(db, current_user.id)

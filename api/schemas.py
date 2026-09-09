@@ -9,6 +9,7 @@ from pydantic import (
     model_validator,
     field_validator,
     computed_field,
+    AliasChoices,
 )
 from pydantic.alias_generators import to_snake, to_camel
 from typing import TypeVar, Generic, Optional, List, Any, Dict, Union, Tuple, Literal
@@ -2911,6 +2912,7 @@ class MiningStatusResponse(BaseModel):
     participating_nodes: int
     node_referral_code: Optional[str] = None
     referrer_node_uuid: Optional[str] = None
+    referrer_referral_code: Optional[str] = None
     has_welcome_bonus: bool = False
     total_operator_fee_collected: float = 0.0
     your_total_volume: float = 0.0
@@ -3015,7 +3017,15 @@ class LocalMiningStatusResponse(BaseModel):
 
 
 class MiningActivatePayload(BaseModel):
-    referrer_code: Optional[str] = None
+    referrer_code: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("referrer_code", "referrerCode"),
+    )
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 
 class NodeMiningConfigUpdate(BaseModel):
@@ -3184,3 +3194,25 @@ class AdminAITestResponse(BaseModel):
     latency_ms: float = 0.0
     response: Optional[str] = None
     error: Optional[str] = None
+
+
+# --- Personal Access Token (PAT) for MCP & Programmatic Access ---
+class PersonalAccessTokenCreate(BaseModel):
+    name: str
+    expires_days: Optional[int] = None  # None = never expires
+
+
+class PersonalAccessTokenInfo(BaseModel):
+    id: int
+    name: str
+    token_prefix: str
+    is_active: bool
+    created_at: datetime
+    expires_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PersonalAccessTokenCreated(PersonalAccessTokenInfo):
+    token: str  # Plain token, returned ONCE upon creation!

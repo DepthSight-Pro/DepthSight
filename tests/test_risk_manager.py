@@ -1470,3 +1470,54 @@ async def test_calculate_scaled_in_quantity_no_stop_loss(risk_manager, mock_exec
 
     assert calculated_quantity is not None
     assert math.isclose(calculated_quantity, expected_adj_qty, rel_tol=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_refresh_balance_and_limits_recovers_trading(risk_manager, mock_executor):
+    """
+    Test that when trading is globally disabled (e.g. 0 balance on key creation),
+    refresh_balance_and_limits correctly updates balance and re-enables trading.
+    """
+    # Simulate initial state: trading disabled due to zero balance
+    risk_manager._is_trading_allowed = False
+    risk_manager.stats.current_balance = 0.0
+    risk_manager.stats.start_of_day_balance = 0.0
+
+    # Mock deposit of $50 USDT
+    mock_executor.get_account_balance.return_value = {
+        "USDT": {"free": "50.00", "locked": "0.00"}
+    }
+
+    result = await risk_manager.refresh_balance_and_limits()
+
+    assert result is True
+    assert risk_manager._is_trading_allowed is True
+    assert risk_manager.stats.current_balance == 50.0
+    assert risk_manager.stats.start_of_day_balance == 50.0
+
+
+@pytest.mark.asyncio
+async def test_is_symbol_trading_allowed_throttled_recovery(
+    risk_manager, mock_executor
+):
+    """
+    Test that is_symbol_trading_allowed auto-refreshes balance and re-enables
+    trading when account was funded after initial block.
+    """
+    # Simulate blocked state
+    risk_manager._is_trading_allowed = False
+    risk_manager.stats.current_balance = 0.0
+    risk_manager.stats.start_of_day_balance = 0.0
+    risk_manager._last_disabled_balance_check_ts = 0.0  # long time ago
+
+    # Mock deposit on exchange
+    mock_executor.get_account_balance.return_value = {
+        "USDT": {"free": "100.00", "locked": "0.00"}
+    }
+
+    # Verify is_symbol_trading_allowed self-heals
+    allowed = await risk_manager.is_symbol_trading_allowed("ETHUSDT")
+
+    assert allowed is True
+    assert risk_manager._is_trading_allowed is True
+    assert risk_manager.stats.current_balance == 100.0

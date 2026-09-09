@@ -108,6 +108,16 @@ async def get_current_user(
         )
         return user
 
+    if token.startswith("ds_pat_"):
+        user = await crud.get_user_by_pat(db, token)
+        if not user:
+            raise credentials_exception
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive"
+            )
+        return user
+
     username = validate_token(token, credentials_exception)
     user = await crud.get_user_by_username(db, username=username)
     if user is None:
@@ -125,12 +135,16 @@ async def get_current_user_from_token(
     token: str, db: AsyncSession
 ) -> models.User | None:
     """
-    Helper function to resolve a User model directly from a JWT Bearer token string.
+    Helper function to resolve a User model directly from a JWT Bearer token string or PAT.
     """
     try:
+        clean_token = token.strip()
+        if clean_token.startswith("ds_pat_"):
+            return await crud.get_user_by_pat(db, clean_token)
+
         from .security import validate_token
 
-        username = validate_token(token, None)
+        username = validate_token(clean_token, None)
         if username:
             return await crud.get_user_by_username(db, username=username)
     except Exception as e:

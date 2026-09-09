@@ -334,6 +334,23 @@ class ApiKey(Base):
     user = relationship("User", back_populates="api_keys", lazy="selectin")
 
 
+class PersonalAccessToken(Base):
+    __tablename__ = "personal_access_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    name = Column(String, nullable=False)
+    token_prefix = Column(String(16), nullable=False)  # e.g. "ds_pat_abc12..."
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA-256
+    is_active = Column(Boolean, default=True, nullable=False, server_default="true")
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # None = never expires
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", lazy="selectin")
+
+
 class Trade(Base):
     __tablename__ = "trades"
 

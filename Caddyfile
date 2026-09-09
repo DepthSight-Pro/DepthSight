@@ -21,8 +21,27 @@
         reverse_proxy pwa:80
     }
 
-    # OG Images / Share
+    # OG Images
+    handle /og-image/* {
+        reverse_proxy api:8000
+    }
+
+    # Render shared page with OG metadata
     handle /render-shared/* {
+        reverse_proxy api:8000
+    }
+
+    # Affiliate redirector
+    handle /r/* {
+        reverse_proxy api:8000
+    }
+
+    # Social bots and link crawlers fetching shared backtests -> route to api
+    @shared_bot {
+        path /s/*
+        header_regexp User-Agent "(?i)(bot|crawler|spider|scraper|preview|opengraph|metatags|facebookexternalhit|whatsapp|skypeuripreview|vkshare)"
+    }
+    handle @shared_bot {
         reverse_proxy api:8000
     }
 

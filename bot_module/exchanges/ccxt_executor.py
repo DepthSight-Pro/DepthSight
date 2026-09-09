@@ -1335,7 +1335,11 @@ class CcxtExecutor:
             ccxt_symbol = self._normalize_symbol(symbol) if symbol else None
             all_okx_algo_orders: List[Dict[str, Any]] = []
             seen_ids = set()
-            for okx_param in ({"stop": True}, {"ordType": "conditional"}, {"ordType": "oco"}):
+            for okx_param in (
+                {"stop": True},
+                {"ordType": "conditional"},
+                {"ordType": "oco"},
+            ):
                 try:
                     orders_batch = await self._exchange.fetch_open_orders(
                         ccxt_symbol,
@@ -1343,7 +1347,9 @@ class CcxtExecutor:
                     )
                     if isinstance(orders_batch, list):
                         for o in orders_batch:
-                            oid = str(o.get("id") or (o.get("info") or {}).get("algoId") or "")
+                            oid = str(
+                                o.get("id") or (o.get("info") or {}).get("algoId") or ""
+                            )
                             if oid and oid not in seen_ids:
                                 seen_ids.add(oid)
                                 all_okx_algo_orders.append(o)
@@ -1353,9 +1359,7 @@ class CcxtExecutor:
                     logger.warning(
                         f"Could not fetch OKX open algo orders with {okx_param} for {symbol or 'all symbols'}: {e}"
                     )
-            return [
-                self._map_ccxt_order_to_binance(o) for o in all_okx_algo_orders
-            ]
+            return [self._map_ccxt_order_to_binance(o) for o in all_okx_algo_orders]
 
         if self.exchange_id == "bybit":
             ccxt_symbol = self._normalize_symbol(symbol) if symbol else None
@@ -1430,17 +1434,25 @@ class CcxtExecutor:
                     # We must also fetch and cancel all open algo/trigger orders!
                     if self.exchange_id == "okx":
                         seen_cancel_ids = set()
-                        for okx_param in ({"stop": True}, {"ordType": "conditional"}, {"ordType": "oco"}):
+                        for okx_param in (
+                            {"stop": True},
+                            {"ordType": "conditional"},
+                            {"ordType": "oco"},
+                        ):
                             try:
                                 trigger_orders = await self._exchange.fetch_open_orders(
                                     ccxt_symbol,
                                     params=okx_param,
                                 )
                                 for o in trigger_orders or []:
-                                    oid = o.get("id") or (o.get("info") or {}).get("algoId")
+                                    oid = o.get("id") or (o.get("info") or {}).get(
+                                        "algoId"
+                                    )
                                     if oid and str(oid) not in seen_cancel_ids:
                                         seen_cancel_ids.add(str(oid))
-                                        await self.cancel_order(symbol, orderId=oid, is_algo_order=True)
+                                        await self.cancel_order(
+                                            symbol, orderId=oid, is_algo_order=True
+                                        )
                             except Exception as okx_algo_err:
                                 logger.warning(
                                     f"Could not cancel OKX algo orders with {okx_param}: {okx_algo_err}"
@@ -1521,7 +1533,11 @@ class CcxtExecutor:
                         f"Could not fetch Gate.io spot trigger orders for cancellation: {te}"
                     )
             if self.exchange_id == "okx":
-                for okx_param in ({"stop": True}, {"ordType": "conditional"}, {"ordType": "oco"}):
+                for okx_param in (
+                    {"stop": True},
+                    {"ordType": "conditional"},
+                    {"ordType": "oco"},
+                ):
                     try:
                         trigger_orders = await self._exchange.fetch_open_orders(
                             ccxt_symbol,
@@ -1592,9 +1608,12 @@ class CcxtExecutor:
                             cancel_params["trigger"] = True
                     if self.exchange_id == "okx":
                         info = order.get("info") or {}
-                        order_type = str(order.get("type") or info.get("ordType") or "").lower()
+                        order_type = str(
+                            order.get("type") or info.get("ordType") or ""
+                        ).lower()
                         if (
-                            order_type in {"trigger", "conditional", "oco", "move_order_stop"}
+                            order_type
+                            in {"trigger", "conditional", "oco", "move_order_stop"}
                             or order.get("stopPrice")
                             or info.get("slTriggerPx")
                             or info.get("triggerPx")
@@ -1607,7 +1626,8 @@ class CcxtExecutor:
                         if (
                             order.get("stopPrice")
                             or (info.get("triggerPrice") or info.get("triggerPx"))
-                            or str(order.get("type") or "").upper() in {"STOP_MARKET", "STOP", "TRIGGER"}
+                            or str(order.get("type") or "").upper()
+                            in {"STOP_MARKET", "STOP", "TRIGGER"}
                         ):
                             cancel_params["trigger"] = True
                     if self.exchange_id == "bybit":
@@ -1816,9 +1836,7 @@ class CcxtExecutor:
             )
             return []
 
-    async def get_my_trades(
-        self, symbol: str, limit: int = 5
-    ) -> List[Dict[str, Any]]:
+    async def get_my_trades(self, symbol: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Fetches recent user trades from exchange via CCXT."""
         if not hasattr(self, "_exchange") or self._exchange is None:
             return []

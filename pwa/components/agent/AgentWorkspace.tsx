@@ -15,17 +15,19 @@ export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({ onStrategyGenera
 	const [activeIteration, setActiveIteration] = useState(0);
 
 	return (
-		<div className="flex flex-col xl:flex-row gap-4 h-full p-1 overflow-y-auto xl:overflow-hidden">
+		<div className="flex flex-col xl:flex-row gap-4 h-full p-1 overflow-y-auto xl:overflow-hidden pb-14 xl:pb-1">
 			
 			{/* Terminal Panel */}
-			<div className="flex-1 flex flex-col min-w-0 min-h-[500px] xl:min-h-0">
+			<div className="w-full shrink-0 xl:flex-1 xl:shrink xl:min-w-0 xl:min-h-0 xl:h-full flex flex-col">
 				<AutopilotTerminal
 					onStrategyGenerated={onStrategyGenerated}
 					setIsAutopilotRunning={setIsAutopilotRunning}
 					setActiveIteration={setActiveIteration}
 				/>
 			</div>
-			<div className="w-full xl:w-80 shrink-0 flex flex-col h-[400px] xl:h-auto">
+
+			{/* Memory Bank Sidebar */}
+			<div className="w-full shrink-0 xl:w-80 xl:h-full flex flex-col h-[380px] xl:h-auto">
 				<MemoryBank
 					isAutopilotRunning={isAutopilotRunning}
 					activeIteration={activeIteration}

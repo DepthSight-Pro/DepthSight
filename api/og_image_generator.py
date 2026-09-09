@@ -69,15 +69,41 @@ async def generate_og_image(data: SharedBacktestData) -> bytes:
     """
     Generates an Open Graph image from backtest data using Playwright.
     """
-    pnl_value = data.kpis.get("total_pnl", 0)
+    kpis_raw = data.kpis or {}
+    try:
+        pnl_raw = kpis_raw.get("total_pnl")
+        pnl_value = float(pnl_raw) if pnl_raw is not None else 0.0
+    except (ValueError, TypeError):
+        pnl_value = 0.0
+
     pnl_sign = "+" if pnl_value >= 0 else ""
     pnl_color = "#22c55e" if pnl_value >= 0 else "#ef4444"
 
+    try:
+        win_rate_raw = kpis_raw.get("win_rate")
+        win_rate_value = float(win_rate_raw) if win_rate_raw is not None else 0.0
+    except (ValueError, TypeError):
+        win_rate_value = 0.0
+
+    try:
+        max_dd_raw = kpis_raw.get("max_drawdown")
+        if max_dd_raw is None:
+            max_dd_raw = kpis_raw.get("max_drawdown_pct")
+        max_dd_value = float(max_dd_raw) if max_dd_raw is not None else 0.0
+    except (ValueError, TypeError):
+        max_dd_value = 0.0
+
+    trades_value = (
+        kpis_raw.get("trades")
+        if kpis_raw.get("trades") is not None
+        else kpis_raw.get("total_trades", 0)
+    )
+
     kpis = {
         "Net Profit": f"{pnl_sign}{pnl_value:,.2f} USD",
-        "Win Rate": f"{data.kpis.get('win_rate', 0):.1f}%",
-        "Max Drawdown": f"{data.kpis.get('max_drawdown', 0):.2f}%",
-        "Total Trades": str(data.kpis.get("trades", 0)),
+        "Win Rate": f"{win_rate_value:.1f}%",
+        "Max Drawdown": f"{max_dd_value:.2f}%",
+        "Total Trades": str(trades_value),
     }
 
     kpi_html = ""

@@ -8,6 +8,7 @@ import {
 	BadgeHelp,
 	BadgeX,
 	Bell,
+	Bot,
 	Database,
 	Key,
 	Plus,
@@ -26,6 +27,7 @@ import { useTranslation } from "react-i18next";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { AddApiKeyModal } from "@/components/settings/AddApiKeyModal";
 import { BlacklistSection } from "@/components/settings/BlacklistSection";
+import { McpSection } from "@/components/settings/McpSection";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -521,10 +523,14 @@ export default function Settings() {
 	return (
 		<PageLayout title={t("pageTitle")} icon={SettingsIcon}>
 			<Tabs defaultValue="api-keys" className="w-full">
-				<TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
+				<TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
 					<TabsTrigger value="api-keys">
 						<Key className="w-4 h-4 mr-2" />
 						{t("tabs.apiKeys")}
+					</TabsTrigger>
+					<TabsTrigger value="mcp">
+						<Bot className="w-4 h-4 mr-2" />
+						{t("tabs.mcp", "AI Agents (MCP)")}
 					</TabsTrigger>
 					<TabsTrigger value="risk-management">
 						<Shield className="w-4 h-4 mr-2" />
@@ -681,6 +687,11 @@ export default function Settings() {
 							</Table>
 						)}
 					</SettingsSection>
+				</TabsContent>
+
+				{/* === AI Agents (MCP) Tab === */}
+				<TabsContent value="mcp" className="mt-6">
+					<McpSection />
 				</TabsContent>
 
 				{/* === Data Sources Tab === */}

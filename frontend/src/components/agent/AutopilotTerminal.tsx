@@ -145,7 +145,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 	}, [maxIterations]);
 
 	const wsRef = useRef<WebSocket | null>(null);
-	const terminalEndRef = useRef<HTMLDivElement>(null);
+	const terminalContainerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
@@ -186,8 +186,11 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		return () => window.removeEventListener("paste", handlePaste);
 	}, [attachImageFile]);
 
+	// Auto-scroll ONLY terminal container
 	useEffect(() => {
-		terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+		if (terminalContainerRef.current) {
+			terminalContainerRef.current.scrollTop = terminalContainerRef.current.scrollHeight;
+		}
 	}, [logs]);
 
 	const addLog = (message: string, type: LogEntry["type"] = "info") => {
@@ -444,7 +447,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 					)}
 				</div>
 
-				<div className="flex-1 p-3 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800">
+				<div ref={terminalContainerRef} className="flex-1 p-3 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800">
 					{logs.length === 0 && (
 						<div className="text-slate-600 text-center py-12 flex flex-col items-center gap-1.5">
 							<TerminalIcon className="w-8 h-8 opacity-40 animate-pulse text-primary" />
@@ -488,7 +491,6 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 							</div>
 						</div>
 					))}
-					<div ref={terminalEndRef} />
 				</div>
 			</div>
 
@@ -561,10 +563,10 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 
 						<button
 							onClick={() => onStrategyGenerated(finalStrategy?.config_data || finalStrategy)}
-							className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-xs font-semibold flex items-center justify-center gap-1 shadow-lg transition"
+							className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-lg shadow-primary/25 transition cursor-pointer active:scale-[0.98]"
 							type="button"
 						>
-							HITL Checkpoint: Approve & Load to Editor <ArrowRight className="w-4 h-4" />
+							Approve & Load to Editor <ArrowRight className="w-4 h-4 ml-1" />
 						</button>
 					</div>
 				</div>

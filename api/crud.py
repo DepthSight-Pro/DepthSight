@@ -4474,3 +4474,95 @@ async def referrer_link_creates_cycle(
         cur = res.scalar()
         depth += 1
     return False
+
+
+# --- Personal Access Tokens (PAT) CRUD ---
+
+
+async def create_personal_access_token(
+    db: AsyncSession,
+    user_id: int,
+    token_create: schemas.PersonalAccessTokenCreate,
+) -> tuple[str, models.PersonalAccessToken]:
+    """Generates a secure PAT, hashes it with SHA-256, and stores it in DB."""
+    import hashlib
+    import secrets
+    from datetime import datetime, timezone, timedelta
+
+    raw_token = f"ds_pat_{secrets.token_urlsafe(32)}"
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    token_prefix = f"{raw_token[:12]}..."
+
+    expires_at = None
+    if token_create.expires_days and token_create.expires_days > 0:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=token_create.expires_days)
+
+    db_pat = models.PersonalAccessToken(
+        user_id=user_id,
+        name=token_create.name.strip(),
+        token_prefix=token_prefix,
+        token_hash=token_hash,
+        is_active=True,
+        expires_at=expires_at,
+    )
+    db.add(db_pat)
+    await db.flush()
+    await db.refresh(db_pat)
+    return raw_token, db_pat
+
+
+async def get_personal_access_tokens_by_user(
+    db: AsyncSession, user_id: int
+) -> list[models.PersonalAccessToken]:
+    stmt = (
+        select(models.PersonalAccessToken)
+        .where(models.PersonalAccessToken.user_id == user_id)
+        .order_by(models.PersonalAccessToken.created_at.desc())
+    )
+    res = await db.execute(stmt)
+    return list(res.scalars().all())
+
+
+async def delete_personal_access_token(
+    db: AsyncSession, user_id: int, token_id: int
+) -> bool:
+    stmt = select(models.PersonalAccessToken).where(
+        models.PersonalAccessToken.id == token_id,
+        models.PersonalAccessToken.user_id == user_id,
+    )
+    res = await db.execute(stmt)
+    pat = res.scalar_one_or_none()
+    if not pat:
+        return False
+    await db.delete(pat)
+    await db.commit()
+    return True
+
+
+async def get_user_by_pat(
+    db: AsyncSession, token_str: str
+) -> Optional[models.User]:
+    """Resolves User from a raw PAT string (verifying SHA-256 hash and expiration)."""
+    import hashlib
+    from datetime import datetime, timezone
+
+    token_hash = hashlib.sha256(token_str.strip().encode()).hexdigest()
+    now = datetime.now(timezone.utc)
+
+    stmt = select(models.PersonalAccessToken).where(
+        models.PersonalAccessToken.token_hash == token_hash,
+        models.PersonalAccessToken.is_active.is_(True),
+        (
+            models.PersonalAccessToken.expires_at.is_(None)
+            | (models.PersonalAccessToken.expires_at > now)
+        ),
+    )
+    res = await db.execute(stmt)
+    pat = res.scalar_one_or_none()
+    if not pat:
+        return None
+
+    pat.last_used_at = now
+    await db.commit()
+
+    return await get_user_by_id(db, user_id=pat.user_id)

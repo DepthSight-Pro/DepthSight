@@ -506,7 +506,10 @@ export const api = {
 	activateMining: (referrerCode?: string): Promise<any> =>
 		apiFetch<any>("/mining/activate", {
 			method: "POST",
-			body: JSON.stringify({ referrer_code: referrerCode }),
+			body: JSON.stringify({
+				referrer_code: referrerCode,
+				referrerCode: referrerCode,
+			}),
 		}),
 	deactivateMining: (): Promise<any> =>
 		apiFetch<any>("/mining/deactivate", {

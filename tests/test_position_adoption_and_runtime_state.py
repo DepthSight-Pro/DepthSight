@@ -89,8 +89,13 @@ async def test_redis_runtime_state_isolation_by_api_key(make_controller):
     ctrl_okx.redis_client = redis
 
     # Ensure keys are distinct
-    assert ctrl_weex.redis_key_runtime_state == "depthsight:controller:runtime_state:186:10"
-    assert ctrl_okx.redis_key_runtime_state == "depthsight:controller:runtime_state:186:20"
+    assert (
+        ctrl_weex.redis_key_runtime_state
+        == "depthsight:controller:runtime_state:186:10"
+    )
+    assert (
+        ctrl_okx.redis_key_runtime_state == "depthsight:controller:runtime_state:186:20"
+    )
 
     # Start strategy on WEEX
     payload_weex = {
@@ -160,7 +165,9 @@ async def test_redis_runtime_state_fallback_legacy_key(make_controller):
             }
         ],
     }
-    await redis.set("depthsight:controller:runtime_state:186", json.dumps(legacy_payload))
+    await redis.set(
+        "depthsight:controller:runtime_state:186", json.dumps(legacy_payload)
+    )
 
     # Load runtime state
     await ctrl._load_runtime_state()
@@ -236,7 +243,9 @@ async def test_ccxt_cancel_algo_order_parameters():
         mock_exchange.cancel_order.assert_called_once()
         _, _, params = mock_exchange.cancel_order.call_args[0]
         for k, v in expected_params.items():
-            assert params.get(k) == v, f"{exch} expected {k}={v} in params, got {params}"
+            assert params.get(k) == v, (
+                f"{exch} expected {k}={v} in params, got {params}"
+            )
 
 
 @pytest.mark.asyncio
@@ -371,7 +380,9 @@ async def test_execute_dca_grid_aborts_for_adopted_position(make_controller):
 
 
 @pytest.mark.asyncio
-async def test_redis_runtime_state_legacy_key_ignores_mismatched_api_key(make_controller):
+async def test_redis_runtime_state_legacy_key_ignores_mismatched_api_key(
+    make_controller,
+):
     """
     Verifies that when loading runtime state from legacy key, positions and strategies
     with non-matching or missing api_key_id are NOT restored.
@@ -422,7 +433,9 @@ async def test_redis_runtime_state_legacy_key_ignores_mismatched_api_key(make_co
             },
         ],
     }
-    await redis.set("depthsight:controller:runtime_state:186", json.dumps(legacy_payload))
+    await redis.set(
+        "depthsight:controller:runtime_state:186", json.dumps(legacy_payload)
+    )
 
     await ctrl_weex._load_runtime_state()
 
@@ -453,7 +466,10 @@ async def test_build_adopted_position_matches_db_strategy_config(make_controller
     ctrl.get_db_session = mock_db_session
 
     from unittest.mock import patch
-    with patch("api.crud.get_strategy_configs_by_user", AsyncMock(return_value=[mock_config])):
+
+    with patch(
+        "api.crud.get_strategy_configs_by_user", AsyncMock(return_value=[mock_config])
+    ):
         adopted = await ctrl._build_adopted_position(
             symbol="ETHUSDT",
             exch_data={"positionAmt": "0.5", "entryPrice": "2600.0"},
@@ -688,7 +704,8 @@ async def test_final_exit_cancels_stop_loss_with_algo_flag(make_controller):
     mock_executor.cancel_order.assert_awaited()
     cancel_calls = mock_executor.cancel_order.await_args_list
     sl_cancels = [
-        call for call in cancel_calls
+        call
+        for call in cancel_calls
         if str(call.kwargs.get("orderId")) == "algo-sl-987654"
     ]
     assert len(sl_cancels) == 1
@@ -727,11 +744,19 @@ async def test_cancel_all_exit_orders_cancels_sl_and_ptp(make_controller):
         is_sl_algo_order=True,
     )
     pos.partial_tp_orders = [
-        PartialTpOrderInfo(target_price=61000.0, orig_fraction=0.5, quantity=0.05, order_id=2222, status="PENDING")
+        PartialTpOrderInfo(
+            target_price=61000.0,
+            orig_fraction=0.5,
+            quantity=0.05,
+            order_id=2222,
+            status="PENDING",
+        )
     ]
     ctrl._active_position_set(pos)
 
-    await ctrl._cancel_all_exit_orders("BTCUSDT", "MANUAL_CLOSE", market_type="futures_usdtm")
+    await ctrl._cancel_all_exit_orders(
+        "BTCUSDT", "MANUAL_CLOSE", market_type="futures_usdtm"
+    )
 
     assert mock_executor.cancel_order.await_count == 2
     calls = mock_executor.cancel_order.await_args_list
@@ -763,14 +788,30 @@ async def test_ccxt_okx_cancel_all_open_orders_queries_and_cancels_algos():
     mock_exchange.privatePostTradeCancelAlgos = AsyncMock(return_value={"code": "0"})
     mock_exchange.privatePostTradeCancelOrder = AsyncMock(return_value={"code": "0"})
     mock_exchange.cancel_order = AsyncMock(return_value={"code": "0"})
-    mock_exchange.fetch_open_orders = AsyncMock(side_effect=[
-        # Call 1: stop=True trigger orders
-        [{"id": "okx-algo-1", "symbol": "ETH/USDT:USDT", "type": "market", "info": {"algoId": "okx-algo-1"}}],
-        # Call 2: ordType=conditional
-        [{"id": "okx-algo-2", "symbol": "ETH/USDT:USDT", "type": "market", "info": {"algoId": "okx-algo-2"}}],
-        # Call 3: ordType=oco
-        [],
-    ])
+    mock_exchange.fetch_open_orders = AsyncMock(
+        side_effect=[
+            # Call 1: stop=True trigger orders
+            [
+                {
+                    "id": "okx-algo-1",
+                    "symbol": "ETH/USDT:USDT",
+                    "type": "market",
+                    "info": {"algoId": "okx-algo-1"},
+                }
+            ],
+            # Call 2: ordType=conditional
+            [
+                {
+                    "id": "okx-algo-2",
+                    "symbol": "ETH/USDT:USDT",
+                    "type": "market",
+                    "info": {"algoId": "okx-algo-2"},
+                }
+            ],
+            # Call 3: ordType=oco
+            [],
+        ]
+    )
     executor._exchange = mock_exchange
 
     res = await executor.cancel_all_open_orders("ETHUSDT")
@@ -835,13 +876,24 @@ def test_client_order_ids_match_distinguishes_broker_prefixed_orders():
     assert TradingController._client_order_ids_match(tp_okx, sl_okx) is False
 
     # True matches across internal and broker-prefixed versions
-    assert TradingController._client_order_ids_match("x-entry-64b6e140747", entry_weex) is True
-    assert TradingController._client_order_ids_match("x-ptp-ff137e06e32e4", tp_weex) is True
-    assert TradingController._client_order_ids_match("x-entry-64b6e140747", entry_okx) is True
+    assert (
+        TradingController._client_order_ids_match("x-entry-64b6e140747", entry_weex)
+        is True
+    )
+    assert (
+        TradingController._client_order_ids_match("x-ptp-ff137e06e32e4", tp_weex)
+        is True
+    )
+    assert (
+        TradingController._client_order_ids_match("x-entry-64b6e140747", entry_okx)
+        is True
+    )
 
 
 @pytest.mark.asyncio
-async def test_reconcile_positions_calls_handle_final_exit_when_closed_on_exchange(make_controller):
+async def test_reconcile_positions_calls_handle_final_exit_when_closed_on_exchange(
+    make_controller,
+):
     """
     Verifies that when a position is closed on the exchange (e.g. by exchange TP/SL),
     _reconcile_positions_with_exchange calls _handle_final_exit so the trade is saved to DB.
@@ -851,7 +903,9 @@ async def test_reconcile_positions_calls_handle_final_exit_when_closed_on_exchan
 
     mock_executor = ctrl.executors["live"]
     mock_executor.market_type = "futures_usdtm"
-    mock_executor.get_open_positions = AsyncMock(return_value=[])  # 0 open positions on exchange
+    mock_executor.get_open_positions = AsyncMock(
+        return_value=[]
+    )  # 0 open positions on exchange
     mock_executor.get_ticker_price = AsyncMock(return_value={"price": "2514.14"})
 
     # Internal position exists
@@ -878,7 +932,3 @@ async def test_reconcile_positions_calls_handle_final_exit_when_closed_on_exchan
     assert kwargs["symbol"] == "ETHUSDT"
     assert kwargs["reason"] == "CLOSED_ON_EXCHANGE"
     assert kwargs["exit_price"] == 2514.14
-
-
-
-

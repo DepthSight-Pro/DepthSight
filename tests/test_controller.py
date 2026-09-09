@@ -218,6 +218,8 @@ def mock_risk_manager():
     rm.stats = MagicMock()
     rm.stats.current_balance = 10000.0
     rm.max_concurrent_trades = 10  # Maximum number of simultaneous trades
+    rm._is_trading_allowed = True
+    rm.refresh_balance_and_limits = AsyncMock(return_value=True)
     return rm
 
 
@@ -2736,3 +2738,30 @@ async def test_close_position_with_small_qty_below_minqty(controller, mock_execu
     assert symbol not in controller._active_positions, (
         f"Position {symbol} should be deleted after closing"
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_start_strategy_refreshes_risk_manager_when_disabled(controller):
+    """
+    Test that _handle_start_strategy_command calls rm.refresh_balance_and_limits()
+    when RiskManager trading is currently disabled.
+    """
+    controller.rm._is_trading_allowed = False
+    controller.rm.refresh_balance_and_limits = AsyncMock(return_value=True)
+
+    payload = {
+        "id": "cfg-test-rm-start",
+        "user_id": controller.user_id,
+        "config_data": {
+            "strategy_name": "MockStrategyA",
+            "symbol": "BTCUSDT",
+        },
+    }
+
+    with patch(
+        "bot_module.controller.create_strategy_instance",
+        return_value=MagicMock(spec=BaseStrategy),
+    ):
+        await controller._handle_start_strategy_command(payload)
+
+    controller.rm.refresh_balance_and_limits.assert_awaited_once()

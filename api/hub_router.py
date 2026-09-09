@@ -1267,7 +1267,9 @@ async def _register_hub_node_impl(
                         )
                 # Sensitive changes (referrer, mining flags) require wallet ownership.
                 allow_sensitive = owner_ok
-                allow_referrer = owner_ok
+                # Allow initial referrer binding if the node has not yet been linked to any referrer.
+                # Re-binding or altering an existing referrer link remains strictly forbidden.
+                allow_referrer = owner_ok or (existing.referrer_node_uuid is None)
             elif wallet_addr:
                 # Legacy node being claimed by a wallet: must prove wallet ownership so a
                 # node that a user runs can't be claimed by an unrelated wallet.
@@ -2054,6 +2056,15 @@ async def get_mining_status(
         db, cfg, daily_emission, node.node_uuid, today_reports
     )
 
+    ref_ref_code = None
+    if node.referrer_node_uuid:
+        r_node_res = await db.execute(
+            select(models.HubNode.node_referral_code).where(
+                models.HubNode.node_uuid == node.referrer_node_uuid
+            )
+        )
+        ref_ref_code = r_node_res.scalar()
+
     return schemas.MiningStatusResponse(
         is_mining_enabled=cfg.is_mining_enabled,
         eligible_exchanges=cfg.eligible_exchanges,
@@ -2066,6 +2077,7 @@ async def get_mining_status(
         participating_nodes=participating_nodes,
         node_referral_code=node.node_referral_code,
         referrer_node_uuid=node.referrer_node_uuid,
+        referrer_referral_code=ref_ref_code,
         has_welcome_bonus=node.has_welcome_bonus,
         total_operator_fee_collected=cfg.total_operator_fee_collected or 0.0,
         your_total_volume=your_total_volume,

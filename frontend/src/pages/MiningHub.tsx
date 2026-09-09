@@ -144,8 +144,9 @@ const MiningHub: React.FC = () => {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
 
   const handleActivate = () => {
+    const code = referrerCode.trim() || undefined;
     activateMining(
-      { referrerCode: referrerCode.trim() || undefined },
+      { referrerCode: code, referrer_code: code } as any,
       {
         onSuccess: (data) => {
           toast({

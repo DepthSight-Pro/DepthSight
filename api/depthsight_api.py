@@ -219,6 +219,7 @@ from .routes.tasks import (  # noqa: F401
 )
 from .routes.users import users_extra_router
 from .routes.webhooks import webhooks_router
+from .routes.mcp import mcp_router
 
 # Initialize global logging for the API service
 setup_global_logging("api.log")
@@ -1760,6 +1761,7 @@ app.add_middleware(
 api_router = APIRouter(prefix="/api/v1", tags=["v1"])
 
 api_router.include_router(hft_router)
+api_router.include_router(mcp_router)
 
 
 redis_api_client = redis.Redis(

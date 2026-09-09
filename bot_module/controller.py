@@ -548,9 +548,7 @@ class TradingController:
                 config.REDIS_STATE_KEY_STRATEGIES
             )  # Key for strategies
             if self.api_key_id is not None:
-                self.redis_key_runtime_state = (
-                    f"depthsight:controller:runtime_state:{self.user_id}:{self.api_key_id}"
-                )
+                self.redis_key_runtime_state = f"depthsight:controller:runtime_state:{self.user_id}:{self.api_key_id}"
             else:
                 self.redis_key_runtime_state = (
                     f"depthsight:controller:runtime_state:{self.user_id}"
@@ -2012,6 +2010,24 @@ class TradingController:
         await self._update_monitored_symbols()
         await self._save_runtime_state()
 
+        # If RiskManager trading is currently disabled (e.g. deposit occurred after key creation),
+        # automatically refresh balance and re-evaluate limits upon starting a strategy.
+        if self.rm:
+            try:
+                if not getattr(self.rm, "_is_trading_allowed", True):
+                    logger.info(
+                        f"{log_prefix} Strategy started while RiskManager trading is disabled. Refreshing balance and risk limits..."
+                    )
+                    await self.rm.refresh_balance_and_limits()
+                else:
+                    await self.rm.update_balance()
+                    if hasattr(self.rm, "_check_risk_limits"):
+                        self.rm._check_risk_limits()
+            except Exception as e:
+                logger.warning(
+                    f"{log_prefix} Balance refresh during strategy start failed: {e}"
+                )
+
     async def _handle_tv_webhook_signal_command(self, payload: dict):
         command_user_id = payload.get("user_id")
         if command_user_id != self.user_id:
@@ -2864,9 +2880,7 @@ class TradingController:
                 if self._instance_covers_symbol(cfg_dict, symbol):
                     assigned_config_id = self._source_config_id(cfg_dict) or cfg_id
                     assigned_strategy_name = (
-                        instance.NAME
-                        or cfg_dict.get("name")
-                        or "VisualBuilderStrategy"
+                        instance.NAME or cfg_dict.get("name") or "VisualBuilderStrategy"
                     )
                     logger.info(
                         f"Adopt:{symbol}: Matched running strategy instance '{assigned_strategy_name}' (config_id={assigned_config_id})."
@@ -2887,7 +2901,8 @@ class TradingController:
 
                     def _norm(s: str) -> str:
                         return (
-                            str(s).upper()
+                            str(s)
+                            .upper()
                             .replace("/", "")
                             .replace(":USDT", "")
                             .replace("-", "")
@@ -2901,9 +2916,16 @@ class TradingController:
                         symbols = sc.symbols if isinstance(sc.symbols, list) else []
                         sc_syms = [_norm(s) for s in symbols if s]
                         if norm_symbol in sc_syms:
-                            cfg_data = sc.config_data if isinstance(sc.config_data, dict) else {}
+                            cfg_data = (
+                                sc.config_data
+                                if isinstance(sc.config_data, dict)
+                                else {}
+                            )
                             cfg_api_key_id = cfg_data.get("api_key_id")
-                            if cfg_api_key_id is not None and self.api_key_id is not None:
+                            if (
+                                cfg_api_key_id is not None
+                                and self.api_key_id is not None
+                            ):
                                 if str(cfg_api_key_id) == str(self.api_key_id):
                                     matched_config = sc
                                     break
@@ -2915,9 +2937,16 @@ class TradingController:
                         for sc in user_configs:
                             mode = (sc.symbol_selection_mode or "STATIC").upper()
                             if mode == "DYNAMIC":
-                                cfg_data = sc.config_data if isinstance(sc.config_data, dict) else {}
+                                cfg_data = (
+                                    sc.config_data
+                                    if isinstance(sc.config_data, dict)
+                                    else {}
+                                )
                                 cfg_api_key_id = cfg_data.get("api_key_id")
-                                if cfg_api_key_id is not None and self.api_key_id is not None:
+                                if (
+                                    cfg_api_key_id is not None
+                                    and self.api_key_id is not None
+                                ):
                                     if str(cfg_api_key_id) == str(self.api_key_id):
                                         matched_config = sc
                                         break
@@ -3062,7 +3091,9 @@ class TradingController:
                 seen_order_ids.add(oid)
             unique_orders.append(o)
 
-        found_sl_orders: List[Tuple[Any, str, float, float, bool]] = []  # (order_id, client_order_id, stop_price, qty, is_algo)
+        found_sl_orders: List[
+            Tuple[Any, str, float, float, bool]
+        ] = []  # (order_id, client_order_id, stop_price, qty, is_algo)
 
         for o in unique_orders:
             o_type = str(o.get("type") or "").upper()
@@ -3108,13 +3139,11 @@ class TradingController:
             # Primary order price: trigger price if trigger/stop order, else limit price
             o_price = trigger_price if trigger_price > 0 else limit_price
 
-            is_exit_side = (
-                (direction == SignalDirection.LONG and o_side == "SELL")
-                or (direction == SignalDirection.SHORT and o_side == "BUY")
+            is_exit_side = (direction == SignalDirection.LONG and o_side == "SELL") or (
+                direction == SignalDirection.SHORT and o_side == "BUY"
             )
-            is_entry_side = (
-                (direction == SignalDirection.LONG and o_side == "BUY")
-                or (direction == SignalDirection.SHORT and o_side == "SELL")
+            is_entry_side = (direction == SignalDirection.LONG and o_side == "BUY") or (
+                direction == SignalDirection.SHORT and o_side == "SELL"
             )
 
             cid_lower = o_cid.lower()
@@ -3124,9 +3153,8 @@ class TradingController:
             is_algo = False
             if is_exit_side:
                 is_worse_price_than_entry = (
-                    (direction == SignalDirection.LONG and 0 < o_price < entry_price)
-                    or (direction == SignalDirection.SHORT and o_price > entry_price)
-                )
+                    direction == SignalDirection.LONG and 0 < o_price < entry_price
+                ) or (direction == SignalDirection.SHORT and o_price > entry_price)
                 if (
                     o_type
                     in [
@@ -3187,8 +3215,14 @@ class TradingController:
                         (o_type == "LIMIT" or not is_sl)
                         and (
                             is_reduce_only
-                            or (direction == SignalDirection.LONG and o_price > entry_price)
-                            or (direction == SignalDirection.SHORT and 0 < o_price < entry_price)
+                            or (
+                                direction == SignalDirection.LONG
+                                and o_price > entry_price
+                            )
+                            or (
+                                direction == SignalDirection.SHORT
+                                and 0 < o_price < entry_price
+                            )
                         )
                     )
                 ):
@@ -3204,7 +3238,10 @@ class TradingController:
                     status="NEW",
                 )
                 adopted_pos.partial_tp_orders.append(ptp)
-                if not adopted_pos.initial_take_profit or adopted_pos.initial_take_profit <= 0:
+                if (
+                    not adopted_pos.initial_take_profit
+                    or adopted_pos.initial_take_profit <= 0
+                ):
                     adopted_pos.initial_take_profit = o_price
                 logger.info(
                     f"Adopt:{symbol}: Adopted existing TP order {o_id} (CliID: {o_cid}) @ {o_price} (Qty: {o_qty})"
@@ -3215,15 +3252,11 @@ class TradingController:
             is_dca = False
             if is_entry_side:
                 has_dca_tag = any(
-                    k in cid_lower
-                    for k in ("scalein", "scale-in", "dca", "grid")
+                    k in cid_lower for k in ("scalein", "scale-in", "dca", "grid")
                 )
-                is_averaging_limit = (
-                    o_type == "LIMIT"
-                    and (
-                        (direction == SignalDirection.LONG and 0 < o_price < entry_price)
-                        or (direction == SignalDirection.SHORT and o_price > entry_price)
-                    )
+                is_averaging_limit = o_type == "LIMIT" and (
+                    (direction == SignalDirection.LONG and 0 < o_price < entry_price)
+                    or (direction == SignalDirection.SHORT and o_price > entry_price)
                 )
                 if has_dca_tag or is_averaging_limit:
                     is_dca = True
@@ -3330,7 +3363,9 @@ class TradingController:
                 if sym_upper not in exchange_positions_map:
                     to_close.append((position_key, internal_pos.symbol))
                 else:
-                    to_update.append((internal_pos.symbol, exchange_positions_map.pop(sym_upper)))
+                    to_update.append(
+                        (internal_pos.symbol, exchange_positions_map.pop(sym_upper))
+                    )
 
             # exchange_positions_map now contains only ORPHANS
             to_adopt = list(exchange_positions_map.items())
@@ -3348,7 +3383,9 @@ class TradingController:
                         logger.warning(
                             f"{log_prefix} Position {symbol} exists internally but NOT on exchange. Finalizing via _handle_final_exit."
                         )
-                        positions_to_finalize.append((symbol, copy.deepcopy(current_pos)))
+                        positions_to_finalize.append(
+                            (symbol, copy.deepcopy(current_pos))
+                        )
 
             for symbol, pos_to_fin in positions_to_finalize:
                 try:
@@ -3410,7 +3447,9 @@ class TradingController:
                         if (
                             not internal_pos.sl_placement_initiated
                             and internal_pos.current_sl_order_id is None
-                            and not self._position_is_intentional_no_sl_mode(internal_pos)
+                            and not self._position_is_intentional_no_sl_mode(
+                                internal_pos
+                            )
                             and internal_pos.current_sl_price
                         ):
                             self.loop.create_task(
@@ -3453,7 +3492,9 @@ class TradingController:
                         if open_orders:
                             orders_to_check.extend(open_orders)
                     except Exception as e_oo:
-                        logger.debug(f"{log_prefix} Reconcile open orders fetch for {v_sym}: {e_oo}")
+                        logger.debug(
+                            f"{log_prefix} Reconcile open orders fetch for {v_sym}: {e_oo}"
+                        )
 
                     if hasattr(executor, "get_open_algo_orders"):
                         try:
@@ -3461,7 +3502,9 @@ class TradingController:
                             if algo_orders:
                                 orders_to_check.extend(algo_orders)
                         except Exception as e_ao:
-                            logger.debug(f"{log_prefix} Reconcile algo orders fetch for {v_sym}: {e_ao}")
+                            logger.debug(
+                                f"{log_prefix} Reconcile algo orders fetch for {v_sym}: {e_ao}"
+                            )
 
                     has_active_sl = False
                     found_sl_id = None
@@ -3469,9 +3512,7 @@ class TradingController:
                     for o in orders_to_check:
                         o_id = o.get("orderId") or o.get("id")
                         o_cid = str(o.get("clientOrderId") or "")
-                        if (
-                            v_sl_oid is not None and str(o_id) == str(v_sl_oid)
-                        ) or (
+                        if (v_sl_oid is not None and str(o_id) == str(v_sl_oid)) or (
                             v_sl_cid and o_cid and str(v_sl_cid) == o_cid
                         ):
                             has_active_sl = True
@@ -3482,9 +3523,8 @@ class TradingController:
                         o_type = str(o.get("type") or "").upper()
                         o_side = str(o.get("side") or "").upper()
                         is_exit_side = (
-                            (v_dir == SignalDirection.LONG and o_side == "SELL")
-                            or (v_dir == SignalDirection.SHORT and o_side == "BUY")
-                        )
+                            v_dir == SignalDirection.LONG and o_side == "SELL"
+                        ) or (v_dir == SignalDirection.SHORT and o_side == "BUY")
                         if is_exit_side and (
                             "STOP" in o_type
                             or "CONDITIONAL" in o_type
@@ -3497,9 +3537,13 @@ class TradingController:
                             break
 
                     if not has_active_sl:
-                        v_symbol_lock = self._get_lock_for_position(v_sym, reconcile_market_type)
+                        v_symbol_lock = self._get_lock_for_position(
+                            v_sym, reconcile_market_type
+                        )
                         async with v_symbol_lock:
-                            cur_p = self._active_position_get(v_sym, reconcile_market_type)
+                            cur_p = self._active_position_get(
+                                v_sym, reconcile_market_type
+                            )
                             if (
                                 cur_p
                                 and cur_p.status == "OPEN"
@@ -3514,7 +3558,10 @@ class TradingController:
                                     cur_p.current_sl_order_id = None
                                     cur_p.current_sl_client_order_id = None
 
-                                if cur_p.current_sl_price and cur_p.current_sl_price > 0:
+                                if (
+                                    cur_p.current_sl_price
+                                    and cur_p.current_sl_price > 0
+                                ):
                                     logger.info(
                                         f"{log_prefix} Triggering stop-loss placement for unprotected position {v_sym}."
                                     )
@@ -3523,10 +3570,18 @@ class TradingController:
                                         name=f"PlaceSL_ReconcileMissing_{v_sym}",
                                     )
                     elif found_sl_id and v_sl_oid is None:
-                        v_symbol_lock = self._get_lock_for_position(v_sym, reconcile_market_type)
+                        v_symbol_lock = self._get_lock_for_position(
+                            v_sym, reconcile_market_type
+                        )
                         async with v_symbol_lock:
-                            cur_p = self._active_position_get(v_sym, reconcile_market_type)
-                            if cur_p and cur_p.status == "OPEN" and cur_p.current_sl_order_id is None:
+                            cur_p = self._active_position_get(
+                                v_sym, reconcile_market_type
+                            )
+                            if (
+                                cur_p
+                                and cur_p.status == "OPEN"
+                                and cur_p.current_sl_order_id is None
+                            ):
                                 cur_p.current_sl_order_id = found_sl_id
                                 if found_sl_cid:
                                     cur_p.current_sl_client_order_id = found_sl_cid
@@ -3534,7 +3589,9 @@ class TradingController:
                                     f"{log_prefix} Synced active SL order {found_sl_id} from exchange for position {v_sym}."
                                 )
                 except Exception as e_sl_rec:
-                    logger.error(f"{log_prefix} Error reconciling SL orders for {v_sym}: {e_sl_rec}")
+                    logger.error(
+                        f"{log_prefix} Error reconciling SL orders for {v_sym}: {e_sl_rec}"
+                    )
 
             # 5. Adopt orphans (Heavy operations like DB queries and API calls done without global lock)
             for _sym_key, exch_data in to_adopt:
@@ -3779,7 +3836,10 @@ class TradingController:
                         pos = LivePosition.from_dict(v)
 
                         # Backfill api_key_id if missing and not from legacy key
-                        if getattr(pos, "api_key_id", None) is None and not is_from_legacy_key:
+                        if (
+                            getattr(pos, "api_key_id", None) is None
+                            and not is_from_legacy_key
+                        ):
                             pos.api_key_id = self.api_key_id
 
                         restored_positions_objects[k] = pos
@@ -3812,14 +3872,18 @@ class TradingController:
                             if self.api_key_id is not None:
                                 pos_api_key_id = getattr(pos, "api_key_id", None)
                                 if is_from_legacy_key:
-                                    if pos_api_key_id is None or str(pos_api_key_id) != str(self.api_key_id):
+                                    if pos_api_key_id is None or str(
+                                        pos_api_key_id
+                                    ) != str(self.api_key_id):
                                         logger.info(
                                             f"{log_prefix} Skipping position {symbol} from legacy key: "
                                             f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
                                         )
                                         continue
                                 else:
-                                    if pos_api_key_id is not None and str(pos_api_key_id) != str(self.api_key_id):
+                                    if pos_api_key_id is not None and str(
+                                        pos_api_key_id
+                                    ) != str(self.api_key_id):
                                         logger.warning(
                                             f"{log_prefix} Skipping position {symbol}: "
                                             f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
@@ -3843,9 +3907,13 @@ class TradingController:
                             if self.api_key_id is not None:
                                 pos_api_key_id = getattr(pos, "api_key_id", None)
                                 if is_from_legacy_key:
-                                    if pos_api_key_id is None or str(pos_api_key_id) != str(self.api_key_id):
+                                    if pos_api_key_id is None or str(
+                                        pos_api_key_id
+                                    ) != str(self.api_key_id):
                                         continue
-                                elif pos_api_key_id is not None and str(pos_api_key_id) != str(self.api_key_id):
+                                elif pos_api_key_id is not None and str(
+                                    pos_api_key_id
+                                ) != str(self.api_key_id):
                                     continue
                             validated_positions[_position_key] = pos
 
@@ -3874,14 +3942,18 @@ class TradingController:
                     if self.api_key_id is not None:
                         strat_api_key_id = strat_payload.get("api_key_id")
                         if is_from_legacy_key:
-                            if strat_api_key_id is None or str(strat_api_key_id) != str(self.api_key_id):
+                            if strat_api_key_id is None or str(strat_api_key_id) != str(
+                                self.api_key_id
+                            ):
                                 logger.info(
                                     f"{log_prefix} Skipping strategy {strat_payload.get('id')} from legacy key: "
                                     f"strat api_key_id ({strat_api_key_id}) != controller ({self.api_key_id})"
                                 )
                                 continue
                         else:
-                            if strat_api_key_id is not None and str(strat_api_key_id) != str(self.api_key_id):
+                            if strat_api_key_id is not None and str(
+                                strat_api_key_id
+                            ) != str(self.api_key_id):
                                 logger.warning(
                                     f"{log_prefix} Skipping strategy {strat_payload.get('id')}: "
                                     f"strat api_key_id ({strat_api_key_id}) != controller ({self.api_key_id})"
@@ -4204,6 +4276,13 @@ class TradingController:
                         prev_chat_id = self.user_telegram_chat_id
                         self.rm.apply_user_settings(runtime_settings)
                         self.user_telegram_chat_id = self.rm.user_telegram_chat_id
+                        if not getattr(self.rm, "_is_trading_allowed", True):
+                            try:
+                                await self.rm.refresh_balance_and_limits()
+                            except Exception as e:
+                                logger.warning(
+                                    f"{log_prefix} Failed to refresh balance on config reload: {e}"
+                                )
                         if prev_chat_id != self.user_telegram_chat_id:
                             logger.info(
                                 f"{log_prefix} Telegram Chat ID changed for user {self.user_id}. Updating."
@@ -5113,7 +5192,9 @@ class TradingController:
                                     real_pos.dca_grid_init_in_progress = True
                                     position_to_manage = LivePosition(**vars(real_pos))
                                     should_schedule_dca_grid = True
-                                elif real_pos and getattr(real_pos, "is_adopted", False):
+                                elif real_pos and getattr(
+                                    real_pos, "is_adopted", False
+                                ):
                                     real_pos.dca_grid_init_triggered = None
                                     logger.info(
                                         f"{log_prefix_pm} Position is ADOPTED. Discarded DCA_GRID_INIT signal."
@@ -9286,18 +9367,15 @@ class TradingController:
             # that _cancel_all_exit_orders will not be able to find them.
             # Exclude the order that has already been filled and triggered this exit (order_id).
             if position.current_sl_order_id is not None and (
-                order_id is None
-                or str(position.current_sl_order_id) != str(order_id)
+                order_id is None or str(position.current_sl_order_id) != str(order_id)
             ):
-                executor_cancel_early = (
-                    self._executor_for_market_type(
-                        self._market_type_for_position(position), mode=position.mode
-                    )
-                    or self.executors.get("live")
-                )
+                executor_cancel_early = self._executor_for_market_type(
+                    self._market_type_for_position(position), mode=position.mode
+                ) or self.executors.get("live")
                 is_okx_or_weex = any(
                     x in str(getattr(self, "api_key_name", "")).lower()
-                    or x in str(getattr(executor_cancel_early, "exchange_id", "")).lower()
+                    or x
+                    in str(getattr(executor_cancel_early, "exchange_id", "")).lower()
                     for x in ["weex", "okx"]
                 )
                 is_sl_algo = bool(
@@ -9494,7 +9572,9 @@ class TradingController:
                 or x in str(getattr(executor_for_cancel, "exchange_id", "")).lower()
                 for x in ["weex", "okx"]
             )
-            if is_okx_or_weex and getattr(executor_for_cancel, "supports_positions", False):
+            if is_okx_or_weex and getattr(
+                executor_for_cancel, "supports_positions", False
+            ):
                 # On OKX/WEEX futures, SL orders are trigger/algo orders
                 orders_to_cancel_after_lock = [
                     (
@@ -11719,7 +11799,9 @@ class TradingController:
             client_id_resp = sl_resp.get("clientOrderId") or sl_resp.get(
                 "clientAlgoId", new_sl_client_id
             )
-            sl_info = sl_resp.get("info") if isinstance(sl_resp.get("info"), dict) else {}
+            sl_info = (
+                sl_resp.get("info") if isinstance(sl_resp.get("info"), dict) else {}
+            )
             if not order_id_resp:
                 order_id_resp = (
                     sl_info.get("algoId")
@@ -11750,16 +11832,15 @@ class TradingController:
                 if pos_after_place and pos_after_place.status == "OPEN":
                     # Check if the existing SL ID matches the one just placed (e.g. WebSocket update arrived before REST response)
                     is_same_order = (
-                        (
-                            pos_after_place.current_sl_order_id is not None
-                            and order_id_resp is not None
-                            and str(pos_after_place.current_sl_order_id) == str(order_id_resp)
-                        )
-                        or (
-                            pos_after_place.current_sl_client_order_id is not None
-                            and client_id_resp is not None
-                            and str(pos_after_place.current_sl_client_order_id) == str(client_id_resp)
-                        )
+                        pos_after_place.current_sl_order_id is not None
+                        and order_id_resp is not None
+                        and str(pos_after_place.current_sl_order_id)
+                        == str(order_id_resp)
+                    ) or (
+                        pos_after_place.current_sl_client_order_id is not None
+                        and client_id_resp is not None
+                        and str(pos_after_place.current_sl_client_order_id)
+                        == str(client_id_resp)
                     )
                     if pos_after_place.current_sl_order_id is None or is_same_order:
                         pos_after_place.current_sl_order_id = order_id_resp
@@ -12464,7 +12545,9 @@ class TradingController:
         """Cancels ALL active exit orders (SL, partial TPs, and DCA orders) for the position."""
         log_prefix = f"[_CancelAllExits:{symbol}:{reason}]"
         # List of tuples: (order_id, client_order_id, is_algo_order)
-        orders_to_cancel_details: List[Tuple[Optional[Union[int, str]], Optional[str], bool]] = []
+        orders_to_cancel_details: List[
+            Tuple[Optional[Union[int, str]], Optional[str], bool]
+        ] = []
 
         symbol_lock_cancel_all = self._get_lock_for_position(symbol, market_type)
         async with symbol_lock_cancel_all:
@@ -12477,12 +12560,9 @@ class TradingController:
                 return
 
             # Collect SL order if it exists and is not excluded
-            if (
-                position.current_sl_order_id is not None
-                and (
-                    exclude_order_id is None
-                    or str(position.current_sl_order_id) != str(exclude_order_id)
-                )
+            if position.current_sl_order_id is not None and (
+                exclude_order_id is None
+                or str(position.current_sl_order_id) != str(exclude_order_id)
             ):
                 is_okx_or_weex = any(
                     x in str(getattr(self, "api_key_name", "")).lower()
@@ -12548,10 +12628,7 @@ class TradingController:
 
             if hasattr(position, "dca_order_ids") and position.dca_order_ids:
                 for dca_id in position.dca_order_ids:
-                    if (
-                        exclude_order_id is None
-                        or str(dca_id) != str(exclude_order_id)
-                    ):
+                    if exclude_order_id is None or str(dca_id) != str(exclude_order_id):
                         if not any(
                             str(o[0]) == str(dca_id) for o in orders_to_cancel_details
                         ):
@@ -13353,11 +13430,11 @@ class TradingController:
 
             # Side check: entry side must match position direction (BUY for LONG, SELL for SHORT)
             is_entry_side = (
-                (position.direction == SignalDirection.LONG and str(side).upper() == "BUY")
-                or (
-                    position.direction == SignalDirection.SHORT
-                    and str(side).upper() == "SELL"
-                )
+                position.direction == SignalDirection.LONG
+                and str(side).upper() == "BUY"
+            ) or (
+                position.direction == SignalDirection.SHORT
+                and str(side).upper() == "SELL"
             )
 
             # 1. Processing the ENTRY order
@@ -13638,28 +13715,32 @@ class TradingController:
                     logger.warning(f"{log_prefix} SL order is {order_status}.")
                     if position.status == "OPEN":  # Only if the position is still OPEN
                         is_current_sl_cancelled = (
-                            (
-                                order_id is not None
-                                and position.current_sl_order_id is not None
-                                and str(position.current_sl_order_id) == str(order_id)
-                            )
-                            or (
-                                client_order_id is not None
-                                and position.current_sl_client_order_id is not None
-                                and str(position.current_sl_client_order_id) == str(client_order_id)
-                            )
+                            order_id is not None
+                            and position.current_sl_order_id is not None
+                            and str(position.current_sl_order_id) == str(order_id)
+                        ) or (
+                            client_order_id is not None
+                            and position.current_sl_client_order_id is not None
+                            and str(position.current_sl_client_order_id)
+                            == str(client_order_id)
                         )
                         if is_current_sl_cancelled:
                             position.current_sl_order_id = None
                             position.current_sl_client_order_id = None
                             position.sl_placement_initiated = False
 
-                        if position.sl_replacement_in_progress and not is_current_sl_cancelled:
+                        if (
+                            position.sl_replacement_in_progress
+                            and not is_current_sl_cancelled
+                        ):
                             logger.info(
                                 f"{log_prefix} SL replacement already in progress. "
                                 f"Ignoring {order_status} event for old SL (intentionally cancelled during replacement)."
                             )
-                        elif position.sl_replacement_in_progress and is_current_sl_cancelled:
+                        elif (
+                            position.sl_replacement_in_progress
+                            and is_current_sl_cancelled
+                        ):
                             logger.warning(
                                 f"{log_prefix} SL replacement in progress, but current SL (ID: {order_id}) was {order_status}! "
                                 f"Cleared SL in memory. Active replacement routine will handle new placement."
@@ -13823,7 +13904,9 @@ class TradingController:
                 or (
                     client_order_id is not None
                     and any(
-                        self._client_order_ids_match(client_order_id, getattr(dca, "client_order_id", ""))
+                        self._client_order_ids_match(
+                            client_order_id, getattr(dca, "client_order_id", "")
+                        )
                         for dca in getattr(position, "dca_orders", [])
                     )
                 )
@@ -13841,7 +13924,9 @@ class TradingController:
                             dca_item.client_order_id is not None
                             and client_order_id is not None
                             and (
-                                self._client_order_ids_match(client_order_id, dca_item.client_order_id)
+                                self._client_order_ids_match(
+                                    client_order_id, dca_item.client_order_id
+                                )
                                 or dca_item.client_order_id in client_order_id
                                 or client_order_id in dca_item.client_order_id
                             )

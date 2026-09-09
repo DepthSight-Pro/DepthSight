@@ -250,6 +250,7 @@
 		"aiAssistantGreeting": "Hi! I'm your AI assistant. How can I help with this strategy?",
 		"errorLoadingStrategy": "Error loading strategy.",
 		"strategyGenerated": "Strategy generated and loaded into the constructor.",
+		"bestStrategyConfigured": "Best Strategy Configured",
 		"backtestStarted": "Backtest started.",
 		"strategySaved": "Strategy '{{strategyName}}' saved successfully.",
 		"errorSavingStrategy": "Error saving strategy.",
@@ -754,7 +755,7 @@
 	"aiChat": {
 		"initialGreeting": "Hello! I'm your AI assistant. Describe the strategy you want to create, or select a backtest to analyze.",
 		"errorMessage": "An error occurred. Please try again.",
-		"loadToEditor": "HITL Checkpoint: Approve & Load to Editor",
+		"loadToEditor": "Approve & Load to Editor",
 		"askPlaceholder": "Ask me anything...",
 		"generateStrategy": "Yes, generate this strategy",
 		"strategyGenerated": "Strategy configuration generated successfully!",
