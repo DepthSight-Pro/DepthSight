@@ -282,6 +282,7 @@
 		"tools": {
 			"get_strategy_schema_and_examples": "Returns visual strategy builder blocks, parameters, and working example templates.",
 			"get_market_metrics": "Fetches 24h market metrics, NATR volatility, trend alignment, and ML Oracle regime.",
+			"get_historical_data_range": "Queries loaded historical data, exact start/end dates, available timeframes, and bookDepth coverage (percentage volume buckets ±0.2%..±5%).",
 			"run_backtest": "Executes a quantitative strategy backtest with custom symbol, timeframe, date range, and fee.",
 			"list_strategies": "Lists all visual strategies created and saved by the user.",
 			"get_strategy": "Loads detailed strategy configuration JSON by its unique identifier.",

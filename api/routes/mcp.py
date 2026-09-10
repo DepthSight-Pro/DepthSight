@@ -140,6 +140,12 @@ async def mcp_streamable_http(
     summary="Model Context Protocol (MCP) SSE Connection Endpoint",
     description="Opens an SSE stream for Claude Desktop and Cursor IDE MCP clients.",
 )
+@mcp_router.get(
+    "",
+    summary="Model Context Protocol (MCP) SSE Connection Endpoint (Root Fallback)",
+    description="Allows clients connecting via SSE to use root /mcp URL.",
+    include_in_schema=False,
+)
 async def mcp_sse_connect(
     request: Request,
     user: models.User = Depends(get_mcp_user),

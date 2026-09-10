@@ -9,8 +9,9 @@ import logging
 import os
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,6 +90,27 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         },
     ),
     ToolDefinition(
+        name="get_historical_data_range",
+        description=(
+            "Queries available market symbols with loaded historical data in DepthSight, "
+            "including exact start/end date intervals, available candle timeframes, and microstructural data "
+            "(bookDepth aggregated percentage depth buckets, open interest, 1s tick trades). "
+            "NOTE: DepthSight orderbook data is 'bookDepth' (Binance Futures aggregated percentage buckets: "
+            "±0.2%, ±1.0%, ±2.0%, ±3.0%, ±4.0%, ±5.0% bids/asks depth and notional volume), NOT tick-level L2 ladder. "
+            "ALWAYS call this before running backtests to ensure your target symbol and dates exist in storage."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Optional trading pair symbol (e.g. 'BTCUSDT'). If provided, returns exact date range and timeframe coverage for this pair. If omitted, lists all available pairs.",
+                }
+            },
+            "required": [],
+        },
+    ),
+    ToolDefinition(
         name="run_backtest",
         description=(
             "Queues and executes an algorithmic backtest simulation on historical market data. "
@@ -131,6 +153,38 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
                 "strategy_name": {
                     "type": "string",
                     "description": "Optional human-readable name for the strategy run.",
+                },
+                "strategy_type": {
+                    "type": "string",
+                    "enum": [
+                        "breakout",
+                        "mean_reversion",
+                        "trend_following",
+                        "scalping",
+                        "momentum",
+                    ],
+                    "description": (
+                        "Strategy archetype: 'breakout', 'mean_reversion', 'trend_following', 'scalping', or 'momentum'. "
+                        "Directly categorizes the insight in the Memory Bank without requiring an external LLM classification call."
+                    ),
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "1 to 4 concise snake_case tags characterizing indicators and setup (e.g. ['breakout', 'volatility_squeeze', 'adx']). "
+                        "Prefer selecting existing database tags returned by search_agent_memory to keep vocabulary unified across sessions. "
+                        "Do NOT include the asset symbol in tags (symbol has its own dedicated column)."
+                    ),
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": (
+                        "MANDATORY: Structured rationale for this backtest variant. "
+                        "Format with concise bullets: Context (asset, TF), Setup (thesis and why these blocks/parameters were chosen), "
+                        "Success Factors (expected edge/triggers), and Rule for Future. "
+                        "DepthSight uses this reasoning to automatically synthesize learned rules in the user's memory bank."
+                    ),
                 },
             },
             "required": ["symbol", "strategy_config", "start_date", "end_date"],
@@ -244,11 +298,11 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "1 to 4 descriptive snake_case tags (e.g. ['volatility', 'adx', 'take_profit_3pct']).",
+                    "description": "1 to 4 concise snake_case tags. Prefer choosing from the existing database tags returned by search_agent_memory to keep vocabulary unified across agent sessions. Only create a new tag if none fit.",
                 },
                 "symbol": {
                     "type": "string",
-                    "description": "Optional trading pair symbol (e.g. 'BTCUSDT').",
+                    "description": "Optional trading pair in UPPERCASE (e.g. 'BTCUSDT'). Do NOT include pair names inside the tags list.",
                 },
                 "outcome": {
                     "type": "string",
@@ -341,7 +395,7 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
 # ---------------------------------------------------------------------------
 
 _CODEBASE_CONTEXT_CACHE: Optional[Dict[str, str]] = None
-
+_MCP_SESSION_STATE: Dict[str, dict] = {}
 
 def get_cached_codebase_context() -> Dict[str, str]:
     """Extracts and caches code blocks marked with # AI_CONTEXT_START / END
@@ -378,74 +432,115 @@ def get_cached_codebase_context() -> Dict[str, str]:
     return _CODEBASE_CONTEXT_CACHE
 
 
-ALLOWED_TYPES_DOC = """# DepthSight Visual Builder Strict Type Checklist
+ALLOWED_TYPES_DOC = """# DepthSight Visual Builder Strict Type Checklist & Parameter Schemas
 
 **ABSOLUTELY CRITICAL**: You MUST use ONLY these exact type values in your JSON configurations.
 Do NOT invent new types. Do NOT use similar-sounding names.
 
 ## Filters (use in `filters` section):
 - `rel_vol_filter`: relative volume threshold
+  `{"rel_vol_threshold": 1.5, "lookback_period": 20}`
 - `trend_filter`: ADX threshold + direction
+  `{"indicator": "ADX", "threshold": 25.0}`
+- `volatility_filter`: ATR threshold
+  `{"natr_threshold": 1.0}`
+- `trading_session`: session hours (UTC)
+  `{"sessions": ["london", "new_york"], "timezone": "UTC"}`
 - `btc_state_filter` (PRO only): BTC market regime ("Consolidation", "Trending Up", "Trending Down", "Any")
 - `correlation` (PRO only): correlation against BTC/ETH
-- `trading_session`: session hours (UTC)
-- `volatility_filter`: ATR threshold
 - `senior_tf_confluence` (PRO only): higher timeframe indicator alignment
 
 ## Foundations & Decision Blocks (use in `entryConditions` section):
 ### Data Providers:
-- `tape_analysis`: aggressive buyer/seller delta flow
-- `order_book_zone`: depth ratio and wall detection
-- `local_level`: high/low swings
-- `significant_level`: key support/resistance zones
+- `local_level`: high/low swing levels
+  `{"timeframe": "15m", "lookback_period": 20, "level_type": "high", "is_data_provider": true, "proximity_type": "atr_multiplier", "proximity_value": 1.5}`
+- `significant_level`: key daily/weekly support/resistance zones
+  `{}` (no params needed; outputs detected_level)
+- `tape_analysis` (PRO only / Precision): aggressive buyer/seller delta flow
+- `order_book_zone` (PRO only / Precision): orderbook depth ratio and wall detection using bookDepth percentage buckets
 
 ### Decision Blocks:
 - `value_comparison`: compare indicators (RSI, EMA, MACD, Stochastic, Bollinger Bands, ATR)
+  Example: `{"leftOperand": {"source": "indicator", "key": "RSI_14"}, "operator": "lt", "rightOperand": {"source": "value", "value": 30.0}}`
 - `trend_direction`: EMA fast vs slow slope
+  `{"timeframe": "15m", "required_trend": "LONG", "fast_period": 10, "slow_period": 50, "rsi_period": 14, "rsi_lower_bound": 40, "rsi_upper_bound": 60}`
 - `volume_confirmation`: volume spikes vs average
-- `classic_pattern`: engulfing, pinbar, breakout
-- `price_consolidation`: channel breakout
-- `open_interest`: OI surge / liquidation traps
-- `round_level`: psychological round price levels
+  `{"multiplier": 1.5, "lookback_period": 20}`
+- `classic_pattern`: candlestick patterns (engulfing, pinbar, breakout)
+  `{"pattern_type": "engulfing", "lookback": 3}`
+- `price_consolidation`: channel/range breakout
+  `{"lookback_period": 20, "max_range_atr": 0.5}`
+- `volatility_squeeze`: Bollinger Bands squeeze inside Keltner Channels
+  `{"lookback_candles": 20, "squeeze_ratio": 0.6}`
+- `price_action_analyzer`: multi-candle geometric structure (e.g. higher lows)
+  `{"structure_type": "higher_lows", "lookback_candles": 30, "min_points": 2, "order": 3}`
 - `return_to_level`: retest of broken level
-- `level_touch_analyzer`: number of level touches
-- `volatility_squeeze`: Bollinger inside Keltner squeeze
-- `price_action_analyzer`: multi-candle structure
+  `{"level_block_id": "resistance_level_1", "retest_type": "breakout_retest", "approach_direction": "from_below", "proximity_type": "atr_multiplier", "proximity_value": 1.5, "departure_type": "atr_multiplier", "departure_value": 3.0, "confirmation_time_sec": 60, "cooldown_sec": 300}`
+- `level_touch_analyzer`: number of level touches without piercing
+  `{"level_source": {"source": "block_result", "block_id": "resistance_level_1", "key": "detected_level"}, "lookback_candles": 50, "touch_tolerance_pct": 0.1, "invalidate_on_pierce": true, "min_touches": 3}`
+- `round_level`: psychological round price levels
+  `{"proximity_pct": 0.1}`
+- `open_interest` (PRO only): OI surge / liquidation traps
+- `order_book_zone_condition` (PRO only): order book liquidity wall detection using bookDepth percentage buckets
+- `tape_condition` (PRO only): aggressive tape delta
+- `l2_microstructure` / `orderbook_imbalance` (PRO only): depth imbalance calculated from bookDepth buckets
+
+### DepthSight Orderbook Format Note (bookDepth):
+Orderbook data in DepthSight is **bookDepth**, NOT raw tick-level L2 orderbook ladder.
+Binance Futures `bookDepth` provides periodic snapshots of cumulative volume and notional USD at fixed percentage offsets:
+- Bids: `depth_m0.2` (-0.2%), `depth_m1.0` (-1%), `depth_m2.0` (-2%), `depth_m3.0` (-3%), `depth_m4.0` (-4%), `depth_m5.0` (-5%) and `notional_m0.2`..`notional_m5.0`.
+- Asks: `depth_p0.2` (+0.2%), `depth_p1.0` (+1%), `depth_p2.0` (+2%), `depth_p3.0` (+3%), `depth_p4.0` (+4%), `depth_p5.0` (+5%) and `notional_p0.2`..`notional_p5.0`.
+Blocks like `order_book_zone` and `orderbook_imbalance` operate on these percentage buckets. Do NOT attempt to query tick-level order queues.
+
+## Actions & Triggers:
+- `open_position` (use in `initialization` only):
+  `{"direction": "LONG", "risk_type": "percent_balance", "risk_value": 1.0, "sl_type": "atr_multiplier", "sl_value": 2.0, "tp_type": "rr_multiplier", "tp_value": 4.0, "partial_exits": [{"tp_type": "rr_multiplier", "tp_value": 1.5, "size_pct": 30.0}, {"tp_type": "rr_multiplier", "tp_value": 3.0, "size_pct": 70.0}]}`
+- `on_candle_close` (use in `entryTrigger` only)
+- `on_tick` (use in `entryTrigger` only)
+- `on_condition_met` (use in `entryTrigger` only)
 
 ## Position Management (use in `positionManagement` section):
-- `move_to_breakeven`: trigger_pct, offset_pct
-- `trailing_stop`: activation_pct, callback_pct
-- `scale_in`: gradual entry execution
-- `conditional_management`: indicator-driven exit
-- `modify_stop_loss`: dynamic SL adjustment
-- `modify_take_profit`: dynamic TP adjustment
-- `close_position`: immediate market exit
-- `dca_management`: dollar-cost averaging steps
-- `grid_management`: geometric/arithmetic grid orders
+- `move_to_breakeven`: `{"target_type": "rr_multiplier", "target_value": 1.0, "offset_pips": 2}`
+- `scale_in`: `{"add_size_pct_of_initial_risk": 100.0, "max_entries": 3}`
+- `dca_management`: `{"max_safety_orders": 5, "volume_multiplier": 2.0, "step_type": "percentage", "step_value": 1.0, "step_multiplier": 1.0}`
+- `grid_management`: `{"grid_levels": 10, "range_type": "percentage", "upper_bound": 1.0, "lower_bound": 1.0}`
+- `modify_stop_loss`: `{"new_sl_price": {"source": "value", "value": 1850.5}}`
+- `modify_take_profit`: `{"new_tp_price": {"source": "value", "value": 1950.0}}`
+- `close_position`: `{}`
+- `conditional_management`: `{"if_conditions": {"type": "AND", "children": []}, "then_actions": []}`
+- `trailing_stop` (PRO only / Precision): `{"activation_pct": 1.5, "callback_pct": 0.5}`
+- `conditional_exit` (PRO only): dynamic condition-based exit
 
 ## Logic Containers:
 - `AND`: all child conditions must be true
 - `OR`: at least one child condition must be true
-
-## Actions & Triggers:
-- `open_position` (use in `initialization` only)
-- `on_candle_close` (use in `entryTrigger` only)
-- `on_tick` (use in `entryTrigger` only)
-- `on_condition_met` (use in `entryTrigger` only)
 """
 
 MEMORY_GUIDE_DOC = """# DepthSight Agent Memory & Quant Protocol Guide
 
 ## 1. The Core Quant Development Loop
 Every autonomous trading agent operating on DepthSight must follow this 6-step loop:
-1. **Search Experience**: Call `search_agent_memory(symbol=..., strategy_type=...)` before formulating any strategy. Check what setups have previously failed or succeeded on this asset.
+1. **Search Experience**: Call `search_agent_memory(symbol=..., strategy_type=...)` before formulating any strategy. Check what setups have previously failed or succeeded on this asset and inspect existing database tags.
 2. **Inspect Market Regime**: Call `get_market_metrics(symbol=...)` to check current NATR volatility, 1H vs 6H macro trend, and ML Oracle regime (Flat vs Impulse).
 3. **Verify Schemas**: Call `get_strategy_schema_and_examples(block_name=...)` to inspect exact Python parameters and allowed block types.
 4. **Validate Performance**: Run simulations via `run_backtest(symbol=..., strategy_config=...)`. Evaluate PnL%, Win Rate%, Profit Factor, and Max Drawdown%.
 5. **Formulate & Persist Rules**: Extract actionable findings and store them in persistent memory via `store_agent_memory(...)`.
 6. **Deploy Strategy**: If backtest KPIs meet criteria (Win Rate > 55%, Profit Factor > 1.4, Drawdown < 15%), persist the strategy using `save_strategy(...)`.
 
-## 2. Rule Synthesis & Deduplication (CRITICAL)
+## 2. Strategy Architecture & Reasoning Standard
+- **Multi-block synergy**: Avoid testing random single-indicator strategies. A production strategy combines market context/filters, entry conditions/patterns, and clear position management.
+- **Mandatory `reasoning` field**: Every strategy JSON must include a structured `reasoning` string inside `config_data` (or at root):
+  - **Context:** [target asset, timeframe, and market condition]
+  - **Setup:** [core thesis, pattern or trigger rationale]
+  - **Success Factors:** [what confirms the edge: volume, volatility, level touch]
+  - **Rule for Future:** [actionable rule synthesized for future iterations]
+
+## 3. Evolutionary Optimization & Backtracking
+- **Baseline + Mutation**: Do NOT start from scratch every iteration. Establish a baseline configuration.
+- **Single-knob Mutation**: When optimizing, mutate ONLY ONE parameter at a time (e.g. lookback period from 14 to 21, volume threshold from 1.5 to 2.0, or adding a specific filter).
+- **Backtrack on Degradation**: If mutation degrades performance (PnL decreases or Drawdown spikes), immediately discard the mutated variant, revert to the previous best baseline, and try an alternative mutation.
+
+## 4. Rule Synthesis & Deduplication (CRITICAL)
 When calling `store_agent_memory`, synthesize **high-confidence, actionable rules** for future strategy generations:
 - Focus on specific indicators, filters, or parameters.
 - **Actionable Rule Format**:
@@ -454,7 +549,10 @@ When calling `store_agent_memory`, synthesize **high-confidence, actionable rule
   - *Example 2 (Edge Capture)*: "In high volatility (NATR > 0.015), RSI oversold dips (RSI <= 28) paired with `trailing_stop` (activation 1.5%, callback 0.4%) achieve 68% win rate on ETHUSDT."
 - **Deduplication Rule**: Compare your proposed insight with existing rules returned by `search_agent_memory`. If a rule with a similar concept, indicator parameter, or trade filter already exists, **DO NOT** create a duplicate.
 
-## 3. Classification & Tagging Conventions
+## 5. Classification & Tagging Conventions (From tag_insight.md)
+- **Select from Existing Tag Pool First**: Inspect the active database tags returned by `search_agent_memory` or displayed in the session. Pick 1 to 4 appropriate tags from the pool to keep vocabulary unified across agent sessions.
+- **Create New Tags Sparingly**: Only if no existing tag accurately describes the concept, create a concise new `snake_case` tag (e.g. `volatility_squeeze`, `retest_level`, `pinbar`).
+- **Never Put Tickers in Tags**: Always pass the trading pair in the dedicated `symbol` field in UPPERCASE (e.g. `symbol='BTCUSDT'`).
 - **strategy_type**: Must be one of:
   - `"breakout"` (channel/level breaks)
   - `"mean_reversion"` (RSI/Bollinger/Stochastic counter-trend pullbacks)
@@ -463,10 +561,204 @@ When calling `store_agent_memory`, synthesize **high-confidence, actionable rule
   - `"momentum"` (impulse/volume spikes)
 - **outcome**:
   - `"success"`: strategy demonstrated robust profitability.
-  - `"failure"`: strategy suffered severe drawdowns or toxic trade clusters.
+  - `"failure"`: strategy suffered negative return or toxic trade clusters.
   - `"neutral"`: mixed results or inconclusive tests.
-- **tags**: Choose 1 to 4 concise `snake_case` tags (e.g. `["adx", "rsi_pullback", "volatility", "trailing_stop", "orderbook"]`).
 """
+
+
+def get_formatted_codebase_reference() -> str:
+    """Formats cached codebase blocks with python syntax highlighting."""
+    codebase = get_cached_codebase_context()
+    if not codebase:
+        return "# No codebase context available."
+    sections = []
+    for k, code in sorted(codebase.items()):
+        sections.append(f"### From: `{k}`\n```python\n{code}\n```")
+    return "\n\n".join(sections)
+
+
+def get_autopilot_generator_prompt() -> str:
+    """Loads the authentic platform autopilot system prompt and generator prompt (Vector engine)
+    and populates them with complete codebase reference blocks, working JSON examples, and engine architectural rules.
+    """
+    prompts_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "prompts")
+    )
+    system_prompt_path = os.path.join(prompts_dir, "autopilot_system.md")
+    generator_prompt_path = os.path.join(prompts_dir, "autopilot_generator_system.md")
+
+    codebase_ref = get_formatted_codebase_reference()
+
+    autopilot_system_content = ""
+    if os.path.exists(system_prompt_path):
+        try:
+            with open(system_prompt_path, "r", encoding="utf-8") as f:
+                autopilot_system_content = f.read().replace(
+                    "{resolved_symbol}", "ADAUSDT"
+                )
+        except Exception as e:
+            logger.error(f"Failed to read autopilot_system.md: {e}")
+
+    generator_content = ""
+    if os.path.exists(generator_prompt_path):
+        try:
+            with open(generator_prompt_path, "r", encoding="utf-8") as f:
+                generator_content = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read autopilot_generator_system.md: {e}")
+
+    if "{codebase_reference}" in generator_content:
+        generator_content = generator_content.replace(
+            "{codebase_reference}", codebase_ref
+        )
+    else:
+        generator_content += (
+            f"\n\n<codebase_reference>\n{codebase_ref}\n</codebase_reference>"
+        )
+
+    mcp_operational_rules = """
+# ==================================================
+# CRITICAL ARCHITECTURAL RULES FOR DEPTHSIGHT ENGINE
+# ==================================================
+
+1. **STRICT SINGLE DIRECTION PER RUN (LONG OR SHORT)**:
+   - In DepthSight, every Visual Builder strategy execution is UNIDIRECTIONAL.
+   - `initialization.params.direction` MUST be strictly set to `"LONG"` or `"SHORT"`.
+   - The vector backtester runs ONLY the direction specified in `initialization.params.direction`.
+   - **NEVER create conflicting branches**: do NOT combine both LONG and SHORT logic into a single strategy configuration. If `direction="LONG"`, all SHORT entry conditions are completely ignored by the engine. To test both, run a LONG strategy backtest, then a separate SHORT strategy backtest.
+
+2. **THE 4-STAGE PIPELINE ARCHITECTURE**:
+   - **Stage 1 (`filters`)**: Global market state gates (`volatility_filter`, `trend_filter`, `rel_vol_filter`, `trading_session`). If conditions are not met, the candle is skipped before evaluating entries.
+   - **Stage 2 (`entryConditions` & `entryTrigger`)**: Setup triggers (`on_candle_close`). Keep entry conditions concise (1 clean foundation block or synergy of 2-3 blocks).
+   - **Stage 3 (`initialization`)**: `open_position` with `direction` ("LONG" or "SHORT"), `risk_type`, `risk_value`, `sl_type`, `tp_type`, and `partial_exits`.
+   - **Stage 4 (`positionManagement`)**: Active in-trade blocks (`move_to_breakeven`, `scale_in`). Do NOT leave empty if you want breakeven or trailing protection!
+
+3. **NEVER DUPLICATE LOOKBACK PERIODS (ANTI-SPAGHETTI RULE)**:
+   - **DO NOT** create 10-14 duplicate `AND` blocks testing 5d, 10d, 14d, 20d, 30d lookback levels. This is a severe anti-pattern (overfitting/conflicting signals).
+   - Use ONE clean level provider (e.g. `significant_level` or `local_level` with `is_data_provider: true`) paired with volume/consolidation confirmation.
+
+4. **TRADE FREQUENCY & SAMPLE SIZE (HOW TO GET >= 50 TRADES)**:
+   - Proving edge on 1m requires statistical validity (>= 50 trades).
+   - Multi-week extremes (e.g. 20-day High on 1d timeframe) happen only ~10-15 times in 2 years! Do NOT use them when high trade frequency is needed.
+   - To achieve >= 50 trades on 1m:
+     - Use `significant_level` (intraday swing highs/lows)
+     - Use `local_level` on 4h / 1d with shorter lookback (e.g. 24h to 3 days)
+     - Use `return_to_level` (pullback and retest entries)
+     - Use `volatility_squeeze` + `volume_confirmation`
+
+5. **COMPLETE BREAKOUT STRATEGY EXAMPLE (COPY-PASTE READY)**:
+```json
+{
+  "name": "ADAUSDT_1m_Clean_Breakout",
+  "symbol": "ADAUSDT",
+  "timeframe": "1m",
+  "start_date": "2025-01-01",
+  "end_date": "2026-08-31",
+  "marketType": "FUTURES",
+  "signal_source": "internal",
+  "reasoning": "Context: ADAUSDT 1m breakout of swing resistance. Setup: 1m candle close above significant intraday level with volume confirmation and pre-breakout consolidation. Success factors: Relative volume > 1.5x, consolidation range <= 0.8 ATR. Rule for Future: Move to BE at 1.5 R:R, take partial profits at 1.5, 3.0, and 5.0 R:R.",
+  "min_foundation_weight_threshold": 50.0,
+  "foundation_weights": {
+    "foundation_breakout": 50.0
+  },
+  "filters": {
+    "type": "AND",
+    "children": [
+      {
+        "type": "volatility_filter",
+        "params": {
+          "natr_threshold": 0.8
+        }
+      },
+      {
+        "type": "rel_vol_filter",
+        "params": {
+          "rel_vol_threshold": 1.5,
+          "lookback_period": 20
+        }
+      }
+    ]
+  },
+  "entryTrigger": {
+    "type": "on_candle_close",
+    "params": {}
+  },
+  "entryConditions": {
+    "type": "OR",
+    "children": [
+      {
+        "id": "foundation_breakout",
+        "type": "AND",
+        "children": [
+          {
+            "id": "level_provider",
+            "type": "significant_level",
+            "params": {}
+          },
+          {
+            "type": "value_comparison",
+            "params": {
+              "leftOperand": { "source": "candle", "key": "close" },
+              "operator": "gt",
+              "rightOperand": { "source": "block_result", "block_id": "level_provider", "key": "detected_level" }
+            }
+          },
+          {
+            "type": "price_consolidation",
+            "params": {
+              "lookback_period": 15,
+              "max_range_atr": 0.8
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "initialization": {
+    "type": "open_position",
+    "params": {
+      "direction": "LONG",
+      "risk_type": "percent_balance",
+      "risk_value": 1.0,
+      "sl_type": "atr_multiplier",
+      "sl_value": 2.0,
+      "tp_type": "rr_multiplier",
+      "tp_value": 5.0,
+      "partial_exits": [
+        { "tp_type": "rr_multiplier", "tp_value": 1.5, "size_pct": 40.0 },
+        { "tp_type": "rr_multiplier", "tp_value": 3.0, "size_pct": 30.0 },
+        { "tp_type": "rr_multiplier", "tp_value": 5.0, "size_pct": 30.0 }
+      ]
+    }
+  },
+  "positionManagement": [
+    {
+      "type": "move_to_breakeven",
+      "params": {
+        "target_type": "rr_multiplier",
+        "target_value": 1.5,
+        "offset_pips": 2
+      }
+    }
+  ]
+}
+```
+"""
+
+    parts = []
+    if autopilot_system_content:
+        parts.append(
+            "## PART 1: DEPTHSIGHT AUTOPILOT JSON SPECIFICATION & EXAMPLES\n"
+            + autopilot_system_content
+        )
+    parts.append(mcp_operational_rules)
+    if generator_content:
+        parts.append(
+            "## PART 2: ALLOWED BLOCK TYPES, SCHEMAS & LIVE CODEBASE BLOCKS\n"
+            + generator_content
+        )
+
+    return "\n\n".join(parts)
 
 
 async def tool_get_strategy_schema_and_examples(
@@ -530,189 +822,19 @@ async def tool_get_strategy_schema_and_examples(
                 )
             )
 
-    blocks_doc = """## DepthSight Visual Builder Strategy Schema
-
-A DepthSight strategy is represented as a structured JSON object containing:
-- `symbol`: string (e.g. "BTCUSDT")
-- `timeframe`: string (e.g. "15m", "1h")
-- `direction`: "LONG" | "SHORT" | "BOTH"
-- `filters`: Root condition group containing market regime/trend/volatility filters.
-- `entryConditions`: Root condition group defining entry criteria.
-- `entryTrigger`: Execution trigger:
-  - `{"type": "on_candle_close"}`
-  - `{"type": "on_condition_met"}`
-- `initialization`: Position setup:
-  - `open_position` with `position_size_type`, `position_size_value`, `stop_loss_pct`, `take_profit_pct`
-- `positionManagement`: List of active management rules:
-  - `trailing_stop` (activation_pct, callback_pct)
-  - `move_to_breakeven` (trigger_pct, offset_pct)
-  - `modify_take_profit` / `modify_stop_loss`
-"""
-
-    examples_doc = """## Example: EMA Trend + RSI Pullback Strategy (Valid JSON)
-```json
-{
-  "name": "EMA_Trend_RSI_Reversal",
-  "symbol": "BTCUSDT",
-  "timeframe": "15m",
-  "direction": "LONG",
-  "filters": {
-    "type": "AND",
-    "children": [
-      {
-        "type": "trend_filter",
-        "params": {
-          "indicator": "ADX",
-          "threshold": 20.0
-        }
-      }
-    ]
-  },
-  "entryConditions": {
-    "type": "AND",
-    "children": [
-      {
-        "type": "value_comparison",
-        "params": {
-          "left_indicator": "RSI",
-          "left_period": 14,
-          "operator": "<=",
-          "right_value": 35.0
-        }
-      },
-      {
-        "type": "value_comparison",
-        "params": {
-          "left_indicator": "EMA",
-          "left_period": 20,
-          "operator": ">",
-          "right_indicator": "EMA",
-          "right_period": 50
-        }
-      }
-    ]
-  },
-  "entryTrigger": {
-    "type": "on_candle_close",
-    "params": {}
-  },
-  "initialization": {
-    "type": "open_position",
-    "params": {
-      "side": "LONG",
-      "position_size_type": "PERCENT_EQUITY",
-      "position_size_value": 10.0,
-      "stop_loss_pct": 1.5,
-      "take_profit_pct": 3.0
-    }
-  },
-  "positionManagement": [
-    {
-      "type": "trailing_stop",
-      "params": {
-        "activation_pct": 1.5,
-        "callback_pct": 0.5
-      }
-    },
-    {
-      "type": "move_to_breakeven",
-      "params": {
-        "trigger_pct": 1.0,
-        "offset_pct": 0.1
-      }
-    }
-  ]
-}
-```
-"""
-
     # Category handlers
     if category == "codebase":
-        codebase = get_cached_codebase_context()
-        sections = [
-            f"## DepthSight Full Codebase Reference ({len(codebase)} blocks extracted from schemas & execution engine)"
-        ]
-        for k, code in sorted(codebase.items()):
-            sections.append(f"### `{k}`\n```python\n{code}\n```")
-        return "\n\n".join(sections)
-
-    elif category == "indicators":
-        codebase = get_cached_codebase_context()
-        indicator_keys = [
-            k
-            for k in codebase.keys()
-            if any(
-                term in k.lower()
-                for term in [
-                    "condition",
-                    "indicator",
-                    "rsi",
-                    "macd",
-                    "stoch",
-                    "bollinger",
-                    "level",
-                    "trend_direction",
-                    "pattern",
-                ]
-            )
-        ]
-        sections = [
-            f"## DepthSight Indicator & Condition Blocks ({len(indicator_keys)} blocks):"
-        ]
-        for k in sorted(indicator_keys):
-            sections.append(f"### `{k}`\n```python\n{codebase[k]}\n```")
-        return "\n\n".join(sections)
-
-    elif category == "filters":
-        codebase = get_cached_codebase_context()
-        filter_keys = [
-            k
-            for k in codebase.keys()
-            if any(
-                term in k.lower()
-                for term in [
-                    "filter",
-                    "session",
-                    "btc_state",
-                    "volatility",
-                    "rel_vol",
-                    "adx",
-                    "natr",
-                ]
-            )
-        ]
-        sections = [f"## DepthSight Filter Blocks ({len(filter_keys)} blocks):"]
-        for k in sorted(filter_keys):
-            sections.append(f"### `{k}`\n```python\n{codebase[k]}\n```")
-        return "\n\n".join(sections)
+        return get_formatted_codebase_reference()
 
     elif category == "memory_guide":
         return MEMORY_GUIDE_DOC
 
-    elif category in ("allowed_types", "schemas"):
+    elif category == "allowed_types":
         return ALLOWED_TYPES_DOC
 
-    elif category == "examples":
-        return examples_doc
-
-    elif category == "blocks":
-        return f"{blocks_doc}\n\n{ALLOWED_TYPES_DOC}"
-
-    elif category == "all":
-        codebase = get_cached_codebase_context()
-        blocks_list = "\n".join(f"- `{k}`" for k in sorted(codebase.keys())[:15])
-        return (
-            f"{blocks_doc}\n\n"
-            f"{ALLOWED_TYPES_DOC}\n\n"
-            f"{examples_doc}\n\n"
-            f"{MEMORY_GUIDE_DOC}\n\n"
-            f"### Available Codebase Implementation Blocks ({len(codebase)} total):\n"
-            f"{blocks_list}\n"
-            f"... and {len(codebase) - 15} more. To view any block's code, call `get_strategy_schema_and_examples(block_name='<name>')`."
-        )
-
-    # Default: "summary"
-    return f"{blocks_doc}\n\n{ALLOWED_TYPES_DOC}\n\n{examples_doc}"
+    # Default ("summary", "all", "schemas", "blocks", "examples"):
+    # Returns the full platform autopilot generator system prompt with all blocks and code
+    return get_autopilot_generator_prompt()
 
 
 async def tool_get_market_metrics(symbol: str) -> str:
@@ -757,6 +879,258 @@ async def tool_get_market_metrics(symbol: str) -> str:
     )
 
 
+async def get_storage_symbols_info(
+    redis_client: Optional[Any] = None, force_refresh: bool = False
+) -> list[dict]:
+    """Retrieves cached storage symbols metadata from Redis or scans parquet files."""
+    cache_key = "depthsight:admin:storage_info"
+    if redis_client and not force_refresh:
+        try:
+            cached_data = await redis_client.get(cache_key)
+            if cached_data:
+                return json.loads(cached_data)
+        except Exception as e:
+            logger.warning(f"Failed to read storage info from Redis cache: {e}")
+
+    project_root = Path(__file__).parent.parent.parent.resolve()
+    base_path = project_root / "data_storage" / "binance" / "futures"
+    if not base_path.exists():
+        return []
+
+    from api.routes.admin import _scan_storage_sync
+
+    symbols_data = await asyncio.to_thread(_scan_storage_sync, base_path)
+    if redis_client and symbols_data:
+        try:
+            await redis_client.set(cache_key, json.dumps(symbols_data), ex=600)
+        except Exception:
+            pass
+
+    return symbols_data
+
+
+async def tool_get_historical_data_range(
+    symbol: Optional[str] = None,
+    redis_client: Optional[Any] = None,
+) -> str:
+    """Queries loaded historical market data coverage, date ranges, and available features."""
+    storage_data = await get_storage_symbols_info(redis_client)
+    if not storage_data:
+        return (
+            "⚠️ No historical data storage directory found or no symbols loaded yet. "
+            "Contact your platform administrator or configure the Data Pipeline."
+        )
+
+    if symbol:
+        clean_target = symbol.strip().upper()
+        match = next((s for s in storage_data if s["symbol"] == clean_target), None)
+        if not match:
+            available_list = ", ".join(sorted([s["symbol"] for s in storage_data])[:20])
+            return (
+                f"❌ Symbol **{clean_target}** has no historical data loaded in DepthSight.\n\n"
+                f"**Available Loaded Symbols ({len(storage_data)} total)**:\n"
+                f"{available_list}...\n\n"
+                f"Call `get_historical_data_range` without arguments to see the full table."
+            )
+
+        kline = match.get("klines_1m") or {}
+        s_date = kline.get("start_date", "N/A")
+        e_date = kline.get("end_date", "N/A")
+        size_mb = kline.get("size_mb", 0)
+        tfs = ", ".join(match.get("timeframes", [])) or "1m"
+
+        depth_status = "✅ Available" if match.get("has_depth") else "❌ Not loaded"
+        depth_note = (
+            "*(Binance Futures aggregated percentage buckets: depth_m0.2..m5.0 bids, depth_p0.2..p5.0 asks, notional_m/p. Used by 'order_book_zone' & 'orderbook_imbalance', NOT tick-level L2 ladder)*"
+            if match.get("has_depth")
+            else "*(Not loaded)*"
+        )
+
+        return (
+            f"### Historical Data Coverage: **{clean_target}**\n"
+            f"- **Valid Date Interval**: `{s_date}` to `{e_date}`\n"
+            f"- **Available Timeframes**: {tfs}\n"
+            f"- **1m Parquet Size**: {size_mb} MB\n"
+            f"- **Enriched with High-Res Data**: {'Yes' if kline.get('is_enriched') else 'No'}\n\n"
+            f"#### Microstructural / PRO Features for {clean_target}:\n"
+            f"- **Orderbook Depth (bookDepth)**: {depth_status} {depth_note}\n"
+            f"- **Open Interest (OI)**: {'✅ Available' if match.get('has_oi') else '❌ Not loaded'}\n"
+            f"- **1s Tick Klines**: {'✅ Available' if match.get('has_klines_1s') else '❌ Not loaded'}\n"
+            f"- **AggTrades / Tape Delta**: {'✅ Available' if match.get('has_aggtrades') else '❌ Not loaded'}\n\n"
+            f"💡 **Orderbook Structure Note**: DepthSight orderbook data is **bookDepth** (aggregated snapshots of cumulative depth and notional volume at percentage thresholds ±0.2%, ±1.0%, ±2.0%, ±3.0%, ±4.0%, ±5.0%), NOT a tick-by-tick L2 price ladder.\n"
+            f"💡 *When running backtests on {clean_target}, choose start_date and end_date between `{s_date}` and `{e_date}`.*"
+        )
+
+    # General summary table of all loaded symbols
+    lines = [
+        f"### DepthSight Historical Market Storage ({len(storage_data)} symbols available):",
+        "",
+        "| Symbol | Available History Range | Timeframes | bookDepth (±% Buckets) | Open Interest |",
+        "| :--- | :--- | :--- | :---: | :---: |",
+    ]
+    for s in sorted(storage_data, key=lambda x: x["symbol"]):
+        k = s.get("klines_1m") or {}
+        s_date = k.get("start_date", "N/A")
+        e_date = k.get("end_date", "N/A")
+        date_range = (
+            f"`{s_date}` to `{e_date}`" if s_date != "N/A" else "Not downloaded"
+        )
+        tfs = ", ".join(s.get("timeframes", [])[:4])
+        if len(s.get("timeframes", [])) > 4:
+            tfs += f" (+{len(s['timeframes']) - 4})"
+        depth = "✅" if s.get("has_depth") else "❌"
+        oi = "✅" if s.get("has_oi") else "❌"
+        lines.append(
+            f"| **{s['symbol']}** | {date_range} | {tfs or '1m'} | {depth} | {oi} |"
+        )
+
+    lines.append("")
+    lines.append(
+        "💡 **Orderbook Format (bookDepth)**: DepthSight orderbook data is **bookDepth** (Binance Futures percentage depth buckets: ±0.2%, ±1%, ±2%, ±3%, ±4%, ±5% bids/asks depth and notional volume), NOT raw tick-level L2 ladder. Used by PRO blocks like `order_book_zone` and `orderbook_imbalance`."
+    )
+    lines.append(
+        "💡 **Rule for Backtests**: You must ONLY run backtests on symbols listed above, and your `start_date` and `end_date` must strictly fall within each symbol's available history range."
+    )
+
+    return "\n".join(lines)
+
+
+def resolve_strategy_tags_and_type(
+    strategy_config: dict,
+    clean_symbol: str,
+    explicit_tags: Optional[List[str]] = None,
+    explicit_strategy_type: Optional[str] = None,
+) -> Tuple[str, List[str]]:
+    """Resolves and normalizes strategy_type and tags for agent memory insights.
+
+    Prefers explicit tags and strategy_type provided directly by the calling agent.
+    If omitted or empty, falls back to zero-token programmatic extraction from
+    strategy blocks and indicators, ensuring consistent vocabulary without burning server LLM tokens.
+    """
+
+    # 1. Helper to extract all block types recursively
+    def _extract_blocks(node: Any) -> List[str]:
+        types = []
+        if isinstance(node, dict):
+            t = node.get("type")
+            if isinstance(t, str) and t.strip():
+                types.append(t.strip())
+            for v in node.values():
+                types.extend(_extract_blocks(v))
+        elif isinstance(node, list):
+            for item in node:
+                types.extend(_extract_blocks(item))
+        return types
+
+    extracted_blocks = _extract_blocks(strategy_config)
+    blocks_lower = [b.lower() for b in extracted_blocks]
+    blocks_text = " ".join(blocks_lower)
+
+    # 2. Resolve strategy_type
+    raw_type = explicit_strategy_type or strategy_config.get("strategy_type")
+    valid_types = {
+        "breakout",
+        "mean_reversion",
+        "trend_following",
+        "scalping",
+        "momentum",
+    }
+    type_synonyms = {
+        "trend": "trend_following",
+        "trending": "trend_following",
+        "trend_follower": "trend_following",
+        "reversion": "mean_reversion",
+        "mean_revert": "mean_reversion",
+        "range": "mean_reversion",
+        "scalp": "scalping",
+        "squeeze": "breakout",
+        "volatility": "breakout",
+    }
+
+    strat_type = None
+    if raw_type and isinstance(raw_type, str):
+        cleaned_raw = raw_type.strip().lower()
+        cleaned_raw = type_synonyms.get(cleaned_raw, cleaned_raw)
+        if cleaned_raw in valid_types:
+            strat_type = cleaned_raw
+
+    if not strat_type:
+        if any(k in blocks_text for k in ("squeeze", "breakout", "donchian")):
+            strat_type = "breakout"
+        elif any(
+            k in blocks_text for k in ("rsi", "reversion", "bollinger", "stoch", "mean")
+        ):
+            strat_type = "mean_reversion"
+        elif any(
+            k in blocks_text
+            for k in ("trend", "adx", "supertrend", "ema", "sma", "macd")
+        ):
+            strat_type = "trend_following"
+        else:
+            strat_type = "breakout"
+
+    # 3. Resolve and normalize tags
+    clean_sym_lower = clean_symbol.strip().lower() if clean_symbol else ""
+    sym_base = (
+        clean_sym_lower.replace("usdt", "").replace("busd", "").replace("usdc", "")
+    )
+
+    def _normalize_tag(tag: Any) -> Optional[str]:
+        if not isinstance(tag, str):
+            return None
+        t = tag.strip().lower()
+        t = re.sub(r"[\s\-/]+", "_", t)
+        t = re.sub(r"[^\w]", "", t).strip("_")
+        if not t:
+            return None
+        # Disallow symbol in tags list (symbol has its own dedicated column)
+        if t == clean_sym_lower or (sym_base and t == sym_base):
+            return None
+        return t
+
+    tags_source = (
+        explicit_tags
+        if (explicit_tags and isinstance(explicit_tags, list))
+        else strategy_config.get("tags")
+    )
+
+    normalized_tags: List[str] = []
+    if tags_source and isinstance(tags_source, list):
+        for raw_tag in tags_source:
+            norm = _normalize_tag(raw_tag)
+            if norm and norm not in normalized_tags:
+                normalized_tags.append(norm)
+
+    # 4. If tags still empty, extract programmatic fallback from strategy blocks at 0 cost
+    if not normalized_tags:
+        skip_container_blocks = {
+            "and",
+            "or",
+            "not",
+            "open_position",
+            "close_position",
+            "on_candle_close",
+            "on_candle_open",
+            "none",
+        }
+        for b in extracted_blocks:
+            norm_b = _normalize_tag(b)
+            if (
+                norm_b
+                and norm_b not in skip_container_blocks
+                and norm_b not in normalized_tags
+            ):
+                normalized_tags.append(norm_b)
+
+        # Ensure strategy type tag is included if space allows
+        if strat_type not in normalized_tags:
+            normalized_tags.insert(0, strat_type)
+
+    # Limit to 5 tags max
+    clean_tags = normalized_tags[:5]
+    return strat_type, clean_tags
+
+
 async def tool_run_backtest(
     symbol: str,
     strategy_config: dict,
@@ -765,10 +1139,14 @@ async def tool_run_backtest(
     timeframe: str = "15m",
     engine: str = "vector",
     strategy_name: Optional[str] = None,
+    strategy_type: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    reasoning: Optional[str] = None,
     user: Optional[models.User] = None,
     redis_client: Optional[Any] = None,
+    db: Optional[AsyncSession] = None,
 ) -> str:
-    """Executes a backtest through Celery with user plan limits and quota checks."""
+    """Executes a backtest through Celery with user plan limits, quota checks, and automatic memory bank recording."""
     if user is None:
         raise ValueError("Authenticated user is required to run backtests.")
 
@@ -787,6 +1165,10 @@ async def tool_run_backtest(
 
     clean_symbol = symbol.strip().upper()
     await _check_symbol_permissions(user, [clean_symbol])
+
+    # Support both direct strategy_config and config_data-wrapped schemas
+    if isinstance(strategy_config.get("config_data"), dict):
+        strategy_config = strategy_config["config_data"]
 
     # 1. Date duration limit check against user plan
     user_plan = plans_config.get_plan(user.plan)
@@ -811,20 +1193,61 @@ async def tool_run_backtest(
 
     # 2. Block and engine restrictions
     try:
+        norm_engine = schemas.normalize_backtest_engine(engine, default="vector")
+    except ValueError as exc:
+        return f"Error: Invalid backtest engine '{engine}': {exc}"
+
+    try:
         _enforce_strategy_plan_restrictions(strategy_config, user)
-        _enforce_backtest_engine_access(user, engine)
+        _enforce_backtest_engine_access(user, norm_engine)
     except Exception as e:
         return f"Plan Restriction Error: {e}"
 
     # Check if strategy requires precision engine
-    if is_strategy_kline_only(strategy_config) and engine == "vector":
+    if is_strategy_kline_only(strategy_config) and norm_engine == "vector":
         return (
             "Error: This strategy contains advanced blocks that require the 'precision' engine. "
             "Please specify engine='precision' (available on Pro plans)."
         )
 
+    # 3. Historical data availability and boundary verification
+    storage_symbols = await get_storage_symbols_info(redis_client)
+    if storage_symbols:
+        symbol_map = {s["symbol"]: s for s in storage_symbols if s.get("symbol")}
+        if clean_symbol not in symbol_map:
+            available_list = ", ".join(sorted(symbol_map.keys())[:15])
+            return (
+                f"Historical Data Error: Symbol '{clean_symbol}' has no historical data loaded in DepthSight. "
+                f"Available symbols ({len(symbol_map)} total): {available_list}... "
+                f"Call 'get_historical_data_range' to view all supported pairs and their valid date intervals."
+            )
+
+        sym_info = symbol_map[clean_symbol]
+        kline_info = sym_info.get("klines_1m") or {}
+        avail_start_str = kline_info.get("start_date")
+        avail_end_str = kline_info.get("end_date")
+        if (
+            avail_start_str
+            and avail_end_str
+            and avail_start_str != "N/A"
+            and avail_end_str != "N/A"
+        ):
+            try:
+                avail_start_dt = datetime.fromisoformat(avail_start_str)
+                avail_end_dt = datetime.fromisoformat(avail_end_str)
+                if start_dt.date() < avail_start_dt.date() or end_dt.date() > (
+                    avail_end_dt.date() + timedelta(days=1)
+                ):
+                    return (
+                        f"Historical Date Range Error: Requested backtest dates ({start_date} to {end_date}) "
+                        f"are outside the loaded historical data for {clean_symbol} ({avail_start_str} to {avail_end_str}). "
+                        f"Please adjust start_date and end_date to be strictly within {avail_start_str} and {avail_end_str}."
+                    )
+            except Exception as dt_err:
+                logger.warning(f"Storage boundary date parse error: {dt_err}")
+
     # 3. Quota and concurrency enforcement
-    quota_feature = f"run_{engine}_backtest"
+    quota_feature = f"run_{norm_engine}_backtest"
     if redis_client:
         try:
             concurrent_check = check_concurrent_task_limit("run_backtest")
@@ -846,7 +1269,7 @@ async def tool_run_backtest(
         "timeframe": timeframe,
         "params": {
             "config": strategy_config,
-            "backtest_engine": engine,
+            "backtest_engine": norm_engine,
         },
     }
 
@@ -895,7 +1318,197 @@ async def tool_run_backtest(
         sharpe = result_data.get("sharpe_ratio", 0.0)
         profit_factor = result_data.get("profit_factor", 0.0)
 
+        # Extract reasoning: parameter first, then inside strategy_config
+        actual_reasoning = (
+            reasoning
+            or strategy_config.get("reasoning")
+            or (
+                strategy_config.get("config_data", {}).get("reasoning")
+                if isinstance(strategy_config.get("config_data"), dict)
+                else ""
+            )
+            or ""
+        ).strip()
+
+        # Ensure we have strat_type for session tracking
+        try:
+            strat_type, clean_tags = resolve_strategy_tags_and_type(
+                strategy_config=strategy_config,
+                clean_symbol=clean_symbol,
+                explicit_tags=tags,
+                explicit_strategy_type=strategy_type,
+            )
+        except Exception:
+            strat_type = strategy_type or "unknown"
+            clean_tags = []
+
+        # Automatic Agent Memory Bank Recording & Rule Synthesis Loop (matching platform autopilot)
+        memory_status_note = ""
+        try:
+            import hashlib
+            from api.agent_autopilot import (
+                run_rule_synthesis,
+                evaluate_rule_lifecycle,
+            )
+            from api.database import async_session_factory
+
+            is_success = pnl > 0.0 and trades >= 5
+            outcome = "success" if is_success else "failure"
+            reason = (
+                "positive return"
+                if is_success
+                else ("negative return" if pnl <= 0.0 else "too few trades (< 5)")
+            )
+            filters_list = (
+                [
+                    f.get("type")
+                    for f in strategy_config.get("filters", {}).get("children", [])
+                ]
+                if isinstance(strategy_config.get("filters"), dict)
+                else []
+            )
+
+            content = (
+                f"{'Profitable' if is_success else 'Failed'} strategy '{run_name}' on {clean_symbol} ({timeframe}): "
+                f"PnL={pnl:.2f}%, WR={win_rate:.1f}%, trades={trades}, DD={max_dd:.1f}%. Reason: {reason}. "
+                f"Weights: {strategy_config.get('foundation_weights')}, Filters: {filters_list}."
+            )
+            if actual_reasoning:
+                content += f" Reasoning: {actual_reasoning}."
+            content += f" Config: {strategy_config}"
+
+            config_str = json.dumps(strategy_config)
+            config_hash = hashlib.sha256(config_str.encode("utf-8")).hexdigest()
+
+            mem_data = schemas.AgentMemoryCreate(
+                memory_type="strategy_insight",
+                content=content,
+                relevance_score=1.0 if is_success else 0.8,
+                expires_at=datetime.now(timezone.utc)
+                + timedelta(days=90 if is_success else 30),
+                tags=clean_tags,
+                symbol=clean_symbol,
+                strategy_type=strat_type,
+                outcome=outcome,
+                confidence=0.85 if is_success else 0.70,
+                validated_count=1,
+                config_hash=config_hash,
+            )
+
+            if db:
+                await crud.create_agent_memory(
+                    db, user_id=user.id, memory_data=mem_data
+                )
+                await db.commit()
+            else:
+                async with async_session_factory() as db_session:
+                    await crud.create_agent_memory(
+                        db_session, user_id=user.id, memory_data=mem_data
+                    )
+                    await db_session.commit()
+
+            # Trigger background rule synthesis and lifecycle evaluation
+            asyncio.create_task(run_rule_synthesis(user.id, strat_type))
+            asyncio.create_task(
+                evaluate_rule_lifecycle(user.id, strategy_config, pnl, strat_type)
+            )
+
+            memory_status_note = (
+                f"\n\n🧠 **Memory Bank Auto-Recorded**:\n"
+                f"- Run saved as `{outcome.upper()}` for `{clean_symbol}` (`{strat_type}`).\n"
+                f"- Assigned tags: {', '.join(f'`{t}`' for t in clean_tags)}.\n"
+                f"- Background rule synthesis & lifecycle active (synthesizes new rules every 3+ insights)."
+            )
+            if not actual_reasoning:
+                memory_status_note += "\n- ⚠️ *Notice: No `reasoning` parameter provided. Always provide `reasoning` in run_backtest to help the Memory Engine extract higher quality rules.*"
+        except Exception as mem_err:
+            logger.warning(
+                f"Auto-recording memory insight in MCP run_backtest failed: {mem_err}"
+            )
+
+        # Check for direction mismatch and trade density diagnostics
+        direction_val = str(
+            strategy_config.get("initialization", {})
+            .get("params", {})
+            .get("direction", "LONG")
+        ).upper()
+
+        config_text = json.dumps(strategy_config).lower()
+        has_opposing = False
+        if direction_val == "LONG" and (
+            "foundation_short" in config_text
+            or '"required_trend": "short"' in config_text
+        ):
+            has_opposing = True
+        elif direction_val == "SHORT" and (
+            "foundation_long" in config_text
+            or '"required_trend": "long"' in config_text
+        ):
+            has_opposing = True
+
+        diagnostics_notes = []
+        if has_opposing:
+            diagnostics_notes.append(
+                f"- ⚠️ **Direction Mismatch Warning**: Strategy has `direction='{direction_val}'`, but contains opposing direction conditions. "
+                f"DepthSight Vector Engine runs strictly single-directional (`{direction_val}`); all opposing branches are ignored by the engine. Do not mix LONG and SHORT branches in a single configuration."
+            )
+        if trades < 30:
+            diagnostics_notes.append(
+                f"- ⚠️ **Low Trade Sample Notice ({trades} trades in {duration_days} days)**: "
+                "For statistical validity (and user prompts requiring >= 50 trades), avoid multi-week extremes (such as 20d High) which occur too rarely. "
+                "Use `significant_level` (intraday swing levels), 4h local levels, or retests (`return_to_level`) to generate adequate trade sample size."
+            )
+        diagnostics_text = (
+            ("\n\n🛠️ **Engine Diagnostics**:\n" + "\n".join(diagnostics_notes))
+            if diagnostics_notes
+            else ""
+        )
+
         status_emoji = "✅" if pnl > 0 else "⚠️"
+        
+        # Stateful MCP guidance for LLM
+        global _MCP_SESSION_STATE
+        session_key = f"{user.id}:{clean_symbol}:{strat_type}"
+        state = _MCP_SESSION_STATE.get(session_key)
+        
+        if state is None:
+            state = {"best_pnl": -999999.0, "best_config": None, "failures": 0, "iterations": 0}
+            _MCP_SESSION_STATE[session_key] = state
+            
+        state["iterations"] += 1
+        
+        if pnl > state["best_pnl"]:
+            state["best_pnl"] = pnl
+            state["best_config"] = strategy_config
+            state["failures"] = 0
+            
+            autopilot_guidance = (
+                f"💡 **Quant Autopilot Guidance (NEW BEST BASELINE)**:\n"
+                f"- **Result**: This is your best variant so far in this session (PnL: {pnl:+.2f}%).\n"
+                f"- **Next Step**: Adopt this configuration as your new Baseline.\n"
+                f"- **Rule**: Make ONLY ONE mathematical mutation at a time to optimize it further."
+            )
+        else:
+            state["failures"] += 1
+            if state["failures"] >= 3:
+                autopilot_guidance = (
+                    f"💡 **Quant Autopilot Guidance (EXHAUSTED - PARADIGM PIVOT)**:\n"
+                    f"- **Result**: You failed to improve the baseline 3 times in a row. You are stuck in a local minimum.\n"
+                    f"- **Action**: DISCARD this strategy architecture entirely. Pivot to a new archetype (e.g. mean_reversion, trend_following, etc).\n"
+                )
+                # Reset state so new paradigm starts fresh
+                state["best_pnl"] = -999999.0
+                state["failures"] = 0
+            else:
+                best_config_str = json.dumps(state["best_config"], indent=2)
+                autopilot_guidance = (
+                    f"💡 **Quant Autopilot Guidance (DEGRADATION - BACKTRACK REQUIRED)**:\n"
+                    f"- **Result**: This mutation degraded performance (PnL: {pnl:+.2f}% vs Best: {state['best_pnl']:+.2f}%).\n"
+                    f"- **Action**: You MUST revert to your best baseline. Do NOT use the variant you just generated.\n"
+                    f"- **Best Config**: Here is the exact JSON of your best variant. Use this as your baseline for the next mutation:\n"
+                    f"```json\n{best_config_str}\n```"
+                )
+
         return (
             f"### {status_emoji} Backtest Results: {clean_symbol} ({timeframe})\n"
             f"- **Strategy**: {run_name}\n"
@@ -907,9 +1520,12 @@ async def tool_run_backtest(
             f"- **Max Drawdown**: {max_dd:.2f}%\n"
             f"- **Profit Factor**: {profit_factor:.2f}\n"
             f"- **Sharpe Ratio**: {sharpe:.2f}\n"
-            f"- **Task ID**: `{celery_task.id}`\n\n"
+            f"- **Task ID**: `{celery_task.id}`"
+            f"{memory_status_note}\n\n"
+            f"{autopilot_guidance}"
+            f"{diagnostics_text}\n\n"
             f"**Recommendation**: If this strategy demonstrates strong risk-adjusted returns, "
-            f"consider saving it using `save_strategy` or recording insights with `store_agent_memory`."
+            f"consider saving it using `save_strategy` or inspecting learned rules via `search_agent_memory`."
         )
 
     except Exception as e:
@@ -1026,8 +1642,18 @@ async def tool_search_agent_memory(
         limit=min(limit, 25),
     )
 
+    unique_tags = await crud.get_unique_agent_tags(db=db, user_id=user.id)
+    tags_pool_text = ""
+    if unique_tags:
+        tags_str = ", ".join(f"`{t}`" for t in unique_tags)
+        tags_pool_text = (
+            f"\n\n---\n**Available Database Tags ({len(unique_tags)} in user memory bank):**\n"
+            f"{tags_str}\n\n"
+            f"*Tagging Rule: When running backtests via `run_backtest` or storing insights via `store_agent_memory`, pick 1 to 4 tags from this pool to maintain consistency. Create a new snake_case tag only if no existing tag fits.*"
+        )
+
     if not memories:
-        return "No agent memories or rules matched your criteria."
+        return f"No agent memories or rules matched your criteria.{tags_pool_text}"
 
     lines = [f"### Agent Knowledge & Historical Insights ({len(memories)} found):"]
     for m in memories:
@@ -1039,6 +1665,9 @@ async def tool_search_agent_memory(
         if tags_str:
             lines.append(f"*{tags_str}*")
         lines.append(f"{m.content}")
+
+    if tags_pool_text:
+        lines.append(tags_pool_text)
 
     return "\n".join(lines)
 
@@ -1057,13 +1686,27 @@ async def tool_store_agent_memory(
     if user is None or db is None:
         return "Error: Database session and authenticated user required."
 
+    # Clean, normalize and deduplicate tags (lowercase, stripped, non-empty)
+    cleaned_tags = list(
+        dict.fromkeys(
+            t.strip().lower() for t in tags if t and isinstance(t, str) and t.strip()
+        )
+    )
+    clean_symbol = (
+        symbol.strip().upper()
+        if symbol and isinstance(symbol, str) and symbol.strip()
+        else None
+    )
+    clean_strat_type = strategy_type.strip().lower()
+    clean_outcome = outcome.strip().lower()
+
     memory_data = schemas.AgentMemoryCreate(
         content=content.strip(),
-        strategy_type=strategy_type.strip().lower(),
-        tags=[t.strip().lower() for t in tags],
-        outcome=outcome.strip().lower(),
+        strategy_type=clean_strat_type,
+        tags=cleaned_tags,
+        outcome=clean_outcome,
         confidence=max(0.1, min(1.0, confidence)),
-        symbol=symbol.strip().upper() if symbol else None,
+        symbol=clean_symbol,
         memory_type="strategy_insight",
         relevance_score=1.0,
     )
@@ -1073,13 +1716,27 @@ async def tool_store_agent_memory(
     )
     await db.commit()
 
+    # Trigger background rule synthesis (exactly like platform autopilot)
+    try:
+        from api.agent_autopilot import run_rule_synthesis
+
+        asyncio.create_task(run_rule_synthesis(user.id, clean_strat_type))
+    except Exception as e:
+        logger.debug(f"Rule synthesis trigger skipped: {e}")
+
+    # Fetch updated unique tags to return in response
+    updated_tags = await crud.get_unique_agent_tags(db=db, user_id=user.id)
+    tags_pool_str = ", ".join(f"`{t}`" for t in updated_tags)
+
     return (
         f"✅ Insight saved to persistent memory bank!\n"
         f"- **ID**: `{saved.id}`\n"
-        f"- **Category**: {saved.strategy_type}\n"
-        f"- **Outcome**: {saved.outcome}\n"
-        f"- **Tags**: {', '.join(saved.tags or [])}\n"
-        f"This knowledge will be used by DepthSight agents during subsequent strategy generations."
+        f"- **Category**: `{saved.strategy_type}`\n"
+        f"- **Symbol**: `{saved.symbol or 'General'}`\n"
+        f"- **Outcome**: `{saved.outcome}`\n"
+        f"- **Tags**: {', '.join(f'`{t}`' for t in saved.tags or [])}\n\n"
+        f"**Active Tag Pool ({len(updated_tags)} tags):** {tags_pool_str}\n"
+        f"*(Background rule synthesis automatically checks for new rules when 3+ insights exist for {clean_strat_type})*"
     )
 
 
@@ -1338,6 +1995,12 @@ async def execute_tool(
             return "Error: 'symbol' argument is required."
         return await tool_get_market_metrics(symbol=arguments["symbol"])
 
+    elif name == "get_historical_data_range":
+        return await tool_get_historical_data_range(
+            symbol=arguments.get("symbol"),
+            redis_client=redis_client,
+        )
+
     elif name == "run_backtest":
         return await tool_run_backtest(
             symbol=arguments.get("symbol", ""),
@@ -1347,8 +2010,12 @@ async def execute_tool(
             timeframe=arguments.get("timeframe", "15m"),
             engine=arguments.get("engine", "vector"),
             strategy_name=arguments.get("strategy_name"),
+            strategy_type=arguments.get("strategy_type"),
+            tags=arguments.get("tags"),
+            reasoning=arguments.get("reasoning"),
             user=user,
             redis_client=redis_client,
+            db=db,
         )
 
     elif name == "list_strategies":

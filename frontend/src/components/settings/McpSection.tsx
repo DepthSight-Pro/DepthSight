@@ -66,6 +66,11 @@ const MCP_TOOLS: McpToolInfo[] = [
 		category: "market",
 	},
 	{
+		name: "get_historical_data_range",
+		description: "Checks loaded historical market data, start/end date boundaries, timeframes, and bookDepth coverage.",
+		category: "market",
+	},
+	{
 		name: "list_strategies",
 		description: "Lists all saved strategies belonging to the user's DepthSight account.",
 		category: "strategy",
@@ -124,10 +129,9 @@ export const McpSection: React.FC = () => {
 	const sseUrl = `${origin}/api/v1/mcp/sse`;
 	const httpUrl = `${origin}/api/v1/mcp`;
 
-	const sessionToken = typeof window !== "undefined" ? (localStorage.getItem("authToken") || localStorage.getItem("access_token") || "") : "";
-	// Prefer newly generated PAT, then first active token prefix hint, fallback to session token
-	const effectiveToken = justCreatedToken || (patTokens.length > 0 ? `${patTokens[0].token_prefix}...` : sessionToken);
-	const universalUrl = `${sseUrl}?token=${justCreatedToken || (patTokens.length > 0 ? (patTokens[0].token_prefix + "...") : (sessionToken || "YOUR_PAT_TOKEN"))}`;
+	const universalUrl = justCreatedToken
+		? `${sseUrl}?token=${justCreatedToken}`
+		: `${sseUrl}?token=YOUR_PAT_TOKEN`;
 
 	const copyToClipboard = (text: string, key: string) => {
 		navigator.clipboard.writeText(text);
@@ -216,7 +220,7 @@ export const McpSection: React.FC = () => {
 		}
 	};
 
-	const displayTokenForSnippet = justCreatedToken || (patTokens.length > 0 ? "<YOUR_PAT_TOKEN>" : sessionToken || "<YOUR_PAT_TOKEN>");
+	const displayTokenForSnippet = justCreatedToken || "<YOUR_PAT_TOKEN>";
 
 	const claudeConfig = JSON.stringify(
 		{
@@ -417,15 +421,26 @@ print("Metrics:", metrics.json()["result"]["content"][0]["text"])
 										{t("settings:mcp.tokenGenerated", "New Token Generated Successfully!")}
 									</span>
 								</div>
-								<Button
-									variant="default"
-									size="sm"
-									className="bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5 h-8 text-xs font-medium"
-									onClick={() => copyToClipboard(justCreatedToken, "New PAT Token")}
-								>
-									{copiedKey === "New PAT Token" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-									{t("settings:mcp.copyToken", "Copy Token")}
-								</Button>
+								<div className="flex items-center gap-2">
+									<Button
+										variant="outline"
+										size="sm"
+										className="h-8 text-xs font-medium border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 gap-1.5"
+										onClick={() => copyToClipboard(`${sseUrl}?token=${justCreatedToken}`, "New PAT URL")}
+									>
+										{copiedKey === "New PAT URL" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+										{t("settings:mcp.copyFullUrl", "Copy Full URL for Codex/Claude")}
+									</Button>
+									<Button
+										variant="default"
+										size="sm"
+										className="bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5 h-8 text-xs font-medium"
+										onClick={() => copyToClipboard(justCreatedToken, "New PAT Token")}
+									>
+										{copiedKey === "New PAT Token" ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+										{t("settings:mcp.copyToken", "Copy Token Only")}
+									</Button>
+								</div>
 							</div>
 							<p className="text-xs text-muted-foreground">
 								⚠️ {t("settings:mcp.tokenCopyWarning", "Make sure to copy your Personal Access Token now. You won't be able to see it again!")}

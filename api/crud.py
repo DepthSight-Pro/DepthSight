@@ -3849,6 +3849,30 @@ async def deduplicate_user_memories(db: AsyncSession, user_id: int) -> int:
     return deleted_count
 
 
+async def get_unique_agent_tags(db: AsyncSession, user_id: int) -> List[str]:
+    """
+    Retrieves all unique, normalized (lowercase) tags from the user's active agent memories.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(models.AgentMemory.tags)
+        .where(models.AgentMemory.user_id == user_id)
+        .where(
+            (models.AgentMemory.expires_at.is_(None))
+            | (models.AgentMemory.expires_at > now)
+        )
+    )
+    result = await db.execute(stmt)
+    all_tags_rows = result.scalars().all()
+    unique_tags = set()
+    for row in all_tags_rows:
+        if row and isinstance(row, list):
+            for t in row:
+                if isinstance(t, str) and t.strip():
+                    unique_tags.add(t.strip().lower())
+    return sorted(list(unique_tags))
+
+
 async def get_chat_history(
     db: AsyncSession, user_id: int, session_id: str, limit: int = 50
 ) -> List[models.AIChatMessage]:
@@ -4495,7 +4519,9 @@ async def create_personal_access_token(
 
     expires_at = None
     if token_create.expires_days and token_create.expires_days > 0:
-        expires_at = datetime.now(timezone.utc) + timedelta(days=token_create.expires_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=token_create.expires_days
+        )
 
     db_pat = models.PersonalAccessToken(
         user_id=user_id,
@@ -4539,9 +4565,7 @@ async def delete_personal_access_token(
     return True
 
 
-async def get_user_by_pat(
-    db: AsyncSession, token_str: str
-) -> Optional[models.User]:
+async def get_user_by_pat(db: AsyncSession, token_str: str) -> Optional[models.User]:
     """Resolves User from a raw PAT string (verifying SHA-256 hash and expiration)."""
     import hashlib
     from datetime import datetime, timezone
