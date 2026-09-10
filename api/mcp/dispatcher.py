@@ -257,7 +257,7 @@ class MCPDispatcher:
                         req_id, INVALID_PARAMS, "Missing 'uri' parameter."
                     )
 
-                content_text = await self._read_resource(uri)
+                content_text = await self._read_resource(uri, redis_client=redis_client)
                 if content_text is None:
                     return make_error_response(
                         req_id, INVALID_PARAMS, f"Resource not found: {uri}"
@@ -328,7 +328,9 @@ class MCPDispatcher:
                 req_id, INTERNAL_ERROR, f"Internal error: {str(e)}"
             )
 
-    async def _read_resource(self, uri: str) -> Optional[str]:
+    async def _read_resource(
+        self, uri: str, redis_client: Optional[Any] = None
+    ) -> Optional[str]:
         """Loads resource content on-demand."""
         if uri == "depthsight://docs/strategy_schema.json":
             return await tool_get_strategy_schema_and_examples(category="blocks")
@@ -343,7 +345,7 @@ class MCPDispatcher:
         elif uri == "depthsight://docs/allowed_blocks.md":
             return await tool_get_strategy_schema_and_examples(category="allowed_types")
         elif uri == "depthsight://docs/available_history.md":
-            return await tool_get_historical_data_range()
+            return await tool_get_historical_data_range(redis_client=redis_client)
         return None
 
     async def _generate_system_prompt(

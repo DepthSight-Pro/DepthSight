@@ -397,6 +397,7 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
 _CODEBASE_CONTEXT_CACHE: Optional[Dict[str, str]] = None
 _MCP_SESSION_STATE: Dict[str, dict] = {}
 
+
 def get_cached_codebase_context() -> Dict[str, str]:
     """Extracts and caches code blocks marked with # AI_CONTEXT_START / END
     from api/schemas.py and bot_module/strategy.py.
@@ -1465,48 +1466,65 @@ async def tool_run_backtest(
         )
 
         status_emoji = "✅" if pnl > 0 else "⚠️"
-        
+
         # Stateful MCP guidance for LLM
         global _MCP_SESSION_STATE
         session_key = f"{user.id}:{clean_symbol}:{strat_type}"
         state = _MCP_SESSION_STATE.get(session_key)
-        
+
         if state is None:
-            state = {"best_pnl": -999999.0, "best_config": None, "failures": 0, "iterations": 0}
+            state = {
+                "best_pnl": -999999.0,
+                "best_config": None,
+                "failures": 0,
+                "iterations": 0,
+            }
             _MCP_SESSION_STATE[session_key] = state
-            
+
         state["iterations"] += 1
-        
-        if pnl > state["best_pnl"]:
+
+        if pnl > state["best_pnl"] and pnl > 0.0:
             state["best_pnl"] = pnl
             state["best_config"] = strategy_config
             state["failures"] = 0
-            
+
             autopilot_guidance = (
-                f"💡 **Quant Autopilot Guidance (NEW BEST BASELINE)**:\n"
-                f"- **Result**: This is your best variant so far in this session (PnL: {pnl:+.2f}%).\n"
-                f"- **Next Step**: Adopt this configuration as your new Baseline.\n"
-                f"- **Rule**: Make ONLY ONE mathematical mutation at a time to optimize it further."
+                f"### 🧭 Quant Autopilot Guidance (Best Baseline Candidate):\n"
+                f"- **Strategy**: `{run_name}`\n"
+                f"- **Evolutionary Step**: This strategy produced positive alpha (PnL {pnl:+.2f}%). "
+                f"Adopt this configuration as your current **Baseline Candidate** (New Best Baseline!).\n"
+                f"- **Strict Mutex Rule**: In your next iteration, change or tune **AT MOST ONE** parameter or rule block "
+                f"(e.g., adjust NATR threshold or tighten take-profit). Do NOT rewrite the entire configuration, as this destroys alpha attribution.\n"
+                f"- **Continuous Evolution**: Continue iterating until Sharpe > 1.5 and Profit Factor > 1.8."
             )
         else:
             state["failures"] += 1
+            best_config_str = (
+                f"\n- **Best Baseline Config to Revert To**:\n```json\n{json.dumps(state['best_config'], indent=2)}\n```\n"
+                if state.get("best_config")
+                else ""
+            )
             if state["failures"] >= 3:
                 autopilot_guidance = (
-                    f"💡 **Quant Autopilot Guidance (EXHAUSTED - PARADIGM PIVOT)**:\n"
-                    f"- **Result**: You failed to improve the baseline 3 times in a row. You are stuck in a local minimum.\n"
-                    f"- **Action**: DISCARD this strategy architecture entirely. Pivot to a new archetype (e.g. mean_reversion, trend_following, etc).\n"
+                    f"### 🧭 Quant Autopilot Guidance (Patience Limit = 3 & Paradigm Pivot):\n"
+                    f"- **Current Variant**: Degraded return (PnL {pnl:+.2f}% vs Best: {state['best_pnl']:+.2f}%).\n"
+                    f"- **Patience Limit = 3 Exceeded**: You failed to improve the baseline 3 times in a row ({state['failures']}/3). You are stuck in a local minimum.\n"
+                    f"- **Action**: **DISCARD this strategy architecture entirely** and pivot to a fundamentally different paradigm "
+                    f"(e.g., from breakout to mean reversion or market microstructure).\n"
+                    f"- **Learn from Failure**: Inspect the failure memory above to avoid repeating invalid filter combinations."
                 )
                 # Reset state so new paradigm starts fresh
                 state["best_pnl"] = -999999.0
                 state["failures"] = 0
             else:
-                best_config_str = json.dumps(state["best_config"], indent=2)
                 autopilot_guidance = (
-                    f"💡 **Quant Autopilot Guidance (DEGRADATION - BACKTRACK REQUIRED)**:\n"
-                    f"- **Result**: This mutation degraded performance (PnL: {pnl:+.2f}% vs Best: {state['best_pnl']:+.2f}%).\n"
-                    f"- **Action**: You MUST revert to your best baseline. Do NOT use the variant you just generated.\n"
-                    f"- **Best Config**: Here is the exact JSON of your best variant. Use this as your baseline for the next mutation:\n"
-                    f"```json\n{best_config_str}\n```"
+                    f"### 🧭 Quant Autopilot Guidance (Patience Limit = 3 & Paradigm Pivot):\n"
+                    f"- **Current Variant**: Degraded return (PnL {pnl:+.2f}% vs Best: {state['best_pnl']:+.2f}%).\n"
+                    f"- **Backtracking Instruction**: Immediately **REVERT** to your last known profitable Baseline Candidate. Do NOT use the variant you just generated.{best_config_str}"
+                    f"- **Patience Limit = 3**: Consecutive failures: {state['failures']}/3. If you reach 3 consecutive failures on `{clean_symbol}`, "
+                    f"the `{strat_type}` hypothesis is exhausted for this regime. **DISCARD this strategy architecture entirely** "
+                    f"and pivot to a fundamentally different paradigm (e.g., from breakout to mean reversion or market microstructure).\n"
+                    f"- **Learn from Failure**: Inspect the failure memory above to avoid repeating invalid filter combinations."
                 )
 
         return (
