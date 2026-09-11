@@ -813,30 +813,11 @@ async def get_data_pipeline_storage_info(
     force_refresh: bool = Query(False, description="Force disk rescan"),
     redis_client: redis.Redis = Depends(get_redis_client),
 ):
-    import asyncio
-    import json
+    from api.mcp.tools import get_storage_symbols_info
 
-    cache_key = "depthsight:admin:storage_info"
-    if not force_refresh:
-        cached_data = await redis_client.get(cache_key)
-        if cached_data:
-            try:
-                symbols_data = json.loads(cached_data)
-                return {"data": {"symbols": symbols_data}, "symbols": symbols_data}
-            except Exception:
-                pass
-
-    project_root = Path(__file__).parent.parent.parent.resolve()
-    base_path = project_root / "data_storage" / "binance" / "futures"
-
-    symbols_data = await asyncio.to_thread(_scan_storage_sync, base_path)
-
-    # Cache for 10 minutes
-    try:
-        await redis_client.set(cache_key, json.dumps(symbols_data), ex=600)
-    except Exception:
-        pass
-
+    symbols_data = await get_storage_symbols_info(
+        redis_client=redis_client, force_refresh=force_refresh
+    )
     return {"data": {"symbols": symbols_data}, "symbols": symbols_data}
 
 

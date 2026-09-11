@@ -37,6 +37,7 @@ import type {
 	GeneticSearchRunDetailsData,
 	GeneticSearchRunListItemData,
 	GeneticSearchRunRequest,
+	HistoricalRangeItem,
 	HubMiningConfig,
 	HubMiningConfigUpdate,
 	ImpersonateToken,
@@ -259,6 +260,41 @@ export const useDeduplicateAgentMemories = () => {
 			}),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: authScopedQueryKey("agentMemories") });
+		},
+	});
+};
+
+export const useUpdateCommunityMemorySharing = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ share_community_memories: boolean; message: string; promoted_count?: number }, Error, boolean>({
+		mutationFn: (enabled: boolean) =>
+			apiClient<{ share_community_memories: boolean; message: string; promoted_count?: number }>(
+				"/ai/memories/community-sharing",
+				{
+					method: "PUT",
+					body: JSON.stringify({ enabled }),
+				}
+			),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: authScopedQueryKey("agentMemories") });
+			void queryClient.invalidateQueries({ queryKey: ["currentUser"] });
+		},
+	});
+};
+
+export const useShareAgentMemory = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ status: string; community_memory_id: string; message: string }, Error, string>({
+		mutationFn: (memoryId: string) =>
+			apiClient<{ status: string; community_memory_id: string; message: string }>(
+				`/ai/memories/${memoryId}/share`,
+				{
+					method: "POST",
+				}
+			),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: authScopedQueryKey("agentMemories") });
+			void queryClient.invalidateQueries({ queryKey: ["currentUser"] });
 		},
 	});
 };
@@ -1460,6 +1496,19 @@ export const useRunBacktest = () => {
 		},
 	});
 };
+
+export const useHistoricalRanges = (symbol?: string) => {
+	return useQuery<HistoricalRangeItem[]>({
+		queryKey: ["historicalRanges", symbol],
+		queryFn: () => {
+			const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+			return apiClient<HistoricalRangeItem[]>(`/backtests/historical-ranges${query}`);
+		},
+		staleTime: 24 * 60 * 60 * 1000, // 24 hours
+		gcTime: 24 * 60 * 60 * 1000,
+	});
+};
+
 export const useEmergencyStop = () => {
 	const queryClient = useQueryClient();
 	const { toast } = useToast();

@@ -348,6 +348,22 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`):
 4. **Wide Stop Loss:** Your `sl_value` MUST be wide enough to allow ALL safety/grid orders to execute.
 5. **Liquidation Check:** Add to `unsupported_features`: "Recommendation: Check the Liquidation Calculator."
 
+# DIVERSITY & EXPERIMENTATION PROTOCOL (CRITICAL FOR SUCCESS)
+When generating or mutating strategies, do NOT generate repetitive or boilerplate configurations. Actively explore diverse structures:
+1. **Trade Frequency Balance (Target >= 20 trades):**
+   - A strategy MUST achieve enough trades over the backtest period (target at least 20 trades) for statistical significance.
+   - Do NOT over-constrain with too many stacked `AND` filters. If a previous run had too few trades, LOOSEN the filters, decrease indicator period thresholds, or lower `min_foundation_weight_threshold` (e.g. to 30-40).
+2. **Structural Variety Across Iterations:**
+   - **Foundations:** Vary between breakout setups (`value_comparison` on close vs level), momentum/trend setups (`trend_filter`, `price_action_analyzer`), and squeeze/reversion setups (`volatility_squeeze`, `return_to_level`, `classic_pattern`).
+   - **Filters:** Do not use identical filter sets. Alternate between `volatility_filter` (natr), `rel_vol_filter` (volume spikes), `trend_filter` (ADX/EMA), or run without filters if signals are high-quality.
+   - **Position & Risk Management:**
+     * Vary stop-loss types: test tight ATR stops (`sl_type: "atr_multiplier"`, 1.0-2.5) with multi-stage `partial_exits` (3-4 targets) vs percent stops (`sl_type: "percent_from_price"`) with trailing stops.
+     * Vary Risk-to-Reward: test R:R ratios between 1:2 and 1:4.
+     * Vary indicator parameters (lookbacks 7, 14, 21; multipliers 1.5, 2.0, 3.0).
+3. **Inspiration from Historical Configurations:**
+   - When top-performing historical configurations are provided under `# MEMORIES & RULES`, study what made them profitable (e.g., indicator choice, weight distribution, exit structure).
+   - DO NOT copy them verbatim. Adapt and mutate their core mechanics while testing different parameters or complementary filters.
+
 # CRITICAL RULES (NON-NEGOTIABLE)
 0. **WEIGHTED "OR" IS THE GOAL:** Your primary goal is a weighted `entryConditions` block with a root `OR` node.
 1. **STRICT TYPE VALIDATION:** Use ONLY types from the ALLOWED TYPES list. Copy-paste EXACTLY (case-sensitive!). DO NOT invent new types.

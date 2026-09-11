@@ -23,13 +23,26 @@ def upgrade() -> None:
     op.create_table(
         "personal_access_tokens",
         sa.Column("id", sa.Integer(), primary_key=True, index=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False, index=True),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id"),
+            nullable=False,
+            index=True,
+        ),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("token_prefix", sa.String(length=16), nullable=False),
-        sa.Column("token_hash", sa.String(length=64), unique=True, nullable=False, index=True),
+        sa.Column(
+            "token_hash", sa.String(length=64), unique=True, nullable=False, index=True
+        ),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=True,
+        ),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
     )
 

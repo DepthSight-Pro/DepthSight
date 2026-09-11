@@ -3475,3 +3475,173 @@ async def designate_operator_node(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to designate operator node.",
         )
+
+
+# --- Community Shared Memory Sync Endpoints ---
+
+
+@router.get("/memory/community")
+async def get_community_memories(
+    symbol: Optional[str] = None,
+    strategy_type: Optional[str] = None,
+    since: Optional[str] = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns anonymized community shared memories for federated nodes.
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(models.AgentMemory)
+        .where(models.AgentMemory.visibility == "community")
+        .where(
+            (models.AgentMemory.expires_at.is_(None))
+            | (models.AgentMemory.expires_at > now)
+        )
+    )
+    if symbol:
+        stmt = stmt.where(
+            (models.AgentMemory.symbol == symbol.upper())
+            | (models.AgentMemory.symbol.is_(None))
+            | (models.AgentMemory.memory_type == "rule")
+        )
+    if strategy_type:
+        stmt = stmt.where(
+            (models.AgentMemory.strategy_type == strategy_type.lower())
+            | (models.AgentMemory.strategy_type.is_(None))
+        )
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            stmt = stmt.where(models.AgentMemory.created_at >= since_dt)
+        except Exception:
+            pass
+
+    stmt = stmt.order_by(
+        models.AgentMemory.community_confirmations.desc(),
+        models.AgentMemory.relevance_score.desc(),
+        models.AgentMemory.created_at.desc(),
+    ).limit(min(limit, 100))
+
+    result = await db.execute(stmt)
+    memories = result.scalars().all()
+
+    items = []
+    for m in memories:
+        items.append(
+            {
+                "id": m.id,
+                "memory_type": m.memory_type,
+                "content": m.content,
+                "tags": m.tags or [],
+                "symbol": m.symbol,
+                "strategy_type": m.strategy_type,
+                "outcome": m.outcome,
+                "confidence": m.confidence,
+                "config_hash": m.config_hash,
+                "community_confirmations": m.community_confirmations,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+        )
+    return {"data": items, "count": len(items)}
+
+
+@router.post("/memory/community/contribute", status_code=status.HTTP_201_CREATED)
+async def contribute_community_memories(
+    request: Request,
+    payload: List[schemas.CommunityMemoryContribute],
+    x_node_uuid: Optional[str] = Header(None, alias="X-Node-UUID"),
+    x_node_secret: Optional[str] = Header(None, alias="X-Node-Secret"),
+    x_node_signature: Optional[str] = Header(None, alias="X-Node-Signature"),
+    x_timestamp: Optional[str] = Header(None, alias="X-Timestamp"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Submits verified backtest memories from a node to the Hub's community pool.
+    """
+    body_bytes = await request.body()
+    auth_node = await _verify_node_signature(
+        db,
+        x_node_uuid,
+        x_node_secret,
+        x_node_signature,
+        body_bytes,
+        x_timestamp=x_timestamp,
+    )
+
+    import re
+    from datetime import datetime, timezone, timedelta
+
+    accepted = 0
+    confirmed = 0
+
+    for item in payload:
+        # Hub quality gate check: trades >= 30, days >= 28, outcome == 'success'
+        if item.outcome != "success":
+            continue
+
+        content = item.content or ""
+        trades_match = re.search(r"trades[=:\s]+(\d+)", content, re.IGNORECASE)
+        trades_count = int(trades_match.group(1)) if trades_match else 0
+
+        days_match = re.search(r"days[=:\s]+(\d+)", content, re.IGNORECASE)
+        backtest_days = int(days_match.group(1)) if days_match else 0
+
+        if backtest_days == 0 and trades_count >= 30:
+            backtest_days = 30
+
+        if trades_count < 30 or backtest_days < 28:
+            continue
+
+        # Dedup / confirm check
+        if item.config_hash:
+            comm_stmt = select(models.AgentMemory).where(
+                models.AgentMemory.visibility == "community",
+                models.AgentMemory.config_hash == item.config_hash,
+            )
+            comm_res = await db.execute(comm_stmt)
+            existing = comm_res.scalars().first()
+            if existing:
+                existing.community_confirmations = (
+                    existing.community_confirmations or 0
+                ) + 1
+                existing.confidence = min(1.0, (existing.confidence or 0.8) + 0.05)
+                confirmed += 1
+                continue
+
+        # Anonymize: ensure config is removed
+        anonymized_content = content
+        config_idx = anonymized_content.find(". Config: ")
+        if config_idx != -1:
+            anonymized_content = anonymized_content[:config_idx]
+
+        new_mem = models.AgentMemory(
+            user_id=1,  # System/Hub owner user
+            memory_type=item.memory_type,
+            content=anonymized_content,
+            relevance_score=1.0,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=180),
+            tags=item.tags or [],
+            symbol=item.symbol,
+            strategy_type=item.strategy_type,
+            outcome=item.outcome,
+            confidence=item.confidence,
+            validated_count=1,
+            config_hash=item.config_hash,
+            visibility="community",
+            source_node_uuid=auth_node.node_uuid,
+            author_user_id=None,
+            community_confirmations=1,
+        )
+        db.add(new_mem)
+        accepted += 1
+
+    await db.commit()
+    return {
+        "status": "success",
+        "accepted": accepted,
+        "confirmed": confirmed,
+    }

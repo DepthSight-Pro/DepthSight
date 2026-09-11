@@ -656,73 +656,122 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 								</div>
 							)}
 						</div>
-						<div className="p-4 border-t flex flex-col space-y-2 shrink-0 bg-background">
+						{/* Bottom Chat Input Form */}
+						<div className="p-4 border-t border-border flex flex-col space-y-2 shrink-0 bg-background">
+							{/* Image Preview (attached above textarea) */}
 							{selectedImage && (
-								<div className="flex items-center gap-2 mb-2 p-2 bg-muted/50 rounded-md relative group max-w-fit">
-									<img
-										src={getImageSrc(selectedImage.base64, selectedImage.type)}
-										className="h-16 w-24 object-cover rounded border border-border shadow-sm"
-										alt="Preview"
-									/>
-									<Button
-										variant="destructive"
-										size="icon"
-										className="absolute -top-2 -right-2 h-5 w-5 rounded-full shadow-md"
-										onClick={removeSelectedImage}
-									>
-										<X className="h-3 w-3" />
-									</Button>
+								<div className="flex items-center gap-2 border border-border rounded-xl p-2 bg-muted/40 max-w-fit animate-in fade-in">
+									<div className="relative group">
+										<img
+											src={getImageSrc(selectedImage.base64, selectedImage.type)}
+											className="h-16 w-24 object-cover rounded-lg border border-border shadow-sm"
+											alt="Chart preview"
+										/>
+										<button
+											onClick={removeSelectedImage}
+											className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full h-5 w-5 flex items-center justify-center shadow-md hover:bg-destructive/90 transition cursor-pointer"
+											type="button"
+											title="Remove image"
+										>
+											<X className="h-3 w-3" />
+										</button>
+									</div>
+									<div className="text-xs text-muted-foreground pr-2">
+										<p className="font-medium text-foreground">
+											{t("ai_assistant.chartAttached", "Chart screenshot attached")}
+										</p>
+										<p className="text-[10px]">
+											{t("ai_assistant.chartAttachedDesc", "Will be sent and analyzed with your message")}
+										</p>
+									</div>
 								</div>
 							)}
-							<p className="text-[10px] text-muted-foreground/60 text-center leading-tight mb-1 px-2">
-								{t("ai.disclaimer", { ns: "strategy-editor" })}
-							</p>
-							<div className="flex w-full items-center space-x-2">
-								<input
-									type="file"
-									accept="image/*"
-									className="hidden"
-									ref={fileInputRef}
-									onChange={handleFileChange}
-								/>
-								<Button
-									variant="ghost"
-									size="icon"
-									onClick={handleClear}
-									title={t("ai_assistant.newChat")}
-									disabled={isTyping}
-								>
-									<Trash2 className="h-4 w-4" />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon"
-									onClick={() => fileInputRef.current?.click()}
-									title={t("ai_assistant.uploadImage", "Upload chart screenshot")}
-									disabled={isTyping}
-								>
-									<Paperclip className="h-4 w-4" />
-								</Button>
-								<Textarea
+
+							{/* Classic Multi-line Chat Textarea */}
+							<div className="relative rounded-2xl border border-border bg-background/90 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 shadow-lg transition-all">
+								<textarea
+									id="copilot-prompt-input"
 									value={input}
 									onChange={(e) => setInput(e.target.value)}
-									placeholder={t("ai_assistant.placeholder")}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" && !e.shiftKey) {
 											e.preventDefault();
-											handleSend();
+											if (!isTyping && (input.trim() || selectedImage)) {
+												handleSend();
+											}
 										}
 									}}
+									onPaste={handlePaste}
 									disabled={isTyping}
-									rows={1}
+									rows={2}
+									placeholder={t(
+										"ai_assistant.placeholderWithHint",
+										"Message AI Co-Pilot (Enter to send, Shift+Enter for new line)...",
+									)}
+									className="w-full bg-transparent px-3.5 pt-3 pb-11 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none resize-none disabled:opacity-50 scrollbar-thin"
 								/>
-								<Button
-									onClick={() => handleSend()}
-									disabled={isTyping || (!input.trim() && !selectedImage)}
-								>
-									<Send className="h-4" />
-								</Button>
+
+								<div className="absolute bottom-2 left-3 right-3 flex items-center justify-between pointer-events-none">
+									<div className="flex items-center gap-1.5 pointer-events-auto">
+										<input
+											type="file"
+											accept="image/*"
+											className="hidden"
+											ref={fileInputRef}
+											onChange={handleFileChange}
+										/>
+										<button
+											type="button"
+											onClick={handleClear}
+											disabled={isTyping}
+											className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/40 transition disabled:opacity-50 flex items-center gap-1 text-xs cursor-pointer"
+											title={t("ai_assistant.newChat", "Start new chat")}
+										>
+											<Trash2 className="w-3.5 h-3.5" />
+											<span className="text-[10px] hidden sm:inline">
+												{t("ai_assistant.clear", "Clear")}
+											</span>
+										</button>
+										<button
+											type="button"
+											onClick={() => fileInputRef.current?.click()}
+											disabled={isTyping}
+											className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition disabled:opacity-50 flex items-center gap-1 text-xs cursor-pointer"
+											title={t("ai_assistant.uploadImage", "Upload chart screenshot")}
+										>
+											<Paperclip className="w-3.5 h-3.5" />
+											<span className="text-[10px] hidden sm:inline">
+												{t("ai_assistant.attachChart", "Attach Chart")}
+											</span>
+										</button>
+									</div>
+
+									<div className="flex items-center gap-2 pointer-events-auto">
+										<button
+											type="button"
+											onClick={() => handleSend()}
+											disabled={isTyping || (!input.trim() && !selectedImage)}
+											className="bg-primary hover:bg-primary/90 text-white rounded-xl px-4 py-1.5 flex items-center gap-1.5 text-xs font-semibold shadow-md shadow-primary/20 transition disabled:opacity-40 cursor-pointer"
+										>
+											{isTyping ? (
+												<>
+													<Loader2 className="w-3.5 h-3.5 animate-spin" />
+													<span>{t("ai_assistant.analyzing", "Analyzing...")}</span>
+												</>
+											) : (
+												<>
+													<Send className="w-3.5 h-3.5" />
+													<span>{t("ai_assistant.send", "Send")}</span>
+												</>
+											)}
+										</button>
+									</div>
+								</div>
 							</div>
+
+							<p className="text-[10px] text-muted-foreground/60 text-center leading-tight mb-0.5 px-2">
+								{t("ai.disclaimer", { ns: "strategy-editor" })}
+							</p>
 						</div>
 					</>
 				)}

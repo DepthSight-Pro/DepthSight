@@ -7,10 +7,11 @@ import json
 import os
 import re
 from datetime import datetime, timezone, timedelta
+from typing import Optional, Dict, Any
 from fastapi import WebSocket
 
 from api.database import async_session_factory
-from api import crud, schemas, ai_assistant
+from api import crud, models, schemas, ai_assistant
 from api.ai_assistant import _generate_json_response
 
 logger = logging.getLogger(__name__)
@@ -63,23 +64,46 @@ def guess_symbol_from_prompt(prompt: str, default: str = "BTCUSDT") -> str:
     return ""
 
 
-async def resolve_symbol_with_llm(user_prompt: str, default: str = "BTCUSDT") -> str:
+async def resolve_symbol_with_llm(
+    user_prompt: str,
+    available_symbols: Optional[list[str]] = None,
+    default: str = "BTCUSDT",
+) -> str:
     """Resolves target trading asset from prompt. Fast-tracks explicit tickers,
     and delegates any ambiguous, slang, or translated names (like 'биток', 'эфир') to the LLM."""
     # 1. Fast regex lookup for explicit tickers
     fast_match = guess_symbol_from_prompt(user_prompt, default="")
     if fast_match:
+        if available_symbols and fast_match not in available_symbols:
+            # Check if stripped match or prefix exists in storage
+            matched = next(
+                (
+                    s
+                    for s in available_symbols
+                    if s == fast_match or s.startswith(fast_match.replace("USDT", ""))
+                ),
+                None,
+            )
+            if matched:
+                return matched
         return fast_match
 
     # 2. LLM resolution for translation / slang / context matching
+    avail_str = (
+        f" Currently loaded symbols in DepthSight storage: {', '.join(available_symbols[:35])}."
+        if available_symbols
+        else ""
+    )
     try:
         raw = await _generate_json_response(
             system_prompt=(
                 "You are an expert crypto trading assistant. "
+                f"{avail_str} "
                 "Identify the target cryptocurrency from the user prompt and return ONLY a JSON object: "
                 '{"symbol": "<BASE>USDT"} where <BASE> is the standard Binance ticker symbol. '
                 "Examples: 'биток' -> BTCUSDT, 'эфир' -> ETHUSDT, 'солана' -> SOLUSDT, 'dogecoin' -> DOGEUSDT. "
-                "If the asset is completely ambiguous or not specified, default to BTCUSDT."
+                "Whenever possible, choose an asset from the available loaded symbols list above. "
+                f"If the asset is completely ambiguous or not specified, default to {default}."
             ),
             user_prompt=f"Identify the symbol from this prompt: '{user_prompt}'",
             max_output_tokens=60,
@@ -96,6 +120,42 @@ async def resolve_symbol_with_llm(user_prompt: str, default: str = "BTCUSDT") ->
         )
 
     return default
+
+
+def _extract_pnl(content: str) -> float:
+    """Extracts PnL percentage from memory content string (e.g. 'PnL=12.34%' or 'PnL: 12.34%')."""
+    match = re.search(r"PnL[=:]\s*([-\d.]+)", content)
+    if match:
+        try:
+            return float(match.group(1))
+        except ValueError:
+            pass
+    return 0.0
+
+
+def _extract_config(content: str) -> Optional[Dict[str, Any]]:
+    """Extracts strategy configuration dictionary from memory content string.
+    Supports both standard JSON formatting and Python dictionary string representations.
+    """
+    match = re.search(r"Config:\s*(\{.*\})", content, re.DOTALL)
+    if not match:
+        return None
+    raw_str = match.group(1).strip()
+    try:
+        data = json.loads(raw_str)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    try:
+        import ast
+
+        data = ast.literal_eval(raw_str)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return None
 
 
 async def tag_strategy_insight(
@@ -328,15 +388,22 @@ async def evaluate_rule_lifecycle(
                             f"Rule {rule.id} reinforced. New conf: {rule.confidence}"
                         )
                     else:
-                        rule.confidence = max(0.0, rule.confidence - 0.2)
+                        is_comm = getattr(rule, "visibility", "private") == "community"
+                        penalty = 0.05 if is_comm else 0.2
+                        rule.confidence = max(0.0, rule.confidence - penalty)
                         rule.validated_count = (rule.validated_count or 0) - 1
                         logger.info(
-                            f"Rule {rule.id} penalized. New conf: {rule.confidence}"
+                            f"{'Community ' if is_comm else ''}Rule {rule.id} penalized (-{penalty}). New conf: {rule.confidence}"
                         )
 
-                        if rule.confidence <= 0.3 or rule.validated_count <= -2:
+                        deprecate_conf = 0.2 if is_comm else 0.3
+                        deprecate_count = -5 if is_comm else -2
+                        if (
+                            rule.confidence <= deprecate_conf
+                            or rule.validated_count <= deprecate_count
+                        ):
                             logger.warning(
-                                f"Rule {rule.id} DEPRECATED due to repeated failures."
+                                f"{'Community ' if is_comm else ''}Rule {rule.id} DEPRECATED due to repeated failures."
                             )
                             rule.expires_at = datetime.now(timezone.utc)
 
@@ -361,24 +428,37 @@ async def run_memory_researcher_agent(
     symbol: str,
     user_prompt: str,
     websocket: WebSocket,
+    storage_range_info: str = "",
 ) -> str:
     """Queries the database for user memories and synthesizes a concise trading summary."""
     from api import crud, models
     from api.database import async_session_factory
     from api.ai_assistant import _generate_text_response
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
 
     try:
         # Fetch all unique tags from DB to match against the user prompt
         prompt_tags = []
         async with async_session_factory() as db:
+            user_obj = await db.get(models.User, user_id)
+            has_community = (
+                bool(getattr(user_obj, "share_community_memories", False))
+                if user_obj
+                else False
+            )
             db_tags = set()
             try:
-                result = await db.execute(
-                    select(models.AgentMemory.tags).where(
-                        models.AgentMemory.user_id == user_id
+                tag_query = select(models.AgentMemory.tags)
+                if has_community:
+                    tag_query = tag_query.where(
+                        or_(
+                            models.AgentMemory.user_id == user_id,
+                            models.AgentMemory.visibility == "community",
+                        )
                     )
-                )
+                else:
+                    tag_query = tag_query.where(models.AgentMemory.user_id == user_id)
+                result = await db.execute(tag_query)
                 all_tags_rows = result.scalars().all()
                 for tags_row in all_tags_rows:
                     if tags_row:
@@ -412,9 +492,21 @@ async def run_memory_researcher_agent(
         search_tags = prompt_tags if prompt_tags else None
 
         async with async_session_factory() as db:
+            user_obj = await db.get(models.User, user_id)
+            has_community = (
+                bool(getattr(user_obj, "share_community_memories", False))
+                if user_obj
+                else False
+            )
+
             # 1. Fetch rules
             rules = await crud.search_agent_memories(
-                db, user_id=user_id, memory_type="rule", tags=search_tags, limit=10
+                db,
+                user_id=user_id,
+                memory_type="rule",
+                tags=search_tags,
+                limit=10,
+                include_community=has_community,
             )
             # 2. Fetch symbol insights
             exact_insights = await crud.search_agent_memories(
@@ -424,6 +516,7 @@ async def run_memory_researcher_agent(
                 symbol=symbol,
                 tags=search_tags,
                 limit=15,
+                include_community=has_community,
             )
             # 3. Fetch transfer insights if exact_insights is small
             transfer_insights = []
@@ -434,6 +527,7 @@ async def run_memory_researcher_agent(
                     memory_type="strategy_insight",
                     tags=search_tags,
                     limit=15,
+                    include_community=has_community,
                 )
                 transfer_insights = [m for m in all_insights if m.symbol != symbol]
 
@@ -449,6 +543,20 @@ async def run_memory_researcher_agent(
             )
             return ""
 
+        comm_count = sum(
+            1
+            for m in (rules + exact_insights + transfer_insights)
+            if getattr(m, "visibility", "private") == "community"
+        )
+        if comm_count > 0:
+            await websocket.send_json(
+                {
+                    "event": "autopilot_status",
+                    "status": "thinking",
+                    "message": f"🌐 Community Memory: Found {comm_count} shared insights from other traders across the network.",
+                }
+            )
+
         await websocket.send_json(
             {
                 "event": "autopilot_status",
@@ -462,29 +570,49 @@ async def run_memory_researcher_agent(
         if rules:
             raw_memories.append("Universal Trading Rules:")
             for r in rules:
-                raw_memories.append(f"- {r.content}")
+                tag = (
+                    " [COMMUNITY 🌐]"
+                    if getattr(r, "visibility", "private") == "community"
+                    else ""
+                )
+                raw_memories.append(f"-{tag} {r.content}")
         if exact_insights:
             raw_memories.append(f"\nPast Backtest Insights for {symbol}:")
             for m in exact_insights:
+                tag = (
+                    " [COMMUNITY 🌐]"
+                    if getattr(m, "visibility", "private") == "community"
+                    else ""
+                )
                 raw_memories.append(
-                    f"- Outcome: {m.outcome.upper()} | Content: {m.content}"
+                    f"-{tag} Outcome: {m.outcome.upper()} | Content: {m.content}"
                 )
         if transfer_insights:
             raw_memories.append(
                 "\nCross-Asset Backtest Insights (transferable lessons):"
             )
             for m in transfer_insights:
+                tag = (
+                    " [COMMUNITY 🌐]"
+                    if getattr(m, "visibility", "private") == "community"
+                    else ""
+                )
                 raw_memories.append(
-                    f"- Asset: {m.symbol} | Outcome: {m.outcome.upper()} | Content: {m.content}"
+                    f"-{tag} Asset: {m.symbol} | Outcome: {m.outcome.upper()} | Content: {m.content}"
                 )
 
         memories_text = "\n".join(raw_memories)
 
         system_instruction = MEMORY_RESEARCHER_SYSTEM_PROMPT
 
+        storage_note = (
+            f"\nHistorical Data in DepthSight Storage: {storage_range_info}"
+            if storage_range_info
+            else ""
+        )
         user_content = (
             f"User Request: {user_prompt}\n"
-            f"Target Symbol: {symbol}\n\n"
+            f"Target Symbol: {symbol}{storage_note}\n\n"
             f"Raw Memories:\n"
             f"{memories_text}\n\n"
             f"Based on the above, synthesize the trading rules and insights for {symbol}."
@@ -496,6 +624,43 @@ async def run_memory_researcher_agent(
         )
 
         summary_text = clean_double_newlines(summary_text)
+
+        # Extract top-performing configurations from historical insights (Variant C)
+        top_configs = []
+        seen_config_hashes = set()
+        candidate_insights = [
+            m for m in (exact_insights + transfer_insights) if m.outcome == "success"
+        ]
+        for m in candidate_insights:
+            cfg = _extract_config(m.content)
+            pnl_val = _extract_pnl(m.content)
+            if cfg and pnl_val > 0:
+                clean_cfg = cfg.copy()
+                for k in ("id", "user_id", "created_at", "updated_at"):
+                    clean_cfg.pop(k, None)
+                c_hash = hashlib.sha256(
+                    json.dumps(clean_cfg, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+                if c_hash in seen_config_hashes:
+                    continue
+                seen_config_hashes.add(c_hash)
+                top_configs.append((pnl_val, m.symbol or symbol, clean_cfg))
+
+        if top_configs:
+            top_configs.sort(key=lambda x: x[0], reverse=True)
+            best_configs = top_configs[:3]
+            config_blocks = []
+            for rank, (pnl_val, sym_val, c_dict) in enumerate(best_configs, 1):
+                config_blocks.append(
+                    f"### Top Config #{rank} ({sym_val}, Historical PnL: +{pnl_val:.2f}%):\n"
+                    f"```json\n{json.dumps(c_dict, indent=2)}\n```"
+                )
+            summary_text += (
+                "\n\n## PROVEN HIGH-PERFORMING STRATEGY CONFIGURATIONS (INSPIRATION):\n"
+                "You may draw architectural inspiration from these proven configurations (e.g. entry block logic, filter choices, risk/reward settings). "
+                "DO NOT copy them blindly; adapt and mutate their parameters and filters for the current asset and market conditions:\n\n"
+                + "\n\n".join(config_blocks)
+            )
 
         await websocket.send_json(
             {
@@ -528,6 +693,7 @@ async def run_strategy_advisor_agent(
     best_pnl: float,
     best_trades: int,
     websocket: WebSocket,
+    storage_range_info: str = "",
 ) -> str:
     """Compares the last run's configuration and results with the best configuration and historical rules, then writes concrete recommendations."""
     from api.ai_assistant import (
@@ -537,17 +703,29 @@ async def run_strategy_advisor_agent(
     )
     from api import crud, models
     from api.database import async_session_factory
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
 
-    # Fetch all unique tags from DB for this user to pass to Advisor
+    # Fetch all unique tags from DB for this user (including community if opted in) to pass to Advisor
     db_tags = set()
     try:
         async with async_session_factory() as db:
-            result = await db.execute(
-                select(models.AgentMemory.tags).where(
-                    models.AgentMemory.user_id == user_id
-                )
+            user_obj = await db.get(models.User, user_id)
+            has_community = (
+                bool(getattr(user_obj, "share_community_memories", False))
+                if user_obj
+                else False
             )
+            tag_query = select(models.AgentMemory.tags)
+            if has_community:
+                tag_query = tag_query.where(
+                    or_(
+                        models.AgentMemory.user_id == user_id,
+                        models.AgentMemory.visibility == "community",
+                    )
+                )
+            else:
+                tag_query = tag_query.where(models.AgentMemory.user_id == user_id)
+            result = await db.execute(tag_query)
             all_tags_rows = result.scalars().all()
             for tags_row in all_tags_rows:
                 if tags_row:
@@ -652,8 +830,11 @@ async def run_strategy_advisor_agent(
         return active_fallbacks
 
     # Turn 0: Ask Advisor what tags it wants to query
+    range_header = (
+        f" (Historical Storage: {storage_range_info})" if storage_range_info else ""
+    )
     advisor_user_prompt = (
-        f"Target Asset: {symbol}\n\n"
+        f"Target Asset: {symbol}{range_header}\n\n"
         f"Best Variant Configuration (PnL: {best_pnl:.2f}%, Trades: {best_trades}):\n"
         f"```json\n{json.dumps(clean_best, indent=2)}\n```\n\n"
         f"Latest Variant Configuration (PnL: {current_pnl:.2f}%, Trades: {current_trades}):\n"
@@ -713,12 +894,28 @@ async def run_strategy_advisor_agent(
     retrieved_lines = []
     try:
         async with async_session_factory() as db:
+            user_obj = await db.get(models.User, user_id)
+            has_community = (
+                bool(getattr(user_obj, "share_community_memories", False))
+                if user_obj
+                else False
+            )
             memories = await crud.search_agent_memories(
-                db, user_id=user_id, tags=tags, symbol=symbol, limit=8
+                db,
+                user_id=user_id,
+                tags=tags,
+                symbol=symbol,
+                limit=8,
+                include_community=has_community,
             )
             for m in memories:
                 icon = "success" if m.outcome == "success" else "failure"
-                retrieved_lines.append(f"- [{icon.upper()}] {m.content}")
+                comm_tag = (
+                    " [COMMUNITY 🌐]"
+                    if getattr(m, "visibility", "private") == "community"
+                    else ""
+                )
+                retrieved_lines.append(f"- [{icon.upper()}]{comm_tag} {m.content}")
 
         await websocket.send_json(
             {
@@ -866,6 +1063,8 @@ async def run_autopilot_loop(
     max_iterations: int | str = 5,
     image_base64: str | None = None,
     image_mime_type: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ):
     """Runs the self-correcting Autopilot loop: Generate -> Backtest -> Learn -> Repeat."""
     until_profitable = False
@@ -882,11 +1081,93 @@ async def run_autopilot_loop(
         f"Starting Autopilot Loop for user {user_id}. Prompt: '{user_prompt}', limit: {iterations_limit}, until_profitable: {until_profitable}"
     )
 
-    # Initial guess for the symbol — uses alias map first, LLM fallback for ambiguous inputs
+    # 1. Fetch available historical data in storage
+    storage_data = []
+    try:
+        from api.mcp.tools import get_storage_symbols_info
+        from api.redis_client import get_redis_client
+
+        try:
+            redis_client = await get_redis_client()
+        except Exception:
+            redis_client = None
+        storage_data = await get_storage_symbols_info(redis_client)
+    except Exception as e:
+        logger.warning(f"Failed to query storage info for autopilot: {e}")
+
+    storage_map = {s["symbol"]: s for s in storage_data if s.get("symbol")}
+    available_symbols = sorted(list(storage_map.keys()))
+
+    # 2. Initial guess for the symbol — uses alias map first, LLM fallback with storage awareness
     if symbol:
-        resolved_symbol = symbol.upper()
+        resolved_symbol = symbol.upper().strip()
     else:
-        resolved_symbol = (await resolve_symbol_with_llm(user_prompt)).upper()
+        resolved_symbol = (
+            (
+                await resolve_symbol_with_llm(
+                    user_prompt, available_symbols=available_symbols
+                )
+            )
+            .upper()
+            .strip()
+        )
+
+    # If resolved_symbol is not in storage, alert and fallback
+    if storage_map and resolved_symbol not in storage_map:
+        logger.warning(f"Resolved symbol {resolved_symbol} not found in local storage.")
+        fallback = "BTCUSDT" if "BTCUSDT" in storage_map else available_symbols[0]
+        await websocket.send_json(
+            {
+                "event": "autopilot_status",
+                "status": "thinking",
+                "message": f"⚠️ **{resolved_symbol}** is not loaded in local storage. Switching to loaded asset **{fallback}**.",
+            }
+        )
+        resolved_symbol = fallback
+
+    # 3. Extract loaded date interval and features for resolved_symbol
+    sym_info = storage_map.get(resolved_symbol, {})
+    kline_info = sym_info.get("klines_1m") or {}
+    storage_start_date = kline_info.get("start_date") or "2025-01-01"
+    storage_end_date = kline_info.get("end_date") or "2026-07-12"
+
+    # Determine default backtest dates
+    user_specified_start = start_date
+    user_specified_end = end_date
+    has_user_date_intent = bool(user_specified_start or user_specified_end)
+
+    if not has_user_date_intent:
+        date_matches = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", user_prompt)
+        if len(date_matches) >= 2:
+            user_specified_start = date_matches[0]
+            user_specified_end = date_matches[1]
+            has_user_date_intent = True
+        elif "2025" in user_prompt and "2026" not in user_prompt:
+            user_specified_start = "2025-01-01"
+            user_specified_end = "2025-12-31"
+            has_user_date_intent = True
+
+    default_start_date = user_specified_start or storage_start_date
+    default_end_date = user_specified_end or storage_end_date
+
+    # Notify UI of asset data coverage
+    timeframes_str = ", ".join(sym_info.get("timeframes", ["15m"])) or "15m"
+    features_list = []
+    if sym_info.get("has_depth"):
+        features_list.append("Orderbook Depth")
+    if sym_info.get("has_oi"):
+        features_list.append("Open Interest")
+    features_str = f" | Features: {', '.join(features_list)}" if features_list else ""
+
+    storage_range_info = f"{storage_start_date} to {storage_end_date} (TFs: {timeframes_str}{features_str})"
+
+    await websocket.send_json(
+        {
+            "event": "autopilot_status",
+            "status": "thinking",
+            "message": f"📊 Target: **{resolved_symbol}** | Available History: **{storage_start_date}** to **{storage_end_date}** (Timeframes: {timeframes_str}{features_str})",
+        }
+    )
 
     # Screenshot analysis step
     if image_base64:
@@ -942,6 +1223,7 @@ async def run_autopilot_loop(
         symbol=resolved_symbol,
         user_prompt=user_prompt,
         websocket=websocket,
+        storage_range_info=storage_range_info,
     )
     if not initial_memory_rules:
         initial_memory_rules = "No prior memories found in database."
@@ -987,15 +1269,37 @@ async def run_autopilot_loop(
                 best_pnl=best_pnl,
                 best_trades=best_kpis.get("trades", 0) if best_kpis else 0,
                 websocket=websocket,
+                storage_range_info=storage_range_info,
             )
             # Combine the historical rules and the dynamic advice so the generator retains both
             memory_summary = f"{initial_memory_rules}\n\n# CURRENT SESSION STRATEGIC ADVICE:\n{advisor_advice}"
 
-        # Build prompt including current feedback if previous iteration failed
+        # Build prompt including iteration context, diversity directive, and feedback
         autopilot_instruction = _load_prompt("autopilot_system.md").format(
-            resolved_symbol=resolved_symbol
+            resolved_symbol=resolved_symbol,
+            start_date=default_start_date,
+            end_date=default_end_date,
         )
-        active_prompt = f"{autopilot_instruction}\n\nUser Request: Find a profitable strategy for {resolved_symbol} based on: '{user_prompt}'"
+        variant_letter = chr(64 + i)
+        iteration_header = f"\n\n--- ITERATION {i}/{iterations_limit} (Generating Variant {variant_letter}) ---"
+        if i == 1:
+            iteration_guidance = (
+                "Goal: Generate a robust initial baseline strategy. Aim for at least 20 trades "
+                "over the backtest period with a solid Risk-to-Reward ratio (1:2 to 1:4) and clear, high-conviction entry logic."
+            )
+        else:
+            iteration_guidance = (
+                f"Goal: Generate Variant {variant_letter}.\n"
+                "DIVERSITY & EXPLORATION DIRECTIVE:\n"
+                "- Do NOT generate an identical or minor cosmetic clone of the previous config.\n"
+                "- If previous trades were too low (< 20 trades), loosen entry filters, widen indicator thresholds, or lower min_foundation_weight_threshold.\n"
+                "- If previous PnL was negative or drawdown high, explore alternative entry blocks, "
+                "adjust stop loss type/distance, or test a different indicator timeframe/lookback."
+            )
+        active_prompt = (
+            f"{autopilot_instruction}\n\nUser Request: Find a profitable strategy for {resolved_symbol} based on: '{user_prompt}'\n"
+            f"{iteration_header}\n{iteration_guidance}"
+        )
         if current_feedback:
             active_prompt += f"\n\nPrevious Iteration Feedback:\n{current_feedback}\nPlease improve the configuration based on this."
 
@@ -1056,23 +1360,55 @@ async def run_autopilot_loop(
                 continue
 
             # Extract symbols generated dynamically by the model
-            ai_symbols = strategy_json.get("symbols") or strategy_json.get(
-                "config_data", {}
-            ).get("symbols")
+            cfg_data = (
+                strategy_json.get("config_data")
+                if isinstance(strategy_json.get("config_data"), dict)
+                else {}
+            )
+            ai_symbols = strategy_json.get("symbols") or cfg_data.get("symbols")
             if (
                 ai_symbols
                 and isinstance(ai_symbols, list)
                 and len(ai_symbols) > 0
                 and ai_symbols[0]
             ):
-                resolved_symbol = str(ai_symbols[0]).upper()
-            elif strategy_json.get("symbol"):
-                resolved_symbol = str(strategy_json.get("symbol")).upper()
+                cand_sym = str(ai_symbols[0]).upper().strip()
+                if not storage_map or cand_sym in storage_map:
+                    resolved_symbol = cand_sym
+            elif strategy_json.get("symbol") or cfg_data.get("symbol"):
+                cand_sym = (
+                    str(strategy_json.get("symbol") or cfg_data.get("symbol"))
+                    .upper()
+                    .strip()
+                )
+                if not storage_map or cand_sym in storage_map:
+                    resolved_symbol = cand_sym
 
             # Extract parameters generated dynamically by the model
-            start_date = strategy_json.get("start_date") or "2025-01-01"
-            end_date = strategy_json.get("end_date") or "2025-12-31"
-            timeframe = strategy_json.get("timeframe") or "15m"
+            raw_start = strategy_json.get("start_date") or cfg_data.get("start_date")
+            raw_end = strategy_json.get("end_date") or cfg_data.get("end_date")
+
+            start_date = (
+                str(raw_start)[:10]
+                if raw_start and str(raw_start) != "null"
+                else default_start_date
+            )
+            if raw_end and str(raw_end) != "null":
+                # If model returned legacy 2025-12-31 but user didn't ask for 2025 and 2026 data exists
+                if (
+                    str(raw_end)[:10] == "2025-12-31"
+                    and not has_user_date_intent
+                    and default_end_date > "2025-12-31"
+                ):
+                    end_date = default_end_date
+                else:
+                    end_date = str(raw_end)[:10]
+            else:
+                end_date = default_end_date
+
+            timeframe = (
+                strategy_json.get("timeframe") or cfg_data.get("timeframe") or "15m"
+            )
 
             strategy_display_name = (
                 strategy_json.get("name")
@@ -1083,6 +1419,13 @@ async def run_autopilot_loop(
             # Synchronize timeframe across all fields to ensure the engine and trainer load it correctly
             strategy_json["candle_timeframe"] = timeframe
             strategy_json["entry_timeframe"] = timeframe
+            strategy_json["start_date"] = start_date
+            strategy_json["end_date"] = end_date
+            if "config_data" in strategy_json and isinstance(
+                strategy_json["config_data"], dict
+            ):
+                strategy_json["config_data"]["start_date"] = start_date
+                strategy_json["config_data"]["end_date"] = end_date
             if "entryTrigger" in strategy_json and isinstance(
                 strategy_json["entryTrigger"], dict
             ):
@@ -1215,7 +1558,14 @@ async def run_autopilot_loop(
                 f.get("type")
                 for f in strategy_json.get("filters", {}).get("children", [])
             ]
-            content = f"Profitable strategy '{strategy_display_name}' on {resolved_symbol} ({timeframe}): PnL={total_pnl:.2f}%, WR={win_rate:.1f}%, DD={max_dd:.1f}%. Weights: {strategy_json.get('foundation_weights')}, Filters: {filters_list}. Reasoning: {reasoning}. Config: {strategy_json}"
+            try:
+                d1 = datetime.strptime(start_date[:10], "%Y-%m-%d")
+                d2 = datetime.strptime(end_date[:10], "%Y-%m-%d")
+                backtest_days = abs((d2 - d1).days)
+            except Exception:
+                backtest_days = 30
+
+            content = f"Profitable strategy '{strategy_display_name}' on {resolved_symbol} ({timeframe}): PnL={total_pnl:.2f}%, WR={win_rate:.1f}%, DD={max_dd:.1f}%, trades={trades_count}, days={backtest_days}. Weights: {strategy_json.get('foundation_weights')}, Filters: {filters_list}. Reasoning: {reasoning}. Config: {json.dumps(strategy_json)}"
 
             # Generate classification tags and config hash
             tag_data = await tag_strategy_insight(
@@ -1224,8 +1574,9 @@ async def run_autopilot_loop(
             config_str = json.dumps(strategy_json)
             config_hash = hashlib.sha256(config_str.encode("utf-8")).hexdigest()
 
+            saved_memory_id = None
             async with async_session_factory() as db:
-                await crud.create_agent_memory(
+                saved_memory = await crud.create_agent_memory(
                     db,
                     user_id=user_id,
                     memory_data=schemas.AgentMemoryCreate(
@@ -1243,6 +1594,33 @@ async def run_autopilot_loop(
                     ),
                 )
                 await db.commit()
+                saved_memory_id = saved_memory.id
+
+                # Trigger community promotion if user opted in
+                user_obj = await db.get(models.User, user_id)
+                if user_obj and getattr(user_obj, "share_community_memories", False):
+                    try:
+                        from tasks import maybe_promote_to_community
+
+                        maybe_promote_to_community.delay(
+                            memory_id=saved_memory_id, user_id=user_id
+                        )
+                    except Exception as prom_err:
+                        logger.debug(
+                            f"Failed to queue Celery community promotion, running async direct: {prom_err}"
+                        )
+                        try:
+                            from tasks import async_maybe_promote_to_community
+
+                            asyncio.create_task(
+                                async_maybe_promote_to_community(
+                                    memory_id=saved_memory_id, user_id=user_id
+                                )
+                            )
+                        except Exception as direct_err:
+                            logger.debug(
+                                f"Direct community promotion failed: {direct_err}"
+                            )
 
             # Trigger rule synthesis check in background
             asyncio.create_task(
@@ -1292,7 +1670,7 @@ async def run_autopilot_loop(
                 f.get("type")
                 for f in strategy_json.get("filters", {}).get("children", [])
             ]
-            insight = f"Failed strategy '{strategy_display_name}' on {resolved_symbol} ({timeframe}): PnL={total_pnl:.2f}%, WR={win_rate:.1f}%, trades={trades_count}. Reason: {reason}. Weights: {strategy_json.get('foundation_weights')}, Filters: {filters_list}. Reasoning: {reasoning}. Config: {strategy_json}"
+            insight = f"Failed strategy '{strategy_display_name}' on {resolved_symbol} ({timeframe}): PnL={total_pnl:.2f}%, WR={win_rate:.1f}%, trades={trades_count}. Reason: {reason}. Weights: {strategy_json.get('foundation_weights')}, Filters: {filters_list}. Reasoning: {reasoning}. Config: {json.dumps(strategy_json)}"
 
             # Generate classification tags and config hash
             tag_data = await tag_strategy_insight(
@@ -1378,7 +1756,8 @@ async def run_autopilot_loop(
             last_strategy_json = strategy_json
             current_feedback = (
                 f"Recent History (Last 3 runs):\n{recent_feedbacks}\n\n"
-                f"Please analyze the recent history and optimize the configuration further to get higher PnL."
+                f"Please analyze the recent history and optimize the configuration further to get higher PnL (target > 5.0% and >= 20 trades). "
+                f"DIVERSITY DIRECTIVE: Make meaningful structural improvements rather than repeating the exact same parameters."
             )
 
     # If we exited the loop, return the best found overall

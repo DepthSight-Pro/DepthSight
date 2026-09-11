@@ -18,11 +18,11 @@
   <strong>The First Algorithmic Trading DePIN: Trade-to-Mine & Swarm AI 🐝</strong>
 </p>
 
-DepthSight is a first-of-its-kind **Web3 Trading DePIN** (Decentralized Physical Infrastructure Network) that completely flips the algorithmic trading industry on its head. Instead of paying expensive monthly subscriptions to platforms like 3Commas or Veles, **DepthSight pays you to trade.**
+DepthSight is a next-generation **Algorithmic Trading DePIN** (Decentralized Physical Infrastructure Network) that redefines the economics of automated trading. By introducing a decentralized, community-driven architecture, we are building a global swarm of trading intelligence.
 
-By utilizing our **Proof-of-Trade Mining** ($DEPTH), your daily trading volume generates utility tokens backed by actual fiat broker rebates, mathematically shifting your trading to a Positive Expected Value (Positive EV). 
+Through our built-in **Proof-of-Trade Mining** ($DEPTH), your daily trading volume generates utility tokens backed by actual exchange broker rebates. This paradigm mathematically subsidizes your fees and creates a Positive Expected Value (Positive EV) ecosystem where your infrastructure works for you.
 
-**Beyond the tokenomics, DepthSight is an engineering powerhouse.** Under the hood, it is a fully open-source, Enterprise-Grade SaaS-in-a-Box featuring:
+**DepthSight is an engineering powerhouse.** Under the hood, it is a fully open-source, Enterprise-Grade SaaS-in-a-Box featuring:
 - 🧩 **Visual Strategy Builder:** A clean drag-and-drop block editor for building complex trading logic without coding (no messy spaghetti wires).
 - 🤖 **AI Autopilot:** Multi-agent LLM system that generates strategies from text prompts and chart screenshots.
 - ⚡ **High-Performance Core:** Python 3.11+ backend powered by FastAPI, Redis (Pub/Sub & State), Celery workers, and PostgreSQL.
@@ -84,13 +84,19 @@ DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 4
 - **Crypto Billing & Payments:** Native integration with Bitcart for processing cryptocurrency subscriptions and payments.
 - **Modern Clients:** Full-featured React web dashboard and a mobile-optimized PWA.
 
-## 🤖 AI Autopilot Co-Pilot
+## 🤖 AI Autopilot Co-Pilot & Collective Memory Bank
 
-DepthSight includes an experimental, multi-agent AI system designed to help users generate and optimize trading strategies using natural language and computer vision.
+DepthSight includes an advanced, multi-agent AI system designed to help users generate, test, and optimize trading strategies using natural language, computer vision, and a decentralized memory network.
 
 1. **Multimodal Generation:** Upload a screenshot of a chart setup (e.g., a breakout or support/resistance bounce). The AI vision models detect the pattern and automatically generate a corresponding block-based strategy in the visual editor.
-2. **Multi-Agent Optimization Loop:** A network of specialized agents (Researcher, Advisor, Critic) can run sequential backtests, analyze PnL metrics, and automatically mutate strategy parameters to find the optimal configuration.
-3. **Human-in-the-Loop:** All AI-generated configurations are loaded into the visual editor. The AI cannot trade your funds autonomously—you review, adjust, and manually approve every strategy before it goes live.
+2. **Multi-Agent Optimization Loop:** A network of specialized agents (Researcher, Advisor, Generator, Backtester) runs sequential backtests, analyzes PnL, win rate, and drawdown metrics, and automatically mutates strategy parameters to find the optimal configuration.
+3. **Collective Swarm Memory (Shared Memory Bank):**
+   - **Continuous Learning:** Successful strategies ($PnL > 5\%$, trades $\ge 20$) and failed attempts are automatically classified, tagged, and recorded into the persistent Agent Memory Bank.
+   - **Decentralized Knowledge Sharing:** Users can opt into the **Community Memory Pool**. High-performing, statistically validated strategies ($\ge 30$ verified trades) pass through an automated Quality Gate and are shared across the network—completely anonymized without API keys or private identifiers.
+   - **Zero Cold-Start for New Traders:** When a newly connected user runs the Autopilot, the agent queries the shared community memory for the target asset. It immediately benefits from the collective insights, optimal filter combinations, and risk rules discovered by the entire network.
+   - **Proven Config Injection:** The Memory Researcher extracts top-performing historical configurations and feeds them directly into the generator prompt as structural templates, enabling the AI to build on battle-tested architectures rather than starting from scratch.
+   - **Diversity & Anti-Overfitting Protocol:** Built-in safeguards ensure the AI never generates repetitive copies. The generator dynamically alternates between breakout, trend-following, and mean-reversion foundations, modulates stop-loss types (tight ATR vs. trailing percentages), and balances trade frequency (targeting $\ge 20$ trades) to avoid over-constrained, curve-fitted models.
+4. **Human-in-the-Loop:** All AI-generated configurations are loaded into the visual editor. The AI cannot trade your funds autonomously—you review, adjust, and manually approve every strategy before it goes live.
 
 ## 💎 Trade Mining & Node Economy ($DEPTH)
 

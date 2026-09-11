@@ -2549,16 +2549,27 @@ async def generate_strategy_json_from_prompt(
     if websocket:
         # Inject the Agent Memory & Tools block dynamically.
         # Query active tags dynamically from the database
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
         from .database import async_session_factory
 
         try:
             async with async_session_factory() as db_session:
-                result = await db_session.execute(
-                    select(models.AgentMemory.tags).where(
+                has_community = bool(
+                    getattr(current_user, "share_community_memories", False)
+                )
+                tag_query = select(models.AgentMemory.tags)
+                if has_community:
+                    tag_query = tag_query.where(
+                        or_(
+                            models.AgentMemory.user_id == current_user.id,
+                            models.AgentMemory.visibility == "community",
+                        )
+                    )
+                else:
+                    tag_query = tag_query.where(
                         models.AgentMemory.user_id == current_user.id
                     )
-                )
+                result = await db_session.execute(tag_query)
                 tag_rows = result.scalars().all()
                 unique_tags = set()
                 for t_list in tag_rows:

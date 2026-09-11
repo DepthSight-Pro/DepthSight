@@ -247,6 +247,36 @@ async def run_backtest(
 
 
 @backtests_router.get(
+    "/historical-ranges",
+    response_model=schemas.ApiResponseData[List[dict]],
+    summary="Get loaded historical data coverage and date intervals for symbols",
+)
+async def get_historical_ranges(
+    symbol: Optional[str] = Query(
+        None, description="Optional symbol filter, e.g. BTCUSDT"
+    ),
+    redis_client: redis.Redis = Depends(get_redis_client),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Returns available historical data ranges and features for backtesting,
+    such as exact start_date and end_date, available timeframes, bookDepth, and OI.
+    """
+    from api.mcp.tools import get_storage_symbols_info
+
+    storage_data = await get_storage_symbols_info(redis_client)
+    if symbol:
+        clean_target = symbol.strip().upper().replace("/", "").replace(":", "")
+        storage_data = [
+            s
+            for s in storage_data
+            if s.get("symbol", "").upper().replace("/", "").replace(":", "")
+            == clean_target
+        ]
+    return {"data": storage_data}
+
+
+@backtests_router.get(
     "",
     response_model=schemas.ApiResponseData[List[schemas.BacktestRunListItem]],
 )

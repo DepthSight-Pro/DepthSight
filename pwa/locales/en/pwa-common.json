@@ -836,7 +836,19 @@
 		"symbol": "Symbol",
 		"startDate": "Start Date",
 		"endDate": "End Date",
-		"runBacktest": "Run Backtest"
+		"runBacktest": "Run Backtest",
+		"quickPresets": "Quick Period",
+		"availableHistory": "Available in History",
+		"noHistory": "No history loaded",
+		"presets": {
+			"all": "All Available",
+			"lastYear": "Last Year",
+			"thisYear": "This Year",
+			"sixMonths": "6 Months",
+			"threeMonths": "3 Months",
+			"oneMonth": "1 Month",
+			"lastMonth": "Last Month"
+		}
 	},
 	"launchStrategyModal": {
 		"fillSymbolsForStatic": "Please specify symbols for static mode.",
@@ -1355,5 +1367,27 @@
 		"supportedExchangesRebateNote": "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.",
 		"okxRebateTip": "Base rate (30%), under 3rd-party referral only 7.5%. Stacks under our link (+7.5%) for 5x token yield.",
 		"bybitRebateTip": "Base rate (50%), under 3rd-party referral only 10%. Stacks under our link (+10%) for maximum yield."
+	},
+	"communityMemory": {
+		"title": "Agent Memory Bank",
+		"communityPool": "Community Pool",
+		"optInTooltip": "About Community Memory",
+		"all": "All",
+		"myMemories": "My Memories",
+		"community": "Community",
+		"confirmedCount": "Confirmed: {{count}}x",
+		"cannotDeleteCommunity": "Community memories are preserved in the shared pool.",
+		"modalTitle": "DepthSight Community Memory Pool",
+		"modalSubtitle": "Decentralized Swarm Intelligence for Trading Agents",
+		"modalDesc": "Participate in the shared trading intelligence pool by barter. When you run profitable backtests (≥30 trades, ≥28 days), generalized market insights are anonymously shared with the network. In return, your agent taps into verified setups and universal rules discovered by traders worldwide.",
+		"modalPrivacy": "Privacy Guarantee: Strategy parameters, confidential configurations, and API keys are strictly removed. Only high-level market lessons and performance statistics are contributed.",
+		"modalQuality": "Quality Gate: Only verified profitable strategies with ≥30 trades and ≥28 days backtest duration enter the network pool.",
+		"modalTransfer": "Cross-Asset Transfer: Learn from BTC, ETH, and altcoin patterns even on assets you haven't traded yet.",
+		"modalLater": "Keep Private Only",
+		"modalJoin": "Join Community Pool",
+		"shareWithCommunity": "Share with Community (requires ≥ 30 trades)",
+		"shareSuccess": "Memory successfully shared to Community pool!",
+		"shareError": "Could not share memory with community",
+		"retroactiveSuccess": "Community pool enabled! {{count}} verified strategies shared."
 	}
 }

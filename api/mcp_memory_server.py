@@ -155,9 +155,16 @@ class MCPMemoryServer:
     ) -> str:
         """Cascade search: Rules -> Exact insights -> Cross-asset transfer."""
         from .database import async_session_factory
-        from . import crud
+        from . import crud, models
 
         async with async_session_factory() as db:
+            user = await db.get(models.User, user_id)
+            has_community = (
+                bool(getattr(user, "share_community_memories", False))
+                if user
+                else False
+            )
+
             rules = await crud.search_agent_memories(
                 db,
                 user_id=user_id,
@@ -165,6 +172,7 @@ class MCPMemoryServer:
                 tags=tags,
                 strategy_type=strategy_type,
                 limit=2,
+                include_community=has_community,
             )
             exact = await crud.search_agent_memories(
                 db,
@@ -174,6 +182,7 @@ class MCPMemoryServer:
                 tags=tags,
                 strategy_type=strategy_type,
                 limit=3,
+                include_community=has_community,
             )
             budget = 8 - (len(rules) + len(exact))
             transfer = []
@@ -184,6 +193,7 @@ class MCPMemoryServer:
                     memory_type="strategy_insight",
                     strategy_type=strategy_type,
                     limit=budget + 5,
+                    include_community=has_community,
                 )
                 seen_ids = {m.id for m in exact}
                 for c in candidates:
@@ -202,17 +212,34 @@ class MCPMemoryServer:
             if rules:
                 lines.append("**Universal Rules:**")
                 for r in rules:
-                    lines.append(f"- [conf: {r.confidence * 100:.0f}%] {r.content}")
+                    comm_tag = (
+                        " [COMMUNITY 🌐]"
+                        if getattr(r, "visibility", "private") == "community"
+                        else ""
+                    )
+                    lines.append(
+                        f"-{comm_tag} [conf: {r.confidence * 100:.0f}%] {r.content}"
+                    )
             if exact:
                 lines.append(f"\n**{symbol or 'Target'} Insights:**")
                 for m in exact:
                     icon = "success" if m.outcome == "success" else "failure"
-                    lines.append(f"- [{icon.upper()}] {m.content}")
+                    comm_tag = (
+                        f" [COMMUNITY 🌐 (confirmed: {m.community_confirmations}x)]"
+                        if getattr(m, "visibility", "private") == "community"
+                        else ""
+                    )
+                    lines.append(f"-{comm_tag} [{icon.upper()}] {m.content}")
             if transfer:
                 lines.append("\n**Cross-Asset Transfer:**")
                 for m in transfer:
+                    comm_tag = (
+                        " [COMMUNITY 🌐]"
+                        if getattr(m, "visibility", "private") == "community"
+                        else ""
+                    )
                     lines.append(
-                        f"- ⚡ [Transfer from {m.symbol}] [{m.outcome.upper()}] {m.content}"
+                        f"- ⚡{comm_tag} [Transfer from {m.symbol}] [{m.outcome.upper()}] {m.content}"
                     )
             if not lines:
                 return "No matching memories found."

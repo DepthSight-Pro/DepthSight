@@ -1122,6 +1122,7 @@ class FastVectorBacktester:
         self.total_commission_usd = 0.0
         self.peak_equity = float(self.initial_balance)
         self.max_drawdown = 0.0
+        self.max_floating_dd = 0.0
         self.is_trading_allowed = True
         self._is_liquidated = False  # Liquidation is an irreversible state
         self._risk_daily_pnl: Dict[str, float] = {}
@@ -1301,7 +1302,9 @@ class FastVectorBacktester:
             series = df_tf[key_str].astype(float)
             if shift:
                 series = series.shift(shift)
-            return self._align_series_to_main_index(series).reindex(self.main_df.index)
+            if not df_tf.index.equals(self.main_df.index):
+                return self._broadcast_closed_signal_to_main(series)
+            return series.reindex(self.main_df.index)
 
         if source == "indicator":
             if not key:
@@ -3175,7 +3178,7 @@ class FastVectorBacktester:
                 )
                 .max()
             )
-            candidate_levels.append(self._align_series_to_main_index(high_level))
+            candidate_levels.append(self._broadcast_closed_signal_to_main(high_level))
         if "low" in columns:
             low_level = (
                 df_tf["low"]
@@ -3187,7 +3190,7 @@ class FastVectorBacktester:
                 )
                 .min()
             )
-            candidate_levels.append(self._align_series_to_main_index(low_level))
+            candidate_levels.append(self._broadcast_closed_signal_to_main(low_level))
 
         for candidate_series in candidate_levels:
             candidate_series = candidate_series.reindex(self.main_df.index)
@@ -4386,8 +4389,8 @@ class FastVectorBacktester:
         self._ensure_market_features()
         # Calculation of ATR if missing (always on 1m)
         if "ATR_14" in self.main_df.columns:
-            # Ensure no NaNs from external sources
-            self.main_df["ATR_14"] = self.main_df["ATR_14"].bfill().fillna(0)
+            # Ensure no NaNs from external sources without forward lookahead
+            self.main_df["ATR_14"] = self.main_df["ATR_14"].ffill().fillna(0)
 
         if (
             "ATR_14" not in self.main_df.columns
@@ -4400,12 +4403,14 @@ class FastVectorBacktester:
                     self.main_df["close"],
                 )
                 atr = ta.atr(high=high, low=low, close=close, length=14)
-                # Fallback for NaNs at the beginning
-                atr = atr.fillna(close * 0.01)
-                self.signals["ATR_14"] = atr.bfill().fillna(0)
+                fallback_atr = (close * 0.01).fillna(0)
+                if atr is not None:
+                    self.signals["ATR_14"] = atr.ffill().fillna(fallback_atr).fillna(0)
+                else:
+                    self.signals["ATR_14"] = fallback_atr
             except Exception as e:
                 logger.warning(f"Failed to calculate ATR_14: {e}")
-                self.signals["ATR_14"] = self.main_df["close"] * 0.01
+                self.signals["ATR_14"] = (self.main_df["close"] * 0.01).fillna(0)
 
         # Extracting indicators from JSON (now with timeframe information)
         required_indicators = {}
@@ -5791,58 +5796,16 @@ class FastVectorBacktester:
 
                     pending_grid_orders = remaining_grid_orders
 
-                # Mid-candle liquidation check (worst-case unrealized PnL)
-                worst_price = l if not is_short else h
-                unrealized_pnl_usd = (
-                    (worst_price - avg_entry_price) * remaining_qty_actual
-                    if not is_short
-                    else (avg_entry_price - worst_price) * remaining_qty_actual
-                )
-                # Floating equity check
-                if (
-                    self.current_balance
-                    - total_commission_usd
-                    + realized_pnl_usd
-                    + unrealized_pnl_usd
-                    <= 0
-                ):
-                    exit_reason = "LIQUIDATION"
-                    final_exit_price = worst_price
-                    realized_pnl_rel += self._realized_pnl_rel(
-                        avg_entry_price=avg_entry_price,
-                        exit_price=final_exit_price,
-                        quantity_rel=remaining_qty_rel,
-                        initial_reference_price=initial_reference_price,
-                        is_short=is_short,
-                    )
-                    realized_pnl_usd += (
-                        (avg_entry_price - final_exit_price) * remaining_qty_actual
-                        if is_short
-                        else (final_exit_price - avg_entry_price) * remaining_qty_actual
-                    )
-                    total_commission_usd += abs(
-                        final_exit_price * remaining_qty_actual * self.commission_pct
-                    )
-                    weighted_exit_sum += final_exit_price * remaining_qty_rel
-                    total_closed_qty_rel += remaining_qty_rel
-                    total_closed_qty_actual += remaining_qty_actual
-                    execution_events.append(
-                        {
-                            "timestamp": self._to_python_datetime(index_vals[i]),
-                            "price": float(final_exit_price),
-                            "quantity": float(remaining_qty_actual),
-                            "type": "EXIT",
-                        }
-                    )
-                    remaining_qty_rel = 0.0
-                    remaining_qty_actual = 0.0
-                    final_abs_idx = i
-                    break
-
+                # 1. Stop loss check (stop-loss triggers before liquidation during continuous price moves)
                 if curr_sl is not None and remaining_qty_rel > 1e-12:
                     sl_hit = h >= curr_sl if is_short else l <= curr_sl
                     if sl_hit:
-                        final_exit_price = curr_sl * (
+                        # Gap-through: if candle opened beyond stop, execute at open (worse price)
+                        gap_through = (not is_short and o <= curr_sl) or (
+                            is_short and o >= curr_sl
+                        )
+                        base_sl_price = o if gap_through else curr_sl
+                        final_exit_price = base_sl_price * (
                             1.0 + SLIPPAGE_PCT if is_short else 1.0 - SLIPPAGE_PCT
                         )
                         realized_pnl_rel += self._realized_pnl_rel(
@@ -5879,6 +5842,79 @@ class FastVectorBacktester:
                         exit_reason = "STOP_LOSS" if not be_activated else "SL_AT_BE"
                         final_abs_idx = i
                         break
+
+                # 2. Mid-candle liquidation check (worst-case unrealized PnL, only if SL did not trigger)
+                worst_price = l if not is_short else h
+                unrealized_pnl_usd = (
+                    (worst_price - avg_entry_price) * remaining_qty_actual
+                    if not is_short
+                    else (avg_entry_price - worst_price) * remaining_qty_actual
+                )
+                floating_equity_low = (
+                    self.current_balance
+                    - total_commission_usd
+                    + realized_pnl_usd
+                    + unrealized_pnl_usd
+                )
+                best_price = h if not is_short else l
+                unrealized_pnl_best = (
+                    (best_price - avg_entry_price) * remaining_qty_actual
+                    if not is_short
+                    else (avg_entry_price - best_price) * remaining_qty_actual
+                )
+                floating_equity_high = (
+                    self.current_balance
+                    - total_commission_usd
+                    + realized_pnl_usd
+                    + unrealized_pnl_best
+                )
+                self.peak_equity = max(
+                    self.peak_equity, floating_equity_high, self.current_balance
+                )
+                if self.peak_equity > 1e-12:
+                    current_floating_dd = (
+                        (self.peak_equity - floating_equity_low)
+                        / self.peak_equity
+                        * 100.0
+                    )
+                    self.max_floating_dd = max(
+                        self.max_floating_dd, current_floating_dd
+                    )
+
+                # Floating equity check
+                if floating_equity_low <= 0:
+                    exit_reason = "LIQUIDATION"
+                    final_exit_price = worst_price
+                    realized_pnl_rel += self._realized_pnl_rel(
+                        avg_entry_price=avg_entry_price,
+                        exit_price=final_exit_price,
+                        quantity_rel=remaining_qty_rel,
+                        initial_reference_price=initial_reference_price,
+                        is_short=is_short,
+                    )
+                    realized_pnl_usd += (
+                        (avg_entry_price - final_exit_price) * remaining_qty_actual
+                        if is_short
+                        else (final_exit_price - avg_entry_price) * remaining_qty_actual
+                    )
+                    total_commission_usd += abs(
+                        final_exit_price * remaining_qty_actual * self.commission_pct
+                    )
+                    weighted_exit_sum += final_exit_price * remaining_qty_rel
+                    total_closed_qty_rel += remaining_qty_rel
+                    total_closed_qty_actual += remaining_qty_actual
+                    execution_events.append(
+                        {
+                            "timestamp": self._to_python_datetime(index_vals[i]),
+                            "price": float(final_exit_price),
+                            "quantity": float(remaining_qty_actual),
+                            "type": "EXIT",
+                        }
+                    )
+                    remaining_qty_rel = 0.0
+                    remaining_qty_actual = 0.0
+                    final_abs_idx = i
+                    break
 
                 hit_new_tp = False
                 for target in targets:
@@ -7133,9 +7169,17 @@ class FastVectorBacktester:
                 "total_pnl": 0.0,
                 "max_dd": 0.0,
                 "max_drawdown": 0.0,
+                "max_floating_dd": _finite_float(getattr(self, "max_floating_dd", 0.0)),
+                "final_equity": _finite_float(self.current_balance),
+                "total_return_all": _finite_float(
+                    ((self.current_balance / self.initial_balance) - 1.0) * 100.0
+                    if self.initial_balance > 1e-12
+                    else 0.0
+                ),
                 "sharpe_ratio": 0.0,
                 "consistency_score": 0.0,
                 "sortino_ratio": 0.0,
+                "sharpe_method": "per_trade_capped",
                 "total_commission": 0.0,
                 "wins": 0,
                 "losses": 0,
@@ -7216,15 +7260,27 @@ class FastVectorBacktester:
 
         sharpe_input = return_series.astype(float)
         pnl_std = sharpe_input.std()
-        if not math.isfinite(pnl_std) or pnl_std < 1e-9:
-            pnl_std = 1e-9
-        sharpe_ratio = (sharpe_input.mean() / pnl_std) * np.sqrt(min(len(df), 252))
+        if not math.isfinite(pnl_std) or pnl_std <= 1e-9:
+            sharpe_ratio = 0.0
+        else:
+            raw_sharpe = (sharpe_input.mean() / pnl_std) * np.sqrt(min(len(df), 252))
+            sharpe_ratio = max(-10.0, min(10.0, float(raw_sharpe)))
 
         downside = sharpe_input[sharpe_input < 0]
         downside_std = downside.std()
-        if not math.isfinite(downside_std) or downside_std < 1e-9:
-            downside_std = 1e-9
-        sortino = (sharpe_input.mean() / downside_std) * np.sqrt(len(df))
+        if (
+            not math.isfinite(downside_std)
+            or downside_std <= 1e-9
+            or len(downside) == 0
+        ):
+            sortino = (
+                10.0
+                if sharpe_input.mean() > 0
+                else (0.0 if sharpe_input.mean() == 0 else -10.0)
+            )
+        else:
+            raw_sortino = (sharpe_input.mean() / downside_std) * np.sqrt(len(df))
+            sortino = max(-10.0, min(10.0, float(raw_sortino)))
 
         if "exit_time" in df.columns:
             df["month"] = df["exit_time"].dt.tz_localize(None).dt.to_period("M")
@@ -7246,9 +7302,17 @@ class FastVectorBacktester:
             "win_rate": _finite_float(win_rate),
             "max_dd": _finite_float(max_dd),
             "max_drawdown": _finite_float(max_dd),
+            "max_floating_dd": _finite_float(getattr(self, "max_floating_dd", max_dd)),
+            "final_equity": _finite_float(self.current_balance),
+            "total_return_all": _finite_float(
+                ((self.current_balance / self.initial_balance) - 1.0) * 100.0
+                if self.initial_balance > 1e-12
+                else 0.0
+            ),
             "profit_factor": _finite_float(profit_factor, pos_inf=99999.0),
             "sharpe_ratio": _finite_float(sharpe_ratio),
             "sortino_ratio": _finite_float(sortino),
+            "sharpe_method": "per_trade_capped",
             "consistency_score": _finite_float(consistency),
             "total_commission": _finite_float(df["commission_usd"].sum())
             if "commission_usd" in df.columns
@@ -7280,9 +7344,13 @@ class FastVectorBacktester:
             "total_pnl": 0.0,
             "max_dd": 0.0,
             "max_drawdown": 0.0,
+            "max_floating_dd": 0.0,
+            "final_equity": float(getattr(self, "initial_balance", 100.0)),
+            "total_return_all": 0.0,
             "sharpe_ratio": 0.0,
             "consistency_score": 0.0,
             "sortino_ratio": 0.0,
+            "sharpe_method": "per_trade_capped",
             "total_commission": 0.0,
             "wins": 0,
             "losses": 0,

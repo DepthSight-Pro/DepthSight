@@ -234,6 +234,7 @@ async def list_mcp_tools(user: models.User = Depends(get_mcp_user)):
 # Personal Access Tokens (PAT) Management Endpoints
 # ---------------------------------------------------------------------------
 
+
 @mcp_router.get(
     "/tokens",
     response_model=schemas.ApiResponseData[List[schemas.PersonalAccessTokenInfo]],
@@ -297,7 +298,9 @@ async def delete_user_pat(
     user: models.User = Depends(get_mcp_user),
     db: AsyncSession = Depends(get_db),
 ):
-    success = await crud.delete_personal_access_token(db, user_id=user.id, token_id=token_id)
+    success = await crud.delete_personal_access_token(
+        db, user_id=user.id, token_id=token_id
+    )
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

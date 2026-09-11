@@ -41,6 +41,12 @@
 		"strategyGenerated": "Strategy configuration generated successfully!",
 		"analystPromptStrategy": "Please analyze my performance for this specific strategy. I've attached its configuration and the top/bottom 5 trades.",
 		"analystPromptOverall": "Please analyze my overall trading performance.",
-		"generateStrategyAction": "Yes, generate this strategy"
+		"generateStrategyAction": "Yes, generate this strategy",
+		"attachChart": "Attach Chart",
+		"clear": "Clear",
+		"send": "Send",
+		"chartAttached": "Chart screenshot attached",
+		"chartAttachedDesc": "Will be sent and analyzed with your message",
+		"placeholderWithHint": "Message AI Co-Pilot (Enter to send, Shift+Enter for new line)..."
 	}
 }

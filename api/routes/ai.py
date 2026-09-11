@@ -4,6 +4,7 @@ from typing import Callable, List, Optional
 
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import ai_assistant, crud, models, schemas
@@ -93,9 +94,11 @@ def create_ai_routers(
         symbol: Optional[str] = None,
         strategy_type: Optional[str] = None,
         memory_type: Optional[str] = None,
+        visibility: Optional[str] = None,
         current_user: models.User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db),
     ):
+        has_community = bool(getattr(current_user, "share_community_memories", False))
         if tag or symbol or strategy_type or memory_type:
             memories = await crud.search_agent_memories(
                 db,
@@ -104,10 +107,124 @@ def create_ai_routers(
                 symbol=symbol,
                 strategy_type=strategy_type,
                 memory_type=memory_type,
+                include_community=has_community,
             )
         else:
-            memories = await crud.get_agent_memories(db, user_id=current_user.id)
+            memories = await crud.get_agent_memories(
+                db, user_id=current_user.id, include_community=has_community
+            )
+
+        if visibility == "community":
+            memories = [
+                m
+                for m in memories
+                if getattr(m, "visibility", "private") == "community"
+            ]
+        elif visibility == "private":
+            memories = [
+                m
+                for m in memories
+                if getattr(m, "visibility", "private") != "community"
+            ]
+
         return {"data": memories}
+
+    @ai_meta_router.put("/memories/community-sharing")
+    async def update_community_sharing(
+        payload: schemas.CommunityMemorySharingUpdate,
+        current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """
+        Toggles participation in the Community Shared Memory pool.
+        When enabled, automatically scans user's private successful memories and
+        promotes eligible ones (trades >= 30) to the shared pool.
+        """
+        await crud.update_user_community_sharing(
+            db, user_id=current_user.id, enabled=payload.enabled
+        )
+        promoted_count = 0
+        if payload.enabled:
+            from tasks import async_maybe_promote_to_community
+
+            stmt = select(models.AgentMemory.id).where(
+                models.AgentMemory.user_id == current_user.id,
+                models.AgentMemory.visibility != "community",
+                func.lower(models.AgentMemory.outcome) == "success",
+            )
+            res = await db.execute(stmt)
+            mem_ids = [row[0] for row in res.all()]
+            for mid in mem_ids[:200]:
+                try:
+                    p_res = await async_maybe_promote_to_community(
+                        memory_id=mid, user_id=current_user.id, session=db, force=True
+                    )
+                    if p_res.get("promoted"):
+                        promoted_count += 1
+                except Exception as e:
+                    logger.debug(f"Retroactive promotion error for {mid}: {e}")
+
+        await db.commit()
+        return {
+            "share_community_memories": payload.enabled,
+            "promoted_count": promoted_count,
+            "message": "Community sharing preference updated successfully",
+        }
+
+    @ai_meta_router.post("/memories/{memory_id}/share")
+    async def share_agent_memory(
+        memory_id: str,
+        current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        """
+        Explicitly shares/promotes a private memory to the Community Shared Pool.
+        """
+        if not getattr(current_user, "share_community_memories", False):
+            await crud.update_user_community_sharing(
+                db, user_id=current_user.id, enabled=True
+            )
+
+        from tasks import async_maybe_promote_to_community
+
+        res = await async_maybe_promote_to_community(
+            memory_id=memory_id, user_id=current_user.id, session=db
+        )
+        if not res.get("promoted"):
+            reason = res.get("reason", "unknown")
+            if reason == "quality_gate_failed":
+                trades = res.get("trades", 0)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Strategy requires at least 30 verified trades to qualify for community pool (found {trades} trades).",
+                )
+            elif reason == "memory_not_found":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Memory not found or not owned by current user.",
+                )
+            elif reason == "already_community":
+                return {
+                    "status": "already_shared",
+                    "message": "Memory is already part of the community pool.",
+                }
+            elif reason == "daily_rate_limit_exceeded":
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Daily community contribution limit (50/day) reached.",
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot share memory: {reason}",
+                )
+
+        await db.commit()
+        return {
+            "status": "success",
+            "community_memory_id": res.get("community_memory_id"),
+            "message": "Memory successfully shared with the community!",
+        }
 
     @ai_meta_router.delete("/memories", status_code=status.HTTP_204_NO_CONTENT)
     async def delete_agent_memories(
@@ -132,7 +249,7 @@ def create_ai_routers(
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Memory not found or not owned by user",
+                detail="Memory not found, not owned by user, or protected as community asset",
             )
         await db.commit()
         return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Enum,
     Date,
+    Index,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -59,6 +60,9 @@ class User(Base):
     )
     totp_backup_codes = Column(JSON, nullable=True)
     totp_last_used_step = Column(Integer, nullable=True)
+    share_community_memories = Column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     referral_code = Column(String, unique=True, index=True, nullable=True)
@@ -166,6 +170,24 @@ class AgentMemory(Base):
     confidence = Column(Float, default=1.0)
     validated_count = Column(Integer, default=1)
     config_hash = Column(String(64), nullable=True)
+
+    # Community Shared Memory fields
+    visibility = Column(
+        String(20),
+        default="private",
+        server_default="private",
+        nullable=False,
+        index=True,
+    )
+    source_node_uuid = Column(String(36), nullable=True)
+    author_user_id = Column(Integer, nullable=True)
+    community_confirmations = Column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_agent_memories_visibility_symbol", "visibility", "symbol"),
+    )
 
     user = relationship("User", back_populates="agent_memories")
 

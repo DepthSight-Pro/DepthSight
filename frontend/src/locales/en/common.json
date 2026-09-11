@@ -111,5 +111,29 @@
 		"startUpdateToast": "Starting platform update...",
 		"updateTriggeredToast": "Update triggered. The system will restart within a minute.",
 		"updateFailedToast": "Failed to trigger update: {{error}}"
+	},
+	"communityMemory": {
+		"title": "Agent Memory Bank",
+		"communityPool": "Community Pool",
+		"optInLabel": "Community Memory",
+		"optInTooltip": "Participate in DepthSight Community Memory sharing",
+		"all": "All",
+		"myMemories": "My Memories",
+		"community": "Community",
+		"communityBadge": "Community",
+		"confirmedCount": "confirmed: {{count}}x",
+		"modalTitle": "DepthSight Community Memory Pool",
+		"modalSubtitle": "Decentralized Swarm Intelligence for Trading Agents",
+		"modalDesc": "Participate in the shared trading intelligence pool by barter. When you run profitable backtests (≥30 trades, ≥28 days), generalized market insights are anonymously shared with the network. In return, your agent taps into verified setups and universal rules discovered by traders worldwide.",
+		"modalPrivacy": "Privacy Guarantee: Strategy parameters, confidential configurations, and API keys are strictly removed. Only high-level market lessons and performance statistics are contributed.",
+		"modalQuality": "Quality Gate: Only verified profitable strategies with ≥30 trades and ≥28 days backtest duration enter the network pool.",
+		"modalTransfer": "Cross-Asset Transfer: Learn from BTC, ETH, and altcoin patterns even on assets you haven't traded yet.",
+		"modalJoin": "Join Community Pool",
+		"modalLater": "Keep Private Only",
+		"cannotDeleteCommunity": "Community memories cannot be deleted as they belong to the shared network pool.",
+		"shareWithCommunity": "Share with Community (requires ≥ 30 trades)",
+		"shareSuccess": "Memory successfully shared to Community pool!",
+		"shareError": "Could not share memory with community",
+		"retroactiveSuccess": "Community pool enabled! {{count}} verified strategies shared."
 	}
 }

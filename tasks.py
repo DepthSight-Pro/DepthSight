@@ -715,8 +715,52 @@ def _normalize_vector_results(
         "sortino_ratio": _safe_float(raw_results.get("sortino_ratio", 0.0)),
         "consistency_score": _safe_float(raw_results.get("consistency_score", 0.0)),
         "total_pnl_pct": _safe_float(total_pnl_pct),
+        "max_floating_dd": _safe_float(
+            raw_results.get("max_floating_dd", max_drawdown)
+        ),
+        "final_equity": _safe_float(
+            raw_results.get(
+                "final_equity",
+                running_balance
+                + sum(float(trade.get("pnl", 0.0) or 0.0) for trade in excluded_trades),
+            )
+        ),
+        "total_return_all": _safe_float(
+            raw_results.get(
+                "total_return_all",
+                (
+                    (
+                        (
+                            running_balance
+                            + sum(
+                                float(trade.get("pnl", 0.0) or 0.0)
+                                for trade in excluded_trades
+                            )
+                        )
+                        / initial_balance
+                        - 1.0
+                    )
+                    * 100.0
+                    if initial_balance > 1e-9
+                    else 0.0
+                ),
+            )
+        ),
         "equity_curve": normalized_equity_curve,
         "analytics_report": raw_results.get("analytics_report"),
+        "sample_trades": [
+            {
+                "entry_time": str(t.get("timestamp_entry")),
+                "exit_time": str(t.get("timestamp_exit")),
+                "direction": str(t.get("direction", "")),
+                "entry_price": _safe_float(t.get("entry_price", 0.0)),
+                "exit_price": _safe_float(t.get("exit_price", 0.0)),
+                "pnl": _safe_float(t.get("pnl", 0.0)),
+                "commission": _safe_float(t.get("commission", 0.0)),
+                "exit_reason": str(t.get("exit_reason", "")),
+            }
+            for t in (stat_trades[-5:] if len(stat_trades) > 5 else stat_trades)
+        ],
     }
 
 
@@ -4102,3 +4146,178 @@ def sync_pending_telemetry_task(limit: int = 50) -> Dict[str, Any]:
     from telemetry_sync import resync_pending_telemetry_reports
 
     return asyncio.run(resync_pending_telemetry_reports(limit=limit))
+
+
+async def _async_maybe_promote_to_community_impl(
+    session, memory_id: str, user_id: int, force: bool = False
+) -> Dict[str, Any]:
+    import re
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func, select
+
+    # 1. Check user opt-in
+    u_stmt = select(models.User).where(models.User.id == user_id)
+    u_res = await session.execute(u_stmt)
+    user = u_res.scalars().first()
+    if not user or not getattr(user, "share_community_memories", False):
+        logger.info(
+            f"[COMMUNITY_MEMORY] Promotion skipped: user {user_id} has not opted into community sharing."
+        )
+        return {"promoted": False, "reason": "not_opted_in"}
+
+    # 2. Rate limit: max 50 community promotions per user per day
+    one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+    count_stmt = select(func.count(models.AgentMemory.id)).where(
+        models.AgentMemory.author_user_id == user_id,
+        models.AgentMemory.visibility == "community",
+        models.AgentMemory.created_at >= one_day_ago,
+    )
+    count_res = await session.execute(count_stmt)
+    daily_count = count_res.scalar() or 0
+    if daily_count >= 50 and not force:
+        logger.warning(
+            f"[COMMUNITY_MEMORY] User {user_id} reached daily rate limit (50/day)."
+        )
+        return {"promoted": False, "reason": "daily_rate_limit_exceeded"}
+
+    # 3. Fetch the memory
+    m_stmt = select(models.AgentMemory).where(
+        models.AgentMemory.id == memory_id,
+        models.AgentMemory.user_id == user_id,
+    )
+    m_res = await session.execute(m_stmt)
+    memory = m_res.scalars().first()
+    if not memory:
+        return {"promoted": False, "reason": "memory_not_found"}
+
+    if memory.visibility == "community":
+        return {"promoted": True, "reason": "already_community"}
+
+    if str(memory.outcome or "").lower() != "success":
+        return {"promoted": False, "reason": "outcome_not_success"}
+
+    # 4. Quality Gate checks: trades >= 30, backtest_days >= 28
+    content = memory.content or ""
+    trades_match = re.search(r"trades[=:\s]+(\d+)", content, re.IGNORECASE)
+    trades_count = int(trades_match.group(1)) if trades_match else 0
+
+    days_match = re.search(r"days[=:\s]+(\d+)", content, re.IGNORECASE)
+    backtest_days = int(days_match.group(1)) if days_match else 0
+
+    # Fallback for legacy autopilot memories generated before 'trades=' was serialized into content
+    if not trades_match and str(memory.outcome or "").lower() == "success":
+        trades_count = 30
+
+    if backtest_days == 0:
+        dates_match = re.findall(r"\b(\d{4}-\d{2}-\d{2})\b", content)
+        if len(dates_match) >= 2:
+            try:
+                d1 = datetime.strptime(dates_match[0], "%Y-%m-%d")
+                d2 = datetime.strptime(dates_match[1], "%Y-%m-%d")
+                backtest_days = abs((d2 - d1).days)
+            except Exception:
+                pass
+        # Fallback for legacy autopilot memories where days was not serialized into content
+        if backtest_days == 0 and trades_count >= 30:
+            backtest_days = 30
+
+    if not force and (trades_count < 30 or backtest_days < 28):
+        logger.info(
+            f"[COMMUNITY_MEMORY] Memory {memory_id} failed quality gate: "
+            f"trades={trades_count} (min 30), days={backtest_days} (min 28)"
+        )
+        return {
+            "promoted": False,
+            "reason": "quality_gate_failed",
+            "trades": trades_count,
+            "days": backtest_days,
+        }
+
+    # 5. Passed quality gate -> Promote!
+    promoted = await crud.promote_memory_to_community(
+        session, memory_id=memory.id, user_id=user_id
+    )
+    await session.commit()
+    logger.info(
+        f"[COMMUNITY_MEMORY] Successfully promoted memory {memory_id} to community pool (new ID: {promoted.id if promoted else 'none'})."
+    )
+    return {
+        "promoted": True,
+        "community_memory_id": promoted.id if promoted else None,
+    }
+
+
+async def async_maybe_promote_to_community(
+    memory_id: str,
+    user_id: int,
+    session: Optional[Any] = None,
+    force: bool = False,
+) -> Dict[str, Any]:
+    """
+    Async implementation of Quality Gate for promoting backtest memories to community pool.
+    """
+    if session is not None:
+        return await _async_maybe_promote_to_community_impl(
+            session=session, memory_id=memory_id, user_id=user_id, force=force
+        )
+    async with get_isolated_worker_session() as worker_session:
+        return await _async_maybe_promote_to_community_impl(
+            session=worker_session, memory_id=memory_id, user_id=user_id, force=force
+        )
+
+
+@celery_app.task(name="maybe_promote_to_community")
+def maybe_promote_to_community(memory_id: str, user_id: int) -> Dict[str, Any]:
+    """
+    Quality Gate task for promoting private backtest memories to the Community Shared Pool.
+    """
+    return run_async_from_sync(
+        async_maybe_promote_to_community(memory_id=memory_id, user_id=user_id)
+    )
+
+
+async def async_cleanup_stale_community_memories(
+    session: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Async implementation of stale community memories cleanup.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import delete
+
+    async def _cleanup(sess):
+        now = datetime.now(timezone.utc)
+        six_months_ago = now - timedelta(days=180)
+
+        stmt = delete(models.AgentMemory).where(
+            models.AgentMemory.visibility == "community",
+            (
+                (models.AgentMemory.confidence < 0.3)
+                & (models.AgentMemory.community_confirmations == 0)
+            )
+            | (
+                (models.AgentMemory.created_at < six_months_ago)
+                & (models.AgentMemory.community_confirmations <= 1)
+            ),
+        )
+        res = await sess.execute(stmt, execution_options={"synchronize_session": False})
+        await sess.commit()
+        logger.info(
+            f"[COMMUNITY_MEMORY] Cleaned up {res.rowcount} stale community memories."
+        )
+        return {"cleaned_count": res.rowcount}
+
+    if session is not None:
+        return await _cleanup(session)
+    async with get_isolated_worker_session() as worker_session:
+        return await _cleanup(worker_session)
+
+
+@celery_app.task(name="cleanup_stale_community_memories")
+def cleanup_stale_community_memories() -> Dict[str, Any]:
+    """
+    Cleans up stale or unconfirmed community memories:
+    - confidence < 0.3 with 0 community confirmations
+    - older than 180 days with <= 1 confirmation
+    """
+    return run_async_from_sync(async_cleanup_stale_community_memories())

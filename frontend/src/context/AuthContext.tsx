@@ -27,6 +27,7 @@ interface AuthContextType {
 	impersonate: (token: string) => void;
 	stopImpersonating: () => void;
 	isImpersonating: boolean;
+	updateUser: (updates: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -170,6 +171,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 		}
 	};
 
+	const updateUser = (updates: Partial<User>) => {
+		setUser((prev) => (prev ? { ...prev, ...updates } : null));
+	};
+
 	return (
 		<AuthContext.Provider
 			value={{
@@ -181,6 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 				impersonate,
 				stopImpersonating,
 				isImpersonating,
+				updateUser,
 			}}
 		>
 			{children}

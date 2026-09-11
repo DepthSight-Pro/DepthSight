@@ -83,6 +83,7 @@ class User(UserBase):
     referral_code: Optional[str] = None
     affiliate_commission_rate: Optional[float] = None  # Added field
     is_totp_enabled: bool = False
+    share_community_memories: bool = False
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -1853,6 +1854,25 @@ class AgentMemoryBase(BaseModel):
     outcome: Optional[str] = None
     confidence: float = 1.0
     validated_count: int = 1
+    config_hash: Optional[str] = None
+    visibility: str = "private"
+    source_node_uuid: Optional[str] = None
+    author_user_id: Optional[int] = None
+    community_confirmations: int = 0
+
+
+class CommunityMemorySharingUpdate(BaseModel):
+    enabled: bool
+
+
+class CommunityMemoryContribute(BaseModel):
+    memory_type: str = "strategy_insight"
+    content: str
+    tags: Optional[List[str]] = None
+    symbol: Optional[str] = None
+    strategy_type: Optional[str] = None
+    outcome: Optional[str] = None
+    confidence: float = 1.0
     config_hash: Optional[str] = None
 
 

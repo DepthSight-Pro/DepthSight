@@ -3518,22 +3518,41 @@ async def create_chat_message(
 
 
 async def get_agent_memories(
-    db: AsyncSession, user_id: int
+    db: AsyncSession, user_id: int, include_community: bool = False
 ) -> List[models.AgentMemory]:
     """
-    Fetches active (non-expired) memories for a user.
+    Fetches active (non-expired) memories for a user, optionally including community memories.
     """
     now = datetime.now(timezone.utc)
-    # Return memories that either don't have an expiration or are in the future
-    stmt = (
-        select(models.AgentMemory)
-        .where(models.AgentMemory.user_id == user_id)
-        .where(
-            (models.AgentMemory.expires_at.is_(None))
-            | (models.AgentMemory.expires_at > now)
+    if include_community:
+        stmt = (
+            select(models.AgentMemory)
+            .where(
+                (models.AgentMemory.user_id == user_id)
+                | (models.AgentMemory.visibility == "community")
+            )
+            .where(
+                (models.AgentMemory.expires_at.is_(None))
+                | (models.AgentMemory.expires_at > now)
+            )
+            .order_by(
+                models.AgentMemory.relevance_score.desc(),
+                models.AgentMemory.created_at.desc(),
+            )
         )
-        .order_by(models.AgentMemory.relevance_score.desc())
-    )
+    else:
+        stmt = (
+            select(models.AgentMemory)
+            .where(models.AgentMemory.user_id == user_id)
+            .where(
+                (models.AgentMemory.expires_at.is_(None))
+                | (models.AgentMemory.expires_at > now)
+            )
+            .order_by(
+                models.AgentMemory.relevance_score.desc(),
+                models.AgentMemory.created_at.desc(),
+            )
+        )
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
@@ -3628,6 +3647,10 @@ async def create_agent_memory(
         confidence=memory_data.confidence,
         validated_count=memory_data.validated_count,
         config_hash=memory_data.config_hash,
+        visibility=getattr(memory_data, "visibility", "private") or "private",
+        source_node_uuid=getattr(memory_data, "source_node_uuid", None),
+        author_user_id=getattr(memory_data, "author_user_id", None),
+        community_confirmations=getattr(memory_data, "community_confirmations", 0) or 0,
     )
     db.add(db_memory)
     await db.flush()
@@ -3644,11 +3667,50 @@ async def search_agent_memories(
     memory_type: Optional[str] = None,
     outcome: Optional[str] = None,
     limit: int = 10,
+    include_community: bool = False,
 ) -> List[models.AgentMemory]:
     """
     Advanced memory bank searching for tag overlap, symbol priorities, and global rules.
+    When include_community is True, cascades to community memories when private results don't fill the limit.
     """
     now = datetime.now(timezone.utc)
+
+    def _apply_filters(base_stmt):
+        if symbol:
+            base_stmt = base_stmt.where(
+                (models.AgentMemory.symbol == symbol)
+                | (models.AgentMemory.symbol.is_(None))
+                | (models.AgentMemory.memory_type == "rule")
+            )
+        if strategy_type:
+            base_stmt = base_stmt.where(
+                (models.AgentMemory.strategy_type == strategy_type)
+                | (models.AgentMemory.strategy_type.is_(None))
+            )
+        if memory_type:
+            base_stmt = base_stmt.where(models.AgentMemory.memory_type == memory_type)
+        if outcome:
+            base_stmt = base_stmt.where(models.AgentMemory.outcome == outcome)
+        return base_stmt
+
+    def _filter_by_tags(
+        memories_list: List[models.AgentMemory],
+    ) -> List[models.AgentMemory]:
+        if not tags:
+            return memories_list
+        filtered = []
+        target_tags = set(t.lower() for t in tags)
+        for m in memories_list:
+            m_tags = set(t.lower() for t in (m.tags or []))
+            if (
+                m.memory_type == "rule"
+                or not m_tags
+                or target_tags.intersection(m_tags)
+            ):
+                filtered.append(m)
+        return filtered
+
+    # Phase 1: User's private memories
     stmt = (
         select(models.AgentMemory)
         .where(models.AgentMemory.user_id == user_id)
@@ -3657,49 +3719,178 @@ async def search_agent_memories(
             | (models.AgentMemory.expires_at > now)
         )
     )
-
-    if symbol:
-        # Match exact symbol, global memories (symbol is null), or global rules
-        stmt = stmt.where(
-            (models.AgentMemory.symbol == symbol)
-            | (models.AgentMemory.symbol.is_(None))
-            | (models.AgentMemory.memory_type == "rule")
-        )
-
-    if strategy_type:
-        stmt = stmt.where(
-            (models.AgentMemory.strategy_type == strategy_type)
-            | (models.AgentMemory.strategy_type.is_(None))
-        )
-
-    if memory_type:
-        stmt = stmt.where(models.AgentMemory.memory_type == memory_type)
-
-    if outcome:
-        stmt = stmt.where(models.AgentMemory.outcome == outcome)
-
+    stmt = _apply_filters(stmt)
     stmt = stmt.order_by(
         models.AgentMemory.relevance_score.desc(), models.AgentMemory.created_at.desc()
     )
     result = await db.execute(stmt)
-    memories = list(result.scalars().all())
+    private_memories = _filter_by_tags(list(result.scalars().all()))[:limit]
 
-    # Tag overlap filtering in Python (highly compatible across PG/SQLite)
-    if tags:
-        filtered = []
-        target_tags = set(t.lower() for t in tags)
-        for m in memories:
-            m_tags = set(t.lower() for t in (m.tags or []))
-            # Rules are always relevant; others match if they overlap with query tags
-            if (
-                m.memory_type == "rule"
-                or not m_tags
-                or target_tags.intersection(m_tags)
-            ):
-                filtered.append(m)
-        return filtered[:limit]
+    if not include_community or len(private_memories) >= limit:
+        return private_memories
 
-    return memories[:limit]
+    # Phase 2: Community memories (visibility == 'community', other users or shared, confidence >= 0.5)
+    comm_stmt = (
+        select(models.AgentMemory)
+        .where(models.AgentMemory.visibility == "community")
+        .where(models.AgentMemory.user_id != user_id)
+        .where(models.AgentMemory.confidence >= 0.5)
+        .where(
+            (models.AgentMemory.expires_at.is_(None))
+            | (models.AgentMemory.expires_at > now)
+        )
+    )
+    comm_stmt = _apply_filters(comm_stmt)
+    comm_stmt = comm_stmt.order_by(
+        models.AgentMemory.community_confirmations.desc(),
+        models.AgentMemory.relevance_score.desc(),
+        models.AgentMemory.created_at.desc(),
+    )
+    comm_result = await db.execute(comm_stmt)
+    community_candidates = _filter_by_tags(list(comm_result.scalars().all()))
+
+    # Deduplicate community candidates against user's private memories by config_hash
+    existing_hashes = {m.config_hash for m in private_memories if m.config_hash}
+    combined = list(private_memories)
+    for c in community_candidates:
+        if c.config_hash and c.config_hash in existing_hashes:
+            continue
+        combined.append(c)
+        if len(combined) >= limit:
+            break
+
+    return combined
+
+
+async def promote_memory_to_community(
+    db: AsyncSession,
+    memory_id: str,
+    user_id: int,
+    source_node_uuid: Optional[str] = None,
+) -> Optional[models.AgentMemory]:
+    """
+    Promotes an existing private memory to the community pool by creating an anonymized copy,
+    or reinforcing an existing community memory if matching config_hash is found.
+    """
+    stmt = select(models.AgentMemory).where(
+        models.AgentMemory.id == memory_id,
+        models.AgentMemory.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    mem = result.scalars().first()
+    if not mem:
+        return None
+
+    if mem.visibility == "community":
+        return mem
+
+    # Extract and sanitize configuration for community sharing
+    import json
+    from api.agent_autopilot import _extract_config
+
+    clean_cfg = _extract_config(mem.content)
+    config_idx = mem.content.find(". Config: ")
+    base_content = mem.content[:config_idx] if config_idx != -1 else mem.content
+
+    if clean_cfg:
+        clean_cfg = clean_cfg.copy()
+        for k in ("id", "user_id", "created_at", "updated_at"):
+            clean_cfg.pop(k, None)
+        anonymized_content = f"{base_content}. Config: {json.dumps(clean_cfg)}"
+    else:
+        anonymized_content = base_content
+
+    import hashlib
+
+    if not mem.config_hash and clean_cfg:
+        mem.config_hash = hashlib.sha256(
+            json.dumps(clean_cfg, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+    # If matching community memory exists by config_hash, confirm it and update content with clean config
+    if mem.config_hash:
+        comm_stmt = select(models.AgentMemory).where(
+            models.AgentMemory.visibility == "community",
+            models.AgentMemory.config_hash == mem.config_hash,
+        )
+        comm_res = await db.execute(comm_stmt)
+        existing_comm = comm_res.scalars().first()
+        if existing_comm:
+            existing_comm.community_confirmations = (
+                existing_comm.community_confirmations or 0
+            ) + 1
+            existing_comm.validated_count = (existing_comm.validated_count or 1) + 1
+            existing_comm.confidence = min(
+                1.0, (existing_comm.confidence or 0.8) + 0.05
+            )
+            if clean_cfg:
+                existing_comm.content = anonymized_content
+            await db.flush()
+            return existing_comm
+
+    community_mem = models.AgentMemory(
+        user_id=user_id,
+        memory_type=mem.memory_type,
+        content=anonymized_content,
+        relevance_score=mem.relevance_score,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=180),
+        tags=list(mem.tags or []),
+        symbol=mem.symbol,
+        strategy_type=mem.strategy_type,
+        outcome=mem.outcome,
+        confidence=mem.confidence,
+        validated_count=mem.validated_count,
+        config_hash=mem.config_hash,
+        visibility="community",
+        source_node_uuid=source_node_uuid,
+        author_user_id=user_id,
+        community_confirmations=1,
+    )
+    db.add(community_mem)
+    await db.flush()
+    await db.refresh(community_mem)
+    return community_mem
+
+
+async def confirm_community_memory(
+    db: AsyncSession,
+    config_hash: str,
+    confirming_user_id: int,
+) -> bool:
+    """
+    Increments confirmation count for a community memory matching config_hash.
+    """
+    if not config_hash:
+        return False
+    stmt = select(models.AgentMemory).where(
+        models.AgentMemory.visibility == "community",
+        models.AgentMemory.config_hash == config_hash,
+    )
+    result = await db.execute(stmt)
+    comm_mem = result.scalars().first()
+    if not comm_mem:
+        return False
+    comm_mem.community_confirmations = (comm_mem.community_confirmations or 0) + 1
+    comm_mem.validated_count = (comm_mem.validated_count or 1) + 1
+    comm_mem.confidence = min(1.0, (comm_mem.confidence or 0.8) + 0.05)
+    await db.flush()
+    return True
+
+
+async def update_user_community_sharing(
+    db: AsyncSession, user_id: int, enabled: bool
+) -> bool:
+    """
+    Updates the user's community memory sharing opt-in flag.
+    """
+    stmt = select(models.User).where(models.User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+    if not user:
+        return False
+    user.share_community_memories = enabled
+    await db.flush()
+    return True
 
 
 async def delete_expired_memories(db: AsyncSession) -> int:
@@ -3714,19 +3905,24 @@ async def delete_expired_memories(db: AsyncSession) -> int:
 
 async def delete_agent_memories(db: AsyncSession, user_id: int) -> int:
     """
-    Deletes all agent memories for a user.
+    Deletes all private agent memories for a user (community memories remain intact).
     """
-    stmt = delete(models.AgentMemory).where(models.AgentMemory.user_id == user_id)
+    stmt = delete(models.AgentMemory).where(
+        models.AgentMemory.user_id == user_id,
+        models.AgentMemory.visibility != "community",
+    )
     result = await db.execute(stmt, execution_options={"synchronize_session": False})
     return result.rowcount
 
 
 async def delete_agent_memory(db: AsyncSession, memory_id: str, user_id: int) -> bool:
     """
-    Deletes a specific agent memory for a user.
+    Deletes a specific private agent memory for a user. Community memories cannot be deleted.
     """
     stmt = delete(models.AgentMemory).where(
-        models.AgentMemory.id == memory_id, models.AgentMemory.user_id == user_id
+        models.AgentMemory.id == memory_id,
+        models.AgentMemory.user_id == user_id,
+        models.AgentMemory.visibility != "community",
     )
     result = await db.execute(stmt, execution_options={"synchronize_session": False})
     return result.rowcount > 0
@@ -3849,14 +4045,25 @@ async def deduplicate_user_memories(db: AsyncSession, user_id: int) -> int:
     return deleted_count
 
 
-async def get_unique_agent_tags(db: AsyncSession, user_id: int) -> List[str]:
+async def get_unique_agent_tags(
+    db: AsyncSession, user_id: int, include_community: bool = False
+) -> List[str]:
     """
-    Retrieves all unique, normalized (lowercase) tags from the user's active agent memories.
+    Retrieves all unique, normalized (lowercase) tags from active agent memories,
+    optionally including shared community memories.
     """
     now = datetime.now(timezone.utc)
+    where_clause = (
+        or_(
+            models.AgentMemory.user_id == user_id,
+            models.AgentMemory.visibility == "community",
+        )
+        if include_community
+        else (models.AgentMemory.user_id == user_id)
+    )
     stmt = (
         select(models.AgentMemory.tags)
-        .where(models.AgentMemory.user_id == user_id)
+        .where(where_clause)
         .where(
             (models.AgentMemory.expires_at.is_(None))
             | (models.AgentMemory.expires_at > now)

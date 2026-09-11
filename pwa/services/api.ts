@@ -15,6 +15,7 @@ import type {
 	BinanceKline,
 	CreatePaymentResponse,
 	GeneStatsResponse,
+	HistoricalRangeItem,
 	Message,
 	PaperWalletData,
 	Plan,
@@ -266,6 +267,19 @@ export const api = {
 		apiFetch<{ deleted_count: number }>("/ai/memories/deduplicate", {
 			method: "POST",
 		}),
+	updateCommunityMemorySharing: (
+		enabled: boolean,
+	): Promise<{ share_community_memories: boolean; promoted_count?: number }> =>
+		apiFetch<{ share_community_memories: boolean; promoted_count?: number }>("/ai/memories/community-sharing", {
+			method: "PUT",
+			body: JSON.stringify({ enabled }),
+		}),
+	shareAgentMemory: (
+		memoryId: string,
+	): Promise<{ status: string; community_memory_id?: string }> =>
+		apiFetch<{ status: string; community_memory_id?: string }>(`/ai/memories/${memoryId}/share`, {
+			method: "POST",
+		}),
 
 	// --- Dashboard ---
 	getPortfolio: (mode: "live" | "paper"): Promise<PortfolioStatus> =>
@@ -316,6 +330,11 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify(payload),
 		}),
+
+	getHistoricalRanges: (symbol?: string): Promise<HistoricalRangeItem[]> => {
+		const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+		return apiFetch<HistoricalRangeItem[]>(`/backtests/historical-ranges${query}`);
+	},
 
 	// --- Strategies ---
 	getSavedStrategies: (): Promise<StrategyConfigDB[]> =>

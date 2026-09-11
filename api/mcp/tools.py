@@ -116,7 +116,7 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
             "Queues and executes an algorithmic backtest simulation on historical market data. "
             "Validates user plan limits and quotas (Free: up to 20/day, max 90 days history; "
             "Standard: 50/day, 365 days; Pro: unlimited). "
-            "Returns key performance indicators (PnL%, Win Rate%, Total Trades, Max Drawdown%, Profit Factor)."
+            "Returns comprehensive performance metrics (PnL%, Total Return All, Final Equity, Win Rate%, Total Trades, Max Drawdown%, Max Floating DD%, Profit Factor, Sharpe, Sortino, Total Fees/Commission, Signal Telemetry, and Executed Trades Sample)."
         ),
         inputSchema={
             "type": "object",
@@ -380,6 +380,25 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
                 },
             },
             "required": [],
+        },
+    ),
+    ToolDefinition(
+        name="set_community_sharing",
+        description=(
+            "Toggles the user's opt-in participation in DepthSight Community Shared Memory (Swarm Intelligence). "
+            "When enabled, the user's agent gains access to verified community trading rules and cross-asset insights, "
+            "and reciprocally contributes qualified successful backtest lessons (>= 30 trades, >= 28 days) anonymously. "
+            "PROTOCOL: When user expresses willingness to participate or asks to enable community pool, invoke this tool."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "True to join the community memory pool, False to restrict to private local memory only.",
+                },
+            },
+            "required": ["enabled"],
         },
     ),
 ]
@@ -880,10 +899,13 @@ async def tool_get_market_metrics(symbol: str) -> str:
     )
 
 
+STORAGE_INFO_CACHE_TTL_SECONDS = 86400  # 24 hours
+
+
 async def get_storage_symbols_info(
     redis_client: Optional[Any] = None, force_refresh: bool = False
 ) -> list[dict]:
-    """Retrieves cached storage symbols metadata from Redis or scans parquet files."""
+    """Retrieves cached storage symbols metadata from Redis (24h TTL) or scans parquet files."""
     cache_key = "depthsight:admin:storage_info"
     if redis_client and not force_refresh:
         try:
@@ -903,7 +925,10 @@ async def get_storage_symbols_info(
     symbols_data = await asyncio.to_thread(_scan_storage_sync, base_path)
     if redis_client and symbols_data:
         try:
-            await redis_client.set(cache_key, json.dumps(symbols_data), ex=600)
+            # Cache in Redis for at least 24 hours (86400s)
+            await redis_client.set(
+                cache_key, json.dumps(symbols_data), ex=STORAGE_INFO_CACHE_TTL_SECONDS
+            )
         except Exception:
             pass
 
@@ -1312,12 +1337,55 @@ async def tool_run_backtest(
         result_data = (
             task_result.get(clean_symbol, {}) if isinstance(task_result, dict) else {}
         )
-        pnl = result_data.get("total_pnl_pct", 0.0)
-        win_rate = result_data.get("win_rate", 0.0)
-        trades = result_data.get("trades", 0)
-        max_dd = result_data.get("max_drawdown", 0.0)
-        sharpe = result_data.get("sharpe_ratio", 0.0)
-        profit_factor = result_data.get("profit_factor", 0.0)
+        pnl = float(result_data.get("total_pnl_pct", 0.0) or 0.0)
+        win_rate = float(result_data.get("win_rate", 0.0) or 0.0)
+        trades = int(result_data.get("trades", 0) or 0)
+        trades_all = int(result_data.get("trades_all", trades) or trades)
+        excluded_eod = int(result_data.get("excluded_end_of_data_trades", 0) or 0)
+        max_dd = float(result_data.get("max_drawdown", 0.0) or 0.0)
+        max_floating_dd = (
+            float(result_data["max_floating_dd"])
+            if result_data.get("max_floating_dd") is not None
+            else None
+        )
+        sharpe = float(result_data.get("sharpe_ratio", 0.0) or 0.0)
+        sortino = (
+            float(result_data["sortino_ratio"])
+            if result_data.get("sortino_ratio") is not None
+            else None
+        )
+        profit_factor = float(result_data.get("profit_factor", 0.0) or 0.0)
+        final_equity = (
+            float(result_data["final_equity"])
+            if result_data.get("final_equity") is not None
+            else None
+        )
+        total_return_all = (
+            float(result_data["total_return_all"])
+            if result_data.get("total_return_all") is not None
+            else None
+        )
+        total_commission = (
+            float(result_data["total_commission"])
+            if result_data.get("total_commission") is not None
+            else None
+        )
+        total_pnl_usd = (
+            float(result_data["total_pnl"])
+            if result_data.get("total_pnl") is not None
+            else None
+        )
+        avg_trade_pnl = (
+            float(result_data["avg_trade_pnl"])
+            if result_data.get("avg_trade_pnl") is not None
+            else None
+        )
+        wins = int(result_data.get("wins", 0) or 0)
+        losses = int(result_data.get("losses", 0) or 0)
+        sharpe_method = str(result_data.get("sharpe_method", "per_trade_capped"))
+        run_id = result_data.get("run_id")
+        sample_trades = result_data.get("sample_trades") or []
+        analytics_report = result_data.get("analytics_report")
 
         # Extract reasoning: parameter first, then inside strategy_config
         actual_reasoning = (
@@ -1376,7 +1444,7 @@ async def tool_run_backtest(
             )
             if actual_reasoning:
                 content += f" Reasoning: {actual_reasoning}."
-            content += f" Config: {strategy_config}"
+            content += f" Config: {json.dumps(strategy_config)}"
 
             config_str = json.dumps(strategy_config)
             config_hash = hashlib.sha256(config_str.encode("utf-8")).hexdigest()
@@ -1396,17 +1464,42 @@ async def tool_run_backtest(
                 config_hash=config_hash,
             )
 
+            saved_mem = None
             if db:
-                await crud.create_agent_memory(
+                saved_mem = await crud.create_agent_memory(
                     db, user_id=user.id, memory_data=mem_data
                 )
                 await db.commit()
             else:
                 async with async_session_factory() as db_session:
-                    await crud.create_agent_memory(
+                    saved_mem = await crud.create_agent_memory(
                         db_session, user_id=user.id, memory_data=mem_data
                     )
                     await db_session.commit()
+
+            # Trigger community promotion if user opted in and run was profitable
+            if (
+                is_success
+                and saved_mem
+                and getattr(user, "share_community_memories", False)
+            ):
+                try:
+                    from tasks import maybe_promote_to_community
+
+                    maybe_promote_to_community.delay(
+                        memory_id=saved_mem.id, user_id=user.id
+                    )
+                except Exception:
+                    try:
+                        from tasks import async_maybe_promote_to_community
+
+                        asyncio.create_task(
+                            async_maybe_promote_to_community(
+                                memory_id=saved_mem.id, user_id=user.id
+                            )
+                        )
+                    except Exception:
+                        pass
 
             # Trigger background rule synthesis and lifecycle evaluation
             asyncio.create_task(run_rule_synthesis(user.id, strat_type))
@@ -1453,7 +1546,30 @@ async def tool_run_backtest(
                 f"- ⚠️ **Direction Mismatch Warning**: Strategy has `direction='{direction_val}'`, but contains opposing direction conditions. "
                 f"DepthSight Vector Engine runs strictly single-directional (`{direction_val}`); all opposing branches are ignored by the engine. Do not mix LONG and SHORT branches in a single configuration."
             )
-        if trades < 30:
+        if trades == 0:
+            zero_diag = []
+            if isinstance(analytics_report, dict):
+                ev = analytics_report.get("event_counters", {})
+                trig = ev.get("foundation_trigger_counts", {})
+                rej = ev.get("rejections", {})
+                total_trigs = sum(trig.values()) if trig else 0
+                if total_trigs == 0:
+                    zero_diag.append(
+                        "No foundation triggers fired during the entire period (0 signals generated). "
+                        "Review condition thresholds, local levels, indicator periods, or timeframe alignment."
+                    )
+                else:
+                    rej_items = [f"{k}: {v}" for k, v in rej.items() if v]
+                    rej_desc = f" ({', '.join(rej_items)})" if rej_items else ""
+                    zero_diag.append(
+                        f"Foundations fired {total_trigs} times, but 0 trades were opened due to filter or risk manager rejections{rej_desc}."
+                    )
+            if not zero_diag:
+                zero_diag.append("No entry signals were generated during the simulation period.")
+            diagnostics_notes.append(
+                f"- ℹ️ **Zero Trades Diagnostic**: {' '.join(zero_diag)}"
+            )
+        elif trades < 30:
             diagnostics_notes.append(
                 f"- ⚠️ **Low Trade Sample Notice ({trades} trades in {duration_days} days)**: "
                 "For statistical validity (and user prompts requiring >= 50 trades), avoid multi-week extremes (such as 20d High) which occur too rarely. "
@@ -1527,21 +1643,110 @@ async def tool_run_backtest(
                     f"- **Learn from Failure**: Inspect the failure memory above to avoid repeating invalid filter combinations."
                 )
 
+        kpi_lines = [
+            f"### {status_emoji} Backtest Results: {clean_symbol} ({timeframe})",
+            f"- **Strategy**: {run_name}",
+            f"- **Period**: {start_date} to {end_date} ({duration_days} days)",
+            f"- **Engine**: {engine.upper()}",
+            f"- **Total Return (PnL)**: **{pnl:+.2f}%**"
+            + (f" (${total_pnl_usd:+,.2f})" if total_pnl_usd is not None else ""),
+        ]
+        if final_equity is not None:
+            ret_all_str = (
+                f" (Total Return All: {total_return_all:+.2f}%)"
+                if total_return_all is not None and abs(total_return_all - pnl) > 0.01
+                else ""
+            )
+            kpi_lines.append(f"- **Final Equity**: ${final_equity:,.2f}{ret_all_str}")
+
+        win_details = f" ({wins}W / {losses}L)" if (wins or losses) else ""
+        kpi_lines.append(f"- **Win Rate**: **{win_rate:.1f}%**{win_details}")
+
+        trade_details = (
+            f" (Total Signals: {trades_all}, Excluded Open at End-of-Data: {excluded_eod})"
+            if excluded_eod
+            else ""
+        )
+        kpi_lines.append(f"- **Total Trades**: {trades}{trade_details}")
+
+        kpi_lines.append(f"- **Max Drawdown**: {max_dd:.2f}%")
+        if max_floating_dd is not None and max_floating_dd > 0:
+            kpi_lines.append(
+                f"- **Max Floating Drawdown (Intra-candle)**: {max_floating_dd:.2f}%"
+            )
+
+        kpi_lines.append(f"- **Profit Factor**: {profit_factor:.2f}")
+        kpi_lines.append(f"- **Sharpe Ratio**: {sharpe:.2f} ({sharpe_method})")
+        if sortino is not None and abs(sortino) > 1e-6:
+            kpi_lines.append(f"- **Sortino Ratio**: {sortino:.2f}")
+        if total_commission is not None:
+            kpi_lines.append(f"- **Total Fees / Commission**: ${total_commission:,.2f}")
+        if avg_trade_pnl is not None and trades > 0:
+            kpi_lines.append(f"- **Avg Trade PnL**: ${avg_trade_pnl:+,.2f}")
+        if run_id:
+            kpi_lines.append(f"- **Run ID**: `{run_id}`")
+        kpi_lines.append(f"- **Task ID**: `{celery_task.id}`")
+
+        # Telemetry from analytics_report
+        telemetry_lines = []
+        if isinstance(analytics_report, dict):
+            ev = analytics_report.get("event_counters", {})
+            trig = ev.get("foundation_trigger_counts", {})
+            rej = ev.get("rejections", {})
+            if trig:
+                telemetry_lines.append(
+                    f"- **Triggered Foundations**: {', '.join(f'`{k}`: {v}' for k, v in trig.items())}"
+                )
+            if rej:
+                active_rej = []
+                for rk, rv in rej.items():
+                    if isinstance(rv, dict):
+                        sub_items = [f"{sk}={sv}" for sk, sv in rv.items() if sv > 0]
+                        if sub_items:
+                            active_rej.append(f"{rk} ({', '.join(sub_items)})")
+                    elif isinstance(rv, (int, float)) and rv > 0:
+                        active_rej.append(f"{rk}={rv}")
+                if active_rej:
+                    telemetry_lines.append(
+                        f"- **Rejection Counters**: {'; '.join(active_rej)}"
+                    )
+
+        telemetry_text = (
+            ("\n\n📊 **Signal Telemetry**:\n" + "\n".join(telemetry_lines))
+            if telemetry_lines
+            else ""
+        )
+
+        # Sample trades table
+        trades_table_text = ""
+        if sample_trades:
+            rows = []
+            for t in sample_trades[-5:]:
+                e_time = str(t.get("entry_time", ""))[:19]
+                x_time = str(t.get("exit_time", ""))[:19]
+                direction = str(t.get("direction", "LONG"))
+                e_price = float(t.get("entry_price", 0.0) or 0.0)
+                x_price = float(t.get("exit_price", 0.0) or 0.0)
+                pnl_val = float(t.get("pnl", 0.0) or 0.0)
+                reason = str(t.get("exit_reason", ""))
+                rows.append(
+                    f"| {e_time} | {x_time} | {direction} | {e_price:.4f} | {x_price:.4f} | `{reason}` | ${pnl_val:+.2f} |"
+                )
+            trades_table_text = (
+                "\n\n📋 **Recent Executed Trades Sample**:\n"
+                "| Entry Time (UTC) | Exit Time (UTC) | Dir | Entry Price | Exit Price | Exit Reason | PnL |\n"
+                "| --- | --- | --- | --- | --- | --- | --- |\n"
+                + "\n".join(rows)
+            )
+
+        kpi_output = "\n".join(kpi_lines)
         return (
-            f"### {status_emoji} Backtest Results: {clean_symbol} ({timeframe})\n"
-            f"- **Strategy**: {run_name}\n"
-            f"- **Period**: {start_date} to {end_date} ({duration_days} days)\n"
-            f"- **Engine**: {engine.upper()}\n"
-            f"- **Total Return (PnL)**: **{pnl:+.2f}%**\n"
-            f"- **Win Rate**: **{win_rate:.1f}%**\n"
-            f"- **Total Trades**: {trades}\n"
-            f"- **Max Drawdown**: {max_dd:.2f}%\n"
-            f"- **Profit Factor**: {profit_factor:.2f}\n"
-            f"- **Sharpe Ratio**: {sharpe:.2f}\n"
-            f"- **Task ID**: `{celery_task.id}`"
+            f"{kpi_output}"
             f"{memory_status_note}\n\n"
             f"{autopilot_guidance}"
-            f"{diagnostics_text}\n\n"
+            f"{diagnostics_text}"
+            f"{telemetry_text}"
+            f"{trades_table_text}\n\n"
             f"**Recommendation**: If this strategy demonstrates strong risk-adjusted returns, "
             f"consider saving it using `save_strategy` or inspecting learned rules via `search_agent_memory`."
         )
@@ -1650,7 +1855,7 @@ async def tool_search_agent_memory(
     strategy_type: Optional[str] = None,
     limit: int = 10,
 ) -> str:
-    """Cascading search through user's persistent agent memory."""
+    has_community = bool(getattr(user, "share_community_memories", False))
     memories = await crud.search_agent_memories(
         db=db,
         user_id=user.id,
@@ -1658,9 +1863,12 @@ async def tool_search_agent_memory(
         symbol=symbol,
         strategy_type=strategy_type,
         limit=min(limit, 25),
+        include_community=has_community,
     )
 
-    unique_tags = await crud.get_unique_agent_tags(db=db, user_id=user.id)
+    unique_tags = await crud.get_unique_agent_tags(
+        db=db, user_id=user.id, include_community=has_community
+    )
     tags_pool_text = ""
     if unique_tags:
         tags_str = ", ".join(f"`{t}`" for t in unique_tags)
@@ -1670,15 +1878,29 @@ async def tool_search_agent_memory(
             f"*Tagging Rule: When running backtests via `run_backtest` or storing insights via `store_agent_memory`, pick 1 to 4 tags from this pool to maintain consistency. Create a new snake_case tag only if no existing tag fits.*"
         )
 
+    community_notice = ""
+    if not has_community:
+        community_notice = (
+            "\n\n---\n🌐 **Notice: Community Shared Memory pool is currently DISABLED for this account.**\n"
+            "Your agent is currently searching only private local memories. "
+            "To participate in the decentralized memory pool (learn from other traders' setups by anonymously sharing qualified backtests with >= 30 trades and >= 28 days), "
+            "ask the user for permission, then invoke `set_community_sharing(enabled=True)`."
+        )
+
     if not memories:
-        return f"No agent memories or rules matched your criteria.{tags_pool_text}"
+        return f"No agent memories or rules matched your criteria.{tags_pool_text}{community_notice}"
 
     lines = [f"### Agent Knowledge & Historical Insights ({len(memories)} found):"]
     for m in memories:
         outcome_tag = f"[{m.outcome.upper()}]" if m.outcome else ""
+        comm_badge = (
+            " [COMMUNITY 🌐]"
+            if getattr(m, "visibility", "private") == "community"
+            else ""
+        )
         tags_str = f"Tags: {', '.join(m.tags)}" if m.tags else ""
         lines.append(
-            f"\n#### {outcome_tag} {m.strategy_type or 'Insight'} ({m.symbol or 'General'})"
+            f"\n#### {outcome_tag}{comm_badge} {m.strategy_type or 'Insight'} ({m.symbol or 'General'})"
         )
         if tags_str:
             lines.append(f"*{tags_str}*")
@@ -1686,8 +1908,32 @@ async def tool_search_agent_memory(
 
     if tags_pool_text:
         lines.append(tags_pool_text)
+    if community_notice:
+        lines.append(community_notice)
 
     return "\n".join(lines)
+
+
+async def tool_set_community_sharing(
+    enabled: bool,
+    user: Optional[models.User] = None,
+    db: Optional[AsyncSession] = None,
+) -> str:
+    """Toggles user's opt-in participation in the Community Shared Memory pool."""
+    if user is None or db is None:
+        return "Error: Database session and authenticated user required."
+
+    await crud.update_user_community_sharing(db, user_id=user.id, enabled=enabled)
+    await db.commit()
+    user.share_community_memories = enabled
+    status_str = "ENABLED 🌐" if enabled else "DISABLED (Private local memory only)"
+    desc = (
+        "Your agent can now search and benefit from verified community trading insights and rules, and will anonymously "
+        "contribute qualified backtest lessons (>= 30 trades, >= 28 days) into the decentralized network."
+        if enabled
+        else "Your agent will now strictly operate using your private local memory only."
+    )
+    return f"✅ Community Shared Memory pool is now **{status_str}**.\n{desc}"
 
 
 async def tool_store_agent_memory(
@@ -1742,8 +1988,29 @@ async def tool_store_agent_memory(
     except Exception as e:
         logger.debug(f"Rule synthesis trigger skipped: {e}")
 
+    # Trigger community promotion if user opted in and outcome was success
+    if clean_outcome == "success" and getattr(user, "share_community_memories", False):
+        try:
+            from tasks import maybe_promote_to_community
+
+            maybe_promote_to_community.delay(memory_id=saved.id, user_id=user.id)
+        except Exception:
+            try:
+                from tasks import async_maybe_promote_to_community
+
+                asyncio.create_task(
+                    async_maybe_promote_to_community(
+                        memory_id=saved.id, user_id=user.id
+                    )
+                )
+            except Exception:
+                pass
+
     # Fetch updated unique tags to return in response
-    updated_tags = await crud.get_unique_agent_tags(db=db, user_id=user.id)
+    has_community = bool(getattr(user, "share_community_memories", False))
+    updated_tags = await crud.get_unique_agent_tags(
+        db=db, user_id=user.id, include_community=has_community
+    )
     tags_pool_str = ", ".join(f"`{t}`" for t in updated_tags)
 
     return (
@@ -2104,6 +2371,15 @@ async def execute_tool(
             mode=arguments.get("mode", "live"),
             symbol=arguments.get("symbol"),
             limit=arguments.get("limit", 50),
+            user=user,
+            db=db,
+        )
+
+    elif name == "set_community_sharing":
+        if "enabled" not in arguments:
+            return "Error: 'enabled' boolean argument is required."
+        return await tool_set_community_sharing(
+            enabled=bool(arguments["enabled"]),
             user=user,
             db=db,
         )

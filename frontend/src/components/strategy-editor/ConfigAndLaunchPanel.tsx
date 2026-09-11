@@ -75,6 +75,7 @@ import {
 	getFoundationWeightValue,
 } from "./FoundationWeightsHelper";
 // Custom Components
+import { BacktestDatePresets } from "./BacktestDatePresets";
 import { FoundationWeightsModal } from "./FoundationWeightsModal";
 import { SymbolCombobox } from "./SymbolCombobox";
 import type { ConditionBlock } from "./types";
@@ -847,43 +848,54 @@ export const ConfigAndLaunchPanel = memo(
 								<CardTitle>{t("configPanel.backtestTitle")}</CardTitle>
 							</CardHeader>
 							<CardContent className="space-y-4">
-								<Popover>
-									<PopoverTrigger asChild>
-										<Button
-											variant="outline"
-											className={cn(
-												"w-full justify-start text-left font-normal",
-												!dateRange && "text-muted-foreground",
-											)}
-										>
-											<CalendarIcon className="mr-2 h-4 w-4" />
-											{dateRange?.from ? (
-												dateRange.to ? (
-													<>
-														{format(dateRange.from, "LLL dd, y")}
-														{" - "}
-														{format(dateRange.to, "LLL dd, y")}
-													</>
+								<BacktestDatePresets
+									symbol={symbol}
+									dateRange={dateRange}
+									onSelectDateRange={setDateRange}
+								/>
+
+								<div className="space-y-1.5">
+									<Label className="text-xs text-muted-foreground uppercase tracking-wider font-bold">
+										{t("configPanel.customPeriodLabel")}
+									</Label>
+									<Popover>
+										<PopoverTrigger asChild>
+											<Button
+												variant="outline"
+												className={cn(
+													"w-full justify-start text-left font-normal",
+													!dateRange && "text-muted-foreground",
+												)}
+											>
+												<CalendarIcon className="mr-2 h-4 w-4" />
+												{dateRange?.from ? (
+													dateRange.to ? (
+														<>
+															{format(dateRange.from, "LLL dd, y")}
+															{" - "}
+															{format(dateRange.to, "LLL dd, y")}
+														</>
+													) : (
+														format(dateRange.from, "LLL dd, y")
+													)
 												) : (
-													format(dateRange.from, "LLL dd, y")
-												)
-											) : (
-												<span>
-													{t("configPanel.selectPeriodPlaceholder") ||
-														"Pick a date"}
-												</span>
-											)}
-										</Button>
-									</PopoverTrigger>
-									<PopoverContent className="w-auto p-0" align="start">
-										<Calendar
-											mode="range"
-											selected={dateRange}
-											onSelect={setDateRange}
-											disabled={{ after: new Date() }}
-										/>
-									</PopoverContent>
-								</Popover>
+													<span>
+														{t("configPanel.selectPeriodPlaceholder") ||
+															"Pick a date"}
+													</span>
+												)}
+											</Button>
+										</PopoverTrigger>
+										<PopoverContent className="w-auto p-0" align="start">
+											<Calendar
+												mode="range"
+												selected={dateRange}
+												onSelect={setDateRange}
+												disabled={{ after: new Date() }}
+											/>
+										</PopoverContent>
+									</Popover>
+								</div>
 								{hasTradingViewSignalBlock && (
 									<div className="flex items-start gap-2 p-2 rounded border border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-200/80 leading-tight">
 										<AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />

@@ -29,13 +29,14 @@ Do **NOT** use `unsupported_features` for reasoning.
 
 ### Time Constraints
 
-If the user specified a custom time period or timeframe (e.g. *"for 2025"* or *"last 90 days"*), extract these constraints and write them **inside** `config_data`:
+DepthSight local storage for **{resolved_symbol}** contains loaded historical market data from **{start_date}** to **{end_date}**.
+Unless the user explicitly requested a different time period in their prompt, you MUST write these constraints inside `config_data`:
 
-| Field | Type | Example |
+| Field | Type | Required Value |
 |-------|------|---------|
-| `start_date` | `"YYYY-MM-DD"` or `null` | `"2025-01-01"` |
-| `end_date` | `"YYYY-MM-DD"` or `null` | `"2025-12-31"` |
-| `timeframe` | `"1h"` or similar, or `null` | `"15m"` |
+| `start_date` | `"YYYY-MM-DD"` | `"{start_date}"` |
+| `end_date` | `"YYYY-MM-DD"` | `"{end_date}"` |
+| `timeframe` | `"15m"`, `"1h"`, etc. | `"15m"` |
 
 ---
 
@@ -51,8 +52,8 @@ You **MUST** strictly follow this nesting structure of arrays and objects:
     "strategy_name": "VisualBuilderStrategy",
     "symbol": "{resolved_symbol}",
     "timeframe": "1m",
-    "start_date": "2025-01-01",
-    "end_date": "2025-12-31",
+    "start_date": "{start_date}",
+    "end_date": "{end_date}",
     "marketType": "FUTURES",
     "signal_source": "internal",
     "min_foundation_weight_threshold": 40.0,

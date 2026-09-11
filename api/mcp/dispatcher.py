@@ -361,7 +361,10 @@ class MCPDispatcher:
         user_tags: List[str] = []
         if db and user:
             try:
-                user_tags = await crud.get_unique_agent_tags(db=db, user_id=user.id)
+                has_community = bool(getattr(user, "share_community_memories", False))
+                user_tags = await crud.get_unique_agent_tags(
+                    db=db, user_id=user.id, include_community=has_community
+                )
             except Exception as e:
                 logger.debug(f"Failed to query unique tags for prompt: {e}")
 
@@ -418,11 +421,12 @@ class MCPDispatcher:
             f"4. **No Isolated Guessing - Rich Block Synergies**: Single indicators (like RSI alone) mathematically fail. "
             f"Combine standard blocks across the entire spectrum: price consolidation, volatility squeeze, candlestick patterns, swing levels, volume confirmation, breakeven, and DCA/Grid.\n"
             f"5. **Mandatory Reasoning**: In every strategy JSON, include a structured `reasoning` field: Context, Setup, Success Factors, and Rule for Future.\n"
-            f"6. **Iterate with Backtests**: Execute `run_backtest` (strictly within the symbol's available historical date range) to verify metrics (PnL%, Win Rate%, Drawdown%).\n"
+            f"6. **Iterate with Backtests & Balance Frequency**: Execute `run_backtest` (strictly within the symbol's available historical date range) to verify metrics (PnL%, Win Rate%, Drawdown%). "
+            f"A strategy MUST achieve statistically meaningful frequency (target >= 20 trades over the backtest window). If trades are too low (< 20), loosen filters or lower weight thresholds.\n"
             f"7. **Save Insights with Tag Consistency**: Call `store_agent_memory` after every backtest. "
             f"Prefer picking 1-4 tags from the active pool above. Always pass the pair in UPPERCASE in `symbol='{symbol}'` (not in tags).\n"
-            f"8. **Evolutionary Optimization & Backtracking**: Treat your best backtest as the Baseline. "
-            f"Mutate only ONE parameter at a time (e.g. adjust ATR multiplier, change indicator period, or add one filter). "
+            f"8. **Evolutionary Optimization & Diversity**: Treat your best backtest as the Baseline. "
+            f"Mutate parameters meaningfully. Do NOT generate identical clones. Test varying stop-loss types (ATR multipliers vs. trailing percent) and risk-reward ratios.\n"
             f"If a mutation degrades performance, immediately revert to the best baseline!\n"
             f"9. **Stagnation Prevention (Patience Limit = 3) & Paradigm Pivot**: "
             f"Allow up to 3 mutation attempts to improve your best baseline. "

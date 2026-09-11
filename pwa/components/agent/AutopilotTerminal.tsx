@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Play, Square, Terminal as TerminalIcon, ArrowRight, Activity, Image as ImageIcon, X } from "lucide-react";
+import { Play, Square, Terminal as TerminalIcon, ArrowRight, Activity, Image as ImageIcon, X, Bot, Sparkles, RotateCcw } from "lucide-react";
 import type { StrategyConfig } from "../../types";
 import ReactMarkdown from "react-markdown";
 
@@ -348,24 +348,292 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 	};
 
 	const chr = (code: number) => String.fromCharCode(code);
-
 	return (
 		<div className="flex flex-col h-auto xl:h-full bg-card border border-border rounded-2xl shadow-2xl p-3 sm:p-4 shrink-0 xl:shrink">
-			{/* Input Header */}
-			<div className="mb-4 border-b border-border pb-4">
-				<div className="flex flex-col">
-					<label className="text-[10px] uppercase font-mono text-muted-foreground mb-1.5" htmlFor="prompt-input">Agent Instructions</label>
-					<div className="flex flex-col sm:flex-row gap-2">
-						<div className="flex w-full sm:flex-1 gap-2">
-							<input
-								id="prompt-input"
-								type="text"
-								value={prompt}
-								onChange={(e) => setPrompt(e.target.value)}
-								disabled={isRunning}
-								placeholder="Describe desired behavior..."
-								className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary disabled:opacity-50 transition min-w-0"
+			{/* Top Control Bar */}
+			<div className="flex items-center justify-between border-b border-border pb-2.5 mb-2.5 shrink-0">
+				<div className="flex items-center gap-2 min-w-0">
+					<div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 shrink-0">
+						<Bot className="w-4 h-4" />
+					</div>
+					<div className="min-w-0">
+						<div className="flex items-center gap-1.5 flex-wrap">
+							<h3 className="font-semibold text-foreground text-xs sm:text-sm truncate">
+								Autopilot Agent
+							</h3>
+							{isRunning ? (
+								<span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+									<span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+									<span className="uppercase font-semibold truncate">{currentStatus}</span>
+									<span>({currentIteration})</span>
+								</span>
+							) : (
+								<span className="inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border shrink-0">
+									<span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+									idle
+								</span>
+							)}
+						</div>
+					</div>
+				</div>
+
+				<div className="flex items-center gap-1.5 shrink-0">
+					<select
+						value={maxIterations}
+						onChange={(e) => {
+							const val = e.target.value;
+							setMaxIterations(isNaN(Number(val)) ? val : Number(val));
+						}}
+						disabled={isRunning}
+						className="bg-background border border-border rounded-lg px-2 py-1 text-[11px] text-foreground focus:outline-none focus:border-primary disabled:opacity-50 transition cursor-pointer font-sans"
+						title="Maximum backtest optimization runs"
+					>
+						<option value={5}>5 runs</option>
+						<option value={10}>10 runs</option>
+						<option value={20}>20 runs</option>
+						<option value="until_profitable">Until Profit</option>
+					</select>
+
+					<button
+						onClick={() => {
+							if (logs.length > 0 && confirm("Clear conversation and log history?")) {
+								setLogs([]);
+								setResults([]);
+								setFinalStrategy(null);
+								setFinalKpis(null);
+								localStorage.removeItem("autopilot_logs");
+								localStorage.removeItem("autopilot_results");
+								localStorage.removeItem("autopilot_final_strategy");
+								localStorage.removeItem("autopilot_final_kpis");
+							}
+						}}
+						disabled={isRunning || logs.length === 0}
+						className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition disabled:opacity-40"
+						title="Clear logs"
+						type="button"
+					>
+						<RotateCcw className="w-3.5 h-3.5" />
+					</button>
+				</div>
+			</div>
+
+			{/* Main Scrollable Chat & Console Area */}
+			<div ref={terminalContainerRef} className="flex-1 min-h-[160px] overflow-y-auto pr-1 space-y-2.5 scrollbar-thin scrollbar-thumb-slate-800">
+				{logs.length === 0 && (
+					<div className="h-full flex flex-col items-center justify-center text-center p-4 sm:p-6 space-y-3 my-auto">
+						<div className="p-3 rounded-2xl bg-gradient-to-b from-primary/20 to-primary/5 border border-primary/20 shadow-inner">
+							<Sparkles className="w-7 h-7 text-primary animate-pulse" />
+						</div>
+						<div className="max-w-md space-y-1">
+							<h4 className="text-sm sm:text-base font-semibold text-foreground">
+								Autonomous Trading Autopilot
+							</h4>
+							<p className="text-[11px] text-muted-foreground leading-relaxed">
+								Describe your desired strategy or market thesis. 
+								The agent will autonomously synthesize rules, backtest on historical candles, and evolve parameters.
+							</p>
+						</div>
+
+						{/* Quick Prompt Suggestions */}
+						<div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-w-lg w-full pt-1">
+							{[
+								"Mean-reversion strategy on ETHUSDT using RSI & Bollinger Bands",
+								"Breakout on BTCUSDT 15m with ADX trend filter and volume confirmation",
+								"High-frequency scalping on SOLUSDT with ATR trailing stop",
+								"Volatility squeeze breakout with pre-breakout consolidation filter"
+							].map((suggestion) => (
+								<button
+									key={suggestion}
+									type="button"
+									onClick={() => setPrompt(suggestion)}
+									className="text-left text-[10px] sm:text-[11px] p-2 rounded-xl border border-border bg-card/60 hover:bg-muted/60 hover:border-primary/40 text-muted-foreground hover:text-foreground transition leading-snug"
+								>
+									💡 {suggestion}
+								</button>
+							))}
+						</div>
+					</div>
+				)}
+
+				{/* Terminal Logs (Console Stream) */}
+				{logs.length > 0 && (
+					<div className="flex flex-col bg-black/60 border border-border rounded-xl p-2.5 font-mono text-xs space-y-1.5 break-words">
+						<div className="flex items-center justify-between border-b border-slate-900 pb-1.5 mb-1 text-[10px] text-muted-foreground">
+							<div className="flex items-center gap-1.5">
+								<TerminalIcon className="w-3 h-3 text-profit shrink-0" />
+								<span>Agent Execution Stream</span>
+							</div>
+							<span>{logs.length} logs</span>
+						</div>
+						{logs.map((log) => (
+							<div key={log.id} className="flex items-start gap-1.5">
+								<span className="text-slate-600 shrink-0 select-none text-[10px]">[{log.timestamp}]</span>
+								<div className="flex-1 min-w-0 flex items-start">
+									<span className={
+										log.type === "success" ? "text-profit mr-1 shrink-0 select-none" :
+										log.type === "warn" ? "text-amber-400 mr-1 shrink-0 select-none" :
+										log.type === "error" ? "text-rose-500 font-bold mr-1 shrink-0 select-none" :
+										"text-foreground/80 mr-1 shrink-0 select-none"
+									}>
+										{log.type === "error" ? "✖ " : log.type === "success" ? "✔ " : "> "}
+									</span>
+									<div className={`flex-1 text-[11px] whitespace-normal break-words ${
+										log.type === "success" ? "text-profit" :
+										log.type === "warn" ? "text-amber-400" :
+										log.type === "error" ? "text-rose-500" :
+										"text-foreground/80"
+									}`}>
+										<ReactMarkdown
+											components={{
+												p: ({ node, ...props }) => <span className="block mb-1 last:mb-0 whitespace-pre-wrap" {...props} />,
+												ul: ({ node, ...props }) => <ul className="list-disc pl-4 space-y-0.5" {...props} />,
+												ol: ({ node, ...props }) => <ol className="list-decimal pl-4 space-y-0.5" {...props} />,
+												li: ({ node, ...props }) => <li className="mb-0.5 whitespace-pre-wrap" {...props} />,
+												h1: ({ node, ...props }) => <h1 className="block text-xs font-bold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
+												h2: ({ node, ...props }) => <h2 className="block text-xs font-bold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
+												h3: ({ node, ...props }) => <h3 className="block text-[11px] font-semibold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
+												strong: ({ node, ...props }) => <strong className="font-bold text-white" {...props} />,
+												a: ({ node, ...props }) => <a className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
+											}}
+										>
+											{log.message}
+										</ReactMarkdown>
+									</div>
+								</div>
+							</div>
+						))}
+					</div>
+				)}
+
+				{/* Iterations Status Grid */}
+				{results.length > 0 && (
+					<div className="border border-border rounded-xl p-2.5 bg-card/50">
+						<h4 className="text-[10px] uppercase font-mono text-muted-foreground mb-1.5">Candidate Comparison</h4>
+						<div className="flex sm:grid sm:grid-cols-5 gap-2 overflow-x-auto pb-1 snap-x scrollbar-none">
+							{results.map((res) => {
+								const isProfitable = res.pnl > 0;
+								return (
+									<div
+										key={res.iteration}
+										className={`min-w-[100px] sm:min-w-0 shrink-0 snap-start bg-card border ${
+											isProfitable ? "border-profit/25 bg-profit/5" : "border-border bg-card"
+										} rounded-lg p-2 flex flex-col justify-between`}
+									>
+										<span className="text-[9px] text-muted-foreground font-mono">Var {chr(64 + res.iteration)}</span>
+										<div className={`text-xs sm:text-sm font-semibold mt-0.5 font-mono ${isProfitable ? "text-profit" : "text-loss"}`}>
+											{res.pnl > 0 ? "+" : ""}{res.pnl.toFixed(1)}%
+										</div>
+										<div className="text-[9px] text-muted-foreground/80 mt-0.5">WR: {res.win_rate.toFixed(0)}%</div>
+										<div className="text-[9px] text-muted-foreground/80">Tr: {res.trades}</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				)}
+
+				{/* Final Strategy Card */}
+				{finalStrategy && (
+					<div className="bg-card border border-primary/40 rounded-xl p-3 shadow-xl relative overflow-hidden shrink-0">
+						<div className="flex flex-col gap-2.5">
+							<div className="flex items-center justify-between gap-2">
+								<div className="flex items-center gap-2 min-w-0">
+									<div className="bg-primary/20 p-1.5 rounded-lg border border-primary/30 shrink-0">
+										<Activity className="w-4 h-4 text-primary animate-pulse" />
+									</div>
+									<div className="min-w-0">
+										<h3 className="font-semibold text-foreground text-xs sm:text-sm truncate">
+											{t("editor.bestStrategyConfigured", "Best Strategy Configured")}
+										</h3>
+										<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+											{(finalStrategy as any).strategy_name || "VisualBuilderStrategy"} • Standard Engine
+										</p>
+									</div>
+								</div>
+
+								<div className="flex items-center gap-2.5 font-mono shrink-0">
+									<div className="text-right">
+										<div className="text-[9px] text-muted-foreground">PnL</div>
+										<div className={`text-xs font-bold ${finalKpis?.pnl > 0 ? "text-profit" : "text-loss"}`}>
+											{finalKpis?.pnl > 0 ? "+" : ""}{finalKpis?.pnl?.toFixed(2)}%
+										</div>
+									</div>
+									<div className="text-right">
+										<div className="text-[9px] text-muted-foreground">WR</div>
+										<div className="text-xs font-bold text-foreground">
+											{finalKpis?.win_rate?.toFixed(1)}%
+										</div>
+									</div>
+									<div className="text-right">
+										<div className="text-[9px] text-muted-foreground">DD</div>
+										<div className="text-xs font-bold text-foreground">
+											-{finalKpis?.max_dd?.toFixed(1)}%
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<button
+								onClick={() => onStrategyGenerated(finalStrategy?.config_data || finalStrategy)}
+								className="w-full bg-primary hover:bg-primary/90 active:scale-[0.98] text-white rounded-lg py-2 px-3 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-md shadow-primary/25 transition cursor-pointer"
+								type="button"
+							>
+								{t("aiChat.loadToEditor", "Approve & Load to Editor")} <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+							</button>
+						</div>
+					</div>
+				)}
+			</div>
+
+			{/* Bottom Chat Input Form */}
+			<div className="pt-2.5 border-t border-border mt-auto shrink-0 space-y-2">
+				{/* Image Preview (attached above textarea) */}
+				{selectedImage && (
+					<div className="flex items-center gap-2 border border-border rounded-xl p-1.5 bg-muted/40 max-w-fit animate-in fade-in">
+						<div className="relative group">
+							<img
+								src={getImageSrc(selectedImage.base64, selectedImage.type)}
+								className="h-14 w-20 object-cover rounded-lg border border-border shadow-sm"
+								alt="Chart preview"
 							/>
+							<button
+								onClick={removeSelectedImage}
+								className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full h-4 w-4 flex items-center justify-center shadow-md hover:bg-destructive/90 transition"
+								type="button"
+								title="Remove image"
+							>
+								<X className="h-2.5 w-2.5" />
+							</button>
+						</div>
+						<div className="text-[11px] text-muted-foreground pr-1">
+							<p className="font-medium text-foreground text-xs">Chart attached</p>
+							<p className="text-[9px]">Will be analyzed with prompt</p>
+						</div>
+					</div>
+				)}
+
+				{/* Classic Multi-line Chat Textarea */}
+				<div className="relative rounded-2xl border border-border bg-background/90 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 shadow-lg transition-all">
+					<textarea
+						id="prompt-input"
+						value={prompt}
+						onChange={(e) => setPrompt(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" && !e.shiftKey) {
+								e.preventDefault();
+								if (!isRunning && prompt.trim()) {
+									startAutopilot();
+								}
+							}
+						}}
+						disabled={isRunning}
+						rows={2}
+						placeholder="Message Autopilot Agent (Enter to optimize, Shift+Enter for new line)..."
+						className="w-full bg-transparent px-3 pt-2.5 pb-10 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none resize-none disabled:opacity-50 scrollbar-thin"
+					/>
+
+					<div className="absolute bottom-1.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+						<div className="flex items-center gap-1.5 pointer-events-auto">
 							<input
 								type="file"
 								accept="image/*"
@@ -376,209 +644,38 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 							<button
 								onClick={() => fileInputRef.current?.click()}
 								disabled={isRunning}
-								className="shrink-0 bg-background border border-border rounded-lg px-3 py-2 text-muted-foreground hover:text-foreground hover:border-primary transition disabled:opacity-50"
+								className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition disabled:opacity-50 flex items-center gap-1 text-[11px]"
 								type="button"
 								title="Attach chart screenshot"
 							>
-								<ImageIcon className="w-4 h-4" />
+								<ImageIcon className="w-3.5 h-3.5" />
+								<span className="text-[10px] hidden sm:inline">Attach Chart</span>
 							</button>
 						</div>
-						<div className="flex w-full sm:w-auto gap-2">
-							<select
-								value={maxIterations}
-								onChange={(e) => {
-									const val = e.target.value;
-									setMaxIterations(isNaN(Number(val)) ? val : Number(val));
-								}}
-								disabled={isRunning}
-								className="flex-1 sm:flex-none bg-background border border-border rounded-lg px-2 py-2 text-xs text-foreground focus:outline-none focus:border-primary disabled:opacity-50 transition cursor-pointer font-sans"
-							>
-								<option value={5}>5 runs</option>
-								<option value={10}>10 runs</option>
-								<option value={20}>20 runs</option>
-								<option value="until_profitable">Until Profit</option>
-							</select>
+
+						<div className="flex items-center gap-1.5 pointer-events-auto">
 							{isRunning ? (
 								<button
 									onClick={() => stopAutopilot(false)}
-									className="flex-1 sm:flex-none justify-center bg-destructive hover:bg-destructive/90 text-white rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium transition shrink-0"
+									className="bg-destructive hover:bg-destructive/90 text-white rounded-xl px-3 py-1 flex items-center gap-1 text-xs font-semibold shadow-md transition"
 									type="button"
 								>
-									<Square className="w-4 h-4 fill-white" /> Stop
+									<Square className="w-3 h-3 fill-white" /> Stop
 								</button>
 							) : (
 								<button
 									onClick={startAutopilot}
-									disabled={!prompt}
-									className="flex-1 sm:flex-none justify-center bg-primary hover:bg-primary/90 disabled:bg-indigo-800/40 text-white rounded-lg px-4 flex items-center gap-1.5 text-sm font-medium transition disabled:opacity-50 shrink-0"
+									disabled={!prompt.trim()}
+									className="bg-primary hover:bg-primary/90 text-white rounded-xl px-3.5 py-1 flex items-center gap-1 text-xs font-semibold shadow-md shadow-primary/20 transition disabled:opacity-40 cursor-pointer"
 									type="button"
 								>
-									<Play className="w-4 h-4 fill-white" /> Optimize
+									<Play className="w-3 h-3 fill-white" /> Optimize
 								</button>
 							)}
 						</div>
 					</div>
 				</div>
 			</div>
-
-			{/* Image Preview */}
-			{selectedImage && (
-				<div className="mb-3 border border-border rounded-xl p-2 bg-muted/30 relative group max-w-fit">
-					<img
-						src={getImageSrc(selectedImage.base64, selectedImage.type)}
-						className="h-20 w-32 object-cover rounded border border-border shadow-sm"
-						alt="Chart preview"
-					/>
-					<button
-						onClick={removeSelectedImage}
-						className="absolute -top-2 -right-2 bg-destructive text-white rounded-full h-5 w-5 flex items-center justify-center shadow-md hover:bg-destructive/90 transition"
-						type="button"
-					>
-						<X className="h-3 w-3" />
-					</button>
-				</div>
-			)}
-
-			{/* Terminal Display */}
-			<div className="h-[200px] sm:h-[240px] xl:h-auto xl:flex-1 min-h-[160px] flex flex-col bg-black/60 border border-border rounded-xl overflow-hidden font-mono text-xs">
-				<div className="bg-background/80 border-b border-slate-950 px-3 py-2 flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						<TerminalIcon className="w-4 h-4 text-profit shrink-0" />
-						<span className="text-muted-foreground/80 font-semibold text-[10px] sm:text-[11px] truncate">AUTOPILOT CONSOLE</span>
-					</div>
-					{isRunning && (
-						<div className="flex items-center gap-1.5 shrink-0 pl-2">
-							<span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-							<span className="text-[9px] sm:text-[10px] text-profit font-semibold uppercase truncate">{currentStatus}</span>
-						</div>
-					)}
-				</div>
-
-				<div ref={terminalContainerRef} className="flex-1 p-2 sm:p-3 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 break-words">
-					{logs.length === 0 && (
-						<div className="text-slate-600 text-center py-8 sm:py-12 flex flex-col items-center gap-1.5 px-4">
-							<TerminalIcon className="w-8 h-8 opacity-40 animate-pulse text-primary mb-2" />
-							<span className="text-center">Autopilot terminal ready. Describe your strategy and click Optimize to start.</span>
-						</div>
-					)}
-					{logs.map((log) => (
-						<div key={log.id} className="flex items-start gap-2">
-							<span className="text-slate-600 shrink-0 select-none">[{log.timestamp}]</span>
-							<div className="flex-1 min-w-0 flex items-start">
-								<span className={
-									log.type === "success" ? "text-profit mr-1.5 shrink-0 select-none" :
-									log.type === "warn" ? "text-amber-400 mr-1.5 shrink-0 select-none" :
-									log.type === "error" ? "text-rose-500 font-bold mr-1.5 shrink-0 select-none" :
-									"text-foreground/80 mr-1.5 shrink-0 select-none"
-								}>
-									{log.type === "error" ? "✖ " : log.type === "success" ? "✔ " : "> "}
-								</span>
-								<div className={`flex-1 text-xs whitespace-normal break-words ${
-									log.type === "success" ? "text-profit" :
-									log.type === "warn" ? "text-amber-400" :
-									log.type === "error" ? "text-rose-500" :
-									"text-foreground/80"
-								}`}>
-									<ReactMarkdown
-										components={{
-											p: ({ node, ...props }) => <span className="block mb-1 last:mb-0 whitespace-pre-wrap" {...props} />,
-											ul: ({ node, ...props }) => <ul className="list-disc pl-4 space-y-0.5" {...props} />,
-											ol: ({ node, ...props }) => <ol className="list-decimal pl-4 space-y-0.5" {...props} />,
-											li: ({ node, ...props }) => <li className="mb-0.5 whitespace-pre-wrap" {...props} />,
-											h1: ({ node, ...props }) => <h1 className="block text-sm font-bold text-white mt-1.5 mb-1 whitespace-pre-wrap" {...props} />,
-											h2: ({ node, ...props }) => <h2 className="block text-xs font-bold text-white mt-1 mb-1 whitespace-pre-wrap" {...props} />,
-											h3: ({ node, ...props }) => <h3 className="block text-xs font-semibold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
-											strong: ({ node, ...props }) => <strong className="font-bold text-white" {...props} />,
-											a: ({ node, ...props }) => <a className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
-										}}
-									>
-										{log.message}
-									</ReactMarkdown>
-								</div>
-							</div>
-						</div>
-					))}
-				</div>
-			</div>
-
-			{/* Iterations Status Grid */}
-			{results.length > 0 && (
-				<div className="mt-4 border-t border-border pt-4">
-					<h4 className="text-[10px] uppercase font-mono text-muted-foreground mb-2">Candidate Comparison</h4>
-					<div className="flex sm:grid sm:grid-cols-5 gap-2.5 overflow-x-auto pb-2 snap-x scrollbar-none">
-						{results.map((res) => {
-							const isProfitable = res.pnl > 0;
-							return (
-								<div
-									key={res.iteration}
-									className={`min-w-[110px] sm:min-w-0 shrink-0 snap-start bg-card border ${
-										isProfitable ? "border-profit/20 bg-profit/5" : "border-border bg-card"
-									} rounded-lg p-2.5 flex flex-col justify-between`}
-								>
-									<span className="text-[10px] text-muted-foreground font-mono">Var {chr(64 + res.iteration)}</span>
-									<div className={`text-sm font-semibold mt-1 font-mono ${isProfitable ? "text-profit" : "text-loss"}`}>
-										{res.pnl > 0 ? "+" : ""}{res.pnl.toFixed(1)}%
-									</div>
-									<div className="text-[9px] text-muted-foreground/80 mt-0.5">WR: {res.win_rate.toFixed(0)}%</div>
-									<div className="text-[9px] text-muted-foreground/80">Tr: {res.trades}</div>
-								</div>
-							);
-						})}
-					</div>
-				</div>
-			)}
-
-			{/* Final Success Card */}
-			{finalStrategy && (
-				<div className="mt-3 bg-card border border-primary/40 rounded-xl p-3 sm:p-4 shadow-xl relative overflow-hidden shrink-0">
-					<div className="flex flex-col gap-3">
-						<div className="flex items-center justify-between gap-2">
-							<div className="flex items-center gap-2.5 min-w-0">
-								<div className="bg-primary/20 p-2 rounded-lg border border-primary/30 shrink-0">
-									<Activity className="w-4 h-4 text-primary animate-pulse" />
-								</div>
-								<div className="min-w-0">
-									<h3 className="font-semibold text-foreground text-xs sm:text-sm truncate">
-										{t("editor.bestStrategyConfigured", "Best Strategy Configured")}
-									</h3>
-									<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-										{(finalStrategy as any).strategy_name || "VisualBuilderStrategy"} • Standard Engine
-									</p>
-								</div>
-							</div>
-
-							<div className="flex items-center gap-3 sm:gap-4 font-mono shrink-0">
-								<div className="text-right">
-									<div className="text-[9px] text-muted-foreground">PnL</div>
-									<div className={`text-xs sm:text-sm font-bold ${finalKpis?.pnl > 0 ? "text-profit" : "text-loss"}`}>
-										{finalKpis?.pnl > 0 ? "+" : ""}{finalKpis?.pnl?.toFixed(2)}%
-									</div>
-								</div>
-								<div className="text-right">
-									<div className="text-[9px] text-muted-foreground">WR</div>
-									<div className="text-xs sm:text-sm font-bold text-foreground">
-										{finalKpis?.win_rate?.toFixed(1)}%
-									</div>
-								</div>
-								<div className="text-right">
-									<div className="text-[9px] text-muted-foreground">DD</div>
-									<div className="text-xs sm:text-sm font-bold text-foreground">
-										-{finalKpis?.max_dd?.toFixed(1)}%
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<button
-							onClick={() => onStrategyGenerated(finalStrategy?.config_data || finalStrategy)}
-							className="w-full bg-primary hover:bg-primary/90 active:scale-[0.98] text-white rounded-lg py-2.5 px-4 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-primary/25 transition cursor-pointer"
-							type="button"
-						>
-							{t("aiChat.loadToEditor", "Approve & Load to Editor")} <ArrowRight className="w-4 h-4 shrink-0" />
-						</button>
-					</div>
-				</div>
-			)}
 		</div>
 	);
 };

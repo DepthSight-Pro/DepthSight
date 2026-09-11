@@ -59,6 +59,12 @@ export interface AgentMemory {
 	strategy_type?: string;
 	outcome?: string;
 	confidence?: number;
+	validated_count?: number;
+	config_hash?: string;
+	visibility?: "private" | "community";
+	source_node_uuid?: string;
+	author_user_id?: number;
+	community_confirmations?: number;
 }
 
 export interface AIChatRequest {
@@ -227,6 +233,23 @@ export interface BacktestRequest {
 	};
 	min_foundation_weight_threshold?: number | null;
 	foundation_weights?: Record<string, number> | null;
+}
+
+export interface StorageKlineInfo {
+	start_date: string;
+	end_date: string;
+	size_mb?: number;
+	is_enriched?: boolean;
+}
+
+export interface HistoricalRangeItem {
+	symbol: string;
+	timeframes: string[];
+	klines_1m?: StorageKlineInfo | null;
+	has_aggtrades?: boolean;
+	has_klines_1s?: boolean;
+	has_oi?: boolean;
+	has_depth?: boolean;
 }
 
 export interface StrategyConfigCreatePayload {
@@ -611,6 +634,8 @@ export interface User {
 	xp: number;
 	level: number;
 	isTotpEnabled?: boolean;
+	shareCommunityMemories?: boolean;
+	share_community_memories?: boolean;
 }
 
 export interface LoginResponse {

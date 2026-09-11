@@ -1029,3 +1029,60 @@ async def test_mcp_memory_tag_pooling_and_autopilot_guidance(
         and "volatility_filter" in (m.tags or [])
         for m in neg_memories
     )
+
+
+@pytest.mark.asyncio
+async def test_mcp_set_community_sharing_and_search_notice(
+    authenticated_client: AsyncClient, db_session, pro_user
+):
+    # 1. Initially disabled -> search_agent_memory returns notice
+    pro_user.share_community_memories = False
+    await db_session.commit()
+
+    search_resp = await authenticated_client.post(
+        "/api/v1/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 401,
+            "method": "tools/call",
+            "params": {"name": "search_agent_memory", "arguments": {}},
+        },
+    )
+    assert search_resp.status_code == 200
+    text = search_resp.json()["result"]["content"][0]["text"]
+    assert "Community Shared Memory pool is currently DISABLED" in text
+    assert "set_community_sharing(enabled=True)" in text
+
+    # 2. Toggle enabled via MCP
+    toggle_resp = await authenticated_client.post(
+        "/api/v1/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 402,
+            "method": "tools/call",
+            "params": {
+                "name": "set_community_sharing",
+                "arguments": {"enabled": True},
+            },
+        },
+    )
+    assert toggle_resp.status_code == 200
+    toggle_text = toggle_resp.json()["result"]["content"][0]["text"]
+    assert "ENABLED 🌐" in toggle_text
+
+    await db_session.refresh(pro_user)
+    assert pro_user.share_community_memories is True
+
+    # 3. Search again -> notice is gone
+    search_resp2 = await authenticated_client.post(
+        "/api/v1/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 403,
+            "method": "tools/call",
+            "params": {"name": "search_agent_memory", "arguments": {}},
+        },
+    )
+    assert search_resp2.status_code == 200
+    text2 = search_resp2.json()["result"]["content"][0]["text"]
+    assert "Community Shared Memory pool is currently DISABLED" not in text2

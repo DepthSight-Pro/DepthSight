@@ -343,9 +343,11 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(
                 max_iterations = data.get("max_iterations", 5)
                 image_base64 = data.get("image_base64")
                 image_mime_type = data.get("image_mime_type")
+                start_date = data.get("start_date")
+                end_date = data.get("end_date")
                 if prompt:
                     logger.info(
-                        f"User {username} (ID: {user_id}) requested autopilot run (symbol: {symbol}, max_iterations: {max_iterations}, has_image: {bool(image_base64)})."
+                        f"User {username} (ID: {user_id}) requested autopilot run (symbol: {symbol}, max_iterations: {max_iterations}, has_image: {bool(image_base64)}, dates: {start_date} to {end_date})."
                     )
                     asyncio.create_task(
                         run_autopilot_loop(
@@ -356,6 +358,8 @@ async def websocket_endpoint(websocket: WebSocket, token: Optional[str] = Query(
                             max_iterations=max_iterations,
                             image_base64=image_base64,
                             image_mime_type=image_mime_type,
+                            start_date=start_date,
+                            end_date=end_date,
                         )
                     )
 

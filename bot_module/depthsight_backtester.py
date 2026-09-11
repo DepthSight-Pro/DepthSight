@@ -3303,11 +3303,31 @@ class DepthSightBacktester:
                     avg_slippage_per_active_trade_usd
                 ),
                 "avg_total_slippage_pct": float(avg_total_slippage_pct),
+                "final_equity": float(self.current_balance),
+                "total_return_all": float(
+                    ((self.current_balance / self.initial_balance) - 1.0) * 100.0
+                    if self.initial_balance > 0
+                    else 0.0
+                ),
             }
         )
 
         kpis["equity_curve"] = [
             (ts.isoformat(), float(balance)) for ts, balance in equity_curve_for_kpis
+        ]
+        recent_trades = df_log.tail(5) if len(df_log) > 5 else df_log
+        kpis["sample_trades"] = [
+            {
+                "entry_time": str(row.get("kpi_entry_time")),
+                "exit_time": str(row.get("kpi_exit_time")),
+                "direction": str(row.get("direction", "")),
+                "entry_price": float(row.get("entry_price", 0.0) or 0.0),
+                "exit_price": float(row.get("exit_price", 0.0) or 0.0),
+                "pnl": float(row.get("pnl", 0.0) or 0.0),
+                "commission": float(row.get("commission", 0.0) or 0.0),
+                "exit_reason": str(row.get("exit_reason", "")),
+            }
+            for _, row in recent_trades.iterrows()
         ]
 
         if not self.ml_training_mode:
@@ -4168,18 +4188,18 @@ class DepthSightBacktester:
                         * backtest_position.remaining_quantity
                     )
 
-                    if self.current_balance + unrealized_pnl_liq <= 0:
-                        exit_reason = "LIQUIDATION"
-                        ideal_exit_price = worst_price_for_liq
-                    elif self._has_active_stop_loss(
+                    # Check Stop Loss first (stop loss triggers before liquidation on continuous price movement)
+                    is_long = pos_before_update.direction == SignalDirection.LONG
+                    has_sl = self._has_active_stop_loss(
                         pos_before_update.current_sl_price
-                    ) and self._is_price_beyond_stop_loss(
+                    )
+                    sl_hit = has_sl and self._is_price_beyond_stop_loss(
                         pos_before_update.direction,
-                        k_low
-                        if pos_before_update.direction == SignalDirection.LONG
-                        else k_high,
+                        k_low if is_long else k_high,
                         pos_before_update.current_sl_price,
-                    ):
+                    )
+
+                    if sl_hit:
                         exit_reason = (
                             "SL_AT_BE"
                             if pos_before_update.is_stop_at_be
@@ -4187,18 +4207,18 @@ class DepthSightBacktester:
                         )
                         ideal_exit_price = pos_before_update.current_sl_price
                     elif pos_before_update.initial_take_profit and (
-                        (
-                            pos_before_update.direction == SignalDirection.LONG
-                            and k_high >= pos_before_update.initial_take_profit
-                        )
+                        (is_long and k_high >= pos_before_update.initial_take_profit)
                         or (
-                            pos_before_update.direction == SignalDirection.SHORT
+                            not is_long
                             and k_low <= pos_before_update.initial_take_profit
                         )
                     ):
                         exit_reason = "TAKE_PROFIT"
                         ideal_exit_price = pos_before_update.initial_take_profit
                         exit_is_limit_order = True
+                    elif self.current_balance + unrealized_pnl_liq <= 0:
+                        exit_reason = "LIQUIDATION"
+                        ideal_exit_price = worst_price_for_liq
 
                     if exit_reason and ideal_exit_price is not None:
                         pos_to_close = position_state_before_management
