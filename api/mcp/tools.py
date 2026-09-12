@@ -1418,9 +1418,11 @@ async def tool_run_backtest(
             from api.agent_autopilot import (
                 run_rule_synthesis,
                 evaluate_rule_lifecycle,
+                compute_safe_calmar,
             )
             from api.database import async_session_factory
 
+            calmar_score = compute_safe_calmar(pnl, max_dd, trades)
             is_success = pnl > 0.0 and trades >= 5
             outcome = "success" if is_success else "failure"
             reason = (
@@ -1439,7 +1441,7 @@ async def tool_run_backtest(
 
             content = (
                 f"{'Profitable' if is_success else 'Failed'} strategy '{run_name}' on {clean_symbol} ({timeframe}): "
-                f"PnL={pnl:.2f}%, WR={win_rate:.1f}%, trades={trades}, DD={max_dd:.1f}%. Reason: {reason}. "
+                f"PnL={pnl:.2f}%, WR={win_rate:.1f}%, trades={trades}, DD={max_dd:.1f}%, Score={calmar_score:.2f}. Reason: {reason}. "
                 f"Weights: {strategy_config.get('foundation_weights')}, Filters: {filters_list}."
             )
             if actual_reasoning:
@@ -1565,7 +1567,9 @@ async def tool_run_backtest(
                         f"Foundations fired {total_trigs} times, but 0 trades were opened due to filter or risk manager rejections{rej_desc}."
                     )
             if not zero_diag:
-                zero_diag.append("No entry signals were generated during the simulation period.")
+                zero_diag.append(
+                    "No entry signals were generated during the simulation period."
+                )
             diagnostics_notes.append(
                 f"- ℹ️ **Zero Trades Diagnostic**: {' '.join(zero_diag)}"
             )
@@ -1591,6 +1595,8 @@ async def tool_run_backtest(
         if state is None:
             state = {
                 "best_pnl": -999999.0,
+                "best_score": -999999.0,
+                "best_dd": 100.0,
                 "best_config": None,
                 "failures": 0,
                 "iterations": 0,
@@ -1599,19 +1605,21 @@ async def tool_run_backtest(
 
         state["iterations"] += 1
 
-        if pnl > state["best_pnl"] and pnl > 0.0:
+        if calmar_score > state.get("best_score", -999999.0) and pnl > 0.0:
+            state["best_score"] = calmar_score
             state["best_pnl"] = pnl
+            state["best_dd"] = max_dd
             state["best_config"] = strategy_config
             state["failures"] = 0
 
             autopilot_guidance = (
                 f"### 🧭 Quant Autopilot Guidance (Best Baseline Candidate):\n"
                 f"- **Strategy**: `{run_name}`\n"
-                f"- **Evolutionary Step**: This strategy produced positive alpha (PnL {pnl:+.2f}%). "
+                f"- **Evolutionary Step**: This strategy produced superior risk-adjusted alpha (Safe Calmar Score: **{calmar_score:.2f}** | PnL: **{pnl:+.2f}%** | Max DD: **{max_dd:.1f}%**). "
                 f"Adopt this configuration as your current **Baseline Candidate** (New Best Baseline!).\n"
                 f"- **Strict Mutex Rule**: In your next iteration, change or tune **AT MOST ONE** parameter or rule block "
                 f"(e.g., adjust NATR threshold or tighten take-profit). Do NOT rewrite the entire configuration, as this destroys alpha attribution.\n"
-                f"- **Continuous Evolution**: Continue iterating until Sharpe > 1.5 and Profit Factor > 1.8."
+                f"- **Continuous Evolution**: Continue iterating until Sharpe > 1.5, Profit Factor > 1.8, and Max DD < 20%."
             )
         else:
             state["failures"] += 1
@@ -1620,10 +1628,13 @@ async def tool_run_backtest(
                 if state.get("best_config")
                 else ""
             )
+            best_sc = state.get("best_score", 0.0)
+            best_p = state.get("best_pnl", 0.0)
+            best_d = state.get("best_dd", 0.0)
             if state["failures"] >= 3:
                 autopilot_guidance = (
                     f"### 🧭 Quant Autopilot Guidance (Patience Limit = 3 & Paradigm Pivot):\n"
-                    f"- **Current Variant**: Degraded return (PnL {pnl:+.2f}% vs Best: {state['best_pnl']:+.2f}%).\n"
+                    f"- **Current Variant**: Degraded risk-adjusted return (Safe Calmar: {calmar_score:.2f} vs Best: {best_sc:.2f}, PnL: {pnl:+.2f}% vs Best: {best_p:+.2f}%, DD: {max_dd:.1f}% vs Best: {best_d:.1f}%).\n"
                     f"- **Patience Limit = 3 Exceeded**: You failed to improve the baseline 3 times in a row ({state['failures']}/3). You are stuck in a local minimum.\n"
                     f"- **Action**: **DISCARD this strategy architecture entirely** and pivot to a fundamentally different paradigm "
                     f"(e.g., from breakout to mean reversion or market microstructure).\n"
@@ -1631,11 +1642,12 @@ async def tool_run_backtest(
                 )
                 # Reset state so new paradigm starts fresh
                 state["best_pnl"] = -999999.0
+                state["best_score"] = -999999.0
                 state["failures"] = 0
             else:
                 autopilot_guidance = (
                     f"### 🧭 Quant Autopilot Guidance (Patience Limit = 3 & Paradigm Pivot):\n"
-                    f"- **Current Variant**: Degraded return (PnL {pnl:+.2f}% vs Best: {state['best_pnl']:+.2f}%).\n"
+                    f"- **Current Variant**: Degraded risk-adjusted return (Safe Calmar: {calmar_score:.2f} vs Best: {best_sc:.2f}, PnL: {pnl:+.2f}% vs Best: {best_p:+.2f}%, DD: {max_dd:.1f}% vs Best: {best_d:.1f}%).\n"
                     f"- **Backtracking Instruction**: Immediately **REVERT** to your last known profitable Baseline Candidate. Do NOT use the variant you just generated.{best_config_str}"
                     f"- **Patience Limit = 3**: Consecutive failures: {state['failures']}/3. If you reach 3 consecutive failures on `{clean_symbol}`, "
                     f"the `{strat_type}` hypothesis is exhausted for this regime. **DISCARD this strategy architecture entirely** "
@@ -1670,6 +1682,9 @@ async def tool_run_backtest(
         kpi_lines.append(f"- **Total Trades**: {trades}{trade_details}")
 
         kpi_lines.append(f"- **Max Drawdown**: {max_dd:.2f}%")
+        kpi_lines.append(
+            f"- **Safe Calmar Ratio**: **{calmar_score:.2f}** (Risk-Adjusted Score: PnL / (MaxDD+2)^1.1 * trade_factor)"
+        )
         if max_floating_dd is not None and max_floating_dd > 0:
             kpi_lines.append(
                 f"- **Max Floating Drawdown (Intra-candle)**: {max_floating_dd:.2f}%"
@@ -1735,8 +1750,7 @@ async def tool_run_backtest(
             trades_table_text = (
                 "\n\n📋 **Recent Executed Trades Sample**:\n"
                 "| Entry Time (UTC) | Exit Time (UTC) | Dir | Entry Price | Exit Price | Exit Reason | PnL |\n"
-                "| --- | --- | --- | --- | --- | --- | --- |\n"
-                + "\n".join(rows)
+                "| --- | --- | --- | --- | --- | --- | --- |\n" + "\n".join(rows)
             )
 
         kpi_output = "\n".join(kpi_lines)

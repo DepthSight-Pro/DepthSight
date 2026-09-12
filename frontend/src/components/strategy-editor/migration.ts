@@ -267,6 +267,46 @@ const traverseAndMigrate = (node: ConditionBlock): ConditionBlock => {
 		migratedNode.type = typeMapping[migratedNode.type] as ComponentType;
 	}
 
+	// Auto-migrate volatility_filter to natr_filter when NATR semantics are detected
+	if (migratedNode.type === "volatility_filter") {
+		const nodeParams = (migratedNode.params || {}) as Record<string, unknown>;
+		const hasNatrParam =
+			nodeParams.natr_threshold !== undefined ||
+			nodeParams.indicator === "NATR" ||
+			nodeParams.indicator === "SCALPER_NATR";
+		const hasNatrId = Boolean(
+			migratedNode.id && migratedNode.id.toLowerCase().includes("natr"),
+		);
+		const isContaminatedWithAtrDefault =
+			nodeParams.indicator === "ATR" &&
+			(nodeParams.value === 1.5 || nodeParams.value === "1.5") &&
+			nodeParams.natr_threshold !== undefined;
+
+		if (
+			hasNatrParam ||
+			isContaminatedWithAtrDefault ||
+			(hasNatrId && !nodeParams.indicator)
+		) {
+			console.log(
+				`Migrating block "${migratedNode.id}" from "volatility_filter" to "natr_filter"`,
+			);
+			migratedNode.type = "natr_filter" as ComponentType;
+			const natrThreshold =
+				nodeParams.natr_threshold ??
+				(nodeParams.indicator === "NATR" || nodeParams.indicator === "SCALPER_NATR"
+					? nodeParams.value
+					: undefined) ??
+				1.0;
+			migratedNode.params = {
+				...nodeParams,
+				natr_threshold: Number(natrThreshold),
+			};
+			delete migratedNode.params.indicator;
+			delete migratedNode.params.operator;
+			delete migratedNode.params.value;
+		}
+	}
+
 	// Filling missing parameters with default values
 	if (migratedNode.type && !["AND", "OR"].includes(migratedNode.type)) {
 		const defaults = getDefaultBlockParams(migratedNode.type);

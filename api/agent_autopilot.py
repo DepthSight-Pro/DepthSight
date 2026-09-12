@@ -122,6 +122,43 @@ async def resolve_symbol_with_llm(
     return default
 
 
+def compute_safe_calmar(pnl: float, max_dd: float, trades: int) -> float:
+    """Computes a risk-adjusted Safe Calmar score.
+
+    - If PnL <= 0, returns PnL directly (negative).
+    - Penalizes drawdowns: Calmar = PnL / ((max_dd + 2.0) ** 1.1)
+    - Applies statistical significance dampener if trades < 20: min(1.0, max(0.05, trades / 20.0))
+    """
+    if pnl <= 0:
+        return float(pnl)
+    clean_dd = max(0.0, float(max_dd or 0.0))
+    base_calmar = float(pnl) / ((clean_dd + 2.0) ** 1.1)
+    trade_factor = min(1.0, max(0.05, float(trades or 0) / 20.0))
+    return base_calmar * trade_factor
+
+
+def _extract_dd(content: str) -> float:
+    """Extracts max drawdown percentage from memory content string (e.g. 'DD=12.3%' or 'DD: 12.3%')."""
+    match = re.search(r"DD[=:]\s*([-\d.]+)", content)
+    if match:
+        try:
+            return abs(float(match.group(1)))
+        except ValueError:
+            pass
+    return 0.0
+
+
+def _extract_trades(content: str) -> int:
+    """Extracts trades count from memory content string (e.g. 'trades=35' or 'trades: 35')."""
+    match = re.search(r"trades[=:]\s*(\d+)", content, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return 0
+
+
 def _extract_pnl(content: str) -> float:
     """Extracts PnL percentage from memory content string (e.g. 'PnL=12.34%' or 'PnL: 12.34%')."""
     match = re.search(r"PnL[=:]\s*([-\d.]+)", content)
@@ -634,6 +671,9 @@ async def run_memory_researcher_agent(
         for m in candidate_insights:
             cfg = _extract_config(m.content)
             pnl_val = _extract_pnl(m.content)
+            dd_val = _extract_dd(m.content)
+            trades_val = _extract_trades(m.content)
+            score_val = compute_safe_calmar(pnl_val, dd_val, trades_val)
             if cfg and pnl_val > 0:
                 clean_cfg = cfg.copy()
                 for k in ("id", "user_id", "created_at", "updated_at"):
@@ -644,15 +684,19 @@ async def run_memory_researcher_agent(
                 if c_hash in seen_config_hashes:
                     continue
                 seen_config_hashes.add(c_hash)
-                top_configs.append((pnl_val, m.symbol or symbol, clean_cfg))
+                top_configs.append(
+                    (score_val, pnl_val, dd_val, m.symbol or symbol, clean_cfg)
+                )
 
         if top_configs:
             top_configs.sort(key=lambda x: x[0], reverse=True)
             best_configs = top_configs[:3]
             config_blocks = []
-            for rank, (pnl_val, sym_val, c_dict) in enumerate(best_configs, 1):
+            for rank, (score_val, pnl_val, dd_val, sym_val, c_dict) in enumerate(
+                best_configs, 1
+            ):
                 config_blocks.append(
-                    f"### Top Config #{rank} ({sym_val}, Historical PnL: +{pnl_val:.2f}%):\n"
+                    f"### Top Config #{rank} ({sym_val}, Historical PnL: +{pnl_val:.2f}% | Max DD: {dd_val:.1f}% | Calmar: {score_val:.2f}):\n"
                     f"```json\n{json.dumps(c_dict, indent=2)}\n```"
                 )
             summary_text += (
@@ -1232,6 +1276,7 @@ async def run_autopilot_loop(
     current_feedback_history = {}
     best_strategy = None
     best_pnl = -999999.0
+    best_score = -999999.0
     best_iteration = 1
     best_kpis = None
     last_strategy_json = None
@@ -1538,8 +1583,12 @@ async def run_autopilot_loop(
         last_iteration_pnl = total_pnl
         last_iteration_trades = trades_count
 
-        # Track the best variant
-        if total_pnl > best_pnl:
+        # Calculate Safe Calmar fitness score
+        current_score = compute_safe_calmar(total_pnl, max_dd, trades_count)
+
+        # Track the best variant based on risk-adjusted Safe Calmar score
+        if current_score > best_score:
+            best_score = current_score
             best_pnl = total_pnl
             best_strategy = strategy_json
             best_iteration = i
@@ -1548,10 +1597,11 @@ async def run_autopilot_loop(
                 "win_rate": win_rate,
                 "trades": trades_count,
                 "max_dd": max_dd,
+                "score": current_score,
             }
 
-        # Check if it meets success criteria
-        if total_pnl > 5.0 and trades_count >= 20:
+        # Check if it meets success criteria (profitable, reasonable DD, adequate trade sample)
+        if total_pnl > 5.0 and max_dd < 35.0 and trades_count >= 20:
             # We found a winning strategy! Save memory of success
             reasoning = strategy_json.get("reasoning", "")
             filters_list = [
@@ -1720,8 +1770,8 @@ async def run_autopilot_loop(
         )
 
         # Backtracking decision:
-        # If this candidate performed worse than the best PnL achieved so far, reset base config.
-        if total_pnl < best_pnl and best_strategy is not None:
+        # If this candidate performed worse than the best risk-adjusted score achieved so far, reset base config.
+        if current_score < best_score and best_strategy is not None:
             last_strategy_json = best_strategy
 
             # Extract clean config for failed variant to show model what NOT to do
@@ -1735,7 +1785,8 @@ async def run_autopilot_loop(
             current_feedback = (
                 f"Recent History (Last 3 runs):\n{recent_feedbacks}\n\n"
                 f"⚠️ Notice: We have backtracked to the best configuration so far (Variant {chr(64 + best_iteration)}).\n"
-                f"The subsequent modification (Variant {chr(64 + i)}) deteriorated the performance (PnL: {total_pnl:.2f}% vs Best: {best_pnl:.2f}%).\n"
+                f"The subsequent modification (Variant {chr(64 + i)}) deteriorated the risk-adjusted performance "
+                f"(Calmar: {current_score:.2f} [PnL: {total_pnl:.2f}%, DD: {max_dd:.1f}%] vs Best: {best_score:.2f} [PnL: {best_pnl:.2f}%, DD: {best_kpis.get('max_dd', 0.0):.1f}%]).\n"
                 f"Failed Variant {chr(64 + i)} Config snippet:\n{json.dumps(failed_config_clean, indent=2)[:800]}...\n\n"
                 f"CRITICAL INSTRUCTION FOR NEXT VARIANT:\n"
                 f"You MUST make meaningful mathematical changes to the baseline strategy. DO NOT output the exact same config.\n"
@@ -1749,14 +1800,14 @@ async def run_autopilot_loop(
                 {
                     "event": "autopilot_status",
                     "status": "loading_data",
-                    "message": f"⚠️ Backtracking: Variant {chr(64 + i)} performance deteriorated (PnL: {total_pnl:.2f}% vs Best: {best_pnl:.2f}%). Restoring best variant config as base...",
+                    "message": f"⚠️ Backtracking: Variant {chr(64 + i)} risk-adjusted performance deteriorated (Calmar: {current_score:.2f} vs Best: {best_score:.2f}). Restoring best variant config as base...",
                 }
             )
         else:
             last_strategy_json = strategy_json
             current_feedback = (
                 f"Recent History (Last 3 runs):\n{recent_feedbacks}\n\n"
-                f"Please analyze the recent history and optimize the configuration further to get higher PnL (target > 5.0% and >= 20 trades). "
+                f"Please analyze the recent history and optimize the configuration further to get higher PnL with low drawdown (target > 5.0%, DD < 25.0%, >= 20 trades). "
                 f"DIVERSITY DIRECTIVE: Make meaningful structural improvements rather than repeating the exact same parameters."
             )
 
@@ -1779,13 +1830,15 @@ async def run_autopilot_loop(
         config_str = json.dumps(best_strategy)
         config_hash = hashlib.sha256(config_str.encode("utf-8")).hexdigest()
 
+        best_max_dd = best_kpis.get("max_dd", best_kpis.get("max_drawdown", 0.0))
+
         async with async_session_factory() as db:
             await crud.create_agent_memory(
                 db,
                 user_id=user_id,
                 memory_data=schemas.AgentMemoryCreate(
                     memory_type="optimization",
-                    content=f"Best optimized strategy '{best_name}' on {resolved_symbol} ({best_strategy.get('timeframe', '15m')}): PnL={best_pnl:.2f}%, WR={best_kpis.get('win_rate', 0.0):.1f}%, DD={best_kpis.get('max_drawdown', 0.0):.1f}%. Config: {best_strategy}",
+                    content=f"Best optimized strategy '{best_name}' on {resolved_symbol} ({best_strategy.get('timeframe', '15m')}): PnL={best_pnl:.2f}%, WR={best_kpis.get('win_rate', 0.0):.1f}%, DD={best_max_dd:.1f}%, Score={best_score:.2f}. Config: {best_strategy}",
                     relevance_score=0.95,
                     expires_at=datetime.now(timezone.utc) + timedelta(days=60),
                     tags=tag_data.get("tags", []),
@@ -1801,9 +1854,9 @@ async def run_autopilot_loop(
 
         status_event = "success" if best_pnl > 0.0 else "partial_success"
         message_event = (
-            f"Successfully optimized! Best variant found has positive PnL ({best_pnl:.2f}%)."
+            f"Successfully optimized! Best variant found has positive risk-adjusted return (PnL: {best_pnl:.2f}%, DD: {best_max_dd:.1f}%, Calmar: {best_score:.2f})."
             if best_pnl > 0.0
-            else f"Autopilot finished. Returned best candidate found (PnL: {best_pnl:.2f}%)."
+            else f"Autopilot finished. Returned best candidate found (PnL: {best_pnl:.2f}%, DD: {best_max_dd:.1f}%)."
         )
 
         await websocket.send_json(

@@ -160,11 +160,15 @@
 		"hubDescription": "Описание / Заметки",
 		"authorNamePlaceholder": "Введите ваше имя или псевдоним",
 		"descriptionPlaceholder": "Опишите стратегию, логику и идеи...",
+		"titlePlaceholder": "Например: Моя прибыльная стратегия",
 		"generateLinkButton": "Сгенерировать ссылку",
 		"successMessage": "Ваша публичная ссылка сгенерирована. Любой, у кого она есть, сможет просмотреть отчет.",
 		"toast": {
 			"successTitle": "Ссылка сгенерирована",
-			"successDescription": "Теперь вы можете скопировать публичную ссылку."
+			"successDescription": "Теперь вы можете скопировать публичную ссылку.",
+			"hubSuccessDesc": "Бэктест успешно опубликован в Discovery Hub!",
+			"hubFailedTitle": "Не удалось опубликовать в Discovery Hub",
+			"hubFailedDesc": "Произошла ошибка при отправке стратегии в хаб."
 		}
 	},
 	"optimizationViewer": {

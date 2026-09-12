@@ -940,7 +940,7 @@ def evaluate_natr_scalar(
     """
     period = int(params.get("period", 14))
     threshold = float(
-        params.get("value", params.get("threshold", params.get("natr_threshold", 1.0)))
+        params.get("natr_threshold", params.get("threshold", params.get("value", 1.0)))
     )
     operator = params.get("operator", "gt")
 

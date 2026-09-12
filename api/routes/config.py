@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -1327,9 +1328,12 @@ async def format_mining_status_response(
         select(models.NodeMiningConfig).where(models.NodeMiningConfig.id == 1)
     )
     node_config = node_cfg_res.scalar_one_or_none()
+    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
     if not node_config:
         node_config = models.NodeMiningConfig(
-            id=1, is_global_mining_enabled=False, user_reward_share_percent=75.0
+            id=1,
+            is_global_mining_enabled=False,
+            user_reward_share_percent=75.0,
         )
         db.add(node_config)
         await db.commit()
@@ -1342,11 +1346,7 @@ async def format_mining_status_response(
     if node_config and node_config.user_reward_share_percent > 0.0:
         share_pct = node_config.user_reward_share_percent / 100.0
     else:
-        share_pct = 0.75
-
-    import os
-
-    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
+        share_pct = 1.0 if is_central else 0.75
 
     from datetime import timezone
     import datetime as dt
@@ -1862,9 +1862,12 @@ async def get_local_mining_status(
         select(models.NodeMiningConfig).where(models.NodeMiningConfig.id == 1)
     )
     node_config = node_cfg_res.scalar_one_or_none()
+    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
     if not node_config:
         node_config = models.NodeMiningConfig(
-            id=1, is_global_mining_enabled=False, user_reward_share_percent=75.0
+            id=1,
+            is_global_mining_enabled=False,
+            user_reward_share_percent=75.0,
         )
         db.add(node_config)
         await db.commit()
@@ -1872,7 +1875,6 @@ async def get_local_mining_status(
 
     is_mining_active = is_enabled and node_config.is_global_mining_enabled
 
-    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
     if is_central:
         wallet_node_uuid = (
             (settings.get("bybit") or {}).get("mining_node_uuid")
@@ -3449,7 +3451,9 @@ async def get_node_mining_config_endpoint(
     config = result.scalar_one_or_none()
     if not config:
         config = models.NodeMiningConfig(
-            id=1, is_global_mining_enabled=False, user_reward_share_percent=75.0
+            id=1,
+            is_global_mining_enabled=False,
+            user_reward_share_percent=75.0,
         )
         db.add(config)
         await db.commit()
@@ -3486,6 +3490,16 @@ async def update_node_mining_config_endpoint(
     config.user_reward_share_percent = payload.user_reward_share_percent
     await db.commit()
     await db.refresh(config)
+
+    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
+    if not is_central:
+        try:
+            import asyncio
+            from ..depthsight_api import perform_node_hub_sync
+
+            asyncio.create_task(perform_node_hub_sync())
+        except Exception:
+            pass
     return {"data": config}
 
 

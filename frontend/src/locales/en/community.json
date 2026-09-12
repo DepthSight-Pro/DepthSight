@@ -68,8 +68,78 @@
 			"publicDesc": "Nodes accepting external miners · sorted by conditions",
 			"privateTitle": "Private Nodes",
 			"privateDesc": "Self-hosted nodes without public access · domain not disclosed",
+			"privateNodesCount": "private",
 			"seasonsTitle": "Operator Seasons",
-			"seasonsDesc": "Compete for seasonal bonuses! Top node operators earn $DEPTH prizes for uptime, volume, and growth."
+			"seasonsDesc": "Compete for seasonal bonuses! Top node operators earn $DEPTH prizes for uptime, volume, and growth.",
+			"comingSoon": "Coming Soon",
+			"sort": {
+				"reward": "Reward",
+				"proPrice": "Pro Price",
+				"uptime": "Uptime",
+				"latency": "Latency",
+				"mined": "Mined"
+			},
+			"columns": {
+				"nodeAndPlans": "Node & Plans",
+				"location": "Location",
+				"reward": "Reward",
+				"uptime": "Uptime",
+				"ping": "Ping",
+				"miners": "Miners"
+			},
+			"masterBadge": "Master",
+			"masterHubTooltip": "Central Federation Hub",
+			"privateBadge": "Private",
+			"privateNodeLabel": "Private Node",
+			"privateNodeTooltip": "Self-hosted private node",
+			"privateNodeSelfHosted": "Self-hosted",
+			"privateNodeDesc": "This node operates in private mode without public subscription plans.",
+			"telemetry": {
+				"allTimeMined": "All-time Mined",
+				"activeMiners": "Active Miners",
+				"activeMinersTooltip": "Active miners: {{count}}",
+				"onlineSince": "Online Since",
+				"version": "Version"
+			},
+			"plans": {
+				"title": "Node Subscription Plans & Pricing",
+				"tiersCount_one": "{{count}} tier",
+				"tiersCount_other": "{{count}} tiers",
+				"openWebApp": "Open Node Web App",
+				"subscribeOnNode": "Subscribe on Node",
+				"hubPlan": "Hub Plan",
+				"defaultDesc": "Node plan",
+				"backtests": "Backtests:",
+				"aiAssistant": "AI Assistant:",
+				"liveBots": "Live Bots:",
+				"unlimited": "Unlimited",
+				"perDay": "/day",
+				"perMonth": "/ month",
+				"lifetime": "/ lifetime",
+				"popular": "POPULAR",
+				"tierBadge": "Tier",
+				"perMonthShort": "/mo",
+				"activeBots": "active bots",
+				"simulationOnly": "Simulation only"
+			},
+			"seasons": {
+				"volumeChampion": {
+					"title": "Volume Champion",
+					"desc": "Highest trade volume"
+				},
+				"uptimeHero": {
+					"title": "Uptime Hero",
+					"desc": "Best uptime record"
+				},
+				"growthStar": {
+					"title": "Growth Star",
+					"desc": "Most new miners onboarded"
+				},
+				"generosityAward": {
+					"title": "Generosity Award",
+					"desc": "Highest reward share %"
+				}
+			}
 		}
 	},
 	"news": {

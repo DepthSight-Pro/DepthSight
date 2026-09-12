@@ -68,8 +68,80 @@
 			"publicDesc": "Ноды, принимающие внешних майнеров · сортировка по условиям",
 			"privateTitle": "Приватные ноды",
 			"privateDesc": "Локальные ноды без публичного доступа · домен не раскрывается",
+			"privateNodesCount": "приватных",
 			"seasonsTitle": "Сезоны операторов",
-			"seasonsDesc": "Участвуйте в сезонных соревнованиях! Топ-операторы нод получают призы в $DEPTH за аптайм, объём и прирост."
+			"seasonsDesc": "Участвуйте в сезонных соревнованиях! Топ-операторы нод получают призы в $DEPTH за аптайм, объём и прирост.",
+			"comingSoon": "Скоро",
+			"sort": {
+				"reward": "Награда",
+				"proPrice": "Цена Pro",
+				"uptime": "Аптайм",
+				"latency": "Задержка",
+				"mined": "Добыто"
+			},
+			"columns": {
+				"nodeAndPlans": "Нода и Тарифы",
+				"location": "Локация",
+				"reward": "Награда",
+				"uptime": "Аптайм",
+				"ping": "Пинг",
+				"miners": "Майнеры"
+			},
+			"masterBadge": "Master",
+			"masterHubTooltip": "Центральный хаб федерации",
+			"privateBadge": "Приватная",
+			"privateNodeLabel": "Приватная нода",
+			"privateNodeTooltip": "Локальный/приватный узел без открытого домена",
+			"privateNodeSelfHosted": "Локальный",
+			"privateNodeDesc": "Данный узел работает в приватном режиме без публичных тарифов.",
+			"telemetry": {
+				"allTimeMined": "Всего добыто",
+				"activeMiners": "Активных майнеров",
+				"activeMinersTooltip": "Активных майнеров: {{count}}",
+				"onlineSince": "Работает с",
+				"version": "Версия"
+			},
+			"plans": {
+				"title": "Тарифные планы и расценки ноды",
+				"tiersCount_one": "{{count}} тариф",
+				"tiersCount_few": "{{count}} тарифа",
+				"tiersCount_many": "{{count}} тарифов",
+				"tiersCount_other": "{{count}} тарифов",
+				"openWebApp": "Открыть веб-интерфейс ноды",
+				"subscribeOnNode": "Подключиться",
+				"hubPlan": "Тариф хаба",
+				"defaultDesc": "План ноды",
+				"backtests": "Бектесты:",
+				"aiAssistant": "AI Ассистент:",
+				"liveBots": "Лайв стратегии:",
+				"unlimited": "∞",
+				"perDay": "/д",
+				"perMonth": "/ месяц",
+				"lifetime": "/ навсегда",
+				"popular": "ПОПУЛЯРНЫЙ",
+				"tierBadge": "Тариф",
+				"perMonthShort": "/мес",
+				"activeBots": "активных",
+				"simulationOnly": "Только симуляция"
+			},
+			"seasons": {
+				"volumeChampion": {
+					"title": "Чемпион объёмов",
+					"desc": "Наибольший торговый объём"
+				},
+				"uptimeHero": {
+					"title": "Герой аптайма",
+					"desc": "Лучшая стабильность"
+				},
+				"growthStar": {
+					"title": "Звезда роста",
+					"desc": "Больше всего новых майнеров"
+				},
+				"generosityAward": {
+					"title": "Награда щедрости",
+					"desc": "Лучший reward share %"
+				}
+			}
 		}
 	},
 	"news": {

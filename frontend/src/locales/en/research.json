@@ -161,11 +161,15 @@
 		"hubDescription": "Description / Notes",
 		"authorNamePlaceholder": "Enter your name or alias",
 		"descriptionPlaceholder": "Describe the strategy and performance ideas...",
+		"titlePlaceholder": "e.g. My Awesome Strategy",
 		"generateLinkButton": "Generate Link",
 		"successMessage": "Your public link has been generated. Anyone with this link can view the report.",
 		"toast": {
 			"successTitle": "Link Generated",
-			"successDescription": "You can now copy the public link."
+			"successDescription": "You can now copy the public link.",
+			"hubSuccessDesc": "Backtest successfully published to Discovery Hub!",
+			"hubFailedTitle": "Hub Publication Failed",
+			"hubFailedDesc": "Failed to publish to Federation Hub."
 		}
 	},
 	"optimizationViewer": {

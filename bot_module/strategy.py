@@ -6261,6 +6261,14 @@ class BaseStrategy:
         - value (float): Threshold value for comparison. Can be dynamic.
         """
         indicator = params.get("indicator", "ATR")
+        indicator_str = str(indicator).upper()
+        if (
+            "natr_threshold" in params
+            or indicator_str in {"NATR", "SCALPER_NATR"}
+            or ("natr" in str(params.get("id", "")).lower() and indicator_str != "BBW")
+        ):
+            return self._check_filter_natr(pair_info, market_data, params, context)
+
         operator = params.get("operator", "gt")
         value = self._resolve_value(params.get("value", 0), context)
         if indicator == "ATR":
@@ -7945,7 +7953,7 @@ class BaseStrategy:
 
             threshold = float(
                 params.get(
-                    "value", params.get("threshold", params.get("natr_threshold", 1.0))
+                    "natr_threshold", params.get("threshold", params.get("value", 1.0))
                 )
             )
             operator = params.get("operator", "gt")

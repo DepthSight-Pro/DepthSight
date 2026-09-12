@@ -132,16 +132,25 @@ export const ShareBacktestDialog: React.FC<ShareBacktestDialogProps> = ({
 
 							toast({
 								title: t("shareDialog.toast.successTitle"),
-								description:
+								description: t(
+									"shareDialog.toast.hubSuccessDesc",
 									"Backtest successfully published to Discovery Hub!",
+								),
 							});
 						} catch (error) {
 							const err = error as Error;
 							toast({
 								variant: "destructive",
-								title: "Hub Publication Failed",
+								title: t(
+									"shareDialog.toast.hubFailedTitle",
+									"Hub Publication Failed",
+								),
 								description:
-									err.message || "Failed to publish to Federation Hub.",
+									err.message ||
+									t(
+										"shareDialog.toast.hubFailedDesc",
+										"Failed to publish to Federation Hub.",
+									),
 							});
 						}
 					} else {
@@ -262,7 +271,10 @@ export const ShareBacktestDialog: React.FC<ShareBacktestDialogProps> = ({
 										id="hub-title"
 										value={title}
 										onChange={(e) => setTitle(e.target.value)}
-										placeholder="e.g. My Awesome Strategy"
+										placeholder={t(
+											"shareDialog.titlePlaceholder",
+											"e.g. My Awesome Strategy",
+										)}
 									/>
 								</div>
 								<div className="space-y-2">
@@ -295,7 +307,7 @@ export const ShareBacktestDialog: React.FC<ShareBacktestDialogProps> = ({
 
 				<DialogFooter>
 					{generatedUrl ? (
-						<Button onClick={handleClose}>{t("common:actions.close")}</Button>
+						<Button onClick={handleClose}>{t("common:close")}</Button>
 					) : (
 						<Button
 							onClick={handleGenerateLink}

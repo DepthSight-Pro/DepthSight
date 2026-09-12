@@ -1244,7 +1244,7 @@ async def create_redis_client_instance() -> redis.Redis:
     )
 
 
-async def _get_local_share_percent() -> float | None:
+async def _get_local_share_percent() -> float:
     """Read the local node's NodeMiningConfig.user_reward_share_percent."""
     try:
         from sqlalchemy import select
@@ -1257,11 +1257,11 @@ async def _get_local_share_percent() -> float | None:
                 select(NodeMiningConfig).where(NodeMiningConfig.id == 1)
             )
             cfg = res.scalars().first()
-            if cfg and cfg.user_reward_share_percent:
+            if cfg and cfg.user_reward_share_percent is not None:
                 return float(cfg.user_reward_share_percent)
     except Exception as e:
         logger.warning(f"Failed to read local share percent: {e}")
-    return None
+    return 75.0
 
 
 async def perform_node_hub_sync():

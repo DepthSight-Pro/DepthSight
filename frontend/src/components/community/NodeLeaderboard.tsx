@@ -1,6 +1,7 @@
 // src/components/community/NodeLeaderboard.tsx
 
 import React, { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import {
 	Trophy,
@@ -223,6 +224,9 @@ function getRankDisplay(rank: number): React.ReactNode {
 }
 
 function getNodePlans(node: LeaderboardNode): Record<string, AdminPlanItem> {
+	if (!node.public_domain && !node.is_master) {
+		return {};
+	}
 	if (node.public_plans && Object.keys(node.public_plans).length > 0) {
 		return node.public_plans;
 	}
@@ -230,6 +234,7 @@ function getNodePlans(node: LeaderboardNode): Record<string, AdminPlanItem> {
 }
 
 function getProPlanPrice(node: LeaderboardNode): number {
+	if (!node.public_domain && !node.is_master) return 999;
 	const plans = getNodePlans(node);
 	if (plans.pro?.price_usd !== undefined) return plans.pro.price_usd;
 	if (plans.standard?.price_usd !== undefined) return plans.standard.price_usd;
@@ -300,8 +305,9 @@ const SortButton: React.FC<{
 // Expanded row detail (Option 1: Rich Plan Cards Accordion)
 const NodeDetailRow: React.FC<{
 	node: LeaderboardNode;
-	isRu: boolean;
-}> = ({ node, isRu }) => {
+}> = ({ node }) => {
+	const { t, i18n } = useTranslation(["community", "common"]);
+	const isPrivate = !node.public_domain && !node.is_master;
 	const nodePlans = getNodePlans(node);
 
 	return (
@@ -318,7 +324,10 @@ const NodeDetailRow: React.FC<{
 					<div className="p-2.5 rounded-lg bg-background/50 border border-border/30 shadow-sm">
 						<div className="text-[9px] uppercase font-mono tracking-wider text-muted-foreground flex items-center gap-1 mb-1">
 							<Coins className="w-3 h-3 text-amber-400" />
-							{isRu ? "Всего добыто" : "All-time Mined"}
+							{t(
+								"community:network.leaderboard.telemetry.allTimeMined",
+								"All-time Mined",
+							)}
 						</div>
 						<div className="text-sm font-black font-mono text-amber-400">
 							{(node.total_mined || 0).toLocaleString("en-US", {
@@ -332,7 +341,10 @@ const NodeDetailRow: React.FC<{
 					<div className="p-2.5 rounded-lg bg-background/50 border border-border/30 shadow-sm">
 						<div className="text-[9px] uppercase font-mono tracking-wider text-muted-foreground flex items-center gap-1 mb-1">
 							<Users className="w-3 h-3 text-blue-400" />
-							{isRu ? "Активных майнеров" : "Active Miners"}
+							{t(
+								"community:network.leaderboard.telemetry.activeMiners",
+								"Active Miners",
+							)}
 						</div>
 						<div className="text-sm font-black font-mono text-foreground">
 							{node.active_miners || 0}
@@ -341,12 +353,15 @@ const NodeDetailRow: React.FC<{
 					<div className="p-2.5 rounded-lg bg-background/50 border border-border/30 shadow-sm">
 						<div className="text-[9px] uppercase font-mono tracking-wider text-muted-foreground flex items-center gap-1 mb-1">
 							<Clock className="w-3 h-3 text-indigo-400" />
-							{isRu ? "Работает с" : "Online Since"}
+							{t(
+								"community:network.leaderboard.telemetry.onlineSince",
+								"Online Since",
+							)}
 						</div>
 						<div className="text-sm font-bold font-mono text-foreground">
 							{node.created_at
 								? new Date(node.created_at).toLocaleDateString(
-										isRu ? "ru-RU" : "en-US",
+										i18n.language?.startsWith("ru") ? "ru-RU" : "en-US",
 										{
 											month: "short",
 											day: "numeric",
@@ -359,7 +374,10 @@ const NodeDetailRow: React.FC<{
 					<div className="p-2.5 rounded-lg bg-background/50 border border-border/30 shadow-sm">
 						<div className="text-[9px] uppercase font-mono tracking-wider text-muted-foreground flex items-center gap-1 mb-1">
 							<Server className="w-3 h-3 text-emerald-400" />
-							{isRu ? "Версия" : "Version"}
+							{t(
+								"community:network.leaderboard.telemetry.version",
+								"Version",
+							)}
 						</div>
 						<div className="text-sm font-bold font-mono text-foreground">
 							v{node.version || "—"}
@@ -367,169 +385,196 @@ const NodeDetailRow: React.FC<{
 					</div>
 				</div>
 
-				{/* Option 1: Node Subscription Plans & Pricing Cards */}
-				<div className="pt-2 space-y-3">
-					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/20 pb-2">
-						<div className="flex items-center gap-2">
-							<div className="p-1 rounded bg-primary/10 text-primary">
-								<Layers className="w-4 h-4" />
-							</div>
-							<span className="text-xs font-bold uppercase tracking-wider text-foreground">
-								{isRu ? "Тарифные планы и расценки ноды" : "Node Subscription Plans & Pricing"}
-							</span>
-							<Badge variant="outline" className="text-[9px] border-primary/30 text-primary bg-primary/5">
-								{Object.keys(nodePlans).length} {isRu ? "тарифов" : "tiers"}
-							</Badge>
-						</div>
-						{node.public_domain && (
-							<a
-								href={`https://${node.public_domain}`}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="text-[11px] text-primary hover:underline flex items-center gap-1 font-mono"
-							>
-								{isRu ? "Открыть веб-интерфейс ноды" : "Open Node Web App"}
-								<ExternalLink className="w-3 h-3" />
-							</a>
-						)}
-					</div>
-
-					{/* Plan Cards Grid */}
-					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-						{Object.entries(nodePlans).map(([planKey, plan]) => {
-							const isPro = planKey === "pro" || planKey === "ultra";
-							const isLifetime = plan.billing?.lifetime?.enabled;
-							const price = plan.price_usd ?? 0;
-
-							return (
-								<Card
-									key={planKey}
-									className={cn(
-										"border relative flex flex-col justify-between p-3.5 bg-card/60 backdrop-blur-sm transition-all rounded-lg",
-										isPro ? "border-primary/50 shadow-md bg-primary/[0.04]" : "border-border/40 hover:border-border/80",
-										!plan.active && "opacity-60",
-									)}
-								>
-									{isPro && (
-										<div className="absolute top-0 right-0 bg-primary text-primary-foreground text-[8px] font-bold uppercase px-2 py-0.5 rounded-bl rounded-tr-lg flex items-center gap-1">
-											<Sparkles className="w-2.5 h-2.5" />
-											Popular
-										</div>
-									)}
-
-									<div className="space-y-3">
-										<div className="flex justify-between items-start">
-											<div>
-												<span className="text-sm font-bold text-foreground block">{plan.name}</span>
-												<span className="text-[10px] text-muted-foreground line-clamp-1">
-													{plan.description || "Subscription tier"}
-												</span>
-											</div>
-											<div className="text-right">
-												<span className="text-xl font-black text-primary">${price}</span>
-												<span className="text-[9px] text-muted-foreground block font-mono">/month</span>
-											</div>
-										</div>
-
-										{isLifetime && (
-											<div className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-1 rounded flex items-center justify-between font-mono">
-												<span>⚡ Lifetime Slot:</span>
-												<span className="font-bold">${plan.billing?.lifetime?.price_usd}</span>
-											</div>
+				{/* Node Subscription Plans (Only for public nodes & master hub) */}
+				{isPrivate ? (
+					<div className="pt-2">
+						<div className="p-3.5 rounded-xl border border-border/20 bg-background/40 flex items-center justify-between gap-3">
+							<div className="flex items-center gap-2.5">
+								<div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+									<Lock className="w-4 h-4" />
+								</div>
+								<div>
+									<div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+										{t(
+											"community:network.leaderboard.privateNodeLabel",
+											"Private Node",
 										)}
-
-										{/* Quotas & Operational Limits */}
-										<div className="text-[10px] bg-background/50 border border-border/20 p-2.5 rounded space-y-1 font-mono">
-											<div className="flex justify-between text-muted-foreground">
-												<span>Backtests:</span>
-												<span className="font-semibold text-foreground">
-													{plan.quotas?.run_vector_backtest_per_day === -1
-														? "Unlimited"
-														: `${plan.quotas?.run_vector_backtest_per_day ?? 0}/day`}
-												</span>
-											</div>
-											<div className="flex justify-between text-muted-foreground">
-												<span>AI Queries:</span>
-												<span className="font-semibold text-foreground">
-													{plan.quotas?.use_ai_assistant_per_day === -1
-														? "Unlimited"
-														: `${plan.quotas?.use_ai_assistant_per_day ?? 0}/day`}
-												</span>
-											</div>
-											<div className="flex justify-between text-muted-foreground">
-												<span>Live Bots:</span>
-												<span className="font-semibold text-foreground">
-													{plan.limits?.allow_real_trading
-														? `${plan.limits?.max_live_strategies ?? 1} bots`
-														: "Sim only"}
-												</span>
-											</div>
-											<div className="flex justify-between text-muted-foreground">
-												<span>History Depth:</span>
-												<span className="font-semibold text-foreground">
-													{plan.limits?.max_backtest_duration_days === -1
-														? "Full history"
-														: `${plan.limits?.max_backtest_duration_days ?? 90} days`}
-												</span>
-											</div>
-										</div>
-
-										{/* Feature Checklist */}
-										{(plan.features || []).length > 0 && (
-											<ul className="text-[10px] space-y-1">
-												{(plan.features || []).slice(0, 3).map((feat, fi) => (
-													<li key={fi} className="flex items-center gap-1.5 text-muted-foreground">
-														<Check className="w-3 h-3 text-emerald-400 shrink-0" />
-														<span className="truncate">{feat}</span>
-													</li>
-												))}
-											</ul>
-										)}
+										<Badge
+											variant="outline"
+											className="text-[9px] border-amber-500/30 text-amber-400 bg-amber-500/5"
+										>
+											{t(
+												"community:network.leaderboard.privateNodeSelfHosted",
+												"Self-hosted",
+											)}
+										</Badge>
 									</div>
+									<p className="text-[11px] text-muted-foreground mt-0.5">
+										{t(
+											"community:network.leaderboard.privateNodeDesc",
+											"This node operates in private mode without public subscription plans.",
+										)}
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				) : Object.keys(nodePlans).length > 0 ? (
+					<div className="pt-2 space-y-3">
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/20 pb-2">
+							<div className="flex items-center gap-2">
+								<div className="p-1 rounded bg-primary/10 text-primary">
+									<Layers className="w-4 h-4" />
+								</div>
+								<span className="text-xs font-bold uppercase tracking-wider text-foreground">
+									{t(
+										"community:network.leaderboard.plans.title",
+										"Node Subscription Plans & Pricing",
+									)}
+								</span>
+								<Badge variant="outline" className="text-[9px] border-primary/30 text-primary bg-primary/5">
+									{t("community:network.leaderboard.plans.tiersCount", {
+										count: Object.keys(nodePlans).length,
+										defaultValue: `${Object.keys(nodePlans).length} tiers`,
+									})}
+								</Badge>
+							</div>
+							{node.public_domain && (
+								<a
+									href={`https://${node.public_domain}`}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-[11px] text-primary hover:underline flex items-center gap-1 font-mono"
+								>
+									{t(
+										"community:network.leaderboard.plans.openWebApp",
+										"Open Node Web App",
+									)}
+									<ExternalLink className="w-3 h-3" />
+								</a>
+							)}
+						</div>
 
-									{/* Action Button */}
-									<div className="pt-3 mt-2 border-t border-border/20">
-										{node.public_domain ? (
-											<a
-												href={`https://${node.public_domain}`}
-												target="_blank"
-												rel="noopener noreferrer"
-												className="block w-full"
-											>
+						{/* Plan Cards Grid */}
+						<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+							{Object.entries(nodePlans).map(([planKey, plan]) => {
+								const isPro = planKey === "pro" || planKey === "ultra";
+								const isLifetime = plan.billing?.lifetime?.enabled;
+								const price = plan.price_usd ?? 0;
+
+								return (
+									<Card
+										key={planKey}
+										className={cn(
+											"border relative flex flex-col justify-between p-3.5 bg-card/60 backdrop-blur-sm transition-all rounded-lg",
+											isPro ? "border-primary/50 shadow-md bg-primary/[0.04]" : "border-border/40 hover:border-border/80",
+											!plan.active && "opacity-60",
+										)}
+									>
+										<div>
+											{/* Top header of card */}
+											<div className="flex items-center justify-between gap-2 mb-2">
+												<div className="flex items-center gap-1.5">
+													<Zap className={cn("w-3.5 h-3.5", isPro ? "text-primary" : "text-muted-foreground")} />
+													<span className="text-xs font-bold text-foreground">{plan.name}</span>
+												</div>
+												{isPro && (
+													<Badge className="text-[8px] h-3.5 bg-primary text-primary-foreground font-bold px-1 py-0">
+														{t("community:network.leaderboard.plans.popular", "POPULAR")}
+													</Badge>
+												)}
+											</div>
+
+											{/* Price & Billing Cycle */}
+											<div className="mb-3">
+												<div className="flex items-baseline gap-1">
+													<span className="text-xl font-black font-mono text-foreground">${price}</span>
+													<span className="text-[10px] text-muted-foreground font-mono">
+														{isLifetime
+															? t("community:network.leaderboard.plans.lifetime", "/ lifetime")
+															: price === 0
+																? ""
+																: t("community:network.leaderboard.plans.perMonth", "/ month")}
+													</span>
+												</div>
+												<p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">
+													{plan.description || t("community:network.leaderboard.plans.defaultDesc", "Node plan")}
+												</p>
+											</div>
+
+											{/* Key Limits / Quotas */}
+											<div className="p-2 rounded bg-background/50 border border-border/20 mb-3 space-y-1 font-mono text-[10px]">
+												<div className="flex justify-between items-center text-muted-foreground">
+													<span>{t("community:network.leaderboard.plans.backtests", "Backtests:")}</span>
+													<span className="font-bold text-foreground">
+														{plan.quotas?.run_vector_backtest_per_day === -1
+															? t("community:network.leaderboard.plans.unlimited", "∞")
+															: `${plan.quotas?.run_vector_backtest_per_day ?? 20}${t("community:network.leaderboard.plans.perDay", "/d")}`}
+													</span>
+												</div>
+												<div className="flex justify-between items-center text-muted-foreground">
+													<span>{t("community:network.leaderboard.plans.aiAssistant", "AI Assistant:")}</span>
+													<span className="font-bold text-foreground">
+														{plan.quotas?.use_ai_assistant_per_day === -1
+															? t("community:network.leaderboard.plans.unlimited", "∞")
+															: `${plan.quotas?.use_ai_assistant_per_day ?? 10}${t("community:network.leaderboard.plans.perDay", "/d")}`}
+													</span>
+												</div>
+												<div className="flex justify-between items-center text-muted-foreground">
+													<span>{t("community:network.leaderboard.plans.liveBots", "Live Bots:")}</span>
+													<span className="font-bold text-foreground">
+														{plan.limits?.max_live_strategies ?? 0}
+													</span>
+												</div>
+											</div>
+
+											{/* Feature Bullets */}
+											{plan.features && plan.features.length > 0 && (
+												<ul className="space-y-1 mb-3">
+													{plan.features.slice(0, 4).map((f, fIdx) => (
+														<li key={fIdx} className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+															<Check className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+															<span className="truncate">{f}</span>
+														</li>
+													))}
+												</ul>
+											)}
+										</div>
+
+										{/* Action Button */}
+										<div className="pt-2 border-t border-border/10 mt-auto">
+											{node.public_domain ? (
+												<a
+													href={`https://${node.public_domain}`}
+													target="_blank"
+													rel="noopener noreferrer"
+													className="block"
+												>
+													<Button
+														size="sm"
+														variant={isPro ? "default" : "outline"}
+														className="w-full text-xs h-7 gap-1 font-semibold"
+													>
+														{t("community:network.leaderboard.plans.subscribeOnNode", "Subscribe on Node")}
+														<ExternalLink className="w-3 h-3" />
+													</Button>
+												</a>
+											) : (
 												<Button
 													size="sm"
 													variant={isPro ? "default" : "outline"}
 													className="w-full text-xs h-7 gap-1 font-semibold"
 												>
-													{isRu ? "Подключиться" : "Subscribe on Node"}
-													<ExternalLink className="w-3 h-3" />
+													{t("community:network.leaderboard.plans.hubPlan", "Hub Plan")}
 												</Button>
-											</a>
-										) : node.is_master ? (
-											<Button
-												size="sm"
-												variant={isPro ? "default" : "outline"}
-												className="w-full text-xs h-7 gap-1 font-semibold"
-											>
-												{isRu ? "Тариф хаба" : "Hub Plan"}
-											</Button>
-										) : (
-											<Button
-												size="sm"
-												variant="secondary"
-												disabled
-												className="w-full text-xs h-7 opacity-50"
-											>
-												<Lock className="w-3 h-3 mr-1" />
-												{isRu ? "Приватный узел" : "Private Node"}
-											</Button>
-										)}
+											)}
 									</div>
 								</Card>
 							);
 						})}
 					</div>
 				</div>
+				) : null}
 			</div>
 		</motion.div>
 	);
@@ -538,9 +583,11 @@ const NodeDetailRow: React.FC<{
 // Main Component
 export const NodeLeaderboard: React.FC<{
 	activeNodes: LeaderboardNode[];
-	isRu: boolean;
-	t: (key: string, fallback?: string) => string;
-}> = ({ activeNodes, isRu, t }) => {
+	isRu?: boolean;
+	t?: (key: string, options?: any) => string;
+}> = ({ activeNodes, t: tProp }) => {
+	const { t: tHook } = useTranslation(["community", "common"]);
+	const t = tProp || tHook;
 	const [sortKey, setSortKey] = useState<SortKey>("reward");
 	const [sortDir, setSortDir] = useState<SortDir>("desc");
 	const [expandedNode, setExpandedNode] = useState<string | null>(null);
@@ -564,8 +611,8 @@ export const NodeLeaderboard: React.FC<{
 					bv = b.uptime_percent || 0;
 					break;
 				case "latency":
-					av = a.latency_ms || 0;
-					bv = b.latency_ms || 0;
+					av = a.latency_ms ?? 9999;
+					bv = b.latency_ms ?? 9999;
 					break;
 				case "mined":
 					av = a.total_mined || 0;
@@ -576,19 +623,20 @@ export const NodeLeaderboard: React.FC<{
 					bv = getProPlanPrice(b);
 					break;
 				default:
-					return 0;
+					av = 0;
+					bv = 0;
 			}
-			return sortDir === "desc" ? bv - av : av - bv;
+			if (sortDir === "asc") return av - bv;
+			return bv - av;
 		});
 		return nodes;
 	}, [allNodes, sortKey, sortDir]);
 
 	const handleSort = (key: SortKey) => {
 		if (sortKey === key) {
-			setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+			setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
 		} else {
 			setSortKey(key);
-			// Latency and Pro Price default to ascending (cheapest / fastest first)
 			setSortDir(key === "latency" || key === "pro_price" ? "asc" : "desc");
 		}
 	};
@@ -627,7 +675,7 @@ export const NodeLeaderboard: React.FC<{
 										>
 											<Lock className="w-2.5 h-2.5" />
 											{privateCount}{" "}
-											{isRu ? "приватных" : "private"}
+											{t("community:network.leaderboard.privateNodesCount", "private")}
 										</Badge>
 									)}
 								</CardTitle>
@@ -644,35 +692,35 @@ export const NodeLeaderboard: React.FC<{
 						<div className="flex items-center gap-1.5 flex-wrap">
 							<ArrowUpDown className="w-3 h-3 text-muted-foreground mr-0.5" />
 							<SortButton
-								label={isRu ? "Награда" : "Reward"}
+								label={t("community:network.leaderboard.sort.reward", "Reward")}
 								sortKey="reward"
 								currentSort={sortKey}
 								currentDir={sortDir}
 								onSort={handleSort}
 							/>
 							<SortButton
-								label={isRu ? "Цена Pro" : "Pro Price"}
+								label={t("community:network.leaderboard.sort.proPrice", "Pro Price")}
 								sortKey="pro_price"
 								currentSort={sortKey}
 								currentDir={sortDir}
 								onSort={handleSort}
 							/>
 							<SortButton
-								label={isRu ? "Аптайм" : "Uptime"}
+								label={t("community:network.leaderboard.sort.uptime", "Uptime")}
 								sortKey="uptime"
 								currentSort={sortKey}
 								currentDir={sortDir}
 								onSort={handleSort}
 							/>
 							<SortButton
-								label={isRu ? "Задержка" : "Latency"}
+								label={t("community:network.leaderboard.sort.latency", "Latency")}
 								sortKey="latency"
 								currentSort={sortKey}
 								currentDir={sortDir}
 								onSort={handleSort}
 							/>
 							<SortButton
-								label={isRu ? "Добыто" : "Mined"}
+								label={t("community:network.leaderboard.sort.mined", "Mined")}
 								sortKey="mined"
 								currentSort={sortKey}
 								currentDir={sortDir}
@@ -686,12 +734,12 @@ export const NodeLeaderboard: React.FC<{
 					{/* Table Header */}
 					<div className="hidden md:grid grid-cols-[2.5rem_1.4fr_1fr_5.5rem_5.5rem_5rem_5.5rem] gap-2 px-4 py-2.5 border-b border-border/10 text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
 						<div className="text-center">#</div>
-						<div>{isRu ? "Нода и Тарифы" : "Node & Plans"}</div>
-						<div>{isRu ? "Локация" : "Location"}</div>
-						<div className="text-center">{isRu ? "Награда" : "Reward"}</div>
-						<div className="text-center">{isRu ? "Аптайм" : "Uptime"}</div>
-						<div className="text-center">{isRu ? "Пинг" : "Ping"}</div>
-						<div className="text-center">{isRu ? "Майнеры" : "Miners"}</div>
+						<div>{t("community:network.leaderboard.columns.nodeAndPlans", "Node & Plans")}</div>
+						<div>{t("community:network.leaderboard.columns.location", "Location")}</div>
+						<div className="text-center">{t("community:network.leaderboard.columns.reward", "Reward")}</div>
+						<div className="text-center">{t("community:network.leaderboard.columns.uptime", "Uptime")}</div>
+						<div className="text-center">{t("community:network.leaderboard.columns.ping", "Ping")}</div>
+						<div className="text-center">{t("community:network.leaderboard.columns.miners", "Miners")}</div>
 					</div>
 
 					{/* Rows */}
@@ -733,13 +781,14 @@ export const NodeLeaderboard: React.FC<{
 														<Tooltip>
 															<TooltipTrigger asChild>
 																<Badge className="text-[8px] h-3.5 bg-blue-500/10 text-blue-400 border-blue-500/20 px-1 py-0">
-																	★ Master
+																	★ {t("community:network.leaderboard.masterBadge", "Master")}
 																</Badge>
 															</TooltipTrigger>
 															<TooltipContent className="text-[10px]">
-																{isRu
-																	? "Центральный хаб федерации"
-																	: "Central Federation Hub"}
+																{t(
+																	"community:network.leaderboard.masterHubTooltip",
+																	"Central Federation Hub",
+																)}
 															</TooltipContent>
 														</Tooltip>
 													)}
@@ -748,13 +797,17 @@ export const NodeLeaderboard: React.FC<{
 															<TooltipTrigger asChild>
 																<Badge className="text-[8px] h-3.5 bg-amber-500/10 text-amber-400 border-amber-500/20 px-1 py-0 flex items-center gap-0.5 font-mono">
 																	<Lock className="w-2.5 h-2.5" />
-																	{isRu ? "Приватная" : "Private"}
+																	{t(
+																		"community:network.leaderboard.privateBadge",
+																		"Private",
+																	)}
 																</Badge>
 															</TooltipTrigger>
 															<TooltipContent className="text-[10px]">
-																{isRu
-																	? "Локальный/приватный узел без открытого домена"
-																	: "Self-hosted private node"}
+																{t(
+																	"community:network.leaderboard.privateNodeTooltip",
+																	"Self-hosted private node",
+																)}
 															</TooltipContent>
 														</Tooltip>
 													)}
@@ -767,12 +820,16 @@ export const NodeLeaderboard: React.FC<{
 												) : isPrivate ? (
 													<span className="text-[10px] font-mono text-muted-foreground/60 truncate flex items-center gap-1">
 														<Lock className="w-2.5 h-2.5 text-amber-400/70" />
-														{isRu ? "Приватная нода" : "Private Node"}
+														{t(
+															"community:network.leaderboard.privateNodeLabel",
+															"Private Node",
+														)}
 													</span>
 												) : null}
 
 												{/* Option 4: Mini-Badges with Plan Prices & Quick Tooltips */}
-												<div className="flex items-center gap-1 mt-1.5 flex-wrap">
+												{!isPrivate && Object.keys(nodePlans).length > 0 && (
+													<div className="flex items-center gap-1 mt-1.5 flex-wrap">
 													{Object.entries(nodePlans).slice(0, 4).map(([planKey, plan]) => {
 														const isPro = planKey === "pro" || planKey === "ultra";
 														const isFree = plan.price_usd === 0;
@@ -802,31 +859,31 @@ export const NodeLeaderboard: React.FC<{
 																	<div className="font-bold flex items-center justify-between gap-2 border-b border-border/20 pb-1">
 																		<span className="flex items-center gap-1">
 																			<Zap className="w-3 h-3 text-primary" />
-																			{plan.name} Tier
+																			{plan.name} {t("community:network.leaderboard.plans.tierBadge", "Tier")}
 																		</span>
-																		<span className="text-primary font-mono">${plan.price_usd}/mo</span>
+																		<span className="text-primary font-mono">${plan.price_usd}{t("community:network.leaderboard.plans.perMonthShort", "/mo")}</span>
 																	</div>
 																	<p className="text-[10px] text-muted-foreground">
-																		{plan.description || "Node subscription plan"}
+																		{plan.description || t("community:network.leaderboard.plans.defaultDesc", "Node plan")}
 																	</p>
 																	<div className="text-[10px] font-mono space-y-0.5 bg-muted/30 p-1.5 rounded">
 																		<div>
-																			Backtests:{" "}
+																			{t("community:network.leaderboard.plans.backtests", "Backtests:")}{" "}
 																			{plan.quotas?.run_vector_backtest_per_day === -1
-																				? "Unlimited"
-																				: `${plan.quotas?.run_vector_backtest_per_day ?? 0}/day`}
+																				? t("community:network.leaderboard.plans.unlimited", "Unlimited")
+																				: `${plan.quotas?.run_vector_backtest_per_day ?? 0}${t("community:network.leaderboard.plans.perDay", "/day")}`}
 																		</div>
 																		<div>
-																			AI Queries:{" "}
+																			{t("community:network.leaderboard.plans.aiAssistant", "AI Assistant:")}{" "}
 																			{plan.quotas?.use_ai_assistant_per_day === -1
-																				? "Unlimited"
-																				: `${plan.quotas?.use_ai_assistant_per_day ?? 0}/day`}
+																				? t("community:network.leaderboard.plans.unlimited", "Unlimited")
+																				: `${plan.quotas?.use_ai_assistant_per_day ?? 0}${t("community:network.leaderboard.plans.perDay", "/day")}`}
 																		</div>
 																		<div>
-																			Live Bots:{" "}
+																			{t("community:network.leaderboard.plans.liveBots", "Live Bots:")}{" "}
 																			{plan.limits?.allow_real_trading
-																				? `${plan.limits?.max_live_strategies ?? 1} active bots`
-																				: "Simulation only"}
+																				? `${plan.limits?.max_live_strategies ?? 1} ${t("community:network.leaderboard.plans.activeBots", "active bots")}`
+																				: t("community:network.leaderboard.plans.simulationOnly", "Simulation only")}
 																		</div>
 																	</div>
 																</TooltipContent>
@@ -834,7 +891,8 @@ export const NodeLeaderboard: React.FC<{
 														);
 													})}
 												</div>
-											</div>
+											)}
+										</div>
 
 											{/* Location */}
 											<div className="flex items-center gap-1.5">
@@ -893,18 +951,31 @@ export const NodeLeaderboard: React.FC<{
 											</div>
 
 											{/* Active Miners */}
-											<div className="flex items-center justify-center gap-1">
-												<Users className="w-3 h-3 text-muted-foreground" />
-												<span className="text-[11px] font-mono font-bold text-foreground">
-													{node.active_miners || 0}
-												</span>
-											</div>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<div className="flex items-center justify-center gap-1 cursor-help">
+														<Users className="w-3 h-3 text-muted-foreground" />
+														<span className="text-[11px] font-mono font-bold text-foreground">
+															{node.active_miners || 0}
+														</span>
+													</div>
+												</TooltipTrigger>
+												<TooltipContent side="top" className="text-xs font-mono">
+													{t(
+														"community:network.leaderboard.telemetry.activeMinersTooltip",
+														{
+															count: node.active_miners || 0,
+															defaultValue: `Active miners: ${node.active_miners || 0}`,
+														},
+													)}
+												</TooltipContent>
+											</Tooltip>
 										</motion.div>
 
 										{/* Option 1: Expanded Accordion with Plan Cards */}
 										<AnimatePresence>
 											{isExpanded && (
-												<NodeDetailRow node={node} isRu={isRu} />
+												<NodeDetailRow node={node} />
 											)}
 										</AnimatePresence>
 									</div>
@@ -935,7 +1006,7 @@ export const NodeLeaderboard: React.FC<{
 									variant="outline"
 									className="text-[8px] h-4 border-amber-500/30 text-amber-400 bg-amber-500/5 px-1.5 uppercase tracking-wider font-bold"
 								>
-									{isRu ? "Скоро" : "Coming Soon"}
+									{t("community:network.leaderboard.comingSoon", "Coming Soon")}
 								</Badge>
 							</div>
 							<p className="text-[10px] text-muted-foreground mt-0.5">
@@ -952,29 +1023,53 @@ export const NodeLeaderboard: React.FC<{
 						{[
 							{
 								icon: TrendingUp,
-								title: isRu ? "Чемпион объёмов" : "Volume Champion",
-								desc: isRu ? "Наибольший торговый объём" : "Highest trade volume",
+								title: t(
+									"community:network.leaderboard.seasons.volumeChampion.title",
+									"Volume Champion",
+								),
+								desc: t(
+									"community:network.leaderboard.seasons.volumeChampion.desc",
+									"Highest trade volume",
+								),
 								color: "text-blue-400",
 								bg: "bg-blue-500/5 border-blue-500/15",
 							},
 							{
 								icon: Shield,
-								title: isRu ? "Герой аптайма" : "Uptime Hero",
-								desc: isRu ? "Лучшая стабильность" : "Best uptime record",
+								title: t(
+									"community:network.leaderboard.seasons.uptimeHero.title",
+									"Uptime Hero",
+								),
+								desc: t(
+									"community:network.leaderboard.seasons.uptimeHero.desc",
+									"Best uptime record",
+								),
 								color: "text-emerald-400",
 								bg: "bg-emerald-500/5 border-emerald-500/15",
 							},
 							{
 								icon: Users,
-								title: isRu ? "Звезда роста" : "Growth Star",
-								desc: isRu ? "Больше всего новых майнеров" : "Most new miners onboarded",
+								title: t(
+									"community:network.leaderboard.seasons.growthStar.title",
+									"Growth Star",
+								),
+								desc: t(
+									"community:network.leaderboard.seasons.growthStar.desc",
+									"Most new miners onboarded",
+								),
 								color: "text-purple-400",
 								bg: "bg-purple-500/5 border-purple-500/15",
 							},
 							{
 								icon: Coins,
-								title: isRu ? "Награда щедрости" : "Generosity Award",
-								desc: isRu ? "Лучший reward share" : "Highest reward share %",
+								title: t(
+									"community:network.leaderboard.seasons.generosityAward.title",
+									"Generosity Award",
+								),
+								desc: t(
+									"community:network.leaderboard.seasons.generosityAward.desc",
+									"Highest reward share %",
+								),
 								color: "text-amber-400",
 								bg: "bg-amber-500/5 border-amber-500/15",
 							},

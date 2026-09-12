@@ -729,7 +729,7 @@ const renderBlockContent = (
 			return (
 				<ParamRow title="NATR threshold >">
 					<DynamicValueInput
-						value={p.natr_threshold}
+						value={p.natr_threshold ?? p.value ?? p.threshold}
 						onChange={(v) => updateParams({ natr_threshold: v })}
 						className="flex-grow flex-1 min-w-0"
 					/>

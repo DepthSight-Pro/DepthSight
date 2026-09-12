@@ -888,7 +888,9 @@ async def test_get_backtest_klines_without_time_range(
 
 
 @pytest.mark.asyncio
-async def test_historical_ranges_endpoint(authenticated_client: AsyncClient, mock_redis_client):
+async def test_historical_ranges_endpoint(
+    authenticated_client: AsyncClient, mock_redis_client
+):
     """
     Tests GET /api/v1/backtests/historical-ranges with and without symbol filtering.
     """
@@ -918,7 +920,9 @@ async def test_historical_ranges_endpoint(authenticated_client: AsyncClient, moc
             "has_oi": False,
         },
     ]
-    await mock_redis_client.set("depthsight:admin:storage_info", json.dumps(mock_storage))
+    await mock_redis_client.set(
+        "depthsight:admin:storage_info", json.dumps(mock_storage)
+    )
 
     # 1. Fetch all
     res = await authenticated_client.get("/api/v1/backtests/historical-ranges")
@@ -928,11 +932,12 @@ async def test_historical_ranges_endpoint(authenticated_client: AsyncClient, moc
     assert data[0]["symbol"] == "BTCUSDT"
 
     # 2. Fetch with symbol filter
-    res_filtered = await authenticated_client.get("/api/v1/backtests/historical-ranges?symbol=BTCUSDT")
+    res_filtered = await authenticated_client.get(
+        "/api/v1/backtests/historical-ranges?symbol=BTCUSDT"
+    )
     assert res_filtered.status_code == 200
     data_filtered = res_filtered.json()["data"]
     assert len(data_filtered) == 1
     assert data_filtered[0]["symbol"] == "BTCUSDT"
     assert data_filtered[0]["klines_1m"]["start_date"] == "2025-01-01"
     assert data_filtered[0]["klines_1m"]["end_date"] == "2026-07-12"
-

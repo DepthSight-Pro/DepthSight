@@ -62,7 +62,7 @@ interface IterationResult {
 	pnl: number;
 	win_rate: number;
 	trades: number;
-	max_dd: number;
+	max_dd?: number;
 	strategy_name: string;
 }
 
@@ -524,6 +524,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 											{res.pnl > 0 ? "+" : ""}{res.pnl.toFixed(1)}%
 										</div>
 										<div className="text-[9px] text-muted-foreground/80 mt-0.5">WR: {res.win_rate.toFixed(0)}%</div>
+										<div className="text-[9px] text-muted-foreground/80">DD: {res.max_dd != null ? `${Math.abs(res.max_dd).toFixed(1)}%` : "0.0%"}</div>
 										<div className="text-[9px] text-muted-foreground/80">Tr: {res.trades}</div>
 									</div>
 								);

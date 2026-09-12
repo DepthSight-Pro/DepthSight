@@ -247,7 +247,9 @@ def test_higher_timeframe_local_level_synchronization():
     bias and without double-shift misalignment.
     """
     n_candles_5m = 30
-    dates_5m = pd.date_range("2024-01-01 00:00:00", periods=n_candles_5m, freq="5min", tz="UTC")
+    dates_5m = pd.date_range(
+        "2024-01-01 00:00:00", periods=n_candles_5m, freq="5min", tz="UTC"
+    )
     df_5m = pd.DataFrame(
         {
             "open": [100.0] * n_candles_5m,
@@ -266,7 +268,9 @@ def test_higher_timeframe_local_level_synchronization():
     df_5m.iloc[26:29, df_5m.columns.get_loc("close")] = 91.0
 
     n_candles_1m = n_candles_5m * 5
-    dates_1m = pd.date_range("2024-01-01 00:00:00", periods=n_candles_1m, freq="1min", tz="UTC")
+    dates_1m = pd.date_range(
+        "2024-01-01 00:00:00", periods=n_candles_1m, freq="1min", tz="UTC"
+    )
     df_1m = pd.DataFrame(
         {
             "open": [100.0] * n_candles_1m,
@@ -311,7 +315,12 @@ def test_higher_timeframe_local_level_synchronization():
                             "type": "value_comparison",
                             "params": {
                                 "operator": "lt",
-                                "leftOperand": {"source": "candle", "key": "close", "timeframe": "5m", "shift": 0},
+                                "leftOperand": {
+                                    "source": "candle",
+                                    "key": "close",
+                                    "timeframe": "5m",
+                                    "shift": 0,
+                                },
                                 "rightOperand": {
                                     "source": "block_result",
                                     "block_id": "channel",
@@ -347,4 +356,3 @@ def test_higher_timeframe_local_level_synchronization():
     )
     bt.run()
     assert len(bt.trade_log) >= 1, "Expected breakout trade to be registered"
-

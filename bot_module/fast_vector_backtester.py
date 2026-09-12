@@ -328,7 +328,13 @@ class FastVectorBacktester:
             indicator_keys.append(f"SMA_{int(params['threshold'])}")
         elif node_type == "volatility_filter":
             indicator = str(params.get("indicator", "")).upper()
-            if indicator == "ATR":
+            if (
+                indicator in {"NATR", "SCALPER_NATR"}
+                or "natr_threshold" in params
+                or "natr" in str(params.get("id", "")).lower()
+            ):
+                indicator_keys.append(f"NATR_{int(params.get('period', 14))}")
+            elif indicator == "ATR":
                 indicator_keys.append(f"ATR_{int(params.get('period', 14))}")
         elif node_type == "natr_filter":
             indicator_keys.append(f"NATR_{int(params.get('period', 14))}")
@@ -2973,17 +2979,11 @@ class FastVectorBacktester:
     def _get_main_atr_series(self) -> pd.Series:
         if "ATR_14" in self.main_df.columns:
             return (
-                self.main_df["ATR_14"]
-                .astype(float)
-                .reindex(self.main_df.index)
-                .ffill()
+                self.main_df["ATR_14"].astype(float).reindex(self.main_df.index).ffill()
             )
         if "ATR_14" in self.signals.columns:
             return (
-                self.signals["ATR_14"]
-                .astype(float)
-                .reindex(self.main_df.index)
-                .ffill()
+                self.signals["ATR_14"].astype(float).reindex(self.main_df.index).ffill()
             )
         return (self.main_df["close"].astype(float) * 0.01).reindex(self.main_df.index)
 
@@ -3994,6 +3994,32 @@ class FastVectorBacktester:
         return self._broadcast_to_1m(series, timeframe)
 
     def _evaluate_volatility_filter(self, params: Dict[str, Any]) -> pd.Series:
+        indicator_str = str(params.get("indicator", "")).upper()
+        has_natr_threshold = "natr_threshold" in params
+        has_natr_id = "natr" in str(params.get("id", "")).lower()
+        is_natr_indicator = indicator_str in {"NATR", "SCALPER_NATR"}
+        is_contaminated_atr = (
+            indicator_str == "ATR"
+            and has_natr_threshold
+            and (params.get("value") == 1.5 or has_natr_id)
+        )
+
+        if (
+            is_natr_indicator
+            or has_natr_threshold
+            or is_contaminated_atr
+            or (has_natr_id and indicator_str != "BBW")
+        ):
+            natr_params = dict(params)
+            if "natr_threshold" in params:
+                natr_params["natr_threshold"] = params["natr_threshold"]
+                natr_params["threshold"] = params["natr_threshold"]
+                natr_params["value"] = params["natr_threshold"]
+            elif "value" in params and is_natr_indicator:
+                natr_params["natr_threshold"] = params["value"]
+                natr_params["threshold"] = params["value"]
+            return self._evaluate_natr_filter(natr_params)
+
         if "indicator" not in params:
             return evaluate_volatility_filter_vectorized(
                 self.main_df,
@@ -4060,9 +4086,7 @@ class FastVectorBacktester:
 
             middle = bb_df[middle_col].replace(0.0, np.nan)
             series = (
-                ((bb_df[upper_col] - bb_df[lower_col]) / middle)
-                .ffill()
-                .fillna(0.0)
+                ((bb_df[upper_col] - bb_df[lower_col]) / middle).ffill().fillna(0.0)
             )
             aligned = self._align_filter_series(series, timeframe)
             return self._compare_numeric_series(
@@ -4091,7 +4115,7 @@ class FastVectorBacktester:
         period = int(self._extract_numeric_param(params.get("period", 14), 14))
         threshold = self._extract_numeric_param(
             params.get(
-                "value", params.get("threshold", params.get("natr_threshold", 1.0))
+                "natr_threshold", params.get("threshold", params.get("value", 1.0))
             ),
             1.0,
         )
@@ -4608,7 +4632,14 @@ class FastVectorBacktester:
 
         elif node_type == "volatility_filter":
             indicator = str(params.get("indicator", "")).upper()
-            if indicator == "ATR":
+            if (
+                indicator in {"NATR", "SCALPER_NATR"}
+                or "natr_threshold" in params
+                or "natr" in str(params.get("id", "")).lower()
+            ):
+                period = int(params.get("period", 14))
+                indicators[f"NATR_{period}"] = {"period": period, "timeframe": tf}
+            elif indicator == "ATR":
                 period = int(params.get("period", 14))
                 indicators[f"ATR_{period}"] = {"period": period, "timeframe": tf}
 
@@ -5838,8 +5869,10 @@ class FastVectorBacktester:
                     (avg_entry_price - o) if is_short else (o - avg_entry_price)
                 ) * remaining_qty_actual
                 self._record_floating_equity(
-                    entry_balance_usd - total_commission_usd
-                    + realized_pnl_usd + open_unrealized
+                    entry_balance_usd
+                    - total_commission_usd
+                    + realized_pnl_usd
+                    + open_unrealized
                 )
 
                 # 1. Stop loss check (stop-loss triggers before liquidation during continuous price moves)
@@ -5996,11 +6029,14 @@ class FastVectorBacktester:
                     )
                     target_unrealized = (
                         (avg_entry_price - float(target["price"]))
-                        if is_short else (float(target["price"]) - avg_entry_price)
+                        if is_short
+                        else (float(target["price"]) - avg_entry_price)
                     ) * remaining_qty_actual
                     self._record_floating_equity(
-                        entry_balance_usd - total_commission_usd
-                        + realized_pnl_usd + target_unrealized
+                        entry_balance_usd
+                        - total_commission_usd
+                        + realized_pnl_usd
+                        + target_unrealized
                     )
                     target["done"] = True
                     hit_new_tp = True
@@ -6022,11 +6058,14 @@ class FastVectorBacktester:
                 for mark_price in ((l if is_short else h), c):
                     mark_unrealized = (
                         (avg_entry_price - mark_price)
-                        if is_short else (mark_price - avg_entry_price)
+                        if is_short
+                        else (mark_price - avg_entry_price)
                     ) * remaining_qty_actual
                     self._record_floating_equity(
-                        entry_balance_usd - total_commission_usd
-                        + realized_pnl_usd + mark_unrealized
+                        entry_balance_usd
+                        - total_commission_usd
+                        + realized_pnl_usd
+                        + mark_unrealized
                     )
 
                 if (

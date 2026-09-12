@@ -1145,7 +1145,7 @@ async def _upsert_server_config(
     db: AsyncSession, node_uuid: str, share_percent: float
 ) -> None:
     """Store/refresh the reward-share config of a mining server node."""
-    if not share_percent or not (0.0 < share_percent <= 100.0):
+    if share_percent is None or not (0.0 <= share_percent <= 100.0):
         return
     stmt = select(models.HubServerConfig).where(
         models.HubServerConfig.node_uuid == node_uuid
@@ -1700,22 +1700,47 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
             c.node_uuid: c.user_reward_share_percent for c in cfg_res.scalars().all()
         }
 
-        # Active miners count per source node (last 24 hours)
+        # Bound wallets / active miners count per node
         from sqlalchemy import func
 
-        miner_stmt = (
+        # Bound wallets per node (via referrer / host node uuid)
+        node_wallets_stmt = (
             select(
-                models.HubTelemetryReport.source_node_uuid,
-                func.count(func.distinct(models.HubTelemetryReport.node_uuid)),
+                models.HubNode.referrer_node_uuid,
+                func.count(func.distinct(models.HubNode.wallet_address)),
             )
             .where(
-                models.HubTelemetryReport.created_at
-                >= datetime.now(timezone.utc) - timedelta(days=1)
+                models.HubNode.wallet_address.is_not(None),
+                models.HubNode.wallet_address != "",
+                models.HubNode.referrer_node_uuid.is_not(None),
+            )
+            .group_by(models.HubNode.referrer_node_uuid)
+        )
+        node_wallets_res = await db.execute(node_wallets_stmt)
+        node_wallets_map = {
+            row[0]: int(row[1] or 0) for row in node_wallets_res.all() if row[0]
+        }
+
+        # Bound wallets that submitted telemetry through source_node_uuid
+        telemetry_wallets_stmt = (
+            select(
+                models.HubTelemetryReport.source_node_uuid,
+                func.count(func.distinct(models.HubNode.wallet_address)),
+            )
+            .join(
+                models.HubNode,
+                models.HubTelemetryReport.node_uuid == models.HubNode.node_uuid,
+            )
+            .where(
+                models.HubNode.wallet_address.is_not(None),
+                models.HubNode.wallet_address != "",
             )
             .group_by(models.HubTelemetryReport.source_node_uuid)
         )
-        miner_res = await db.execute(miner_stmt)
-        active_miners_map = {row[0]: row[1] for row in miner_res.all()}
+        telemetry_wallets_res = await db.execute(telemetry_wallets_stmt)
+        telemetry_wallets_map = {
+            row[0]: int(row[1] or 0) for row in telemetry_wallets_res.all() if row[0]
+        }
 
         # Total mined tokens from MiningLedger per node (fallback for accumulated balances)
         ledger_stmt = select(
@@ -1736,10 +1761,41 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
             ledger_total_res = await db.execute(ledger_total_stmt)
             master_mined = float(ledger_total_res.scalar() or 0.0)
 
-        # Total active miners on master server
-        master_active_miners = len(active_miners_map)
-        if master_active_miners == 0:
-            master_active_miners = 1
+        # Collect all unique bound wallets across the platform
+        all_wallets_stmt = select(models.HubNode.wallet_address).where(
+            models.HubNode.wallet_address.is_not(None),
+            models.HubNode.wallet_address != "",
+        )
+        all_wallets_res = await db.execute(all_wallets_stmt)
+        bound_wallets_set = {
+            w.strip().lower()
+            for (w,) in all_wallets_res.all()
+            if w and isinstance(w, str) and w.strip()
+        }
+
+        # Also inspect AppConfig.exchange_settings as fallback for any locally bound wallets
+        try:
+            app_cfg_stmt = select(models.AppConfig.exchange_settings).where(
+                models.AppConfig.exchange_settings.is_not(None)
+            )
+            app_cfg_res = await db.execute(app_cfg_stmt)
+            for (s,) in app_cfg_res.all():
+                if not isinstance(s, dict):
+                    continue
+                w = (
+                    (s.get("bybit") or {}).get("wallet_address")
+                    or (s.get("okx") or {}).get("wallet_address")
+                    or (s.get("weex") or {}).get("wallet_address")
+                    or (s.get("binance") or {}).get("wallet_address")
+                    or s.get("wallet_address")
+                )
+                if w and isinstance(w, str) and w.strip():
+                    bound_wallets_set.add(w.strip().lower())
+        except Exception as ex:
+            logger.debug(f"Failed to extract wallets from AppConfig: {ex}")
+
+        # Exact count of bound wallets on master hub (no artificial fallback to 1)
+        master_active_miners = len(bound_wallets_set)
 
         response_nodes = []
 
@@ -1747,6 +1803,15 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
         master_domain = os.getenv("PUBLIC_DOMAIN") or "app.depthsight.pro"
         await plans_config.load_from_db(db)
         master_plans = plans_config.get_full_config().get("plans", {})
+
+        # Resolve Central Master Hub reward share from NodeMiningConfig (id=1)
+        node_cfg_res = await db.execute(
+            select(models.NodeMiningConfig).where(models.NodeMiningConfig.id == 1)
+        )
+        node_cfg = node_cfg_res.scalar_one_or_none()
+        master_reward_share = 75.0
+        if node_cfg is not None and node_cfg.user_reward_share_percent is not None:
+            master_reward_share = float(node_cfg.user_reward_share_percent)
 
         response_nodes.append(
             schemas.HubNodeResponse(
@@ -1758,7 +1823,7 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
                 latency_ms=0.0,
                 version=APP_VERSION,
                 is_master=True,
-                user_reward_share_percent=75.0,
+                user_reward_share_percent=master_reward_share,
                 public_domain=master_domain,
                 uptime_percent=99.99,
                 active_miners=master_active_miners,
@@ -1779,11 +1844,12 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
             uptime = 99.5 if last_ping_utc and last_ping_utc >= cutoff else 95.0
             created_str = n.created_at.isoformat() if n.created_at else None
 
-            # Calculate total mined & active miners per node
+            # Calculate total mined & bound wallets per node (no artificial fallback to 1)
             node_mined = n.total_mined or ledger_mined_map.get(n.node_uuid, 0.0)
-            node_miners = active_miners_map.get(n.node_uuid, 0)
-            if node_miners == 0 and last_ping_utc and last_ping_utc >= cutoff:
-                node_miners = 1
+            node_miners = max(
+                node_wallets_map.get(n.node_uuid, 0),
+                telemetry_wallets_map.get(n.node_uuid, 0),
+            )
 
             response_nodes.append(
                 schemas.HubNodeResponse(
@@ -1795,9 +1861,7 @@ async def get_active_nodes(request: Request, db: AsyncSession = Depends(get_db))
                     latency_ms=n.latency_ms,
                     version=n.version or "1.0.0",
                     is_master=False,
-                    user_reward_share_percent=server_configs.get(
-                        n.node_uuid, 75.0 if n.is_mining_server else None
-                    ),
+                    user_reward_share_percent=server_configs.get(n.node_uuid, 75.0),
                     public_domain=n.public_domain,
                     uptime_percent=uptime,
                     active_miners=node_miners,
