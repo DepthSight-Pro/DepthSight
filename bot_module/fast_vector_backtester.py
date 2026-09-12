@@ -746,6 +746,7 @@ class FastVectorBacktester:
             strategy_json = self._extract_strategy_json(self.params)
 
         strategy_json = self.normalize_strategy(strategy_json or {})
+        self._validate_causal_shifts(strategy_json)
         self.strategy_json = strategy_json
         self.base_timeframe = self._resolve_main_timeframe(klines_input)
 
@@ -1123,6 +1124,7 @@ class FastVectorBacktester:
         self.peak_equity = float(self.initial_balance)
         self.max_drawdown = 0.0
         self.max_floating_dd = 0.0
+        self._floating_peak_equity = float(self.initial_balance)
         self.is_trading_allowed = True
         self._is_liquidated = False  # Liquidation is an irreversible state
         self._risk_daily_pnl: Dict[str, float] = {}
@@ -1279,6 +1281,28 @@ class FastVectorBacktester:
             aligned = self._constant_series(series)
         return pd.to_numeric(aligned, errors="coerce").astype(float)
 
+    @staticmethod
+    def _historical_shift(operand: Dict[str, Any]) -> int:
+        raw_shift = operand.get("shift", 0)
+        try:
+            shift = float(raw_shift)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Historical shift must be a non-negative integer") from exc
+        if not math.isfinite(shift) or shift < 0 or not shift.is_integer():
+            raise ValueError("Historical shift must be a non-negative integer")
+        return int(shift)
+
+    @classmethod
+    def _validate_causal_shifts(cls, node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("source") in {"candle", "indicator", "block_result"}:
+                cls._historical_shift(node)
+            for value in node.values():
+                cls._validate_causal_shifts(value)
+        elif isinstance(node, list):
+            for value in node:
+                cls._validate_causal_shifts(value)
+
     def _resolve_value_series(self, operand: Any) -> pd.Series:
         if not isinstance(operand, dict) or "source" not in operand:
             return self._constant_series(operand)
@@ -1286,7 +1310,7 @@ class FastVectorBacktester:
         source = operand.get("source")
         key = operand.get("key")
         value = operand.get("value", key)
-        shift = int(self._extract_numeric_param(operand.get("shift", 0), 0))
+        shift = self._historical_shift(operand)
 
         if source in {"constant", "value"}:
             return self._constant_series(value)
@@ -2952,7 +2976,6 @@ class FastVectorBacktester:
                 self.main_df["ATR_14"]
                 .astype(float)
                 .reindex(self.main_df.index)
-                .bfill()
                 .ffill()
             )
         if "ATR_14" in self.signals.columns:
@@ -2960,7 +2983,6 @@ class FastVectorBacktester:
                 self.signals["ATR_14"]
                 .astype(float)
                 .reindex(self.main_df.index)
-                .bfill()
                 .ffill()
             )
         return (self.main_df["close"].astype(float) * 0.01).reindex(self.main_df.index)
@@ -4010,7 +4032,7 @@ class FastVectorBacktester:
                 )
                 if series is None:
                     return pd.Series(False, index=self.main_df.index)
-                series = series.bfill().ffill().fillna(0.0)
+                series = series.ffill().fillna(0.0)
 
             aligned = self._align_filter_series(series, timeframe)
             return self._compare_numeric_series(
@@ -4039,7 +4061,6 @@ class FastVectorBacktester:
             middle = bb_df[middle_col].replace(0.0, np.nan)
             series = (
                 ((bb_df[upper_col] - bb_df[lower_col]) / middle)
-                .bfill()
                 .ffill()
                 .fillna(0.0)
             )
@@ -4090,7 +4111,6 @@ class FastVectorBacktester:
                 ((high_low / close_adj) * 100.0)
                 .rolling(window=period)
                 .mean()
-                .bfill()
                 .ffill()
                 .fillna(0.0)
             )
@@ -4462,21 +4482,21 @@ class FastVectorBacktester:
                 if indicator_type == "ema":
                     result_series = ta.ema(
                         close=close_tf, length=params.get("period")
-                    ).bfill()
+                    ).ffill()
                 elif indicator_type == "sma":
                     result_series = ta.sma(
                         close=close_tf, length=params.get("period")
-                    ).bfill()
+                    ).ffill()
                 elif indicator_type == "rsi":
                     result_series = ta.rsi(
                         close=close_tf, length=params.get("period")
-                    ).bfill()
+                    ).ffill()
                 elif indicator_type == "natr":
                     period = params.get("period", 14)
                     high_low = df_tf["high"] - df_tf["low"]
                     close_adj = df_tf["close"].replace(0, 1)
                     val = (high_low / close_adj) * 100
-                    result_series = val.rolling(window=period).mean().bfill()
+                    result_series = val.rolling(window=period).mean().ffill()
 
                 elif indicator_type == "atr":
                     period = params.get("period", 14)
@@ -4487,7 +4507,7 @@ class FastVectorBacktester:
                         length=period,
                     )
                     if result_series is not None:
-                        result_series = result_series.bfill()
+                        result_series = result_series.ffill()
 
                 elif indicator_type == "adx":
                     period = params.get("period", 14)
@@ -4498,7 +4518,7 @@ class FastVectorBacktester:
                         length=period,
                     )
                     if adx_df is not None:
-                        result_series = adx_df[f"ADX_{period}"].bfill()
+                        result_series = adx_df[f"ADX_{period}"].ffill()
 
                 elif indicator_type == "macd":
                     p1, p2 = params.get("fast", 12), params.get("slow", 26)
@@ -4513,7 +4533,7 @@ class FastVectorBacktester:
                         # Copy all MACD columns (with broadcasting)
                         for col in macd_df.columns:
                             broadcasted_col = self._broadcast_to_1m(
-                                macd_df[col].bfill(), tf
+                                macd_df[col].ffill(), tf
                             )
                             col_cache_key = f"{col}_{tf}"
                             self.broadcasted_cache[col_cache_key] = broadcasted_col
@@ -4526,7 +4546,7 @@ class FastVectorBacktester:
                     if bb_df is not None:
                         for col in bb_df.columns:
                             broadcasted_col = self._broadcast_to_1m(
-                                bb_df[col].bfill(), tf
+                                bb_df[col].ffill(), tf
                             )
                             col_cache_key = f"{col}_{tf}"
                             self.broadcasted_cache[col_cache_key] = broadcasted_col
@@ -4547,7 +4567,7 @@ class FastVectorBacktester:
                     if stoch_df is not None:
                         for col in stoch_df.columns:
                             broadcasted_col = self._broadcast_to_1m(
-                                stoch_df[col].bfill(), tf
+                                stoch_df[col].ffill(), tf
                             )
                             col_cache_key = f"{col}_{tf}"
                             self.broadcasted_cache[col_cache_key] = broadcasted_col
@@ -5447,6 +5467,24 @@ class FastVectorBacktester:
         )
         return pnl_abs / initial_reference_price
 
+    def _record_floating_equity(self, equity: float) -> None:
+        """Record an equity observation while its position exposure still exists.
+
+        The simple OHLC execution policy is adverse-first (SL before TP).
+        Floating peaks are separate from peaks of the closed-trade balance.
+        """
+        equity = max(0.0, float(equity))
+        peak = max(
+            float(getattr(self, "_floating_peak_equity", self.initial_balance)),
+            equity,
+        )
+        self._floating_peak_equity = peak
+        if peak > 1e-12:
+            self.max_floating_dd = max(
+                float(getattr(self, "max_floating_dd", 0.0)),
+                (peak - equity) / peak * 100.0,
+            )
+
     def _simulate_trades_vectorized_v2(self) -> None:
         """Sequential trade simulation with DCA/grid support and TP repricing after scale-ins."""
         init_params = self.strategy_json.get("initialization", {}).get("params", {})
@@ -5796,6 +5834,14 @@ class FastVectorBacktester:
 
                     pending_grid_orders = remaining_grid_orders
 
+                open_unrealized = (
+                    (avg_entry_price - o) if is_short else (o - avg_entry_price)
+                ) * remaining_qty_actual
+                self._record_floating_equity(
+                    entry_balance_usd - total_commission_usd
+                    + realized_pnl_usd + open_unrealized
+                )
+
                 # 1. Stop loss check (stop-loss triggers before liquidation during continuous price moves)
                 if curr_sl is not None and remaining_qty_rel > 1e-12:
                     sl_hit = h >= curr_sl if is_short else l <= curr_sl
@@ -5841,6 +5887,9 @@ class FastVectorBacktester:
                         remaining_qty_actual = 0.0
                         exit_reason = "STOP_LOSS" if not be_activated else "SL_AT_BE"
                         final_abs_idx = i
+                        self._record_floating_equity(
+                            entry_balance_usd - total_commission_usd + realized_pnl_usd
+                        )
                         break
 
                 # 2. Mid-candle liquidation check (worst-case unrealized PnL, only if SL did not trigger)
@@ -5856,30 +5905,9 @@ class FastVectorBacktester:
                     + realized_pnl_usd
                     + unrealized_pnl_usd
                 )
-                best_price = h if not is_short else l
-                unrealized_pnl_best = (
-                    (best_price - avg_entry_price) * remaining_qty_actual
-                    if not is_short
-                    else (avg_entry_price - best_price) * remaining_qty_actual
-                )
-                floating_equity_high = (
-                    self.current_balance
-                    - total_commission_usd
-                    + realized_pnl_usd
-                    + unrealized_pnl_best
-                )
-                self.peak_equity = max(
-                    self.peak_equity, floating_equity_high, self.current_balance
-                )
-                if self.peak_equity > 1e-12:
-                    current_floating_dd = (
-                        (self.peak_equity - floating_equity_low)
-                        / self.peak_equity
-                        * 100.0
-                    )
-                    self.max_floating_dd = max(
-                        self.max_floating_dd, current_floating_dd
-                    )
+                # Adverse-first OHLC path: observe the adverse price before
+                # TP fills; never credit a favorable extreme after a full exit.
+                self._record_floating_equity(floating_equity_low)
 
                 # Floating equity check
                 if floating_equity_low <= 0:
@@ -5966,6 +5994,14 @@ class FastVectorBacktester:
                     remaining_qty_actual = max(
                         0.0, remaining_qty_actual - close_qty_actual
                     )
+                    target_unrealized = (
+                        (avg_entry_price - float(target["price"]))
+                        if is_short else (float(target["price"]) - avg_entry_price)
+                    ) * remaining_qty_actual
+                    self._record_floating_equity(
+                        entry_balance_usd - total_commission_usd
+                        + realized_pnl_usd + target_unrealized
+                    )
                     target["done"] = True
                     hit_new_tp = True
                     partials_hit = True
@@ -5980,6 +6016,18 @@ class FastVectorBacktester:
 
                 if remaining_qty_rel <= 1e-12:
                     break
+
+                # Only remaining exposure participates in the favorable extreme
+                # and close after partial profit-taking.
+                for mark_price in ((l if is_short else h), c):
+                    mark_unrealized = (
+                        (avg_entry_price - mark_price)
+                        if is_short else (mark_price - avg_entry_price)
+                    ) * remaining_qty_actual
+                    self._record_floating_equity(
+                        entry_balance_usd - total_commission_usd
+                        + realized_pnl_usd + mark_unrealized
+                    )
 
                 if (
                     move_sl_to_be
@@ -6458,7 +6506,7 @@ class FastVectorBacktester:
                             )
                         break
             else:
-                final_abs_idx = min(end_search, len_data - 1)
+                final_abs_idx = min(end_search - 1, len_data - 1)
                 if remaining_qty_rel > 1e-12:
                     final_exit_price = np_close[final_abs_idx] * (
                         1.0 + SLIPPAGE_PCT if is_short else 1.0 - SLIPPAGE_PCT
@@ -6495,7 +6543,7 @@ class FastVectorBacktester:
                     remaining_qty_actual = 0.0
                 exit_reason = (
                     "TIMEOUT"
-                    if timeout_limit_idx is not None and timeout_limit_idx < len_data
+                    if timeout_limit_idx is not None and timeout_limit_idx <= len_data
                     else "END_OF_DATA"
                 )
 
@@ -6552,6 +6600,7 @@ class FastVectorBacktester:
                     self.max_drawdown = max(self.max_drawdown, drawdown)
                 self.equity_curve.append((exit_dt, float(self.current_balance)))
 
+            self._record_floating_equity(self.current_balance)
             self._check_risk_limits_after_trade(net_pnl_usd, exit_dt)
 
             self.trade_log.append(
