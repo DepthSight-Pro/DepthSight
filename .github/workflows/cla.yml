@@ -5,17 +5,24 @@ on:
   pull_request_target:
     types: [opened, closed, synchronize]
 
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
 jobs:
   CLAAssistant:
     runs-on: ubuntu-latest
     steps:
       - name: "CLA Assistant"
-        if: (github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
-        uses: cla-assistant/github-action@v2.4.0
+        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        uses: contributor-assistant/github-action@v2.6.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/DepthSight-Pro/DepthSight/blob/main/CLA.md'
+          branch: 'main'
+          allowlist: bot*
           custom-notsigned-prcomment: 'Thank you for your pull request! Please sign our Contributor License Agreement (CLA) by adding a comment with the following text: **I have read the CLA Document and I hereby sign the CLA**'
