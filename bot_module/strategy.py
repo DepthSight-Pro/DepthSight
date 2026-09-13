@@ -2415,7 +2415,7 @@ class BaseStrategy:
             return param_value
 
         source = param_value.get("source")
-        key = param_value.get("key")
+        key = param_value.get("key") or param_value.get("field")
         pair_info = context.get("pair_info", {})
         market_data = context.get("market_data", {})
 
@@ -2486,15 +2486,49 @@ class BaseStrategy:
 
         elif source == "block_result":
             block_id = param_value.get("block_id")
+            resolved_key = key or "result"
             trace = context.get("trace")
-            if block_id and trace:
-                block_trace = self.find_block_in_trace(trace, block_id)
+            if trace:
+                block_trace = None
+                if block_id:
+                    block_trace = self.find_block_in_trace(trace, block_id)
+                if not block_trace and isinstance(trace, list):
+                    for b in trace:
+                        if isinstance(b, dict) and b.get("details"):
+                            b_id = str(b.get("id", "")).lower()
+                            if block_id and (
+                                b_id == str(block_id).lower()
+                                or b_id in str(block_id).lower()
+                                or str(block_id).lower() in b_id
+                            ):
+                                block_trace = b
+                                break
+                    if not block_trace:
+                        provider_traces = [
+                            b
+                            for b in trace
+                            if isinstance(b, dict)
+                            and "detected_level" in b.get("details", {})
+                        ]
+                        if len(provider_traces) == 1:
+                            block_trace = provider_traces[0]
+
                 if block_trace:
-                    val = block_trace.get("details", {}).get(key)
+                    details = block_trace.get("details", {})
+                    val = details.get(resolved_key)
+                    if val is None:
+                        for cand in [
+                            str(resolved_key).lower(),
+                            "detected_level",
+                            "result",
+                        ]:
+                            if cand in details:
+                                val = details[cand]
+                                break
                     if val is not None:
                         return val
                     logger.warning(
-                        f"[_resolve_value] BLOCK_RESULT found for {block_id} but key '{key}' missing in details. Details keys: {list(block_trace.get('details', {}).keys())}"
+                        f"[_resolve_value] BLOCK_RESULT found for {block_id} but key '{resolved_key}' missing in details. Details keys: {list(details.keys())}"
                     )
                 else:
                     logger.warning(
@@ -6263,9 +6297,8 @@ class BaseStrategy:
         indicator = params.get("indicator", "ATR")
         indicator_str = str(indicator).upper()
         if (
-            "natr_threshold" in params
-            or indicator_str in {"NATR", "SCALPER_NATR"}
-            or ("natr" in str(params.get("id", "")).lower() and indicator_str != "BBW")
+            indicator_str in {"NATR", "SCALPER_NATR"}
+            or ("indicator" not in params and "natr_threshold" in params)
         ):
             return self._check_filter_natr(pair_info, market_data, params, context)
 

@@ -198,7 +198,11 @@ const normalizeNodeParams = (node: ConditionBlock) => {
 		if (Array.isArray(value)) return value.map(normalizeDynamicLinks);
 		const valObj = value as Record<string, unknown>;
 		if (valObj.source === "block_result") {
-			return { ...valObj, key: normalizeTapeOutputKey(valObj.key as string) };
+			let outputKey = (valObj.key || valObj.field || "") as string;
+			if (["level_price", "level", "price"].includes(outputKey.toLowerCase())) {
+				outputKey = "detected_level";
+			}
+			return { ...valObj, key: normalizeTapeOutputKey(outputKey) };
 		}
 		return Object.fromEntries(
 			Object.entries(valObj).map(([key, child]) => [
@@ -275,30 +279,30 @@ const traverseAndMigrate = (node: ConditionBlock): ConditionBlock => {
 		migratedNode.type = typeMapping[migratedNode.type];
 	}
 
-	// Auto-migrate volatility_filter to natr_filter when NATR semantics are detected
+	// Ensure volatility_filter and natr_filter remain cleanly separated
 	if (migratedNode.type === "volatility_filter") {
 		const nodeParams = (migratedNode.params || {}) as Record<string, unknown>;
-		const hasNatrParam =
-			nodeParams.natr_threshold !== undefined ||
-			nodeParams.indicator === "NATR" ||
-			nodeParams.indicator === "SCALPER_NATR";
-		const hasNatrId = Boolean(
-			migratedNode.id && migratedNode.id.toLowerCase().includes("natr"),
-		);
-		const isContaminatedWithAtrDefault =
-			nodeParams.indicator === "ATR" &&
-			(nodeParams.value === 1.5 || nodeParams.value === "1.5") &&
-			nodeParams.natr_threshold !== undefined;
+		const indicator = String(nodeParams.indicator || "").toUpperCase();
 
-		if (
-			hasNatrParam ||
-			isContaminatedWithAtrDefault ||
-			(hasNatrId && !nodeParams.indicator)
+		if (indicator === "ATR" || indicator === "BBW") {
+			// This is explicitly an ATR or BBW volatility filter - preserve it as volatility_filter!
+			// Remove any stray natr_threshold so it does not pollute the block
+			if (nodeParams.natr_threshold !== undefined) {
+				delete nodeParams.natr_threshold;
+			}
+		} else if (
+			indicator === "NATR" ||
+			indicator === "SCALPER_NATR" ||
+			(!nodeParams.indicator && nodeParams.natr_threshold !== undefined)
 		) {
+			// Only legacy blocks without an indicator or explicitly set to NATR are converted to natr_filter
+			console.log(
+				`Migrating block "${migratedNode.id}" with NATR intent to "natr_filter"`,
+			);
 			migratedNode.type = "natr_filter" as ComponentType;
 			const natrThreshold =
 				nodeParams.natr_threshold ??
-				(nodeParams.indicator === "NATR" || nodeParams.indicator === "SCALPER_NATR"
+				(indicator === "NATR" || indicator === "SCALPER_NATR"
 					? nodeParams.value
 					: undefined) ??
 				1.0;
@@ -310,6 +314,11 @@ const traverseAndMigrate = (node: ConditionBlock): ConditionBlock => {
 			delete migratedNode.params.operator;
 			delete migratedNode.params.value;
 		}
+	} else if (migratedNode.type === "natr_filter") {
+		const nodeParams = (migratedNode.params || {}) as Record<string, unknown>;
+		delete nodeParams.indicator;
+		delete nodeParams.operator;
+		delete nodeParams.value;
 	}
 
 	if (migratedNode.type && !["AND", "OR"].includes(migratedNode.type)) {

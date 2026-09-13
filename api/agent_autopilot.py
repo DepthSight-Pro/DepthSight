@@ -13,6 +13,10 @@ from fastapi import WebSocket
 from api.database import async_session_factory
 from api import crud, models, schemas, ai_assistant
 from api.ai_assistant import _generate_json_response
+from bot_module.telemetry_formatter import (
+    extract_rejection_telemetry,
+    format_event_log_markdown,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -738,6 +742,7 @@ async def run_strategy_advisor_agent(
     best_trades: int,
     websocket: WebSocket,
     storage_range_info: str = "",
+    current_telemetry: Optional[dict] = None,
 ) -> str:
     """Compares the last run's configuration and results with the best configuration and historical rules, then writes concrete recommendations."""
     from api.ai_assistant import (
@@ -873,6 +878,13 @@ async def run_strategy_advisor_agent(
             active_fallbacks = [sorted(list(db_tags))[0]] if db_tags else ["breakout"]
         return active_fallbacks
 
+    telemetry_block = ""
+    if current_telemetry:
+        telemetry_md = format_event_log_markdown(
+            current_telemetry, language="en", compact=True
+        )
+        telemetry_block = f"\nLatest Variant Event Telemetry & Rejections:\n{telemetry_md}\n"
+
     # Turn 0: Ask Advisor what tags it wants to query
     range_header = (
         f" (Historical Storage: {storage_range_info})" if storage_range_info else ""
@@ -882,7 +894,8 @@ async def run_strategy_advisor_agent(
         f"Best Variant Configuration (PnL: {best_pnl:.2f}%, Trades: {best_trades}):\n"
         f"```json\n{json.dumps(clean_best, indent=2)}\n```\n\n"
         f"Latest Variant Configuration (PnL: {current_pnl:.2f}%, Trades: {current_trades}):\n"
-        f"```json\n{json.dumps(clean_curr, indent=2)}\n```\n\n"
+        f"```json\n{json.dumps(clean_curr, indent=2)}\n```\n"
+        f"{telemetry_block}\n"
         f"Select the tags you want to search in the memory bank to compare this setup with historical successes or failures."
     )
 
@@ -996,7 +1009,8 @@ async def run_strategy_advisor_agent(
         f"{initial_memory_rules}\n\n"
         f"Here are the historical examples retrieved from the database:\n"
         f"{retrieved_context}\n\n"
-        f"Compare the configurations and results, and write specific recommendations for the next variant."
+        f"{telemetry_block}\n"
+        f"Compare the configurations and results (especially rejection counters, filter bottlenecks, and foundation triggers if trades are low or zero), and write specific recommendations for the next variant."
     )
 
     messages = [
@@ -1284,6 +1298,7 @@ async def run_autopilot_loop(
     last_iteration_json = None
     last_iteration_pnl = 0.0
     last_iteration_trades = 0
+    last_iteration_telemetry = None
 
     for i in range(1, iterations_limit + 1):
         # Get user configuration
@@ -1315,6 +1330,7 @@ async def run_autopilot_loop(
                 best_trades=best_kpis.get("trades", 0) if best_kpis else 0,
                 websocket=websocket,
                 storage_range_info=storage_range_info,
+                current_telemetry=last_iteration_telemetry,
             )
             # Combine the historical rules and the dynamic advice so the generator retains both
             memory_summary = f"{initial_memory_rules}\n\n# CURRENT SESSION STRATEGIC ADVICE:\n{advisor_advice}"
@@ -1563,6 +1579,14 @@ async def run_autopilot_loop(
         trades_count = kpis.get("trades", 0)
         max_dd = kpis.get("max_drawdown", 0.0)
 
+        analytics_report = (
+            kpis.get("analytics_report") if isinstance(kpis, dict) else None
+        )
+        telemetry = extract_rejection_telemetry(analytics_report, strategy_json)
+        telemetry_compact = format_event_log_markdown(
+            telemetry, language="en", compact=True
+        )
+
         # Stream result to client
         await websocket.send_json(
             {
@@ -1575,6 +1599,8 @@ async def run_autopilot_loop(
                 "max_dd": max_dd,
                 "strategy_name": strategy_display_name,
                 "reasoning": strategy_json.get("reasoning", ""),
+                "analytics_report": analytics_report,
+                "telemetry": telemetry,
             }
         )
 
@@ -1582,6 +1608,7 @@ async def run_autopilot_loop(
         last_iteration_json = strategy_json
         last_iteration_pnl = total_pnl
         last_iteration_trades = trades_count
+        last_iteration_telemetry = telemetry
 
         # Calculate Safe Calmar fitness score
         current_score = compute_safe_calmar(total_pnl, max_dd, trades_count)
@@ -1710,11 +1737,22 @@ async def run_autopilot_loop(
                     "message": f"Profitable candidate found in Variant {chr(64 + i)} (PnL: {total_pnl:.2f}%). Continuing to search for better variants...",
                 }
             )
-            feedback_msg = f"Variant {chr(64 + i)} succeeded backtest with PnL: {total_pnl:.2f}%, winrate: {win_rate:.1f}%, trades: {trades_count}. Let's try to optimize it further to get even higher PnL."
+            feedback_msg = (
+                f"Variant {chr(64 + i)} succeeded backtest with PnL: {total_pnl:.2f}%, winrate: {win_rate:.1f}%, trades: {trades_count}.\n"
+                f"Diagnostic Telemetry:\n{telemetry_compact}\n"
+                "Let's try to optimize it further to get even higher PnL."
+            )
             current_feedback_history[i] = feedback_msg
         else:
             # Create failure reason and save to database
-            reason = "negative return" if total_pnl <= 0.0 else "too few trades (< 5)"
+            if total_pnl <= 0.0:
+                reason = "negative return"
+            elif trades_count < 20:
+                bottleneck_reason = telemetry.get("primary_bottleneck") or "too few trades (< 20)"
+                reason = f"low trade count ({trades_count} trades). {bottleneck_reason}"
+            else:
+                reason = "high drawdown or sub-target performance"
+
             reasoning = strategy_json.get("reasoning", "")
             filters_list = [
                 f.get("type")
@@ -1762,7 +1800,11 @@ async def run_autopilot_loop(
                 )
             )
 
-            feedback_msg = f"Variant {chr(64 + i)} failed backtest with PnL: {total_pnl:.2f}%, winrate: {win_rate:.1f}%, trades: {trades_count}, max drawdown: {max_dd:.1f}%. Reason: {reason}."
+            feedback_msg = (
+                f"Variant {chr(64 + i)} failed backtest with PnL: {total_pnl:.2f}%, winrate: {win_rate:.1f}%, trades: {trades_count}, max drawdown: {max_dd:.1f}%.\n"
+                f"Reason: {reason}.\n"
+                f"Diagnostic Telemetry:\n{telemetry_compact}"
+            )
             current_feedback_history[i] = feedback_msg
 
         recent_feedbacks = "\n".join(
@@ -1781,12 +1823,19 @@ async def run_autopilot_loop(
             failed_config_clean.pop("created_at", None)
             failed_config_clean.pop("updated_at", None)
 
+            bottleneck_hint = (
+                f"⚠️ REJECTION BOTTLENECK TO FIX: {telemetry['primary_bottleneck']}\n\n"
+                if telemetry.get("primary_bottleneck")
+                else ""
+            )
+
             # Reset feedback to focus on the best baseline AND explain the failed modification
             current_feedback = (
                 f"Recent History (Last 3 runs):\n{recent_feedbacks}\n\n"
                 f"⚠️ Notice: We have backtracked to the best configuration so far (Variant {chr(64 + best_iteration)}).\n"
                 f"The subsequent modification (Variant {chr(64 + i)}) deteriorated the risk-adjusted performance "
                 f"(Calmar: {current_score:.2f} [PnL: {total_pnl:.2f}%, DD: {max_dd:.1f}%] vs Best: {best_score:.2f} [PnL: {best_pnl:.2f}%, DD: {best_kpis.get('max_dd', 0.0):.1f}%]).\n"
+                f"{bottleneck_hint}"
                 f"Failed Variant {chr(64 + i)} Config snippet:\n{json.dumps(failed_config_clean, indent=2)[:800]}...\n\n"
                 f"CRITICAL INSTRUCTION FOR NEXT VARIANT:\n"
                 f"You MUST make meaningful mathematical changes to the baseline strategy. DO NOT output the exact same config.\n"
@@ -1805,8 +1854,14 @@ async def run_autopilot_loop(
             )
         else:
             last_strategy_json = strategy_json
+            bottleneck_hint = (
+                f"⚠️ REJECTION BOTTLENECK TO FIX: {telemetry['primary_bottleneck']}\n\n"
+                if telemetry.get("primary_bottleneck")
+                else ""
+            )
             current_feedback = (
                 f"Recent History (Last 3 runs):\n{recent_feedbacks}\n\n"
+                f"{bottleneck_hint}"
                 f"Please analyze the recent history and optimize the configuration further to get higher PnL with low drawdown (target > 5.0%, DD < 25.0%, >= 20 trades). "
                 f"DIVERSITY DIRECTIVE: Make meaningful structural improvements rather than repeating the exact same parameters."
             )

@@ -330,11 +330,10 @@ class FastVectorBacktester:
             indicator = str(params.get("indicator", "")).upper()
             if (
                 indicator in {"NATR", "SCALPER_NATR"}
-                or "natr_threshold" in params
-                or "natr" in str(params.get("id", "")).lower()
+                or ("indicator" not in params and "natr_threshold" in params)
             ):
                 indicator_keys.append(f"NATR_{int(params.get('period', 14))}")
-            elif indicator == "ATR":
+            elif indicator in {"ATR", "BBW", ""}:
                 indicator_keys.append(f"ATR_{int(params.get('period', 14))}")
         elif node_type == "natr_filter":
             indicator_keys.append(f"NATR_{int(params.get('period', 14))}")
@@ -653,6 +652,13 @@ class FastVectorBacktester:
                 if "name" not in inner and "name" in result:
                     inner["name"] = result["name"]
                 result = inner
+
+        try:
+            from .strategy_healer import heal_strategy_config
+
+            result = heal_strategy_config(result, symbol=result.get("symbol"))
+        except Exception as e:
+            logger.warning(f"Error applying strategy_healer: {e}")
 
         return result
 
@@ -1384,11 +1390,37 @@ class FastVectorBacktester:
 
         if source == "block_result":
             block_id = operand.get("block_id")
-            result_key = key or "result"
+            result_key = key or operand.get("field") or "result"
+            if not block_id and len(self._dynamic_block_results) == 1:
+                block_id = next(iter(self._dynamic_block_results.keys()))
             if not block_id:
                 return self._empty_numeric_series()
-            block_details = self._dynamic_block_results.get(str(block_id), {})
+
+            block_details = self._dynamic_block_results.get(str(block_id))
+            if block_details is None:
+                lower_bid = str(block_id).lower()
+                for k, v in self._dynamic_block_results.items():
+                    if (
+                        k.lower() == lower_bid
+                        or k.lower() in lower_bid
+                        or lower_bid in k.lower()
+                    ):
+                        block_details = v
+                        break
+            if block_details is None and len(self._dynamic_block_results) == 1:
+                block_details = next(iter(self._dynamic_block_results.values()))
+
+            if not block_details:
+                return self._empty_numeric_series()
+
             series = block_details.get(str(result_key))
+            if series is None:
+                candidates = [str(result_key).lower(), "detected_level", "result"]
+                for cand in candidates:
+                    if cand in block_details:
+                        series = block_details[cand]
+                        break
+
             if series is None:
                 return self._empty_numeric_series()
             if shift:
@@ -3995,27 +4027,19 @@ class FastVectorBacktester:
 
     def _evaluate_volatility_filter(self, params: Dict[str, Any]) -> pd.Series:
         indicator_str = str(params.get("indicator", "")).upper()
-        has_natr_threshold = "natr_threshold" in params
-        has_natr_id = "natr" in str(params.get("id", "")).lower()
-        is_natr_indicator = indicator_str in {"NATR", "SCALPER_NATR"}
-        is_contaminated_atr = (
-            indicator_str == "ATR"
-            and has_natr_threshold
-            and (params.get("value") == 1.5 or has_natr_id)
-        )
-
+        # Legacy fallback: ONLY when the block is explicitly configured for NATR
+        # or has no indicator specified at all and only natr_threshold.
+        # An explicit ATR or BBW indicator MUST NEVER be treated as NATR!
         if (
-            is_natr_indicator
-            or has_natr_threshold
-            or is_contaminated_atr
-            or (has_natr_id and indicator_str != "BBW")
+            indicator_str in {"NATR", "SCALPER_NATR"}
+            or ("indicator" not in params and "natr_threshold" in params)
         ):
             natr_params = dict(params)
             if "natr_threshold" in params:
                 natr_params["natr_threshold"] = params["natr_threshold"]
                 natr_params["threshold"] = params["natr_threshold"]
                 natr_params["value"] = params["natr_threshold"]
-            elif "value" in params and is_natr_indicator:
+            elif "value" in params and indicator_str in {"NATR", "SCALPER_NATR"}:
                 natr_params["natr_threshold"] = params["value"]
                 natr_params["threshold"] = params["value"]
             return self._evaluate_natr_filter(natr_params)
@@ -4634,12 +4658,11 @@ class FastVectorBacktester:
             indicator = str(params.get("indicator", "")).upper()
             if (
                 indicator in {"NATR", "SCALPER_NATR"}
-                or "natr_threshold" in params
-                or "natr" in str(params.get("id", "")).lower()
+                or ("indicator" not in params and "natr_threshold" in params)
             ):
                 period = int(params.get("period", 14))
                 indicators[f"NATR_{period}"] = {"period": period, "timeframe": tf}
-            elif indicator == "ATR":
+            elif indicator in {"ATR", "BBW", ""}:
                 period = int(params.get("period", 14))
                 indicators[f"ATR_{period}"] = {"period": period, "timeframe": tf}
 

@@ -281,6 +281,17 @@ def _ensure_default_params(node: Any):
             node["params"] = {**defaults, **node["params"]}
             logger.debug(f"Merged default params for block type: {node['type']}")
 
+        if node["type"] == "volatility_filter":
+            params = node.get("params", {})
+            ind = str(params.get("indicator", "")).upper()
+            if ind in {"ATR", "BBW"} and "natr_threshold" in params:
+                del params["natr_threshold"]
+        elif node["type"] == "natr_filter":
+            params = node.get("params", {})
+            params.pop("indicator", None)
+            params.pop("operator", None)
+            params.pop("value", None)
+
     # Recursively traverse all possible nested structures
     for key, value in node.items():
         if isinstance(value, list):
@@ -369,6 +380,25 @@ def _sanitize_strategy_nulls(node: Any) -> Any:
                 _sanitize_strategy_nulls(item)
         elif isinstance(value, dict):
             _sanitize_strategy_nulls(value)
+
+    # Apply self-healing for links, weights, and ATR scaling if at root strategy level
+    if any(
+        k in node
+        for k in ("entryConditions", "filters", "initialization", "config_data")
+    ):
+        try:
+            from bot_module.strategy_healer import heal_strategy_config
+
+            target_dict = (
+                node.get("config_data")
+                if isinstance(node.get("config_data"), dict)
+                else node
+            )
+            heal_strategy_config(target_dict, symbol=target_dict.get("symbol"))
+        except Exception as e:
+            logger.warning(
+                f"Error applying heal_strategy_config in _sanitize_strategy_nulls: {e}"
+            )
 
     return node
 
@@ -574,12 +604,23 @@ async def enrich_market_context_for_ai(text_prompt: str) -> str:
                     elif oracle == 0:
                         oracle_text = "0 (Flat / Consolidation)"
 
+                    price = (
+                        data.get("price")
+                        or data.get("last_price")
+                        or data.get("close")
+                    )
+                    price_line = (
+                        f"- Current price ($): {price}\n" if price is not None else ""
+                    )
+
                     context_blocks.append(
                         f"### LIVE SCREENER DATA for {target_pair} ###\n"
-                        f"- Current volatility (NATR): {natr}\n"
+                        f"{price_line}"
+                        f"- Current volatility (NATR): {natr}%\n"
                         f"- Current macro-trend (1H vs 6H): {trend}\n"
                         f"- ML Oracle Regime: {oracle_text}\n"
                         f"- Daily volume ($): {vol}\n"
+                        f"- Volatility guidance: ALWAYS use 'natr_filter' (normalized %) instead of absolute 'volatility_filter' (ATR).\n"
                         f"Consider these metrics when advising the user or building a strategy."
                     )
                 else:

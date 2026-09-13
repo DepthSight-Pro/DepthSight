@@ -64,7 +64,7 @@ You **MUST** strictly follow this nesting structure of arrays and objects:
       "type": "AND",
       "children": [
         {{
-          "type": "volatility_filter",
+          "type": "natr_filter",
           "params": {{
             "natr_threshold": 1.0
           }}

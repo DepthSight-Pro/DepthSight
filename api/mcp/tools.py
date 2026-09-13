@@ -19,6 +19,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api import crud, models, schemas
 from api.celery_app import celery_app
 from api.plans import plans_config
+from bot_module.telemetry_formatter import (
+    extract_rejection_telemetry,
+    format_event_log_markdown,
+)
 from .protocol import ToolDefinition
 
 logger = logging.getLogger("depthsight.mcp.tools")
@@ -462,7 +466,9 @@ Do NOT invent new types. Do NOT use similar-sounding names.
   `{"rel_vol_threshold": 1.5, "lookback_period": 20}`
 - `trend_filter`: ADX threshold + direction
   `{"indicator": "ADX", "threshold": 25.0}`
-- `volatility_filter`: ATR threshold
+- `volatility_filter`: absolute ATR or BBW threshold
+  `{"indicator": "ATR", "operator": "gt", "value": 1.5}`
+- `natr_filter`: normalized ATR percentage threshold
   `{"natr_threshold": 1.0}`
 - `trading_session`: session hours (UTC)
   `{"sessions": ["london", "new_york"], "timezone": "UTC"}`
@@ -685,7 +691,7 @@ def get_autopilot_generator_prompt() -> str:
     "type": "AND",
     "children": [
       {
-        "type": "volatility_filter",
+        "type": "natr_filter",
         "params": {
           "natr_threshold": 0.8
         }
@@ -808,7 +814,8 @@ async def tool_get_strategy_schema_and_examples(
         if not matches:
             aliases = {
                 "trend_filter": ["trend_strength", "adx"],
-                "volatility_filter": ["volatility", "natr"],
+                "volatility_filter": ["volatility", "atr", "bbw"],
+                "natr_filter": ["natr", "volatility"],
                 "rel_vol_filter": ["rel_vol"],
                 "trailing_stop": ["ManagementBlocks"],
                 "move_to_breakeven": ["ManagementBlocks"],
@@ -880,12 +887,21 @@ async def tool_get_market_metrics(symbol: str) -> str:
                     else ("Impulse / Volatile" if oracle == 1 else str(oracle))
                 )
 
+                price = data.get("price") or data.get("last_price") or data.get("close")
+                price_line = (
+                    f"- **Current Price**: ${float(price):,.4f}\n"
+                    if price is not None
+                    else ""
+                )
+
                 return (
                     f"### Live Market Metrics for {target_pair}\n"
-                    f"- **Current Volatility (NATR)**: {natr}\n"
+                    f"{price_line}"
+                    f"- **Current Volatility (NATR)**: {natr}%\n"
                     f"- **Macro Trend (1H vs 6H)**: {trend}\n"
                     f"- **ML Oracle Regime**: {oracle_text}\n"
                     f"- **24h Volume (USD)**: {vol}\n"
+                    f"- **Volatility Guidance**: Use `natr_filter` (percentage) instead of absolute ATR. On altcoins (e.g. LINK, DOGE, ADA), absolute ATR > 0.5 is unscaled and produces 0 trades.\n"
                     f"- **Timestamp**: {datetime.now(timezone.utc).isoformat()}"
                 )
     except Exception as e:
@@ -1195,6 +1211,18 @@ async def tool_run_backtest(
     # Support both direct strategy_config and config_data-wrapped schemas
     if isinstance(strategy_config.get("config_data"), dict):
         strategy_config = strategy_config["config_data"]
+
+    # Apply self-healing for dynamic links, foundation weights, and ATR price-scaling
+    try:
+        from bot_module.strategy_healer import heal_strategy_config
+
+        strategy_config = heal_strategy_config(
+            strategy_config, symbol=clean_symbol
+        )
+    except Exception as heal_err:
+        logger.warning(
+            f"Error applying strategy_healer in tool_run_backtest: {heal_err}"
+        )
 
     # 1. Date duration limit check against user plan
     user_plan = plans_config.get_plan(user.plan)
@@ -1548,24 +1576,29 @@ async def tool_run_backtest(
                 f"- ⚠️ **Direction Mismatch Warning**: Strategy has `direction='{direction_val}'`, but contains opposing direction conditions. "
                 f"DepthSight Vector Engine runs strictly single-directional (`{direction_val}`); all opposing branches are ignored by the engine. Do not mix LONG and SHORT branches in a single configuration."
             )
+        telemetry_data = extract_rejection_telemetry(analytics_report, strategy_config)
+
         if trades == 0:
             zero_diag = []
-            if isinstance(analytics_report, dict):
-                ev = analytics_report.get("event_counters", {})
-                trig = ev.get("foundation_trigger_counts", {})
-                rej = ev.get("rejections", {})
-                total_trigs = sum(trig.values()) if trig else 0
-                if total_trigs == 0:
-                    zero_diag.append(
-                        "No foundation triggers fired during the entire period (0 signals generated). "
-                        "Review condition thresholds, local levels, indicator periods, or timeframe alignment."
-                    )
-                else:
-                    rej_items = [f"{k}: {v}" for k, v in rej.items() if v]
-                    rej_desc = f" ({', '.join(rej_items)})" if rej_items else ""
-                    zero_diag.append(
-                        f"Foundations fired {total_trigs} times, but 0 trades were opened due to filter or risk manager rejections{rej_desc}."
-                    )
+            if telemetry_data.get("signals_generated_total", 0) == 0:
+                zero_diag.append(
+                    "No foundation triggers or entry signals fired during the entire period (0 signals generated). "
+                    "Review condition thresholds, local levels, indicator periods, or timeframe alignment."
+                )
+            else:
+                total_trigs = sum(
+                    telemetry_data.get("foundation_trigger_counts", {}).values()
+                )
+                trig_desc = (
+                    f"Foundations fired {total_trigs} times, but "
+                    if total_trigs
+                    else ""
+                )
+                zero_diag.append(
+                    f"{trig_desc}0 trades were opened due to signal rejections."
+                )
+                if telemetry_data.get("primary_bottleneck"):
+                    zero_diag.append(f"Primary blocker: {telemetry_data['primary_bottleneck']}")
             if not zero_diag:
                 zero_diag.append(
                     "No entry signals were generated during the simulation period."
@@ -1579,6 +1612,10 @@ async def tool_run_backtest(
                 "For statistical validity (and user prompts requiring >= 50 trades), avoid multi-week extremes (such as 20d High) which occur too rarely. "
                 "Use `significant_level` (intraday swing levels), 4h local levels, or retests (`return_to_level`) to generate adequate trade sample size."
             )
+            if telemetry_data.get("primary_bottleneck"):
+                diagnostics_notes.append(
+                    f"- ⚠️ **Rejection Bottleneck**: {telemetry_data['primary_bottleneck']}"
+                )
         diagnostics_text = (
             ("\n\n🛠️ **Engine Diagnostics**:\n" + "\n".join(diagnostics_notes))
             if diagnostics_notes
@@ -1702,34 +1739,9 @@ async def tool_run_backtest(
             kpi_lines.append(f"- **Run ID**: `{run_id}`")
         kpi_lines.append(f"- **Task ID**: `{celery_task.id}`")
 
-        # Telemetry from analytics_report
-        telemetry_lines = []
-        if isinstance(analytics_report, dict):
-            ev = analytics_report.get("event_counters", {})
-            trig = ev.get("foundation_trigger_counts", {})
-            rej = ev.get("rejections", {})
-            if trig:
-                telemetry_lines.append(
-                    f"- **Triggered Foundations**: {', '.join(f'`{k}`: {v}' for k, v in trig.items())}"
-                )
-            if rej:
-                active_rej = []
-                for rk, rv in rej.items():
-                    if isinstance(rv, dict):
-                        sub_items = [f"{sk}={sv}" for sk, sv in rv.items() if sv > 0]
-                        if sub_items:
-                            active_rej.append(f"{rk} ({', '.join(sub_items)})")
-                    elif isinstance(rv, (int, float)) and rv > 0:
-                        active_rej.append(f"{rk}={rv}")
-                if active_rej:
-                    telemetry_lines.append(
-                        f"- **Rejection Counters**: {'; '.join(active_rej)}"
-                    )
-
-        telemetry_text = (
-            ("\n\n📊 **Signal Telemetry**:\n" + "\n".join(telemetry_lines))
-            if telemetry_lines
-            else ""
+        # Telemetry from analytics_report (Event Log & Rejections matching UI screenshot)
+        telemetry_text = "\n\n" + format_event_log_markdown(
+            telemetry_data, language="en", compact=False
         )
 
         # Sample trades table
@@ -1835,6 +1847,17 @@ async def tool_save_strategy(
         detected_tf = timeframe or strategy_config.get("timeframe") or "15m"
         clean_config["symbol"] = detected_symbol
         clean_config["timeframe"] = detected_tf
+
+        try:
+            from bot_module.strategy_healer import heal_strategy_config
+
+            clean_config = heal_strategy_config(
+                clean_config, symbol=detected_symbol
+            )
+        except Exception as heal_err:
+            logger.warning(
+                f"Error applying strategy_healer in tool_save_strategy: {heal_err}"
+            )
 
         create_schema = schemas.StrategyConfigCreate(
             name=name.strip(),

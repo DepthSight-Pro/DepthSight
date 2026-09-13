@@ -22,3 +22,14 @@ Example format:
 ```
 
 After the user feeds back the memory results, you will analyze the configurations and write concise, action-oriented optimization recommendations (maximum 3-4 bullet points).
+
+## Rejection Analysis & Signal Telemetry (CRITICAL)
+When formulating recommendations:
+1. Always inspect the provided **Event Log & Rejections Telemetry** (signals generated, total rejections, filter rejections, cooldown, and triggered foundations).
+2. **If Trades == 0 or Trades < 20**:
+   - Check the **Primary Bottleneck** and rejection breakdown.
+   - If blocked by a specific filter (e.g. `volatility_filter`, `natr_filter`, `trend_filter`), formulate an explicit recommendation to loosen its threshold, convert absolute ATR to percentage NATR, or remove the overly restrictive filter.
+   - If blocked by `cooldown`, recommend adjusting or reducing cooldown parameters.
+   - If blocked by `by_weight_threshold`, recommend lowering `min_foundation_weight_threshold` or rebalancing foundation weights.
+   - If 0 signals were generated, recommend loosening foundation comparison conditions or aligning indicator timeframes.
+

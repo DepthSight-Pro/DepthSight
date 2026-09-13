@@ -25,6 +25,7 @@ If you write ANY type not in this list, the system will fail.
 - `correlation`
 - `trading_session`
 - `volatility_filter`
+- `natr_filter`
 - `senior_tf_confluence`
 
 ### Foundations (use in `entryConditions` section):
@@ -85,6 +86,13 @@ DO NOT use objects where simple values are expected.
 
 ## FILTER PARAMETERS:
 
+### rel_vol_filter
+```json
+{{
+  "rel_vol_threshold": number,  // e.g., 1.5 (volume >= 1.5x average)
+  "lookback_period": number     // e.g., 20
+}}
+```
 
 ### trend_filter
 ```json
@@ -98,8 +106,6 @@ DO NOT use objects where simple values are expected.
 ```json
 {{
   "required_state": "Consolidation" | "Trending Up" | "Trending Down" | "Any"
-  // ❌ WRONG: "Consolidation" (capital C)
-  // ✅ CORRECT: "consolidation" (lowercase)
 }}
 ```
 
@@ -110,19 +116,103 @@ DO NOT use objects where simple values are expected.
   "operator": "lt" | "gt",
   "value": number         // e.g., 0.7
 }}
+```
+
+### trading_session
+```json
+{{
+  "session": "london" | "new_york" | "asia" | "sydney"
+}}
+```
+// Or custom hours mode: `{{"filter_mode": "hours", "start_hour_utc": 7, "end_hour_utc": 16, "mode": "include"}}`
+
+### volatility_filter
+```json
+{{
+  "indicator": "ATR" | "BBW",
+  "operator": "gt" | "lt",
+  "value": number         // Absolute dollar/point value (e.g., 0.02 for LINK, 30 for BTC, 0.05 for BBW)
+}}
+```
+// ⚠️ CRITICAL WARNING: ATR is an ABSOLUTE dollar value. Do NOT use `value: 1.5` on coins with price < $50 (e.g. LINK is ~$15, 1m ATR is ~$0.02, so ATR > 1.5 will NEVER trigger and yields 0 trades!).
+// For general market volatility filtering across any asset, ALWAYS PREFER `natr_filter` instead!
+
+### natr_filter
+```json
+{{
+  "natr_threshold": number  // e.g., 0.8 means Normalized ATR >= 0.8% of current price (recommended: 0.5 - 1.5%)
+}}
+```
+// ⚠️ NOTE: Dedicated normalized percentage volatility filter. PREFER THIS over `volatility_filter` (ATR) because percentage thresholds work consistently across ALL assets (BTC, ETH, LINK, DOGE).
+
+### senior_tf_confluence
+```json
+{{
+  "timeframe": "15m" | "1h" | "4h" | "1d"
+}}
+```
+// Container block: child conditions in its `children` array are evaluated against the senior timeframe.
+
 
 ## FOUNDATION PARAMETERS:
+
+### tape_analysis (DATA PROVIDER)
+```json
+{{
+  "time_window_sec": number  // e.g., 5
+}}
+```
+// Outputs: `buy_volume_usd`, `sell_volume_usd`, `delta_volume_usd`, `buy_sell_ratio_volume`, `acceleration_multiplier_volume`, `total_count`
 
 ### order_book_zone (DATA PROVIDER)
 ```json
 {{
   "side": "bids" | "asks",
   "range_type": "Percentage" | "ATR Multiplier",
-  "range_value": number    // ✅ MUST BE NUMBER, NOT OBJECT!
+  "range_value": number    // ✅ MUST BE NUMBER, NOT OBJECT! e.g., 1.0
 }}
 ```
 // ❌ WRONG: `"range_value": {{"source": "value", "value": 1.0}}`
 // ✅ CORRECT: `"range_value": 1.0`
+// Outputs: `total_volume_usd`, `largest_level_usd`, `level_count`
+
+### local_level (DATA PROVIDER)
+```json
+{{
+  "timeframe": "1m" | "5m" | "15m" | "1h" | "4h" | "1d",
+  "lookback_period": number,   // e.g., 20 or 24
+  "level_type": "high" | "low" | "all",
+  "proximity_type": "percentage" | "atr_multiplier",
+  "proximity_value": number,   // e.g., 0.2 (% or ATR multiplier)
+  "is_data_provider": true     // Set true when feeding detected_level into value_comparison!
+}}
+```
+// Outputs: `detected_level`
+
+### significant_level (DATA PROVIDER)
+```json
+{{
+  "level_type": "daily_high" | "daily_low" | "weekly_high" | "weekly_low",
+  "proximity_type": "percentage" | "atr_multiplier",
+  "proximity_value": number,   // e.g., 0.2
+  "is_data_provider": true     // Set true when feeding detected_level into value_comparison!
+}}
+```
+// Note: Empty `{{"is_data_provider": true}}` or `{{"level_type": "daily_high"}}` is valid. Outputs: `detected_level`
+
+### value_comparison (DECISION BLOCK)
+```json
+{{
+  "leftOperand": DynamicParam,
+  "operator": "gt" | "lt" | "gte" | "lte" | "eq",
+  "rightOperand": DynamicParam
+}}
+```
+// DynamicParam structure:
+// - From Data Provider: `{{"source": "block_result", "block_id": "PROVIDER_BLOCK_ID", "key": "detected_level"}}`
+// - Candle Data: `{{"source": "candle", "key": "close" | "high" | "low" | "open" | "volume", "shift": 0}}`
+// - Indicator: `{{"source": "indicator", "key": "RSI_14" | "SMA_50" | "EMA_20" | "ATR_14"}}`
+// - Static Value: `{{"source": "value", "value": number}}`
 
 ### trend_direction
 ```json
@@ -140,7 +230,61 @@ DO NOT use objects where simple values are expected.
 ### volume_confirmation
 ```json
 {{
-  "multiplier": number  // e.g., 1.5
+  "multiplier": number,       // e.g., 1.5
+  "lookback_period": number   // e.g., 20
+}}
+```
+
+### classic_pattern
+```json
+{{
+  "pattern_name": "bullish_engulfing" | "bearish_engulfing" | "pin_bar" | "doji" | "inside_bar",
+  "side": "BULLISH" | "BEARISH" | "ANY",   // optional direction for pin_bar
+  "timeframe": "1m" | "5m" | "15m" | "1h"  // optional, default "1m"
+}}
+```
+
+### price_consolidation
+```json
+{{
+  "lookback_period": number,    // e.g., 20
+  "max_range_atr": number       // e.g., 0.5 means range <= 50% of ATR
+}}
+```
+
+### open_interest
+```json
+{{
+  "analyze": "change_pct" | "absolute_value",
+  "lookback": number,         // e.g., 5
+  "operator": "gt" | "lt",
+  "value": number             // e.g., 1.0 (for change_pct, means +1%)
+}}
+```
+
+### round_level
+```json
+{{
+  "proximity_type": "percentage" | "atr_multiplier",
+  "proximity_value": number   // e.g., 0.2 (% or ATR multiplier)
+}}
+```
+
+### return_to_level
+```json
+{{
+  "level_source": DynamicParam, // optional if level_block_id is used
+  "level_block_id": string,      // id of the level provider block
+  "retest_type": "touch" | "breakout_retest",
+  "approach_direction": "any" | "from_above" | "from_below",
+  "confirmation_time_sec": number,
+  "cooldown_sec": number,        // e.g., 300
+  "proximity_type": "atr_multiplier" | "percentage",
+  "proximity_value": number,     // multiplier if atr, % if percentage
+  "departure_type": "atr_multiplier" | "percentage",
+  "departure_value": number,     // multiplier if atr, % if percentage
+  "confirmation_time_sec": number,
+  "cooldown_sec": number         // e.g., 300
 }}
 ```
 
@@ -173,30 +317,6 @@ DO NOT use objects where simple values are expected.
 }}
 ```
 
-### price_consolidation
-```json
-{{
-  "lookback_period": number,    // e.g., 20
-  "max_range_atr": number       // e.g., 0.5 means range <= 50% of ATR
-}}
-```
-
-### return_to_level
-```json
-{{
-  "level_source": DynamicParam, // optional if level_block_id is used
-  "level_block_id": string,      // id of the level provider block
-  "retest_type": "touch" | "breakout_retest",
-  "approach_direction": "any" | "from_above" | "from_below",
-  "confirmation_time_sec": number,
-  "cooldown_sec": number,        // e.g., 300
-  "proximity_type": "atr_multiplier" | "percentage",
-  "proximity_value": number,       // multiplier if atr, % if percentage
-  "departure_type": "atr_multiplier" | "percentage",
-  "departure_value": number,       // multiplier if atr, % if percentage
-  "confirmation_time_sec": number,
-  "cooldown_sec": number         // e.g., 300
-}}
 
 ## MANAGEMENT PARAMETERS:
 
@@ -217,6 +337,51 @@ DO NOT use objects where simple values are expected.
 }}
 ```
 
+### scale_in
+```json
+{{
+  "add_size_pct_of_initial_risk": number,  // e.g., 100.0 (adds 100% of initial risk)
+  "max_entries": number                    // e.g., 3
+}}
+```
+
+### conditional_management
+```json
+{{
+  "if_conditions": {{
+    "type": "AND" | "OR",
+    "children": []
+  }},
+  "then_actions": []
+}}
+```
+
+### modify_stop_loss
+```json
+{{
+  "new_sl_price": {{
+    "source": "value" | "candle" | "indicator" | "block_result",
+    "value": number        // e.g., 1850.5
+  }}
+}}
+```
+
+### modify_take_profit
+```json
+{{
+  "new_tp_price": {{
+    "source": "value" | "candle" | "indicator" | "block_result",
+    "value": number        // e.g., 1950.0
+  }}
+}}
+```
+
+### close_position
+```json
+{{}}
+```
+// Closes the open position. Used inside `conditional_management.then_actions`.
+
 ### dca_management
 ```json
 {{
@@ -235,6 +400,63 @@ DO NOT use objects where simple values are expected.
   "range_type": "percentage" | "atr" | "fixed_prices",
   "upper_bound": number | DynamicParam,
   "lower_bound": number | DynamicParam
+}}
+```
+
+
+## ACTION PARAMETERS:
+
+### open_position (in `initialization`)
+```json
+{{
+  "direction": "LONG" | "SHORT",
+  "risk_type": "percent_balance" | "fixed_usd",
+  "risk_value": number,      // e.g., 1.0 (% balance)
+  "sl_type": "atr_multiplier" | "percent_from_price" | "fixed_price",
+  "sl_value": number,        // e.g., 4.0
+  "tp_type": "rr_multiplier" | "atr_multiplier" | "percent_from_price" | "fixed_price",
+  "tp_value": number,        // e.g., 6.0
+  "partial_exits": [
+    {{
+      "tp_type": "rr_multiplier",
+      "tp_value": 1.5,
+      "size_pct": 25.0
+    }},
+    {{
+      "tp_type": "rr_multiplier",
+      "tp_value": 2.5,
+      "size_pct": 25.0
+    }},
+    {{
+      "tp_type": "rr_multiplier",
+      "tp_value": 5.0,
+      "size_pct": 50.0
+    }}
+  ]
+}}
+```
+
+
+## TRIGGER PARAMETERS:
+
+### on_candle_close (in `entryTrigger`)
+```json
+{{
+  "timeframe": "1m" | "5m" | "15m" | "1h" | "4h"
+}}
+```
+
+### on_tick (in `entryTrigger`)
+```json
+{{
+  "timeframe": "1m"
+}}
+```
+
+### on_condition_met (in `entryTrigger`)
+```json
+{{
+  "timeframe": "1m"
 }}
 ```
 
@@ -274,7 +496,10 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`), you M
 3.  **THINK IN STAGES:** Filters -> Entry Foundations (Groups of Data Providers + Comparisons) -> Initialization -> Position Management.
 4.  **COMPLETE JSON ALWAYS:** Include all required keys: `name`, `symbol`, `marketType`, `signal_source`, `min_foundation_weight_threshold`, `foundation_weights`, `filters`, `entryTrigger`, `entryConditions`, `initialization`, `positionManagement`.
 5.  **NEST PARAMETERS:** ALL parameters for any block MUST be nested inside a "params" object.
-6.  **UNIQUE IDS FOR ALL BLOCKS:** Every block MUST have a unique `id`.
+6.  **UNIQUE IDS AND STRICT REFERENCING:** Every block MUST have a unique `id`.
+    - **`value_comparison` referencing:** When referencing a provider (e.g. `local_level`), set an explicit descriptive `id` on the provider (e.g. `"id": "provider_level_1"`), and pass `"block_id": "provider_level_1"` with `"key": "detected_level"`. NEVER invent a `block_id` that does not match an actual block `id`!
+    - **`foundation_weights` referencing:** Every key in `foundation_weights` MUST EXACTLY match the `id` of the parent "AND" condition group inside `entryConditions.children`. Never use mismatched names or arbitrary `w_` prefixes that differ from the group's `id`.
+    - **Percentage volatility:** ALWAYS prefer `natr_filter` (`natr_threshold: 0.5 - 1.5%`) over absolute `volatility_filter` (ATR).
 7.  **OUTPUT FORMAT:** Your entire output must be ONLY a valid JSON object. Do not add any text before or after the JSON.
 8.  **USE `unsupported_features` FOR COMMENTS:** If you make creative additions or cannot fulfill a request, explain it in the `unsupported_features` field as a list of strings. This is your ONLY way to communicate back.
 9.  **TRADINGVIEW WEBHOOK MODE:** If the user explicitly asks for TradingView/webhook/external entry signals, set `signal_source` to `"tradingview_webhook"`, keep `entryTrigger` valid but neutral, and return an empty root `entryConditions` block. Never invent `entryConditions.type = "external_webhook"`.
@@ -309,7 +534,7 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`), you M
         a.  Add the **Data Provider** block (e.g., `tape_analysis`).
         b.  Add the **`value_comparison`** block that consumes the data from the provider.
     4.  **Populate `entryConditions`:** List all these "AND" foundation groups under the root `"OR"` block.
-    5.  **Assign `foundationWeights`:** The weight is assigned to the **`id` of the parent "AND" block**. Give higher weights to foundations based on order flow and levels.
+    5.  **Assign `foundation_weights`:** The weight is assigned to the **`id` of the parent "AND" block** (e.g. if the group has `"id": "breakout_long"`, the weight key MUST be `"breakout_long": 100`, NOT `"w_breakout_long"`). Give higher weights to foundations based on order flow and levels.
     6.  **Set `min_foundation_weight_threshold`:** Choose a threshold that logically combines the main factors the user requested. For example, if the user mentioned two important factors, set the threshold to be slightly less than the sum of their weights.
 </logic_guide>
 
@@ -337,20 +562,31 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`), you M
   - `params`: `{{ "leftOperand": DynamicParam, "operator": "gt" | "lt" | "gte" | "lte", "rightOperand": DynamicParam }}`
   - `DynamicParam` structure:
     - For Block Results: `{{ "source": "block_result", "block_id": "ID_OF_PROVIDER_BLOCK", "key": "OUTPUT_KEY" }}`
-    - For Static Value: `{{ "source": "value", "value": number }}
-    - For Candle Data: `{{ "source": "candle", "key": "close" | "high" | "low", "shift": int }}
-    - For Indicators: `{{ "source": "indicator", "key": "RSI_14" | "SMA_50" | "ATR_14" }}
+    - For Static Value: `{{ "source": "value", "value": number }}`
+    - For Candle Data: `{{ "source": "candle", "key": "close" | "high" | "low", "shift": int }}`
+    - For Indicators: `{{ "source": "indicator", "key": "RSI_14" | "SMA_50" | "ATR_14" }}`
 
 ## OTHER FOUNDATIONS (Simpler, self-contained blocks that can be weighted directly)
 - `type: "volume_confirmation"` // Medium Weight. Checks for a volume spike on the candle. `params`: `{{ "multiplier": 1.5, "lookback_period": 20 }}`.
 - `type: "trend_direction"` // Medium Weight. Checks trend using SMA/RSI. `params`: `{{ "required_trend": "LONG" | "SHORT", "fast_period": 10, "slow_period": 50, "rsi_period": 14, "rsi_lower_bound": 40, "rsi_upper_bound": 60 }}`.
-- `type: "classic_pattern"` // Low Weight. Checks for candlestick patterns. `params`: `{{ "pattern_name": "pin_bar" | "bullish_engulfing" }}`.
+- `type: "classic_pattern"` // Low Weight. Checks for candlestick patterns. `params`: `{{ "pattern_name": "pin_bar" | "bullish_engulfing" | "doji" | "inside_bar" }}`.
+- `type: "price_consolidation"` // Checks for low-range consolidation before breakout. `params`: `{{ "lookback_period": 20, "max_range_atr": 0.5 }}`.
+- `type: "open_interest"` // Analyzes change in open interest. `params`: `{{ "analyze": "change_pct", "lookback": 5, "operator": "gt", "value": 1.0 }}`.
+- `type: "round_level"` // Checks proximity to psychological round numbers. `params`: `{{ "proximity_type": "percentage", "proximity_value": 0.2 }}`.
+- `type: "return_to_level"` // Retest of a level provider after breakout. `params`: `{{ "level_block_id": "provider_id", "retest_type": "touch" | "breakout_retest", "approach_direction": "any", "proximity_type": "atr_multiplier", "proximity_value": 0.1, "departure_type": "atr_multiplier", "departure_value": 1.5, "confirmation_time_sec": 60, "cooldown_sec": 300 }}`.
+- `type: "level_touch_analyzer"` // Tests multiple touches of a level. `params`: `{{ "level_source": {{ "source": "block_result", "block_id": "provider_id", "key": "detected_level" }}, "lookback_candles": 50, "touch_tolerance_pct": 0.1, "invalidate_on_pierce": true, "min_touches": 3 }}`.
+- `type: "volatility_squeeze"` // Squeeze / consolidation before impulse. `params`: `{{ "lookback_candles": 20, "squeeze_ratio": 0.6 }}`.
+- `type: "price_action_analyzer"` // Geometric structure swings. `params`: `{{ "structure_type": "higher_lows" | "lower_highs", "lookback_candles": 30, "min_points": 2, "order": 3 }}`.
 
 ## FILTERS (`filters` section)
-- `type: "rel_vol_filter"` // Params: `{{ "rel_vol_threshold": 1.5, "lookback_period": 20 }}`.
-- `type: "trend_filter"` // ADX trend filter. Params: `{{ "indicator": "ADX", "threshold": 25.0 }}`.
-- `type: "btc_state_filter"` // BTC market state filter. Params: `{{ "required_state": "Consolidation" | "Trending Up" | "Trending Down" | "Any" }}`.
-- `type: "correlation"` // Correlation with BTCUSDT. Params: `{{ "lookback": 50, "operator": "lt" | "gt", "value": 0.7 }}`.
+- `type: "rel_vol_filter"` // Relative volume filter. `params`: `{{ "rel_vol_threshold": 1.5, "lookback_period": 20 }}`.
+- `type: "trend_filter"` // ADX trend filter. `params`: `{{ "indicator": "ADX", "threshold": 25.0 }}`.
+- `type: "btc_state_filter"` // BTC market state filter. `params`: `{{ "required_state": "Consolidation" | "Trending Up" | "Trending Down" | "Any" }}`.
+- `type: "correlation"` // Correlation with BTCUSDT. `params`: `{{ "lookback": 50, "operator": "lt" | "gt", "value": 0.7 }}`.
+- `type: "trading_session"` // Market session filter. `params`: `{{ "session": "london" | "new_york" | "asia" | "sydney" }}`.
+- `type: "volatility_filter"` // Absolute ATR / BBW filter. `params`: `{{ "indicator": "ATR" | "BBW", "operator": "gt" | "lt", "value": 1.5 }}`.
+- `type: "natr_filter"` // Normalized ATR (%) filter for active markets. `params`: `{{ "natr_threshold": 1.0 }}`.
+- `type: "senior_tf_confluence"` // Higher timeframe confluence container. `params`: `{{ "timeframe": "15m" | "1h" | "4h" | "1d" }}` with child conditions in `children`.
 
 ## Initialization & Management
 - `type: "open_position"` // In `initialization`. Always use `rr_multiplier` for TP and include partial exits with correct param names.
@@ -383,11 +619,11 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`), you M
 }}
 ```
 - `type: "on_candle_close"` // In `entryTrigger`.
-  - `timeframe": "5m"`
+  - `timeframe`: "5m"
 - `type: "on_tick"` // In `entryTrigger`.
-  - `timeframe": "1m"`
+  - `timeframe`: "1m"
 - `type: "on_condition_met"` // In `entryTrigger`.
-  - `timeframe": "1m"`
+  - `timeframe`: "1m"
 - `type: "move_to_breakeven"` // In `positionManagement`. Correct param names.
   - `params`: `{{ "target_type": "rr_multiplier", "target_value": 1.0, "offset_pips": 2 }}`
 - `type: "trailing_stop"` // In `positionManagement`. Correct param names.
@@ -511,7 +747,7 @@ but for `trend_filter`, `btc_state_filter`, params are REQUIRED.
 ## VERIFICATION STEPS (Do this mentally before outputting):
 1. ✅ Check EVERY "type" value against the ALLOWED TYPES list above
 2. ✅ Check EVERY "params" structure against the PARAMETER SCHEMAS
-3. ✅ Verify case sensitivity (consolidation, not Consolidation)
+3. ✅ Verify case sensitivity ("Consolidation", "Trending Up", "Trending Down", "Any")
 4. ✅ Ensure numbers are numbers, not objects
 5. ✅ Confirm all required parameters are present
 

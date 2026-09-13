@@ -19,6 +19,7 @@ If you write ANY type not in this list, the system will fail.
 - `rel_vol_filter`
 - `trend_filter`
 - `volatility_filter`
+- `natr_filter`
 - `trading_session`
 
 ### Foundations (use in `entryConditions` section):
@@ -91,22 +92,56 @@ DO NOT use objects where simple values are expected.
 }
 ```
 
-### volatility_filter
+### natr_filter
 ```json
 {
   "natr_threshold": 1.0
 }
 ```
 
+### volatility_filter
+```json
+{
+  "indicator": "ATR" | "BBW",
+  "operator": "gt" | "lt",
+  "value": number         // Absolute point/dollar threshold (e.g. 0.02 for LINK, 30 for BTC, 0.05 for BBW)
+}
+```
+// ⚠️ CRITICAL WARNING: ATR is an ABSOLUTE dollar value. Do NOT use `value: 1.5` on coins with price < $50 (e.g. LINK price is $15, 1m ATR is ~$0.02, so ATR > 1.5 yields 0 trades!).
+// For general market volatility filtering across any asset, ALWAYS PREFER `natr_filter` instead!
+
+### natr_filter
+```json
+{
+  "natr_threshold": number  // Normalized ATR in % of price, e.g. 0.8 means >= 0.8% (recommended: 0.5 - 1.5%)
+}
+```
+// ⚠️ NOTE: Dedicated normalized percentage filter. PREFER THIS over `volatility_filter` (ATR) because percentage thresholds work consistently across ALL assets (BTC, ETH, LINK, DOGE).
+
 ### trading_session
 ```json
 {
-  "sessions": ["london", "new_york"],
-  "timezone": "UTC"
+  "session": "london" | "new_york" | "asia" | "sydney"
 }
 ```
+// Or custom hours: `{"filter_mode": "hours", "start_hour_utc": 7, "end_hour_utc": 16, "mode": "include"}`
 
 ## FOUNDATION PARAMETERS:
+
+### value_comparison (DECISION BLOCK)
+```json
+{
+  "leftOperand": DynamicParam,
+  "operator": "gt" | "lt" | "gte" | "lte" | "eq",
+  "rightOperand": DynamicParam
+}
+```
+// DynamicParam structure:
+// - From Provider: `{"source": "block_result", "block_id": "PROVIDER_BLOCK_ID", "key": "detected_level"}`
+//   ⚠️ PROVIDER_BLOCK_ID MUST EXACTLY MATCH the "id" of the provider block! NEVER invent an unmatched block_id.
+// - Candle Data: `{"source": "candle", "key": "close" | "high" | "low" | "open" | "volume", "shift": 0}`
+// - Indicator: `{"source": "indicator", "key": "RSI_14" | "SMA_50" | "EMA_20" | "ATR_14"}`
+// - Static Value: `{"source": "value", "value": number}`
 
 ### trend_direction
 ```json
@@ -126,6 +161,15 @@ DO NOT use objects where simple values are expected.
 {
   "multiplier": 1.5,
   "lookback_period": 20
+}
+```
+
+### classic_pattern
+```json
+{
+  "pattern_name": "bullish_engulfing" | "bearish_engulfing" | "pin_bar" | "doji" | "inside_bar",
+  "side": "BULLISH" | "BEARISH" | "ANY",
+  "timeframe": "1m" | "5m" | "15m" | "1h"
 }
 ```
 
@@ -206,7 +250,8 @@ DO NOT use objects where simple values are expected.
 ### round_level
 ```json
 {
-  "proximity_pct": 0.1
+  "proximity_type": "percentage" | "pips",
+  "proximity_value": 0.2
 }
 ```
 
@@ -319,6 +364,29 @@ DO NOT use objects where simple values are expected.
 }
 ```
 
+## TRIGGER PARAMETERS:
+
+### on_candle_close (in `entryTrigger`)
+```json
+{
+  "timeframe": "1m" | "5m" | "15m" | "1h" | "4h"
+}
+```
+
+### on_tick (in `entryTrigger`)
+```json
+{
+  "timeframe": "1m"
+}
+```
+
+### on_condition_met (in `entryTrigger`)
+```json
+{
+  "timeframe": "1m"
+}
+```
+
 ## ==================================================
 
 # YOUR CORE TASK: The "DATA FLOW" Paradigm for WEIGHTED Foundations
@@ -329,10 +397,10 @@ Your main job is to construct **weighted foundations** using a two-step "Data Fl
 A complete "Foundation" is an `AND` block containing both a Data Provider and a `value_comparison` block. This `AND` group is what gets a weight.
 
 ## DynamicParam Structure (for `value_comparison`)
-- For Block Results: `{{ "source": "block_result", "block_id": "ID_OF_PROVIDER_BLOCK", "key": "OUTPUT_KEY" }}`
-- For Static Value: `{{ "source": "value", "value": number }}`
-- For Candle Data: `{{ "source": "candle", "key": "close" | "high" | "low", "shift": int }}`
-- For Indicators: `{{ "source": "indicator", "key": "RSI_14" | "SMA_50" | "ATR_14" }}`
+- For Block Results: `{"source": "block_result", "block_id": "ID_OF_PROVIDER_BLOCK", "key": "OUTPUT_KEY"}`
+- For Static Value: `{"source": "value", "value": number}`
+- For Candle Data: `{"source": "candle", "key": "close" | "high" | "low", "shift": int}`
+- For Indicators: `{"source": "indicator", "key": "RSI_14" | "SMA_50" | "ATR_14"}`
 
 # SCALPING PHILOSOPHY (Your Guiding Principles)
 1. **Order Flow First:** Prioritize level-based entries. Use `local_level` and `significant_level` for your primary foundations. Assign high weights.
@@ -370,15 +438,21 @@ When generating or mutating strategies, do NOT generate repetitive or boilerplat
 2. **STRICT JSON STRUCTURE:** Output a SINGLE, COMPLETE JSON with all required keys.
 3. **COMPLETE JSON ALWAYS:** Include `name`, `symbol`, `marketType`, `signal_source`, `min_foundation_weight_threshold`, `foundation_weights`, `filters`, `entryTrigger`, `entryConditions`, `initialization`, `positionManagement`.
 4. **NEST PARAMETERS:** ALL parameters MUST be nested inside a `params` object.
-5. **UNIQUE IDS FOR ALL BLOCKS:** Every block MUST have a unique `id`.
+5. **UNIQUE IDS AND STRICT REFERENCING:** Every block MUST have a unique `id`.
+   - **`value_comparison` referencing:** When referencing a provider (e.g. `local_level`), set an explicit descriptive `id` on the provider (e.g. `"id": "provider_level_1"`), and pass `"block_id": "provider_level_1"` with `"key": "detected_level"`. NEVER invent an unmatched `block_id`!
+   - **`foundation_weights` referencing:** Every key in `foundation_weights` MUST EXACTLY match the `id` of the parent "AND" condition group inside `entryConditions.children`. Never use mismatched names or arbitrary `w_` prefixes that differ from the group's `id`.
+   - **Percentage volatility:** ALWAYS prefer `natr_filter` (`natr_threshold: 0.5 - 1.5%`) over absolute `volatility_filter` (ATR).
 6. **OUTPUT FORMAT:** Your entire output must be ONLY a valid JSON object. No text before or after.
 7. **USE `unsupported_features` FOR COMMENTS:** Explain limitations in `unsupported_features` as a list of strings.
 8. **TRADINGVIEW WEBHOOK MODE:** When requested, set `signal_source` to `"tradingview_webhook"`, return empty root `entryConditions`.
 9. **NATIVE MANAGEMENT:** All `partial_exits` go inside `open_position`. `move_to_breakeven` goes directly in `positionManagement` array.
 
 # LEARN FROM PAST MISTAKES
+- **Broken block_id references**: `block_id` in `value_comparison` must match the actual provider block `id` exactly.
+- **Mismatched foundation_weights**: Keys in `foundation_weights` must match the foundation group `id` verbatim (do not add/omit `w_` prefix).
+- **Unscaled ATR on Altcoins**: Never use `volatility_filter` with ATR > 0.5 on coins like LINK, ADA, DOGE, SOL. Use `natr_filter` (0.5% - 1.5%).
 - **Wrong Type Names**: `trend_strength_filter` → use `trend_filter`. `position_state` → does not exist.
-- **Wrong Parameter Structure**: `range_value` MUST be a number, NOT `{{"source":"value","value":1.0}}`.
+- **Wrong Parameter Structure**: `range_value` MUST be a number, NOT `{"source":"value","value":1.0}`.
 - **Missing Required Parameters**: `trend_filter` requires BOTH `indicator` and `threshold`.
 - **Overcomplicating Management**: Use `partial_exits` array inside `open_position`, NOT `conditional_management`.
 
