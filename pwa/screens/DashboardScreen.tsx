@@ -19,7 +19,7 @@ import { Logo } from "../components/ui/logo";
 import { ICONS } from "../constants";
 import { useLiveMarks } from "../hooks/useLiveMarks";
 import { applyLiveMarksToPositions, readExchangeOf } from "../lib/livePnl";
-import { api } from "../services/api";
+import { api, hasUsableAuthToken } from "../services/api";
 import { useRealtimeStore } from "../stores/realtimeStore";
 import type { PortfolioStatus } from "../types";
 
@@ -269,9 +269,11 @@ const DashboardScreen: React.FC = () => {
 	}, [tradesSeq, mode, pnlPeriod]);
 
 	// Fallback polling while the socket is down (realtime is push-driven).
+	// Skipped without a usable token to avoid 401 storms when logged out.
 	useEffect(() => {
 		if (wsConnected) return;
 		const id = setInterval(async () => {
+			if (!hasUsableAuthToken()) return;
 			try {
 				const [portfolioRes, positionsRes] = await Promise.all([
 					api.getPortfolio(mode),

@@ -39,7 +39,7 @@ import ConfirmEmailScreen from "./screens/ConfirmEmailScreen";
 import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import { useAuth } from "./contexts/AuthContext";
 import { useAIChat } from "./contexts/AIChatContext";
-import { api } from "./services/api";
+import { api, readAccessToken } from "./services/api";
 import { useRealtimeStore, type PushEnvelope } from "./stores/realtimeStore";
 
 import DashboardScreen from "./screens/DashboardScreen";
@@ -453,15 +453,8 @@ const MainAppLayout = () => {
 					: import.meta.env.VITE_WS_URL ||
 						`${wsProtocol}//${window.location.host}`;
 
-			const authTokenString = localStorage.getItem("authToken");
-			if (!authTokenString) return;
-			let accessToken: string;
-			try {
-				accessToken = JSON.parse(authTokenString).access_token;
-			} catch (e) {
-				console.error("Failed to parse auth token", e);
-				return;
-			}
+			const accessToken = readAccessToken();
+			if (!accessToken) return;
 			const websocket = new WebSocket(
 				`${WS_URL}/ws?token=${encodeURIComponent(accessToken)}`,
 			);

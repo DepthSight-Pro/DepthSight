@@ -15,7 +15,7 @@ import {
 	readExchangeOf,
 } from "../lib/livePnl";
 import { resolveStrategyTimeframe } from "../lib/strategyMeta";
-import { api } from "../services/api";
+import { api, hasUsableAuthToken } from "../services/api";
 import { useRealtimeStore } from "../stores/realtimeStore";
 import type { DisplayStrategy, StrategyConfigDB } from "../types";
 
@@ -242,10 +242,14 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 	const storeStrategies = useRealtimeStore((s) => s.strategies);
 	const tradesSeq = useRealtimeStore((s) => s.tradesSeq);
 	const wsConnected = useRealtimeStore((s) => s.wsConnected);
-	const snapshotPositions = useRealtimeStore((s) => [
-		...s.positionsByMode.live,
-		...s.positionsByMode.paper,
-	]);
+	// Stable selectors + memo: never spread inside a selector (new identity
+	// every evaluation causes an infinite re-render loop, React error #185).
+	const liveModePositions = useRealtimeStore((s) => s.positionsByMode.live);
+	const paperModePositions = useRealtimeStore((s) => s.positionsByMode.paper);
+	const snapshotPositions = useMemo(
+		() => [...liveModePositions, ...paperModePositions],
+		[liveModePositions, paperModePositions],
+	);
 
 	// Live mark-prices straight from exchanges (zero backend load).
 	// useLiveMarks reconnects only when the symbol set actually changes.
@@ -286,9 +290,11 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 	}, [tradesSeq]);
 
 	// Fallback polling while the socket is down (realtime is push-driven).
+	// Skipped without a usable token to avoid 401 storms when logged out.
 	useEffect(() => {
 		if (wsConnected) return;
 		const id = setInterval(async () => {
+			if (!hasUsableAuthToken()) return;
 			try {
 				const [runningRes, liveRes, paperRes] = await Promise.all([
 					api.getRunningStrategies(),

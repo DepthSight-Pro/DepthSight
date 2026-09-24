@@ -237,15 +237,60 @@ interface PwaMiningDeactivateResponse {
 
 // --- Helper Functions ---
 
-const getAuthToken = (): string | null => {
+/**
+ * Read the access token tolerantly. PWA stores JSON {access_token, ...},
+ * but the web app on the same origin shares localStorage["authToken"] and
+ * stores a raw JWT — whichever logged in last wins. Accept both.
+ */
+export const readAccessToken = (): string | null => {
 	try {
-		const tokenData = localStorage.getItem("authToken");
-		return tokenData ? JSON.parse(tokenData).access_token : null;
+		const raw = localStorage.getItem("authToken");
+		if (!raw) return null;
+		const trimmed = raw.trim();
+		if (trimmed.startsWith("{")) {
+			const parsed: unknown = JSON.parse(trimmed);
+			if (parsed && typeof parsed === "object") {
+				const at = (parsed as Record<string, unknown>).access_token;
+				return typeof at === "string" && at.length > 0 ? at : null;
+			}
+			return null;
+		}
+		// Raw JWT fallback: three base64url segments.
+		return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(trimmed)
+			? trimmed
+			: null;
 	} catch (e) {
 		console.error("Could not parse auth token", e);
 		return null;
 	}
 };
+
+/** PWA-format refresh token, if present (raw-JWT storage has none). */
+const readRefreshToken = (): string | null => {
+	try {
+		const raw = localStorage.getItem("authToken");
+		if (!raw || !raw.trim().startsWith("{")) return null;
+		const parsed: unknown = JSON.parse(raw);
+		if (parsed && typeof parsed === "object") {
+			const rt = (parsed as Record<string, unknown>).refresh_token;
+			return typeof rt === "string" && rt.length > 0 ? rt : null;
+		}
+		return null;
+	} catch {
+		return null;
+	}
+};
+
+/** True when at least one request can be authenticated. */
+export const hasUsableAuthToken = (): boolean => readAccessToken() !== null;
+
+/** Re-login is required: drop the broken token and reboot to AuthScreen. */
+const forceReLogin = () => {
+	localStorage.removeItem("authToken");
+	window.location.reload();
+};
+
+const getAuthToken = (): string | null => readAccessToken();
 
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
@@ -284,58 +329,55 @@ const apiFetch = async <T = unknown>(
 		!endpoint.includes("/token") &&
 		!endpoint.includes("/refresh")
 	) {
-		const tokenDataString = localStorage.getItem("authToken");
-		if (tokenDataString) {
+		const refreshToken = readRefreshToken();
+		if (!refreshToken) {
+			// Raw-JWT storage (written by the web app) or no token at all:
+			// refresh is impossible, re-login is required.
+			forceReLogin();
+			throw new Error("Not authenticated");
+		}
+		if (!isRefreshing) {
+			isRefreshing = true;
 			try {
-				const parsedToken = JSON.parse(tokenDataString);
-				const refreshToken = parsedToken.refresh_token;
-				if (refreshToken) {
-					if (!isRefreshing) {
-						isRefreshing = true;
-						try {
-							const refreshResponse = await fetch(
-								`${API_BASE_URL}/api/v1/refresh`,
-								{
-									method: "POST",
-									headers: {
-										"Content-Type": "application/json",
-									},
-									body: JSON.stringify({ refresh_token: refreshToken }),
-								},
-							);
+				const refreshResponse = await fetch(
+					`${API_BASE_URL}/api/v1/refresh`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+						},
+						body: JSON.stringify({ refresh_token: refreshToken }),
+					},
+				);
 
-							if (refreshResponse.ok) {
-								const newTokenData = await refreshResponse.json();
-								localStorage.setItem("authToken", JSON.stringify(newTokenData));
-								onRefreshed(newTokenData.access_token);
-							} else {
-								localStorage.removeItem("authToken");
-								window.location.href = "/login";
-							}
-						} catch {
-							localStorage.removeItem("authToken");
-							window.location.href = "/login";
-						} finally {
-							isRefreshing = false;
-						}
-					}
-
-					const newAccessToken = await new Promise<string>((resolve) => {
-						subscribeTokenRefresh((token: string) => {
-							resolve(token);
-						});
-					});
-
-					headers.set("Authorization", `Bearer ${newAccessToken}`);
-					response = await fetch(`${API_BASE_URL}/api/v1${endpoint}`, {
-						...options,
-						headers,
-					});
+				if (refreshResponse.ok) {
+					const newTokenData = await refreshResponse.json();
+					localStorage.setItem("authToken", JSON.stringify(newTokenData));
+					onRefreshed(newTokenData.access_token);
+				} else {
+					forceReLogin();
+					throw new Error("Not authenticated");
 				}
 			} catch (e) {
-				console.error("Error parsing auth token", e);
+				// Refresh failed or is impossible: back to AuthScreen.
+				forceReLogin();
+				throw e;
+			} finally {
+				isRefreshing = false;
 			}
 		}
+
+		const newAccessToken = await new Promise<string>((resolve) => {
+			subscribeTokenRefresh((token: string) => {
+				resolve(token);
+			});
+		});
+
+		headers.set("Authorization", `Bearer ${newAccessToken}`);
+		response = await fetch(`${API_BASE_URL}/api/v1${endpoint}`, {
+			...options,
+			headers,
+		});
 	}
 
 	if (!response.ok) {

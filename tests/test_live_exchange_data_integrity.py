@@ -28,6 +28,20 @@ if platform.system() == "Windows":
 
 load_dotenv()
 
+# Opt-in gate: live exchange connections must not run in CI/GitHub Actions.
+# Run locally/nightly with LIVE_SMOKE_ENABLED=1. Without it the whole file
+# is skipped (fast, no network).
+LIVE_SMOKE_ENABLED = os.environ.get("LIVE_SMOKE_ENABLED", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+pytestmark = pytest.mark.skipif(
+    not LIVE_SMOKE_ENABLED,
+    reason="live exchange smoke needs LIVE_SMOKE_ENABLED=1",
+)
+
 # We define a registry of EVERY block type in the system.
 # This ensures that ALL blocks are verified against live exchange data.
 # NOTE: entries must use production lowercase block types (the exact keys of
@@ -302,7 +316,17 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
         df_klines.ta.rsi(length=14, append=True)
         df_klines.ta.adx(length=14, append=True)
         df_klines.ta.stoch(k=14, d=3, smooth_k=3, append=True)
-        df_klines.ta.bbands(length=20, std=2, append=True)
+        # Bollinger bands are computed manually (not via ta.bbands): pandas_ta
+        # column naming drifts between versions (BBL_20_2 vs BBL_20_2.0),
+        # which broke CI on some exchanges. Manual rolling values match the
+        # exact keys the bollinger checker reads.
+        bb_mid = df_klines["close"].rolling(20).mean()
+        bb_std = df_klines["close"].rolling(20).std()
+        df_klines["BBL_20_2.0"] = bb_mid - 2.0 * bb_std
+        df_klines["BBU_20_2.0"] = bb_mid + 2.0 * bb_std
+        df_klines["BBB_20_2.0"] = (
+            df_klines["BBU_20_2.0"] - df_klines["BBL_20_2.0"]
+        ) / bb_mid.replace(0, float("nan"))
         df_klines.ta.macd(fast=12, slow=26, signal=9, append=True)
         df_klines.ta.atr(length=14, append=True)
         df_klines = calculate_scalper_natr(df_klines, period=14)
