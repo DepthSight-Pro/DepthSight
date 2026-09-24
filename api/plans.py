@@ -88,9 +88,14 @@ class PlansConfig:
             if (
                 limits.get("allow_free_bybit_trading")
                 or limits.get("allow_free_weex_trading")
-            ) and "allow_free_okx_trading" not in limits:
-                limits["allow_free_okx_trading"] = True
-                limits.setdefault("max_free_okx_live_strategies", 5)
+                or limits.get("allow_free_okx_trading")
+            ):
+                if "allow_free_okx_trading" not in limits:
+                    limits["allow_free_okx_trading"] = True
+                    limits.setdefault("max_free_okx_live_strategies", 5)
+                if "allow_free_bitget_trading" not in limits:
+                    limits["allow_free_bitget_trading"] = True
+                    limits.setdefault("max_free_bitget_live_strategies", 5)
         return plan
 
     def get_all_plans(self) -> dict:
@@ -310,19 +315,23 @@ class PlansConfig:
                     "max_free_weex_live_strategies": 5,
                     "allow_free_okx_trading": True,
                     "max_free_okx_live_strategies": 5,
+                    "allow_free_bitget_trading": True,
+                    "max_free_bitget_live_strategies": 5,
                 }
                 for f_key, f_val in free_exchange_defaults.items():
                     if f_key not in db_limits:
                         db_limits[f_key] = f_val
                         changed = True
 
-                # Ensure features list mentions OKX if Bybit is present
+                # Ensure features list mentions OKX and Bitget if partner exchanges are present
                 features = db_plan.setdefault("features", [])
-                if isinstance(features, list) and not any(
-                    "okx" in str(f).lower() for f in features
-                ):
-                    features.append("5 live strategies on OKX")
-                    changed = True
+                if isinstance(features, list):
+                    if not any("okx" in str(f).lower() for f in features):
+                        features.append("5 live strategies on OKX")
+                        changed = True
+                    if not any("bitget" in str(f).lower() for f in features):
+                        features.append("5 live strategies on Bitget")
+                        changed = True
 
         return merged, changed
 

@@ -4,7 +4,6 @@ import { useDndContext, useDroppable } from "@dnd-kit/core";
 import { Cpu, Globe, LogIn, Rocket, Shield, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
 	Select,
@@ -218,7 +217,7 @@ export const StrategyCanvas = () => {
 		<div
 			ref={canvasRef}
 			className={cn(
-				"relative h-full overflow-y-auto p-4 space-y-6 bg-background",
+				"relative h-full overflow-y-auto p-5 space-y-6 bg-transparent",
 				isClearing && "canvas-clearing",
 			)}
 		>
@@ -229,13 +228,13 @@ export const StrategyCanvas = () => {
 						className={cn(
 							"pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm backdrop-blur-md text-xs font-medium transition-all duration-300",
 							isProStrategy
-								? "bg-violet-500/10 border-violet-500/30 text-violet-400"
-								: "bg-background/80 border-border text-muted-foreground",
+								? "bg-amber-500/10 border-amber-500/30 text-amber-300"
+								: "bg-white/[0.04] border-white/10 text-white/60",
 						)}
 					>
 						{isProStrategy ? (
 							<>
-								<Cpu className="w-3.5 h-3.5" />
+								<Cpu className="w-3.5 h-3.5 text-amber-400" />
 								<span>Institutional Grade (Precision Engine)</span>
 							</>
 						) : (
@@ -257,14 +256,14 @@ export const StrategyCanvas = () => {
 
 			<section>
 				<div className="flex items-center gap-3 mb-3">
-					<div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center">
-						<Globe className="text-cyan-400" />
+					<div className="w-8 h-8 rounded-xl bg-cyan/10 border border-cyan/30 flex items-center justify-center">
+						<Globe className="w-4 h-4 text-cyan" />
 					</div>
 					<div>
-						<h2 className="text-xl font-semibold">
+						<h2 className="text-sm font-semibold tracking-wide text-white">
 							{t("canvas.stage1.title")}
 						</h2>
-						<p className="text-sm text-muted-foreground">
+						<p className="text-xs text-white/50">
 							{t("canvas.stage1.desc")}
 						</p>
 					</div>
@@ -272,11 +271,11 @@ export const StrategyCanvas = () => {
 				<div
 					ref={filtersDropRef}
 					className={cn(
-						"drop-zone border-2 border-dashed rounded-lg p-4 space-y-3 transition-colors",
+						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isFiltersTarget
-							? "border-cyan-500 bg-cyan-500/10"
-							: "border-border",
-						isOverFilters && isFiltersTarget && "ring-2 ring-cyan-500",
+							? "border-cyan/50 bg-cyan/10 shadow-lg shadow-cyan/10"
+							: "border-white/10 bg-white/[0.02]",
+						isOverFilters && isFiltersTarget && "ring-2 ring-cyan/50",
 					)}
 				>
 					{filters.children && filters.children.length > 0 ? (
@@ -291,7 +290,7 @@ export const StrategyCanvas = () => {
 							</AnimatedBlock>
 						))
 					) : (
-						<p className="text-center text-muted-foreground text-sm py-4">
+						<p className="text-center text-white/40 text-xs py-4 font-mono">
 							{t("canvas.dropZone.filters")}
 						</p>
 					)}
@@ -300,82 +299,80 @@ export const StrategyCanvas = () => {
 
 			<section>
 				<div className="flex items-center gap-3 mb-3">
-					<div className="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center">
-						<LogIn className="text-yellow-400" />
+					<div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+						<LogIn className="w-4 h-4 text-amber-400" />
 					</div>
 					<div>
-						<h2 className="text-xl font-semibold">
+						<h2 className="text-sm font-semibold tracking-wide text-white">
 							{t("canvas.stage2.title")}
 						</h2>
-						<p className="text-sm text-muted-foreground">
+						<p className="text-xs text-white/50">
 							{t("canvas.stage2.desc")}
 						</p>
 					</div>
 				</div>
-				<Card className="bg-card/50 mb-3">
-					<CardContent className="p-4">
-						<div className="grid grid-cols-2 gap-4">
-							<div>
-								<Label>{t("canvas.triggerTypeLabel")}</Label>
-								<Select
-									value={entryTrigger.type}
-									onValueChange={(
-										v: "on_candle_close" | "on_tick" | "on_condition_met",
-									) => setTrigger({ type: v })}
-								>
-									<SelectTrigger>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="on_candle_close">
-											{t("canvas.triggerTypeOnClose")}
-										</SelectItem>
-										<SelectItem value="on_tick">
-											{t("canvas.triggerTypeOnTick", onTickLabel)}
-										</SelectItem>
-										<SelectItem value="on_condition_met">
-											{t(
-												"canvas.triggerTypeOnConditionMet",
-												"On Condition Met (Intra-candle)",
-											)}
-										</SelectItem>
-									</SelectContent>
-								</Select>
-							</div>
-							<div>
-								<Label>{t("canvas.timeframeLabel")}</Label>
-								<Select
-									value={entryTrigger.timeframe}
-									onValueChange={(v) =>
-										setTrigger({
-											timeframe: v as "1m" | "3m" | "5m" | "15m" | "1h" | "4h",
-										})
-									}
-								>
-									<SelectTrigger>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="1m">1m</SelectItem>
-										<SelectItem value="5m">5m</SelectItem>
-										<SelectItem value="15m">15m</SelectItem>
-										<SelectItem value="1h">1h</SelectItem>
-										<SelectItem value="4h">4h</SelectItem>
-									</SelectContent>
-								</Select>
-							</div>
+				<div className="rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-md p-4 mb-3">
+					<div className="grid grid-cols-2 gap-4">
+						<div>
+							<Label className="text-xs text-white/70">{t("canvas.triggerTypeLabel")}</Label>
+							<Select
+								value={entryTrigger.type}
+								onValueChange={(
+									v: "on_candle_close" | "on_tick" | "on_condition_met",
+								) => setTrigger({ type: v })}
+							>
+								<SelectTrigger className="mt-1 bg-white/[0.03] border-white/10 text-xs">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent className="bg-[#0c0d12] border-white/10 text-white">
+									<SelectItem value="on_candle_close">
+										{t("canvas.triggerTypeOnClose")}
+									</SelectItem>
+									<SelectItem value="on_tick">
+										{t("canvas.triggerTypeOnTick", onTickLabel)}
+									</SelectItem>
+									<SelectItem value="on_condition_met">
+										{t(
+											"canvas.triggerTypeOnConditionMet",
+											"On Condition Met (Intra-candle)",
+										)}
+									</SelectItem>
+								</SelectContent>
+							</Select>
 						</div>
-					</CardContent>
-				</Card>
+						<div>
+							<Label className="text-xs text-white/70">{t("canvas.timeframeLabel")}</Label>
+							<Select
+								value={entryTrigger.timeframe}
+								onValueChange={(v) =>
+									setTrigger({
+										timeframe: v as "1m" | "3m" | "5m" | "15m" | "1h" | "4h",
+									})
+								}
+							>
+								<SelectTrigger className="mt-1 bg-white/[0.03] border-white/10 text-xs">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent className="bg-[#0c0d12] border-white/10 text-white">
+									<SelectItem value="1m">1m</SelectItem>
+									<SelectItem value="5m">5m</SelectItem>
+									<SelectItem value="15m">15m</SelectItem>
+									<SelectItem value="1h">1h</SelectItem>
+									<SelectItem value="4h">4h</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
+				</div>
 				<div
 					ref={entryDropRef}
 					data-tutorial-id="entry-conditions-dropzone"
 					className={cn(
-						"drop-zone border-2 border-dashed rounded-lg p-4 space-y-3 transition-colors",
+						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isEntryTarget
-							? "border-yellow-500 bg-yellow-500/10"
-							: "border-border",
-						isOverEntry && isEntryTarget && "ring-2 ring-yellow-500",
+							? "border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/10"
+							: "border-white/10 bg-white/[0.02]",
+						isOverEntry && isEntryTarget && "ring-2 ring-amber-500/50",
 					)}
 				>
 					{entryConditions.children && entryConditions.children.length > 0 ? (
@@ -396,7 +393,7 @@ export const StrategyCanvas = () => {
 							},
 						)
 					) : (
-						<p className="text-center text-muted-foreground text-sm py-4">
+						<p className="text-center text-white/40 text-xs py-4 font-mono">
 							{t("canvas.dropZone.conditions")}
 						</p>
 					)}
@@ -405,35 +402,33 @@ export const StrategyCanvas = () => {
 
 			<section>
 				<div className="flex items-center gap-3 mb-3">
-					<div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center">
-						<Rocket className="text-red-400" />
+					<div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center">
+						<Rocket className="w-4 h-4 text-rose-400" />
 					</div>
 					<div>
-						<h2 className="text-xl font-semibold">
+						<h2 className="text-sm font-semibold tracking-wide text-white">
 							{t("canvas.stage3.title")}
 						</h2>
-						<p className="text-sm text-muted-foreground">
+						<p className="text-xs text-white/50">
 							{t("canvas.stage3.desc")}
 						</p>
 					</div>
 				</div>
-				<Card className="bg-card/50">
-					<CardContent className="p-4">
-						<InitializationEditor />
-					</CardContent>
-				</Card>
+				<div className="rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-md p-4">
+					<InitializationEditor />
+				</div>
 			</section>
 
 			<section>
 				<div className="flex items-center gap-3 mb-3">
-					<div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center">
-						<Shield className="text-purple-400" />
+					<div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center">
+						<Shield className="w-4 h-4 text-purple-400" />
 					</div>
 					<div>
-						<h2 className="text-xl font-semibold">
+						<h2 className="text-sm font-semibold tracking-wide text-white">
 							{t("canvas.stage4.title")}
 						</h2>
-						<p className="text-sm text-muted-foreground">
+						<p className="text-xs text-white/50">
 							{t("canvas.stage4.desc")}
 						</p>
 					</div>
@@ -441,11 +436,11 @@ export const StrategyCanvas = () => {
 				<div
 					ref={managementDropRef}
 					className={cn(
-						"drop-zone border-2 border-dashed rounded-lg p-4 space-y-3 transition-colors",
+						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isManagementTarget
-							? "border-purple-500 bg-purple-500/10"
-							: "border-border",
-						isOverManagement && isManagementTarget && "ring-2 ring-purple-500",
+							? "border-purple-500/50 bg-purple-500/10 shadow-lg shadow-purple-500/10"
+							: "border-white/10 bg-white/[0.02]",
+						isOverManagement && isManagementTarget && "ring-2 ring-purple-500/50",
 					)}
 				>
 					{positionManagement.length > 0 ? (

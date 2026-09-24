@@ -29,7 +29,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Segmented } from "@/components/ui/quant-ui";
 import { useToast } from "@/components/ui/use-toast";
 // WebSocket
 import { useWebSocket } from "@/context/WebSocketProvider";
@@ -157,6 +158,7 @@ const GeneticCommandCenter: React.FC = () => {
 		const fetchAssets = async () => {
 			try {
 				const response = await fetch(`${getApiBase()}/api/simulation/assets`);
+				if (!response.ok) return;
 				const data = await response.json();
 				if (isMounted) {
 					const assets = data.assets || [];
@@ -433,29 +435,28 @@ const GeneticCommandCenter: React.FC = () => {
 
 	// Header actions for PageLayout
 	const headerActions = (
-		<div className="flex items-center gap-4">
-			<div className="flex items-center gap-2">
-				<Badge
-					variant={evoState.isRunning ? "default" : "secondary"}
-					className="font-mono"
-				>
-					<span
-						className={`w-2 h-2 rounded-full mr-2 ${evoState.isRunning ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground"}`}
-					></span>
-					{evoState.isRunning
-						? t("gcc.statusEvolving", "EVOLVING...")
-						: t("gcc.statusIdle", "IDLE")}
+		<div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+			<Badge
+				variant={evoState.isRunning ? "default" : "secondary"}
+				className="font-mono text-[10px] sm:text-xs"
+			>
+				<span
+					className={`w-2 h-2 rounded-full mr-1.5 ${evoState.isRunning ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground"}`}
+				></span>
+				{evoState.isRunning
+					? t("gcc.statusEvolving", "EVOLVING...")
+					: t("gcc.statusIdle", "IDLE")}
+			</Badge>
+			{evoState.isRunning && (
+				<Badge variant="outline" className="font-mono text-[10px] sm:text-xs">
+					Gen {evoState.generation}
 				</Badge>
-				{evoState.isRunning && (
-					<Badge variant="outline" className="font-mono">
-						Gen {evoState.generation}
-					</Badge>
-				)}
-			</div>
+			)}
 			<Button
 				onClick={toggleEvolution}
 				variant={evoState.isRunning ? "destructive" : "default"}
-				className="font-bold"
+				size="sm"
+				className="font-bold text-xs sm:text-sm px-3 sm:px-4"
 				disabled={startMutation.isPending || stopMutation.isPending}
 			>
 				{startMutation.isPending || stopMutation.isPending ? (
@@ -483,40 +484,50 @@ const GeneticCommandCenter: React.FC = () => {
 				onValueChange={setActiveTab}
 				className="h-full flex flex-col"
 			>
-				<div className="flex items-center justify-between mb-6">
-					<TabsList className="grid max-w-md grid-cols-3">
-						<TabsTrigger value="config" className="flex items-center gap-2">
-							<Settings className="w-4 h-4" />
-							{t("gcc.tabs.config", "Config")}
-						</TabsTrigger>
-						<TabsTrigger value="monitor" className="flex items-center gap-2">
-							<Activity className="w-4 h-4" />
-							{t("gcc.tabs.monitor", "Monitor")}
-						</TabsTrigger>
-						<TabsTrigger value="hallOfFame" className="flex items-center gap-2">
-							<Trophy className="w-4 h-4" />
-							{t("gcc.tabs.results", "Results")}
-						</TabsTrigger>
-					</TabsList>
+				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+					<div className="flex items-center overflow-x-auto pb-1 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+						<Segmented<"config" | "monitor" | "hallOfFame">
+							size="md"
+							value={activeTab as "config" | "monitor" | "hallOfFame"}
+							onChange={(val) => setActiveTab(val)}
+							options={[
+								{
+									value: "config",
+									label: t("gcc.tabs.config", "Config"),
+									icon: <Settings className="w-4 h-4" />,
+								},
+								{
+									value: "monitor",
+									label: t("gcc.tabs.monitor", "Monitor"),
+									icon: <Activity className="w-4 h-4" />,
+								},
+								{
+									value: "hallOfFame",
+									label: t("gcc.tabs.results", "Results"),
+									icon: <Trophy className="w-4 h-4" />,
+								},
+							]}
+						/>
+					</div>
 
 					{/* Run Selector - always visible */}
-					<div className="flex items-center gap-3">
-						<label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+					<div className="flex items-center gap-2.5 w-full sm:w-auto">
+						<label className="text-xs font-mono text-white/50 whitespace-nowrap">
 							{t("discovery:hallOfFame.selectRun", "Select Run:")}
 						</label>
 						<select
-							className="flex h-9 w-64 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+							className="flex h-9 w-full sm:w-64 rounded-xl border border-white/10 bg-[#0c0d12]/90 px-3 py-1 text-xs font-mono text-white shadow-sm focus:outline-none focus:border-cyan/50"
 							value={activeRunId || ""}
 							onChange={(e) => setActiveRunId(e.target.value || null)}
 						>
-							<option value="">
+							<option value="" className="bg-[#0c0d12] text-white">
 								{t(
 									"discovery:hallOfFame.selectRunPlaceholder",
 									"-- Select a run --",
 								)}
 							</option>
 							{geneticRuns?.map((run) => (
-								<option key={run.id} value={run.id}>
+								<option key={run.id} value={run.id} className="bg-[#0c0d12] text-white">
 									{run.config_json?.name || "Unnamed"} (
 									{new Date(run.created_at).toLocaleDateString()}) -{" "}
 									{run.status}

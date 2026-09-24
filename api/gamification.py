@@ -570,7 +570,15 @@ async def check_and_grant_mining_achievements(
                 await grant_achievement(db, user_id, "mining_node_operator")
 
             # Exchange diversity check
-            linked_uids = sum(1 for uid in [node.bybit_uid, node.okx_uid] if uid)
+            linked_uids = sum(
+                1
+                for uid in [
+                    node.bybit_uid,
+                    node.okx_uid,
+                    getattr(node, "bitget_uid", None),
+                ]
+                if uid
+            )
             if linked_uids >= 2 and "mining_multi_exchange" not in user_achievements:
                 await grant_achievement(db, user_id, "mining_multi_exchange")
             if (

@@ -2,9 +2,10 @@ import type React from "react";
 import { useState } from "react";
 import { MemoryBank } from "./MemoryBank";
 import { AutopilotTerminal } from "./AutopilotTerminal";
+import type { StrategyConfig } from "@/types/api";
 
 interface AgentWorkspaceProps {
-	onStrategyGenerated: (strategyJson: Record<string, any>) => void;
+	onStrategyGenerated: (strategyJson: Partial<StrategyConfig>) => void;
 }
 
 export const AgentWorkspace: React.FC<AgentWorkspaceProps> = ({ onStrategyGenerated }) => {

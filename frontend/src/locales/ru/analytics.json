@@ -49,6 +49,7 @@
 			"closeTime": "Время закрытия",
 			"symbol": "Символ",
 			"strategy": "Стратегия",
+			"exchange": "Биржа",
 			"direction": "Направление",
 			"quantity": "Кол-во",
 			"entryPrice": "Цена входа",

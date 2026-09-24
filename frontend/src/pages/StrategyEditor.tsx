@@ -11,19 +11,23 @@ import {
 	useSensors,
 } from "@dnd-kit/core";
 import {
+	ArrowLeft,
 	Code,
 	Download,
+	ExternalLink,
 	Eye,
 	Loader2,
+	Monitor,
 	PencilRuler,
 	Save,
+	Smartphone,
 	Sparkles,
 	Trash2,
 	Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { AppLoader } from "@/components/shared/AppLoader";
 import {
@@ -41,8 +45,7 @@ import {
 	type ConditionBlock as ConditionBlockType,
 	TOP_LEVEL_MANAGEMENT_BLOCK_TYPES,
 } from "@/components/strategy-editor/types";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Btn } from "@/components/ui/quant-ui";
 import {
 	Dialog,
 	DialogContent,
@@ -126,6 +129,7 @@ const StrategyEditorPage = () => {
 	const use_ml_confirmation = useStrategyEditorStore(
 		(state) => state.use_ml_confirmation,
 	);
+	const userTier = useStrategyEditorStore((state) => state.userTier);
 	const isStatePristine = useStrategyEditorStore(
 		(state) =>
 			(!state.filters.children || state.filters.children.length === 0) &&
@@ -135,10 +139,18 @@ const StrategyEditorPage = () => {
 	);
 
 	const [viewMode, setViewMode] = useState<"visual" | "json">("visual");
-	const [activeDragItem, setActiveDragItem] = useState<Record<
-		string,
-		unknown
-	> | null>(null);
+	type DragOverlayItem = {
+		isPaletteItem?: boolean;
+		componentType?: ComponentType;
+		category?: ComponentCategory;
+		title?: string;
+		description?: string;
+		icon?: React.ReactNode;
+		stateKey?: "filters" | "entryConditions";
+		block?: ConditionBlockType;
+	};
+	const [activeDragItem, setActiveDragItem] =
+		useState<DragOverlayItem | null>(null);
 	const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 	const {
 		start: startOnboarding,
@@ -220,7 +232,7 @@ const StrategyEditorPage = () => {
 
 	const handleDragStart = (event: DragStartEvent) => {
 		setActiveDragItem(
-			(event.active.data.current as Record<string, unknown>) || null,
+			(event.active.data.current as DragOverlayItem) || null,
 		);
 	};
 
@@ -609,13 +621,13 @@ const StrategyEditorPage = () => {
 	};
 
 	const headerActions = (
-		<>
-			<Button
-				variant="outline"
+		<div className="hidden lg:flex items-center gap-2">
+			<Btn
+				variant="primary"
 				size="sm"
 				onClick={handleSave}
 				disabled={isSaving}
-				className="mr-2"
+				className="shadow-lg shadow-cyan/20"
 			>
 				{isSaving ? (
 					<Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -623,54 +635,52 @@ const StrategyEditorPage = () => {
 					<Save className="w-4 h-4 mr-2" />
 				)}
 				{id ? t("configPanel.updateButton") : t("configPanel.saveButton")}
-			</Button>
-			<Button
+			</Btn>
+			<Btn
 				variant="ghost"
 				size="sm"
 				onClick={handleReset}
 				disabled={isSaving}
-				className="mr-2 text-muted-foreground"
+				className="text-white/60 hover:text-white hover:bg-white/5"
 			>
-				<Trash2 className="w-4 h-4 mr-2" />
+				<Trash2 className="w-4 h-4 mr-2 text-rose-400/80" />
 				{t("configPanel.resetButton")}
-			</Button>
+			</Btn>
 
-			<div className="h-6 w-[1px] bg-border mx-2 self-center hidden sm:block" />
+			<div className="h-5 w-[1px] bg-white/10 mx-1 hidden sm:block" />
 
-			<Button
-				variant="outline"
+			<Btn
+				variant="subtle"
 				size="sm"
 				onClick={handleImportClick}
-				className="mr-2"
 			>
-				<Upload className="w-4 h-4 mr-2" />
+				<Upload className="w-4 h-4 mr-2 text-white/70" />
 				{t("configPanel.importButton")}
-			</Button>
-			<Button
-				variant="outline"
+			</Btn>
+			<Btn
+				variant="subtle"
 				size="sm"
 				onClick={handleExport}
-				className="mr-2"
 			>
-				<Download className="w-4 h-4 mr-2" />
+				<Download className="w-4 h-4 mr-2 text-white/70" />
 				{t("configPanel.exportButton")}
-			</Button>
+			</Btn>
 
-			<div className="h-6 w-[1px] bg-border mx-2 self-center hidden sm:block" />
+			<div className="h-5 w-[1px] bg-white/10 mx-1 hidden sm:block" />
 
-			<Button
-				variant="outline"
+			<Btn
+				variant="subtle"
 				size="sm"
 				onClick={() => setViewMode((v) => (v === "visual" ? "json" : "visual"))}
 			>
 				{viewMode === "visual" ? (
-					<Code className="w-4 h-4 mr-2" />
+					<Code className="w-4 h-4 mr-2 text-cyan" />
 				) : (
-					<Eye className="w-4 h-4 mr-2" />
+					<Eye className="w-4 h-4 mr-2 text-cyan" />
 				)}
 				{viewMode === "visual" ? t("jsonView") : t("visualView")}
-			</Button>
-		</>
+			</Btn>
+		</div>
 	);
 
 	if (isLoadingStrategy) {
@@ -689,85 +699,147 @@ const StrategyEditorPage = () => {
 			icon={PencilRuler}
 			headerActions={headerActions}
 		>
-			<DndContext
-				sensors={sensors}
-				onDragStart={handleDragStart}
-				onDragEnd={handleDragEnd}
-				collisionDetection={closestCenter}
-			>
-				<div className="w-full h-full">
-					<ResizablePanelGroup
-						direction="horizontal"
-						className="h-full rounded-lg border bg-card"
-					>
-						<ResizablePanel defaultSize={20} minSize={15} className="h-full">
-							<ComponentPalette
-								value={openPaletteGroups}
-								onValueChange={setOpenPaletteGroups}
-							/>
-						</ResizablePanel>
-						<ResizableHandle withHandle />
-						<ResizablePanel defaultSize={55} minSize={30}>
-							{viewMode === "visual" ? <StrategyCanvas /> : <JsonEditor />}
-						</ResizablePanel>
-						<ResizableHandle withHandle />
-						<ResizablePanel defaultSize={25} minSize={20}>
-							<ConfigAndLaunchPanel isSaving={isSaving} />
-						</ResizablePanel>
-					</ResizablePanelGroup>
+			{/* Mobile Stub: Shown on screens < lg */}
+			<div className="lg:hidden flex flex-col items-center justify-center py-6 sm:py-10 px-2 w-full min-h-[calc(100vh-200px)]">
+				<div className="relative w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl p-6 sm:p-8 text-center shadow-2xl overflow-hidden flex flex-col items-center">
+					{/* Glowing decorative neon orbs */}
+					<div className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full bg-cyan/15 blur-3xl" />
+					<div className="pointer-events-none absolute -bottom-16 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full bg-azure/15 blur-3xl" />
+
+					{/* Neon Device Icon Badge */}
+					<div className="relative flex items-center justify-center w-20 h-20 rounded-2xl bg-cyan/10 border border-cyan/30 text-cyan shadow-[0_0_30px_rgba(0,212,255,0.35)] mb-6">
+						<Smartphone className="w-10 h-10 text-cyan drop-shadow-[0_0_8px_rgba(0,212,255,0.85)]" />
+						<span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full text-[9px] font-bold bg-cyan text-black tracking-wider shadow-[0_0_10px_rgba(0,212,255,0.7)] uppercase">
+							{t("mobileStub.badge", "PWA")}
+						</span>
+					</div>
+
+					{/* Title & Description */}
+					<h2 className="text-lg sm:text-xl font-bold text-white tracking-tight mb-2.5">
+						{t("mobileStub.title", "Визуальный редактор оптимизирован для ПК")}
+					</h2>
+					<p className="text-xs sm:text-sm text-white/60 leading-relaxed mb-6 max-w-xs">
+						{t(
+							"mobileStub.description",
+							"Полноценное конструирование стратегий со сложными логическими деревьями и перетаскиванием блоков требует большого экрана. Для работы с телефона используйте адаптированное приложение DepthSight PWA.",
+						)}
+					</p>
+
+					{/* Actions */}
+					<div className="flex flex-col gap-2.5 w-full max-w-xs z-10">
+						<a
+							href="https://app.depthsight.pro/pwa/"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="group relative flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs sm:text-sm font-semibold text-black bg-gradient-to-r from-cyan to-azure hover:brightness-110 shadow-[0_0_20px_rgba(0,212,255,0.4)] transition-all"
+						>
+							<Smartphone className="w-4 h-4 text-black group-hover:scale-110 transition-transform" />
+							<span>{t("mobileStub.openPwa", "Открыть редактор в PWA")}</span>
+							<ExternalLink className="w-3.5 h-3.5 ml-0.5 opacity-70" />
+						</a>
+
+						<Link
+							to="/strategies"
+							className="flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-medium text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+						>
+							<ArrowLeft className="w-3.5 h-3.5" />
+							<span>{t("mobileStub.backToStrategies", "К списку стратегий")}</span>
+						</Link>
+					</div>
+
+					{/* Desktop Hint */}
+					<div className="flex items-center gap-2 text-[11px] text-white/40 mt-6 pt-5 border-t border-white/5 w-full max-w-xs justify-center">
+						<Monitor className="w-3.5 h-3.5 text-cyan/70 shrink-0 drop-shadow-[0_0_4px_rgba(0,212,255,0.7)]" />
+						<span>{t("mobileStub.desktopHint", "Или откройте этот раздел на компьютере")}</span>
+					</div>
 				</div>
-				{activeDragItem && (
-					<DragOverlay>
-						{activeDragItem ? (
-							activeDragItem.isPaletteItem ? (
+			</div>
+
+			{/* Desktop Strategy Editor: Shown on screens >= lg */}
+			<div className="hidden lg:block w-full">
+				<DndContext
+					sensors={sensors}
+					onDragStart={handleDragStart}
+					onDragEnd={handleDragEnd}
+					collisionDetection={closestCenter}
+				>
+					<div className="w-full h-[calc(100vh-215px)] min-h-[520px]">
+						<ResizablePanelGroup
+							direction="horizontal"
+							className="h-full rounded-2xl border border-white/10 glass shadow-2xl overflow-hidden"
+						>
+							<ResizablePanel defaultSize={20} minSize={15} className="h-full overflow-hidden">
+								<ComponentPalette
+									value={openPaletteGroups}
+									onValueChange={setOpenPaletteGroups}
+								/>
+							</ResizablePanel>
+							<ResizableHandle withHandle className="bg-white/5 hover:bg-cyan/40 transition-colors" />
+							<ResizablePanel defaultSize={55} minSize={30} className="h-full overflow-hidden">
+								{viewMode === "visual" ? <StrategyCanvas /> : <JsonEditor />}
+							</ResizablePanel>
+							<ResizableHandle withHandle className="bg-white/5 hover:bg-cyan/40 transition-colors" />
+							<ResizablePanel defaultSize={25} minSize={20} className="h-full overflow-hidden">
+								<ConfigAndLaunchPanel isSaving={isSaving} />
+							</ResizablePanel>
+						</ResizablePanelGroup>
+					</div>
+					{activeDragItem && (
+						<DragOverlay>
+							{activeDragItem.isPaletteItem ? (
 								<DraggablePaletteItem
-									{...(activeDragItem as any)}
+									type={activeDragItem.componentType ?? "rsi_condition"}
+									category={activeDragItem.category ?? "indicator"}
+									title={activeDragItem.title ?? ""}
+									description={activeDragItem.description ?? ""}
+									icon={activeDragItem.icon ?? null}
+									userTier={userTier}
 								/>
 							) : (
-								<Card className="p-2 shadow-lg opacity-90">
-									<ConditionBlock
-										block={activeDragItem as unknown as ConditionBlockType}
-										stateKey={
-											(activeDragItem as Record<string, unknown>).stateKey as
-												| "filters"
-												| "entryConditions"
-										}
-									/>
-								</Card>
-							)
-						) : null}
-					</DragOverlay>
-				)}
-			</DndContext>
+									<div className="p-2 rounded-xl border border-cyan/40 glass shadow-2xl opacity-95 ring-2 ring-cyan/20">
+										<ConditionBlock
+											block={
+												(activeDragItem.block ??
+													(activeDragItem as unknown as ConditionBlockType))
+											}
+											stateKey={activeDragItem.stateKey ?? "entryConditions"}
+										/>
+									</div>
+								)}
+						</DragOverlay>
+					)}
+				</DndContext>
+			</div>
 			<Dialog open={showOnboardingModal} onOpenChange={setShowOnboardingModal}>
-				<DialogContent>
+				<DialogContent className="glass border border-white/10 text-white shadow-2xl rounded-2xl sm:max-w-md">
 					<DialogHeader>
-						<DialogTitle className="flex items-center">
-							<Sparkles className="w-6 h-6 mr-2 text-yellow-400" />
+						<DialogTitle className="flex items-center text-lg font-semibold text-white">
+							<Sparkles className="w-5 h-5 mr-2 text-cyan" />
 							{t("welcomeDialog.title")}
 						</DialogTitle>
-						<DialogDescription>
+						<DialogDescription className="text-white/60 text-sm mt-2">
 							{t("welcomeDialog.description")}
 						</DialogDescription>
 					</DialogHeader>
-					<DialogFooter>
-						<Button
-							variant="outline"
+					<DialogFooter className="gap-2 sm:gap-0 mt-4">
+						<Btn
+							variant="ghost"
 							onClick={() => {
 								setShowOnboardingModal(false);
 								endOnboarding();
 							}}
 						>
 							{t("welcomeDialog.cancelButton")}
-						</Button>
-						<Button
+						</Btn>
+						<Btn
+							variant="primary"
 							onClick={() => {
 								setShowOnboardingModal(false);
 								startOnboarding();
 							}}
 						>
 							{t("welcomeDialog.confirmButton")}
-						</Button>
+						</Btn>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

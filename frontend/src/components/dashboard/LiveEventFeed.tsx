@@ -55,14 +55,16 @@ export function LiveEventFeed() {
 					// If there are events, show a div with scrolling
 					<div className="space-y-2 terminal-scroll max-h-48 overflow-y-auto">
 						{events.map((event) => (
-							<div key={event.id} className="text-sm font-mono flex space-x-2">
-								<span className="text-terminal-dim">
-									[{new Date(event.timestamp).toLocaleTimeString()}]
-								</span>
-								<span className={`font-medium ${getLevelStyle(event.level)}`}>
-									[{event.level}]
-								</span>
-								<span className="text-foreground flex-1">{event.message}</span>
+							<div key={event.id} className="text-sm font-mono flex flex-col sm:flex-row gap-1 sm:gap-2">
+								<div className="flex items-center gap-2 shrink-0">
+									<span className="text-terminal-dim shrink-0 whitespace-nowrap">
+										[{new Date(event.timestamp).toLocaleTimeString()}]
+									</span>
+									<span className={`font-medium shrink-0 whitespace-nowrap ${getLevelStyle(event.level)}`}>
+										[{event.level}]
+									</span>
+								</div>
+								<span className="text-foreground flex-1 whitespace-pre-wrap break-words min-w-0 w-full sm:w-auto">{event.message}</span>
 							</div>
 						))}
 					</div>

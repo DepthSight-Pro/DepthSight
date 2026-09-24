@@ -24,8 +24,7 @@ export function OpenPositions() {
 		mode,
 		apiKeyId: mode === "live" ? selectedApiKeyId : undefined,
 		marketType: mode === "live" ? selectedMarketType : undefined,
-		// Add automatic update every 5 seconds
-		refetchInterval: 5000,
+		// Push-driven via WS snapshots; no polling (fallback handled by pages).
 	});
 
 	return (

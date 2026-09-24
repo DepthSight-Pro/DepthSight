@@ -47,6 +47,9 @@
 		"send": "Send",
 		"chartAttached": "Chart screenshot attached",
 		"chartAttachedDesc": "Will be sent and analyzed with your message",
-		"placeholderWithHint": "Message AI Co-Pilot (Enter to send, Shift+Enter for new line)..."
+		"placeholderWithHint": "Message AI Co-Pilot (Enter to send, Shift+Enter for new line)...",
+		"chatTab": "Chat",
+		"agentTab": "Agent",
+		"mcpSettings": "MCP settings"
 	}
 }

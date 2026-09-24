@@ -173,3 +173,15 @@ class TestVolumeParameterization:
 
         assert "VOL_LOOKBACK_88" in required
         assert "VOL_LOOKBACK_99" in required
+        # Live DataConsumer computes 'relative_volume' only for RELATIVE_VOLUME;
+        # without it the filter falls back to the 1.0 default and rejects everything.
+        assert "RELATIVE_VOLUME" in required
+
+    def test_visual_strategy_market_activity_requires_volume_spike(self):
+        """market_activity default percentile mode reads pair_info['is_volume_spike']."""
+        strategy_json = {"filters": {"type": "market_activity", "params": {}}}
+        strat = VisualBuilderStrategy({"config": strategy_json})
+        required = strat.required_indicators
+
+        assert "RELATIVE_VOLUME" in required
+        assert "IS_VOLUME_SPIKE" in required

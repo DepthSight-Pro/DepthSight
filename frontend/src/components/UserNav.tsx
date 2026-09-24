@@ -11,8 +11,6 @@ import {
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -53,15 +51,14 @@ export function UserNav() {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
-				<Button variant="ghost" className="relative h-8 w-8 rounded-full">
-					<Avatar className="h-8 w-8">
-						<AvatarFallback>
-							{user.username.charAt(0).toUpperCase()}
-						</AvatarFallback>
-					</Avatar>
-				</Button>
+				<button className="relative h-7 w-7 sm:h-8 sm:w-8 shrink-0 rounded-full bg-gradient-to-br from-cyan to-azure p-px shadow-[0_0_14px_-3px_rgba(0,212,255,0.6)] hover:shadow-[0_0_20px_-2px_rgba(0,212,255,0.9)] transition-all outline-none">
+					<div className="flex h-full w-full items-center justify-center rounded-full bg-obsidian text-[10px] sm:text-[11px] font-bold text-white uppercase">
+						{user.username.slice(0, 2)}
+					</div>
+					<span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full border-2 border-obsidian bg-emerald-400 shadow-[0_0_6px_#10e0a0]" />
+				</button>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent className="w-64" align="end" forceMount>
+			<DropdownMenuContent className="w-64 bg-obsidian/95 backdrop-blur-xl border border-white/10 text-white shadow-2xl rounded-xl p-1.5" align="end" forceMount>
 				{/* --- BLOCK 1: USER INFORMATION --- */}
 				<DropdownMenuLabel className="font-normal">
 					<div className="flex flex-col space-y-1">

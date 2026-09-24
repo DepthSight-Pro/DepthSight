@@ -1,7 +1,6 @@
 // src/pages/admin/AdminLayout.tsx
 
 import {
-	Activity,
 	ArrowLeft,
 	ClipboardList,
 	LayoutDashboard,
@@ -14,11 +13,16 @@ import {
 	Pickaxe,
 	Layers,
 	Brain,
+	Gift,
 } from "lucide-react";
 import type React from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { useSystemStatus } from "@/lib/api";
 
 const AdminLayout: React.FC = () => {
+	const { data: systemStatus } = useSystemStatus();
+	const isCentralHub = Boolean(systemStatus?.isCentralHub);
+
 	const navItems = [
 		{
 			to: "/admin",
@@ -67,6 +71,15 @@ const AdminLayout: React.FC = () => {
 			text: "Trade Mining",
 			icon: <Pickaxe className="h-4 w-4" />,
 		},
+		...(isCentralHub
+			? [
+					{
+						to: "/admin/promo",
+						text: "Promo Campaigns",
+						icon: <Gift className="h-4 w-4" />,
+					},
+			  ]
+			: []),
 		{
 			to: "/admin/health",
 			text: "Platform Health",

@@ -1,1407 +1,1470 @@
 {
-	"common": {
-		"error": "Ошибка: {{message}}",
-		"dark": "темную",
-		"light": "светлую",
-		"russian": "русский",
-		"english": "английский"
-	},
-	"loadingScreen": "Загрузка...",
-	"logo": {
-		"depth": "Depth",
-		"sight": "Sight"
-	},
-	"header": {
-		"depthsightAI": "DepthSight AI",
-		"dashboard": "Панель управления",
-		"strategies": "Стратегии",
-		"research": "Исследования",
-		"analytics": "Аналитика",
-		"notifications": "Уведомления",
-		"aiChat": "AI Ассистент",
-		"editor": "Редактор стратегий",
-		"backtestResult": "Результаты бэктеста",
-		"profile": "Профиль",
-		"settings": "Настройки",
-		"notificationsEnabledTitle": "Отключить push-уведомления",
-		"notificationsDisabledTitle": "Включить push-уведомления"
-	},
-	"nav": {
-		"dashboard": "Главная",
-		"strategies": "Стратегии",
-		"research": "Исследования",
-		"notifications": "Уведомления"
-	},
-	"buttons": {
-		"save": "Сохранить",
-		"saving": "Сохранение...",
-		"cancel": "Отмена",
-		"add": "Добавить",
-		"adding": "Добавление...",
-		"close": "Закрыть",
-		"delete": "Удалить"
-	},
-	"auth": {
-		"loginToAccount": "Вход в аккаунт",
-		"createAccount": "Создать аккаунт",
-		"email": "Email",
-		"username": "Имя пользователя",
-		"password": "Пароль",
-		"confirmPassword": "Подтвердите пароль",
-		"login": "Войти",
-		"register": "Зарегистрироваться",
-		"noAccount": "Нет аккаунта?",
-		"alreadyHaveAccount": "Уже есть аккаунт?",
-		"create": "Создать",
-		"invalidCredentials": "Неверные учетные данные.",
-		"registrationError": "Ошибка регистрации.",
-		"passwordsDoNotMatch": "Пароли не совпадают.",
-		"usernameTaken": "Это имя пользователя уже занято.",
-		"emailTaken": "Эта электронная почта уже зарегистрирована.",
-		"registrationSuccessTitle": "Регистрация успешна",
-		"confirmEmailPrompt": "Остался один шаг...",
-		"confirmEmailInstructions": "Мы отправили ссылку для подтверждения на ваш адрес электронной почты. Пожалуйста, перейдите по ссылке, чтобы активировать свой аккаунт.",
-		"backToLogin": "Вернуться ко входу",
-		"resendEmail": "Отправить письмо повторно",
-		"resendingEmail": "Отправка...",
-		"resendEmailTimer": "Повторная отправка через {{seconds}} сек",
-		"resendFailedDescription": "Не удалось отправить письмо. Попробуйте позже.",
-		"emailConfirmation": "Подтверждение Email",
-		"tokenNotFound": "Токен подтверждения не найден.",
-		"loginSuccess": "Успешный вход в систему.",
-		"successMessageDefault": "Ваш email успешно подтвержден!",
-		"errorMessageDefault": "Ссылка для подтверждения недействительна или истекла.",
-		"connectionError": "Ошибка соединения. Попробуйте снова.",
-		"errorTitle": "Ошибка подтверждения",
-		"loadingText": "Подтверждаем ваш email...",
-		"redirecting": "Перенаправление на главную...",
-		"referralCode": "Реферальный код (необязательно)",
-		"referralCodePlaceholder": "Введите реферальный код",
-		"forgotPassword": "Забыли пароль?",
-		"forgotPasswordTitle": "Восстановление пароля",
-		"forgotPasswordDescription": "Введите ваш email, и мы отправим ссылку для сброса пароля.",
-		"sendResetLink": "Отправить ссылку",
-		"resetLinkSent": "Если этот email зарегистрирован, вы получите ссылку для сброса пароля.",
-		"resetPasswordTitle": "Новый пароль",
-		"resetPasswordDescription": "Введите новый пароль ниже.",
-		"newPassword": "Новый пароль",
-		"confirmResetPassword": "Подтвердите пароль",
-		"resetPassword": "Сбросить пароль",
-		"passwordResetSuccess": "Пароль успешно изменён. Теперь вы можете войти.",
-		"passwordMismatch": "Пароли не совпадают",
-		"invalidResetLink": "Ссылка недействительна или истекла."
-	},
-	"twoFactor": {
-		"title": "Двухфакторная аутентификация",
-		"cardTitle": "Двухфакторная аутентификация (2FA)",
-		"pwaCardSub": "Защита аккаунта кодами из Google Authenticator",
-		"cardDescription": "Защитите свои биржевые ключи и торговых ботов подтверждением входа через TOTP-код.",
-		"badgeEnabled": "Активна",
-		"badgeDisabled": "Не включена",
-		"recoveryCodesCountLabel": "Доступно резервных кодов:",
-		"remaining": "осталось",
-		"lowCodesWarning": "Осталось мало резервных кодов. Рекомендуется сгенерировать новые.",
-		"btnRegenerateCodes": "Сгенерировать коды",
-		"btnDisable": "Отключить 2FA",
-		"btnEnable": "Включить 2FA аутентификацию",
-		"enterBackupCode": "Введите один из ваших 8-значных резервных кодов восстановления",
-		"enterAuthenticatorCode": "Введите 6-значный код из вашего приложения аутентификатора",
-		"backupCode": "Резервный код",
-		"backupCodeLabel": "Резервный код восстановления",
-		"code": "Код аутентификатора",
-		"enterCodeLabel": "Введите 6-значный код",
-		"verifyAndLogin": "Подтвердить и войти",
-		"useAuthenticatorCode": "Использовать код из приложения",
-		"useBackupCode": "Нет доступа к телефону? Использовать резервный код",
-		"modalSetupTitle": "Настройка 2FA",
-		"modalSetupDesc": "Отсканируйте QR-код в Google Authenticator или Aegis и введите 6-значный код.",
-		"manualKeyLabel": "Не удается отсканировать? Введите ключ вручную:",
-		"btnConfirmAndEnable": "Подтвердить и включить",
-		"modalBackupCodesTitle": "Сохраните резервные коды",
-		"modalBackupCodesDesc": "Если вы потеряете телефон или доступ к приложению, эти коды — единственный способ восстановить доступ.",
-		"backupWarningText": "Эти коды показываются только один раз. Сохраните их в надежном месте.",
-		"btnCopyCodes": "Скопировать все коды",
-		"btnSavedDone": "Я сохранил коды",
-		"modalDisableTitle": "Отключение 2FA",
-		"modalDisableDesc": "Для отключения 2FA введите текущий 6-значный код из приложения или пароль от аккаунта.",
-		"codeOrBackupLabel": "Код из приложения или резервный код",
-		"accountPasswordLabel": "Пароль от аккаунта",
-		"btnConfirmDisable": "Подтвердить отключение",
-		"modalRegenTitle": "Генерация новых резервных кодов",
-		"modalRegenDesc": "Это действие аннулирует все старые резервные коды. Введите текущий 6-значный код из приложения для подтверждения.",
-		"btnRegenConfirm": "Сгенерировать коды",
-		"setupError": "Не удалось начать настройку 2FA",
-		"enabledSuccess": "2FA успешно включена!",
-		"disabledSuccess": "2FA отключена",
-		"regenSuccess": "Новые резервные коды успешно сгенерированы",
-		"invalidCode": "Неверный код подтверждения",
-		"disableError": "Не удалось отключить 2FA",
-		"keyCopied": "Секретный ключ скопирован",
-		"codesCopied": "Резервные коды скопированы!",
-		"copied": "Скопировано!",
-		"copyFailed": "Не удалось скопировать ключ",
-		"btnOpenInApp": "Открыть в приложении Authenticator",
-		"btnCopyKeyFull": "Скопировать секретный ключ",
-		"btnCopyKey": "Скопировать",
-		"clickToCopy": "Нажмите, чтобы скопировать",
-		"manualKeyHelp": "Введите этот ключ в Google Authenticator или Aegis, если нет возможности отсканировать QR-код."
-	},
-	"dashboard": {
-		"live": "Live",
-		"paper": "Paper",
-		"totalBalance": "Общий баланс",
-		"dailyPnl": "Дневной PnL",
-		"unrealizedPnl": "Нереализованный PnL",
-		"pnlChart": "График PnL",
-		"1d": "1Д",
-		"7d": "7Д",
-		"mtd": "МТД",
-		"loadingChart": "Загрузка графика...",
-		"pnl": "PnL",
-		"noDataToDisplay": "Нет данных для отображения.",
-		"activePositions": "Активные позиции",
-		"size": "Размер",
-		"noActivePositions": "Нет активных позиций.",
-		"closePosition": "Закрыть позицию {{symbol}}",
-		"confirmClosePosition": "Вы уверены, что хотите закрыть позицию по {{symbol}}?",
-		"closePositionCommandSent": "Команда на закрытие позиции по {{symbol}} отправлена.",
-		"errorClosingPosition": "Ошибка при закрытии позиции по {{symbol}}.",
-		"failedToLoadData": "Не удалось загрузить данные.",
-		"maxDrawdown": "Макс. просадка",
-		"sharpeRatio": "Коэф. Шарпа",
-		"connectApiKeysMessage": "Подключите API ключи в десктопной версии приложения"
-	},
-	"analytics": {
-		"pageTitle": "Аналитика",
-		"overview": {
-			"netProfit": "Чистый PnL",
-			"winRate": "Винрейт",
-			"profitFactor": "Профит-фактор",
-			"expectancy": "Мат. ожидание",
-			"sharpeRatio": "Коэф. Шарпа",
-			"totalCommission": "Комиссия",
-			"avgWinLossRatio": "W/L соотн.",
-			"volume": "Объем",
-			"perTrade": "В среднем за сделку",
-			"annualized": "Годовой",
-			"needsMoreDays": "Нужно 2+ дня",
-			"totalFees": "Всего комиссий",
-			"avgWinVsLoss": "Ср. W vs L",
-			"tradedVolume": "Проторговано"
-		},
-		"tabs": {
-			"cumulativePnl": "Кривая капитала",
-			"hourlyPerformance": "По часам",
-			"dailyPerformance": "По дням"
-		}
-	},
-	"strategies": {
-		"status": {
-			"running": "Активные",
-			"stopped": "Сохраненные"
-		},
-		"run": "Запустить",
-		"backtest": "Бэктест",
-		"edit": "Изменить",
-		"delete": "Удалить",
-		"stop": "Остановить",
-		"stopCommandSent": "Команда на остановку стратегии отправлена.",
-		"errorStopping": "Ошибка при остановке стратегии.",
-		"deleteSuccess": "Стратегия успешно удалена.",
-		"deleteError": "Ошибка при удалении стратегии."
-	},
-	"research": {
-		"netPnl": "Чистая PnL",
-		"winRate": "Процент побед",
-		"inProgress": "В процессе...",
-		"failedToLoad": "Не удалось загрузить бэктесты.",
-		"noBacktests": "Вы еще не запускали бэктесты.",
-		"status": {
-			"completed": "Завершен",
-			"running": "В процессе",
-			"pending": "В очереди",
-			"failed": "Ошибка"
-		}
-	},
-	"backtestResultScreen": {
-		"resultsNotFound": "Результаты бэктеста не найдены.",
-		"equityChart": "График капитала",
-		"noData": "Нет данных для отображения графика.",
-		"runLive": "Запустить вживую",
-		"analyzeWithAI": "Анализ с AI",
-		"openInEditor": "Открыть в редакторе",
-		"share": "Поделиться",
-		"trades": "Сделки",
-		"buy": "Покупка",
-		"sell": "Продажа",
-		"exit": "Выход",
-		"tradesNotFound": "Сделки не найдены.",
-		"page": "Страница",
-		"back": "Назад",
-		"forward": "Вперед",
-		"toast": {
-			"failedToLoadDetails": "Не удалось загрузить детали бэктеста.",
-			"backtestStarted": "Бэктест запущен. Результаты появятся в Исследованиях.",
-			"errorStartingBacktest": "Ошибка при запуске бэктеста.",
-			"strategySavedAndLaunched": "Стратегия '{{strategyName}}' сохранена и запущена.",
-			"errorLaunchingStrategy": "Ошибка при запуске стратегии."
-		}
-	},
-	"editor": {
-		"aiAssistantGreeting": "Привет! Я ваш AI-ассистент. Как я могу помочь с этой стратегией?",
-		"errorLoadingStrategy": "Ошибка загрузки стратегии.",
-		"strategyGenerated": "Стратегия сгенерирована и загружена в конструктор.",
-		"bestStrategyConfigured": "Лучшая стратегия настроена",
-		"backtestStarted": "Бэктест запущен.",
-		"strategySaved": "Стратегия '{{strategyName}}' успешно сохранена.",
-		"errorSavingStrategy": "Ошибка сохранения стратегии.",
-		"defaultStrategyName": "Новая стратегия",
-		"constructor": "Конструктор",
-		"aiAssistant": "AI Ассистент",
-		"strategyInfo": "Информация о стратегии",
-		"strategyName": "Название стратегии",
-		"namePlaceholder": "Например, Пробой EMA 50",
-		"description": "Описание",
-		"descriptionPlaceholder": "Краткое описание логики стратегии...",
-		"filtersSectionTitle": "Фильтры",
-		"entryConditionsSectionTitle": "Условия входа",
-		"positionManagementSectionTitle": "Управление позицией",
-		"foundationsAndWeights": "Основания и веса",
-		"useWeights": "Использовать веса",
-		"minWeightThreshold": "Мин. порог веса:",
-		"foundationsWeightsButton": "Настроить веса оснований",
-		"runBacktest": "Запустить бэктест",
-		"add": "Добавить",
-		"addConditionTo": "Добавить условие в",
-		"showAllBlocks": "Показать все блоки",
-		"initialization": "Инициализация сделки",
-		"direction": "Направление",
-		"positionSize": "Размер позиции",
-		"percentBalance": "% от баланса",
-		"fixedUsd": "Фиксир. USD",
-		"orderType": "Тип ордера",
-		"market": "Рыночный",
-		"limitRetest": "Лимитный ретест",
-		"entryPrice": "Цена входа",
-		"stopLoss": "Стоп-лосс",
-		"atrMultiplier": "ATR множитель",
-		"percentFromPrice": "% от цены",
-		"takeProfit": "Тейк-профит",
-		"rrMultiplier": "R:R множитель",
-		"partialExits": "Частичные выходы",
-		"atTP": "При достижении TP:",
-		"addPartialExit": "Добавить частичный выход",
-		"configPanel": {
-			"paramsTitle": "Параметры"
-		}
-	},
-	"profile": {
-		"profileTitle": "Профиль",
-		"accountTab": "Аккаунт",
-		"securityTab": "Безопасность",
-		"achievementsTab": "Достижения",
-		"error": "Ошибка: ",
-		"failedToLoadProfileData": "Не удалось загрузить данные профиля.",
-		"myPlan": "Мой план",
-		"planActiveUntil": "План активен до {{date}}",
-		"noActivePlan": "У вас нет активного плана.",
-		"changePlan": "Сменить план",
-		"paperAccount": "Paper-счет",
-		"resetting": "Сброс...",
-		"reset": "Сбросить",
-		"quotas": "Квоты",
-		"unlimited": "∞",
-		"referrals": "Рефералы",
-		"referralCode": "Ваш реферальный код",
-		"copy": "Копировать",
-		"copied": "Готово!",
-		"codeCopied": "Код скопирован.",
-		"referralLink": "Ваша реферальная ссылка",
-		"linkCopied": "Ссылка скопирована.",
-		"geneticsLaboratory": "Генетическая лаборатория",
-		"genesDiscovered": "Обнаружено генов",
-		"dangerZone": "Опасная зона",
-		"deleteAccountTitle": "Удаление аккаунта",
-		"deleteAccountDescription": "Это действие необратимо. Все ваши данные будут удалены.",
-		"deleteAccount": "Удалить аккаунт",
-		"deleting": "Удаление...",
-		"paperAccountResetSuccess": "Paper-счет успешно сброшен.",
-		"failedToResetPaperAccount": "Не удалось сбросить Paper-счет.",
-		"accountDeleted": "Аккаунт успешно удален.",
-		"failedToDeleteAccount": "Не удалось удалить аккаунт.",
-		"copiedToClipboard": "Скопировано в буфер обмена.",
-		"failedToCopyValue": "Не удалось скопировать.",
-		"pleaseWait": "Пожалуйста, подождите...",
-		"choosePlan": "Выберите ваш план",
-		"upgradePlanDescription": "Повысьте уровень, чтобы разблокировать больше возможностей.",
-		"failedToLoadPlans": "Не удалось загрузить тарифные планы.",
-		"failedToOpenPaymentPage": "Не удалось открыть страницу оплаты.",
-		"failedToInitiatePayment": "Не удалось инициировать платеж.",
-		"perMonth": "/ мес.",
-		"currentPlanLabel": "Текущий план",
-		"transitioning": "Переходим...",
-		"select": "Выбрать",
-		"continueAgreeing": "Продолжая, вы соглашаетесь с нашими",
-		"termsAndConditions": "Условиями предоставления услуг",
-		"and": "и",
-		"privacyPolicy": "Политикой конфиденциальности",
-		"confirmResetTitle": "Подтвердить сброс",
-		"confirmResetMessage": "Вы уверены, что хотите сбросить свой Paper-счет? Баланс вернется к значению по умолчанию.",
-		"resetAccount": "Сбросить счет",
-		"confirmDeleteTitle": "Подтвердить удаление",
-		"confirmDeleteMessage": "Вы уверены, что хотите удалить свой аккаунт? Это действие нельзя будет отменить.",
-		"deleteMyAccount": "Удалить мой аккаунт",
-		"noActivePositions": "Нет активных позиций",
-		"noAchievements": "Вы еще не получали достижений."
-	},
-	"achievements": {
-		"grandmaster": "Грандмастер",
-		"legend": "Легенда",
-		"master": "Мастер",
-		"analyst": "Аналитик",
-		"apprentice": "Ученик",
-		"novice": "Новичок",
-		"level": "Уровень {{level}}",
-		"experience": "Опыт",
-		"xpToNextLevel": "{{xpToNext}} XP до уровня {{level}}",
-		"totalXp": "Всего XP",
-		"genesFound": "Найдено генов",
-		"currentLevel": "Текущий уровень",
-		"achievementsUnlocked": "Достижений",
-		"totalAvailable": "Всего доступно",
-		"collectionProgress": "Прогресс",
-		"xpReward": "+{{xp}} XP",
-		"rarityDisplay": "Редкость: {{rarity}}",
-		"noAchievements": "У вас пока нет разблокированных достижений.",
-		"list": {
-			"first_backtest": {
-				"name": "Первопроходец",
-				"description": "Запустить свой первый бэктест"
-			},
-			"first_save": {
-				"name": "Первый чертеж",
-				"description": "Сохранить свою первую конфигурацию стратегии"
-			},
-			"used_ai_assistant": {
-				"name": "Диалог с машиной",
-				"description": "Использовать AI-ассистента для создания или анализа стратегии"
-			},
-			"first_optimization": {
-				"name": "В поисках идеала",
-				"description": "Запустить первую оптимизацию параметров"
-			},
-			"first_api_key": {
-				"name": "Ключник",
-				"description": "Добавить свой первый API ключ для торговли"
-			},
-			"two_factor_enabled": {
-				"name": "Чемпион безопасности",
-				"description": "Включить двухфакторную аутентификацию (2FA)"
-			},
-			"first_paper_trade": {
-				"name": "Бумажный тигр",
-				"description": "Запустить первую стратегию в режиме Paper Trading"
-			},
-			"reset_paper": {
-				"name": "С чистого листа",
-				"description": "Сбросить баланс своего Paper Trading счета"
-			},
-			"10_backtests": {
-				"name": "Младший научный сотрудник",
-				"description": "Провести 10 бэктестов"
-			},
-			"100_backtests": {
-				"name": "Старший научный сотрудник",
-				"description": "Провести 100 бэктестов"
-			},
-			"500_backtests": {
-				"name": "Заведующий лабораторией",
-				"description": "Провести 500 бэктестов"
-			},
-			"1000_trades_backtests": {
-				"name": "Ветеран рынка",
-				"description": "Симулировать 1000 сделок в бэктестах"
-			},
-			"10000_trades_backtests": {
-				"name": "Легенда Уолл-стрит",
-				"description": "Симулировать 10,000 сделок в бэктестах"
-			},
-			"50_optimizations": {
-				"name": "Безумный ученый",
-				"description": "Провести 50 оптимизаций"
-			},
-			"save_10_strategies": {
-				"name": "Стратег",
-				"description": "Сохранить 10 различных конфигураций стратегий"
-			},
-			"sniper": {
-				"name": "Снайпер",
-				"description": "Завершить бэктест (мин. 20 сделок) с Win Rate > 80%"
-			},
-			"marathon_runner": {
-				"name": "Марафонец",
-				"description": "Провести успешный бэктест на периоде более 1 года"
-			},
-			"hard_nut": {
-				"name": "Крепкий орешек",
-				"description": "Завершить бэктест (мин. 50 сделок) с макс. просадкой < 5%"
-			},
-			"alpha_hunter": {
-				"name": "Охотник за Альфой",
-				"description": "Завершить бэктест с Sharpe Ratio > 2.0"
-			},
-			"money_printer": {
-				"name": "Печатный станок",
-				"description": "Завершить бэктест с Profit Factor > 3.0"
-			},
-			"winning_streak": {
-				"name": "На волне успеха",
-				"description": "Получить 10 прибыльных сделок подряд в одном бэктесте"
-			},
-			"phoenix": {
-				"name": "Феникс",
-				"description": "Стратегия вышла из просадки >10% и достигла нового максимума эквити"
-			},
-			"flawless_victory": {
-				"name": "Безупречная победа",
-				"description": "Завершить бэктест (мин. 10 сделок) with Win Rate 100%"
-			},
-			"clairvoyant": {
-				"name": "Ясновидящий",
-				"description": "Использовать Визуализатор Оснований"
-			},
-			"diversifier": {
-				"name": "Диверсификатор",
-				"description": "Запустить первый портфельный бэктест"
-			},
-			"show_off": {
-				"name": "Выставочный образец",
-				"description": "Поделиться результатом своего бэктеста"
-			},
-			"contender": {
-				"name": "Претендент",
-				"description": "Опубликовать свой результат в Лидерборде"
-			},
-			"the_intervention": {
-				"name": "Вмешательство",
-				"description": "Закрыть позицию вручную через интерфейс"
-			},
-			"pulling_the_plug": {
-				"name": "Дернуть за шнур",
-				"description": "Использовать функцию экстренной остановки (Emergency Stop)"
-			},
-			"the_professor": {
-				"name": "Профессор",
-				"description": "Обучить свою первую модель в Лаборатории Моделей"
-			},
-			"strategy_5_blocks": {
-				"name": "Конструктор",
-				"description": "Создать стратегию, используя 5+ блоков"
-			},
-			"the_architect": {
-				"name": "Архитектор",
-				"description": "Создать стратегию, используя 15+ блоков"
-			},
-			"logician": {
-				"name": "Логик",
-				"description": "Использовать одновременно и AND, и OR логику в условиях входа"
-			},
-			"inventor": {
-				"name": "Изобретатель",
-				"description": "Создать стратегию, используя 5+ разных типов \"оснований\""
-			},
-			"order_flow_purist": {
-				"name": "Адепт потока",
-				"description": "Создать стратегию, где основания входа состоят только из анализа ленты и стакана"
-			},
-			"prudent_manager": {
-				"name": "Расчетливый менеджер",
-				"description": "Использовать блок частичного закрытия позиции (Partial Exits)"
-			},
-			"10_strategies_discovery": {
-				"name": "Золотоискатель",
-				"description": "Найти 10 уникальных стратегий в Лаборатории Открытий"
-			},
-			"the_spark": {
-				"name": "Искра жизни",
-				"description": "Открыть свой первый ген стратегии"
-			},
-			"gem_hunter": {
-				"name": "Охотник за самоцветами",
-				"description": "Открыть ген Редкого (RARE) качества"
-			},
-			"treasure_hunter": {
-				"name": "Охотник за сокровищами",
-				"description": "Открыть ген Эпического (EPIC) качества"
-			},
-			"myth_buster": {
-				"name": "Разрушитель мифов",
-				"description": "Открыть ген Легендарного (LEGENDARY) качества"
-			},
-			"gene_collector": {
-				"name": "Коллекционер генов",
-				"description": "Собрать 20 уникальных генов в своей библиотеке"
-			},
-			"geneticist": {
-				"name": "Генетик",
-				"description": "Скрестить две стратегии в Лаборатории Скрещивания"
-			},
-			"natural_selection": {
-				"name": "Естественный отбор",
-				"description": "Создать стратегию 5-го поколения в Древе Эволюции"
-			},
-			"recruiter": {
-				"name": "Рекрутер",
-				"description": "Пригласить первого пользователя по своей реферальной ссылке"
-			},
-			"first_commission": {
-				"name": "Первая комиссия",
-				"description": "Получить первое вознаграждение по партнерской программе"
-			},
-			"partner": {
-				"name": "Партнер",
-				"description": "Заработать $100 в рамках партнерской программы"
-			},
-			"underminer": {
-				"name": "Подрыв устоев",
-				"description": "Создать бэктест с Sharpe Ratio < -2.0"
-			},
-			"the_pacifist": {
-				"name": "Пацифист",
-				"description": "Провести бэктест, который не совершил ни одной сделки"
-			},
-			"perfectly_balanced": {
-				"name": "Идеальный баланс",
-				"description": "Завершить бэктест (мин. 50 сделок) с Win Rate ровно 50% (+/- 1%)"
-			},
-			"diamond_hands": {
-				"name": "Алмазные руки",
-				"description": "Назвать стратегию 'HODL' и запустить с ней бэктест"
-			},
-			"mining_activated": {
-				"name": "Генезис",
-				"description": "Активировать Trade Mining и принять условия передачи телеметрии"
-			},
-			"mining_wallet_linked": {
-				"name": "Web3-гражданин",
-				"description": "Привязать и верифицировать EVM-кошелек для майнинга"
-			},
-			"mining_first_trade": {
-				"name": "Первая искра",
-				"description": "Совершить первую сделку, успешно верифицированную в пуле майнинга"
-			},
-			"welcome_bonus_claimed": {
-				"name": "Золотой билет",
-				"description": "Сгенерировать $1.0 комиссии и забрать Welcome Bonus (1,000 $DEPTH)"
-			},
-			"mining_volume_1k": {
-				"name": "Проходчик",
-				"description": "Достичь $1,000 суммарного торгового объема в майнинге"
-			},
-			"mining_volume_10k": {
-				"name": "Горный мастер",
-				"description": "Достичь $10,000 суммарного объема в майнинге"
-			},
-			"mining_volume_100k": {
-				"name": "Карьерный гигант",
-				"description": "Достичь $100,000 суммарного объема в майнинге"
-			},
-			"mining_volume_1m": {
-				"name": "Крипто-кит",
-				"description": "Достичь $1,000,000 суммарного объема в майнинге"
-			},
-			"mining_volume_10m": {
-				"name": "Маркет-мейкер",
-				"description": "Достичь $10,000,000 суммарного объема в майнинге"
-			},
-			"mining_daily_volume_10k": {
-				"name": "Ударник труда",
-				"description": "Наторговать $10,000 объема за одну 24-часовую эпоху"
-			},
-			"mining_daily_volume_100k": {
-				"name": "Шторм на бирже",
-				"description": "Наторговать $100,000 объема за сутки"
-			},
-			"mining_daily_top_miner": {
-				"name": "Царь горы",
-				"description": "Занять 1-е место по объему среди всех нод по итогам эпохи"
-			},
-			"mining_daily_top5_miner": {
-				"name": "Высшая лига",
-				"description": "Войти в топ-5 майнеров дня по торговому объему"
-			},
-			"mining_first_referral": {
-				"name": "Партнер сети",
-				"description": "Пригласить первого пользователя, активировавшего майнинг"
-			},
-			"mining_5_referrals": {
-				"name": "Лидер звена",
-				"description": "Пригласить 5 активных майнеров"
-			},
-			"mining_10_referrals": {
-				"name": "Бригадир",
-				"description": "Пригласить 10 активных майнеров"
-			},
-			"mining_50_referrals": {
-				"name": "Синдикат",
-				"description": "Построить сеть из 50 активных нод"
-			},
-			"mining_active_squad": {
-				"name": "Спящих нет",
-				"description": "Иметь как минимум 5 рефералов, торгующих одновременно в один день"
-			},
-			"mining_mentor_bonus": {
-				"name": "Наставник",
-				"description": "Твой реферал впервые заклеймил свой Welcome Bonus"
-			},
-			"mining_ref_volume_100k": {
-				"name": "Голос сети",
-				"description": "Совокупный торговый объем рефералов превысил $100,000"
-			},
-			"mining_ref_earnings_100k": {
-				"name": "Пассивный доход",
-				"description": "Заработать суммарно 100,000 $DEPTH на 10% реферальных бонусах"
-			},
-			"mining_streak_7d": {
-				"name": "Недельный марафон",
-				"description": "Участвовать в распределении эмиссии 7 эпох подряд"
-			},
-			"mining_streak_30d": {
-				"name": "Железная дисциплина",
-				"description": "Непрерывный майнинг на протяжении 30 эпох подряд"
-			},
-			"mining_epochs_100": {
-				"name": "Ветеран сети",
-				"description": "Принять участие в 100 дневных эпохах суммарно"
-			},
-			"mining_halving_survivor": {
-				"name": "Свидетель халвинга",
-				"description": "Быть активным майнером в момент наступления халвинга пула"
-			},
-			"mining_depth_1k": {
-				"name": "Первая тысяча",
-				"description": "Добыть суммарно 1,000 $DEPTH"
-			},
-			"mining_depth_10k": {
-				"name": "Золотой запас",
-				"description": "Добыть суммарно 10,000 $DEPTH"
-			},
-			"mining_depth_100k": {
-				"name": "Крипто-магнат",
-				"description": "Добыть суммарно 100,000 $DEPTH"
-			},
-			"mining_jackpot_epoch": {
-				"name": "Сорвать куш",
-				"description": "Получить более 5,000 $DEPTH за одну дневную эпоху"
-			},
-			"mining_flawless_telemetry": {
-				"name": "Идеальный поток",
-				"description": "50 сделок подряд без единого отклонения верификатором"
-			},
-			"mining_high_speed_turnover": {
-				"name": "Высокая частота",
-				"description": "Совершить 50+ верифицированных сделок за один день"
-			},
-			"mining_profitable": {
-				"name": "Плюс на плюс",
-				"description": "10 закрытых майнинговых сделок подряд с положительным PnL"
-			},
-			"mining_multi_exchange": {
-				"name": "Арбитражер",
-				"description": "Промайнить сделки на 2+ разных биржах за одну неделю"
-			},
-			"mining_all_exchanges": {
-				"name": "Вездесущий",
-				"description": "Привязать UID и майнить на всех поддерживаемых биржах"
-			},
-			"mining_node_operator": {
-				"name": "Свой дата-центр",
-				"description": "Запустить серверную ноду, обслуживающую других майнеров"
-			},
-			"mining_boost_active": {
-				"name": "Форсаж",
-				"description": "Активировать любой повышающий множитель майнинга"
-			},
-			"mining_diamond_staker": {
-				"name": "Алмазный стейкер",
-				"description": "Залочить $DEPTH на 360 дней под максимальный множитель 2.0x"
-			}
-		}
-	},
-	"settings": {
-		"riskManagement": "Управление рисками",
-		"liveTrading": "Live торговля",
-		"backtesting": "Бэктестинг",
-		"liveTradingRiskManagement": "Управление рисками (Live)",
-		"riskManagementDescription": "Настройте параметры управления рисками для реальной торговли.",
-		"backtestingRiskManagement": "Управление рисками (Бэктест)",
-		"backtestingRiskManagementDescription": "Настройте параметры управления рисками для бэктестирования.",
-		"maxDrawdown": "Макс. просадка (%)",
-		"dailyMaxLossPercent": "Дневной макс. убыток (%)",
-		"maxConsecutiveLosses": "Макс. последовательных убытков",
-		"maxConcurrentTrades": "Макс. одновременных сделок",
-		"enableStopLoss": "Включить Stop Loss по умолчанию",
-		"defaultStopLossPercent": "Stop Loss по умолчанию (%)",
-		"maxStopDistancePercent": "Макс. расстояние до Stop Loss (%)",
-		"adaptiveRiskManagement": "Адаптивное управление рисками",
-		"enableAdaptiveRM": "Включить адаптивное управление",
-		"windowSize": "Размер окна (кол-во сделок)",
-		"minTrades": "Мин. сделок для оценки",
-		"pnlThreshold": "Порог PnL (%)",
-		"winRateThreshold": "Порог Win Rate (%)",
-		"recoveryWins": "Побед для восстановления",
-		"recoveryPnl": "PnL для восстановления (%)",
-		"cooldownSeconds": "Время 'остывания' (сек)"
-	},
-	"aiChat": {
-		"initialGreeting": "Привет! Я ваш AI-ассистент. Опишите, какую стратегию вы хотите создать, или выберите бэктест для анализа.",
-		"errorMessage": "Произошла ошибка. Пожалуйста, попробуйте еще раз.",
-		"loadToEditor": "Загрузить в редактор",
-		"askPlaceholder": "Спросите что-нибудь...",
-		"generateStrategy": "Да, сгенерируй эту стратегию",
-		"strategyGenerated": "Конфигурация стратегии успешно сгенерирована!",
-		"analyzeBacktestPrompt": "Проанализируй, пожалуйста, этот бэктест: {{strategyName}}"
-	},
-	"shareDialog": {
-		"title": "Поделиться бэктестом",
-		"description": "Создайте публичную ссылку, чтобы поделиться результатами вашего бэктеста.",
-		"successMessage": "Ваша публичная ссылка сгенерирована.",
-		"showStrategyName": "Показывать название стратегии",
-		"showParameters": "Показывать параметры",
-		"publishToLeaderboard": "Опубликовать в таблице лидеров",
-		"generateLinkButton": "Сгенерировать ссылку",
-		"toast": {
-			"successTitle": "Ссылка сгенерирована",
-			"successDescription": "Теперь вы можете поделиться результатами бэктеста.",
-			"copied": "Ссылка скопирована в буфер обмена."
-		}
-	},
-	"notifications": {
-		"pushNotSupported": "Push-уведомления не поддерживаются в этом браузере.",
-		"notificationsDisabled": "Уведомления отключены.",
-		"unsubscribeFailedLocal": "Не удалось отписаться. Уведомления отключены локально.",
-		"notificationsEnabled": "Уведомления включены.",
-		"subscribeFailed": "Не удалось подписаться на уведомления.",
-		"permissionBlocked": "Разрешение на уведомления заблокировано. Измените настройки браузера.",
-		"achievementUnlocked": "Получено достижение!",
-		"backtestCompleted": "Бэктест завершен",
-		"markAllAsRead": "Отметить все прочитанными",
-		"clearAll": "Очистить всё",
-		"empty": {
-			"title": "Нет уведомлений",
-			"description": "Здесь будут отображаться уведомления о бэктестах, позициях и достижениях"
-		},
-		"time": {
-			"justNow": "Только что",
-			"minutesAgo_one": "{{count}} мин. назад",
-			"minutesAgo_few": "{{count}} мин. назад",
-			"minutesAgo_many": "{{count}} мин. назад",
-			"hoursAgo_one": "{{count}} ч. назад",
-			"hoursAgo_few": "{{count}} ч. назад",
-			"hoursAgo_many": "{{count}} ч. назад",
-			"daysAgo_one": "{{count}} д. назад",
-			"daysAgo_few": "{{count}} д. назад",
-			"daysAgo_many": "{{count}} д. назад"
-		}
-	},
-	"sideMenu": {
-		"account": "Аккаунт",
-		"allAccounts": "Все аккаунты",
-		"unknown": "Неизвестно",
-		"profile": "Профиль",
-		"settings": "Настройки",
-		"mining": "Торговый майнинг",
-		"theme": "Тема",
-		"toggleThemeLabel": "Переключить на {{theme}} тему",
-		"language": "Язык",
-		"toggleLanguageLabel": "Переключить на {{language}} язык",
-		"english": "EN",
-		"russian": "RU",
-		"fullWebsiteVersion": "Полная версия сайта",
-		"termsOfService": "Условия использования",
-		"privacyPolicy": "Политика конфиденциальности",
-		"logout": "Выйти"
-	},
-	"modal": {
-		"addBlock": "Добавить блок",
-		"configureFoundationWeights": "Настроить веса оснований",
-		"noFoundationsForWeights": "В условиях входа нет блоков 'Оснований' для настройки весов."
-	},
-	"addApiKeyModal": {
-		"title": "Добавить API ключ",
-		"apiKeyLabel": "API Ключ",
-		"apiKeyPlaceholder": "Введите ваш API ключ",
-		"apiSecretLabel": "API Секрет",
-		"apiSecretPlaceholder": "Введите ваш API секрет"
-	},
-	"backtestModal": {
-		"fillAllFields": "Пожалуйста, заполните все поля.",
-		"strategyBacktest": "Бэктест стратегии",
-		"symbol": "Символ",
-		"startDate": "Дата начала",
-		"endDate": "Дата окончания",
-		"runBacktest": "Запустить бэктест",
-		"quickPresets": "Быстрый период",
-		"availableHistory": "Доступно на истории",
-		"noHistory": "История не найдена в хранилище",
-		"presets": {
-			"all": "Весь период",
-			"lastYear": "Прошлый год",
-			"thisYear": "Этот год",
-			"sixMonths": "Полгода",
-			"threeMonths": "3 месяца",
-			"oneMonth": "Месяц",
-			"lastMonth": "Прошлый месяц"
-		}
-	},
-	"launchStrategyModal": {
-		"fillSymbolsForStatic": "Пожалуйста, укажите символы для статического режима.",
-		"launchStrategy": "Запуск стратегии",
-		"tradingMode": "Режим торговли",
-		"paperTrading": "Paper Trading",
-		"paperTradingDescription": "Симуляция торговли без реального риска.",
-		"liveTrading": "Live Trading",
-		"liveTradingDescription": "Торговля на реальные средства. Будьте осторожны.",
-		"symbolSelection": "Выбор символов",
-		"dynamicFromScreener": "Динамический (из скринера)",
-		"dynamicFromScreenerDescription": "Автоматический выбор символов по заданным фильтрам.",
-		"staticManualList": "Статический (ручной список)",
-		"staticManualListDescription": "Торговля только по указанным символам.",
-		"symbolList": "Список символов",
-		"symbolPlaceholder": "BTCUSDT, ETHUSDT, ...",
-		"separateByCommas": "Разделяйте символы запятыми.",
-		"dynamicSettings": "Настройки динамического выбора",
-		"oracleFilter": "Фильтр Oracle",
-		"lowVolatilityNatr": "Низкая волатильность (NATR)",
-		"requiredRegime": "Требуемый режим",
-		"minConfidence": "Мин. уверенность (%)",
-		"minNatr": "Мин. NATR",
-		"maxConcurrentSymbols": "Макс. одновременных символов",
-		"advancedSettings": "Расширенные настройки",
-		"enableMlConfirmation": "Включить подтверждение ML",
-		"breakevenOnRegimeChange": "Breakeven при смене режима",
-		"oracleRegimeParanoiaFull": "0: Паранойя (Trend-following/Sideways)",
-		"oracleRegimeAmnesiaFull": "1: Амнезия (News/Trend)",
-		"oracleRegimeSchizophreniaFull": "2: Шизофрения (Volatile)"
-	},
-	"bottomSheet": {
-		"editBlock": "Редактирование: {{blockName}}"
-	},
-	"errors": {
-		"popoverTrigger": "PopoverTrigger must be used within a Popover.",
-		"popoverContent": "PopoverContent must be used within a Popover."
-	},
-	"palette": {
-		"groups": {
-			"filters": "Фильтры",
-			"foundations": "Основания",
-			"indicators": "Индикаторы",
-			"logic": "Логика",
-			"management": "Управление позицией"
-		}
-	},
-	"blocks": {
-		"standardParams": "Стандартные параметры",
-		"dynamicParam": "[динамич.]",
-		"AND": {
-			"title": "Группа «И»"
-		},
-		"OR": {
-			"title": "Группа «ИЛИ»"
-		},
-		"trading_session": {
-			"title": "Торг. сессия",
-			"desc": "Фильтр по времени торговых сессий (Лондон, Нью-Йорк и т.д.).",
-			"text": "Торговать в сессию",
-			"modes": {
-				"session": "По сессиям",
-				"hours": "По часам"
-			},
-			"sessions": {
-				"london": "Лондон",
-				"new_york": "Нью-Йорк",
-				"asia": "Азия",
-				"sydney": "Сидней"
-			},
-			"include": "Включить",
-			"exclude": "Исключить"
-		},
-		"volatility_filter": {
-			"title": "Фильтр волатильности",
-			"desc": "Разрешает торговлю только при определенном уровне волатильности (ATR, BBW).",
-			"text": "Когда"
-		},
-		"trend_filter": {
-			"title": "Фильтр тренда",
-			"desc": "Определяет наличие тренда с помощью индикаторов, таких как ADX.",
-			"text": "Тренд по"
-		},
-		"senior_tf_confluence": {
-			"title": "Старший ТФ",
-			"desc": "Проверяет выполнение вложенных условий на старшем таймфрейме.",
-			"text": "На таймфрейме"
-		},
-		"btc_state_filter": {
-			"title": "Состояние BTC",
-			"desc": "Фильтр по текущему состоянию рынка BTC (тренд, флэт).",
-			"required_state": "Требуемое состояние BTC",
-			"states": {
-				"consolidation": "Консолидация",
-				"trending_up": "Восходящий тренд",
-				"trending_down": "Нисходящий тренд",
-				"any": "Любое"
-			}
-		},
-		"correlation": {
-			"title": "Корреляция",
-			"desc": "Проверяет корреляцию инструмента с BTC или другим активом.",
-			"correlation_with": "Корреляция с",
-			"for": "за",
-			"bars": "баров"
-		},
-		"natr_filter": {
-			"title": "NATR Фильтр",
-			"desc": "Фильтрует сделки на основе нормализованного ATR.",
-			"text": "NATR (14) должен быть >"
-		},
-		"rel_vol_filter": {
-			"title": "Относит. объем",
-			"desc": "Фильтрует сделки на основе относительного объема.",
-			"text": "Относительный объем >"
-		},
-		"tape_analysis": {
-			"title": "Анализ ленты",
-			"desc": "Обнаруживает ускорение ленты сделок (по объему или количеству). Предоставляет данные для сравнения.",
-			"text": "Анализ ленты за",
-			"provides_data": "предоставляет данные"
-		},
-		"tape_condition": {
-			"title": "Условие по ленте",
-			"desc": "Анализирует активность в ленте сделок в реальном времени.",
-			"for": "Временное окно",
-			"check": "Проверяемая метрика",
-			"absolute_value": "Абсолютное значение",
-			"multiplier_value": "Множитель от среднего",
-			"of_average": "от среднего",
-			"metrics": {
-				"delta_volume_usd": "Дельта объема ($)",
-				"buy_volume_usd": "Объем покупок ($)",
-				"sell_volume_usd": "Объем продаж ($)",
-				"total_volume_usd": "Суммарный объем ($)",
-				"buy_sell_ratio_volume": "Соотношение покупок/продаж",
-				"acceleration_multiplier_volume": "Ускорение объема"
-			}
-		},
-		"order_book_zone_condition": {
-			"title": "Условие по стакану",
-			"desc": "Анализирует плотность заявок в указанной зоне стакана.",
-			"metric": "Проверяемая метрика",
-			"in": "в",
-			"in_range": "в диапазоне",
-			"metrics": {
-				"total_volume_usd": "Суммарный объем ($)",
-				"largest_level_usd": "Крупнейший уровень ($)",
-				"level_count": "Количество уровней"
-			},
-			"sides": {
-				"bids": "бидах (спросе)",
-				"asks": "асках (предложении)"
-			},
-			"range_types": {
-				"atr_multiplier": "x ATR",
-				"ticks": "тиках"
-			}
-		},
-		"level_proximity_condition": {
-			"title": "Близость к уровню",
-			"desc": "Проверяет, находится ли цена близко к локальному уровню.",
-			"price": "Источник цены",
-			"near_level_on": "ТФ для поиска уровня",
-			"tf_for": "Период поиска",
-			"bars_within": "баров",
-			"within_proximity": "В пределах",
-			"price_sources": {
-				"close": "Close",
-				"high": "High",
-				"low": "Low"
-			}
-		},
-		"order_book_zone": {
-			"title": "Зона в стакане",
-			"desc": "Анализирует плотность заявок в указанной зоне стакана. Предоставляет данные для сравнения.",
-			"text_1": "Анализ зоны",
-			"text_2": "в пределах",
-			"options": {
-				"bids": "спроса (bids)",
-				"asks": "предложения (asks)"
-			},
-			"range_type_percentage": "% от цены",
-			"range_type_atr": "x ATR",
-			"range_type_ticks": "тиков",
-			"provides_data": "предоставляет данные"
-		},
-		"l2_microstructure_check": {
-			"title": "Микроструктура L2",
-			"desc": "Анализирует события в стакане, такие как крупные заявки или спуфинг.",
-			"text_1": "Проверить на",
-			"options": {
-				"large_order": "крупную заявку"
-			}
-		},
-		"local_level": {
-			"title": "Локальный уровень",
-			"desc": "Определяет локальные максимумы/минимумы на заданном таймфрейме.",
-			"text_1": "Цена около локального уровня на",
-			"text_2": "за последние",
-			"text_3": "баров, в пределах",
-			"is_data_provider_label": "Использовать как поставщик данных (отключить проверку близости)"
-		},
-		"significant_level": {
-			"title": "Значимый уровень",
-			"desc": "Определяет дневные/недельные максимумы/минимумы.",
-			"text_1": "Цена около уровня",
-			"levels": {
-				"daily_high": "Дневной максимум",
-				"daily_low": "Дневной минимум",
-				"weekly_high": "Недельный максимум",
-				"weekly_low": "Недельный минимум"
-			},
-			"text_2": "в пределах",
-			"options": {
-				"atr_multiplier": "x ATR",
-				"percentage": "%"
-			}
-		},
-		"round_level": {
-			"title": "Круглый уровень",
-			"desc": "Проверяет близость цены к круглому ценовому уровню.",
-			"text": "Цена около круглого уровня",
-			"options": {
-				"percentage": "%",
-				"pips": "пипсов"
-			}
-		},
-		"trend_direction": {
-			"title": "Направление тренда",
-			"desc": "Определяет тренд по комбинации SMA и RSI.",
-			"text_on_tf": "Тренд на",
-			"is": "является",
-			"trends": {
-				"long": "Лонговым",
-				"short": "Шортовым",
-				"any_trend": "Любым (не флэт)",
-				"flat": "Флэтом"
-			}
-		},
-		"classic_pattern": {
-			"title": "Классический паттерн",
-			"desc": "Распознает свечные паттерны, такие как поглощение, пин-бар и т.д.",
-			"text": "Обнаружен паттерн",
-			"bullish_engulfing": "Бычье поглощение",
-			"bearish_engulfing": "Медвежье поглощение",
-			"pin_bar": "Пин-бар",
-			"doji": "Доджи",
-			"inside_bar": "Внутренний бар",
-			"sides": {
-				"any": "Любой",
-				"bullish": "Бычий",
-				"bearish": "Медвежий"
-			}
-		},
-		"volume_confirmation": {
-			"title": "Подтверждение объемом",
-			"desc": "Проверяет, превышает ли объем свечи среднее значение.",
-			"text": "Объем свечи превышает средний в",
-			"x_average": "раз"
-		},
-		"price_consolidation": {
-			"title": "Консолидация",
-			"desc": "Определяет, находится ли цена в узком диапазоне (флэте).",
-			"text1": "Цена консолидируется последние",
-			"text2": "баров в диапазоне <",
-			"text3": "x ATR"
-		},
-		"open_interest": {
-			"title": "Открытый интерес",
-			"desc": "Анализирует изменение или абсолютное значение открытого интереса.",
-			"analyze": "Анализировать",
-			"for": "за",
-			"bars": "баров",
-			"analysis_types": {
-				"change_pct": "Изменение в %",
-				"absolute_value": "Абсолютное значение"
-			}
-		},
-		"ma_cross_condition": {
-			"title": "Пересечение MA",
-			"desc": "Условие на пересечение двух скользящих средних.",
-			"ma": "MA(",
-			"crosses": ") пересекает",
-			"shift": "(сдвиг",
-			"brackets": ")"
-		},
-		"rsi_condition": {
-			"title": "Условие RSI",
-			"desc": "Проверяет значение RSI (выше/ниже определенного уровня).",
-			"text": "RSI(",
-			"shift": "(сдвиг",
-			"brackets": ")"
-		},
-		"value_comparison": {
-			"title": "Сравнение значений",
-			"desc": "Сравнивает два динамических значения (индикаторы, цены, результаты блоков)."
-		},
-		"macd_condition": {
-			"title": "Условие MACD",
-			"desc": "Проверяет пересечение линий MACD или значение гистограммы.",
-			"macd": "MACD(",
-			"shift": "(сдвиг",
-			"brackets": ")"
-		},
-		"bollinger_bands_condition": {
-			"title": "Полосы Боллинджера",
-			"desc": "Проверяет положение цены относительно полос Боллинджера.",
-			"price": "Цена",
-			"shift": "(сдвиг",
-			"brackets": ")"
-		},
-		"stochastic_condition": {
-			"title": "Стохастик",
-			"desc": "Проверяет пересечение линий стохастика или их положение.",
-			"stochastic": "Стохастик(",
-			"shift": "(сдвиг",
-			"brackets": ")"
-		},
-		"price_vs_level": {
-			"title": "Цена против Уровня",
-			"desc": "Сравнивает цену с динамическим уровнем из другого блока."
-		},
-		"and": {
-			"title": "И (AND)",
-			"desc": "Группирует условия. Должны выполниться ВСЕ вложенные условия."
-		},
-		"or": {
-			"title": "ИЛИ (OR)",
-			"desc": "Группирует условия. Должно выполниться ХОТЯ БЫ ОДНО вложенное условие."
-		},
-		"trailing_stop": {
-			"title": "Трейлинг-стоп",
-			"desc": "Перемещает стоп-лосс вслед за ценой для защиты прибыли.",
-			"text_1": "Активировать когда цена достигнет",
-			"text_2": "и двигать стоп с отступом"
-		},
-		"move_to_breakeven": {
-			"title": "Перевод в Б/У",
-			"desc": "Перемещает стоп-лосс в безубыток при достижении цели.",
-			"text_1": "Перевести в безубыток, когда цена достигнет"
-		},
-		"conditional_exit": {
-			"title": "Условный выход",
-			"desc": "Закрывает позицию при выполнении определенных условий."
-		},
-		"scale_in": {
-			"title": "Добор позиции",
-			"desc": "Добавляет объем к открытой позиции при выполнении условий.",
-			"text_1": "Добавить",
-			"text_2": "от риска, макс.",
-			"text_3": "входов"
-		},
-		"conditional_management": {
-			"title": "Условное управление",
-			"desc": "Применяет действия (трейлинг-стоп, БУ), если выполняются условия."
-		},
-		"modify_stop_loss": {
-			"title": "Изменить стоп-лосс",
-			"desc": "Изменяет стоп-лосс на новое динамическое значение.",
-			"text_1": "Переместить стоп-лосс на"
-		},
-		"return_to_level": {
-			"title": "Возврат к уровню",
-			"desc": "Ожидает возврата цены к ранее определенному уровню.",
-			"text1": "Возврат к уровню из",
-			"within": "в течение",
-			"seconds": "сек",
-			"types": {
-				"touch": "Касание",
-				"breakout_retest": "Пробой и ретест"
-			},
-			"directions": {
-				"any": "Любое направление",
-				"from_above": "Сверху",
-				"from_below": "Снизу"
-			}
-		},
-		"volatility_squeeze": {
-			"title": "Сжатие Волатильности",
-			"desc": "Определяет сужение торгового диапазона."
-		},
-		"market_activity": {
-			"title": "Активность Рынка",
-			"desc": "Проверка NATR / Относительного Объема."
-		},
-		"dca_management": {
-			"title": "DCA Усреднение",
-			"desc": "Автоматическое усреднение позиции по мартингейлу или условиям."
-		},
-		"grid_management": {
-			"title": "GRID Сетка",
-			"desc": "Размещение сетки лимитных ордеров в заданном диапазоне."
-		},
-		"tradingview_signal": {
-			"title": "Сигнал TradingView",
-			"desc": "Ожидание вебхука от TradingView с указанным ID."
-		},
-		"price_action_analyzer": {
-			"title": "Price Action Анализатор",
-			"desc": "Распознавание структурных паттернов (HH/HL, LH/LL)."
-		},
-		"level_touch_analyzer": {
-			"title": "Касание Уровня",
-			"desc": "Точное касание, ложный пробой или ретест уровня."
-		},
-		"modify_take_profit": {
-			"title": "Изменить Тейк-Профит",
-			"desc": "Переместить TP на новую цену."
-		},
-		"close_position": {
-			"title": "Закрыть Позицию",
-			"desc": "Закрыть позицию по рынку."
-		},
-		"unknown_block": "Неизвестный блок",
-		"confirm_delete_block": "Вы уверены, что хотите удалить этот блок?",
-		"select_block_to_configure": "Выберите блок для настройки.",
-		"delete": "Удалить",
-		"showAdvancedMode": "Расширенные настройки",
-		"showSimpleMode": "Простые настройки"
-	},
-	"dynamicInput": {
-		"linked": "🔗 Связано",
-		"block": "Блок",
-		"candle": "Свеча",
-		"market": "Рынок",
-		"staticValue": "Статичное значение..."
-	},
-	"dynamicPicker": {
-		"categories": {
-			"position": "Позиция",
-			"candle": "Свеча",
-			"blocks": "Блоки",
-			"market": "Рынок"
-		},
-		"noBlocks": "Нет доступных блоков с результатами."
-	},
-	"dynamic_sources": {
-		"position_state": {
-			"entry_price": "Цена входа",
-			"current_size_qty": "Текущий размер",
-			"unrealized_pnl_pct": "Нереализованный PnL (%)",
-			"time_in_trade_sec": "Время в сделке (сек)",
-			"number_of_entries": "Количество входов"
-		},
-		"candle": {
-			"open": "Цена открытия (Open)",
-			"high": "Максимум (High)",
-			"low": "Минимум (Low)",
-			"close": "Цена закрытия (Close)",
-			"volume": "Объем (Volume)"
-		},
-		"market": {
-			"btc_dominance": "Доминация BTC",
-			"funding_rate": "Ставка финансирования"
-		},
-		"block_results": {
-			"title": "Результаты блоков"
-		}
-	},
-	"quotas": {
-		"run_vector_backtest_per_day": "Векторные бэктесты в день",
-		"run_kline_backtest_per_day": "Свечные (Kline) бэктесты в день",
-		"run_backtest_per_day": "Бэктесты в день",
-		"use_ai_assistant_per_day": "Запросы к AI в день",
-		"run_portfolio_backtest_per_day": "Портфельные бэктесты в день",
-		"run_optimization_per_month": "Оптимизации в месяц",
-		"run_genetic_search_per_month": "Генетические поиски в месяц",
-		"generate_dataset_per_month": "Генерации датасетов в месяц",
-		"train_model_per_month": "Тренировки моделей в месяц"
-	},
-	"mining": {
-		"nodeSharingPolicy": "Политика распределения наград",
-		"nodeSharePercentage": "Процент распределения наград",
-		"yourVolumeShare": "Ваша доля объема (сегодня)",
-		"yourTotalVolume": "Ваш общий объем торгов",
-		"subtitle": "Передавайте телеметрию сделок и зарабатывайте токены $DEPTH на каждой сделке.",
-		"privacyTitle": "Какие данные передаются",
-		"privacyDesc": "Необходимо при активном майнинге: ваши закрытые сделки (символ, цены входа/выхода, объём, PnL, длительность, ID ордеров) и параметры стратегий передаются в Центральный Хаб с привязкой к адресу кошелька ноды и UID биржи. Биржевые API-ключи, пароли и балансы никогда не передаются. Отключить можно деактивацией торгового майнинга.",
-		"enterReferrerCode": "Реферальный код (опционально)",
-		"activating": "Активация...",
-		"activateButton": "Активировать и начать майнинг",
-		"totalMined": "Всего добыто",
-		"todayEstReward": "Ожидаемая награда",
-		"todayRebates": "Суточные рибейты",
-		"dailyEmission": "Суточная эмиссия",
-		"totalDistributed": "Всего распределено",
-		"totalDistributedSubtitle": "Общая эмиссия за все эпохи",
-		"welcomeBonus": "Приветственный бонус",
-		"welcomeBonusClaimedBadge": "Получен",
-		"welcomeBonusDesc": "Сгенерируйте не менее $1.0 кумулятивного рибейта, чтобы получить приветственный бонус 1000 $DEPTH.",
-		"welcomeBonusClaimed": "Приветственный бонус получен!",
-		"welcomeBonusClaimedDesc": "1000 $DEPTH зачислено на баланс.",
-		"welcomeBonusProgress": "Рибейты: ${{current}} / ${{target}}",
-		"referralLinkCardTitle": "Реферальная ссылка",
-		"referralProgramDesc": "Приглашайте друзей запускать ноды и получайте +10% ежедневного буста, а также приветственные награды!",
-		"yourReferralCode": "Ваш реферальный код",
-		"referralLink": "Реферальная ссылка",
-		"stakingBoost": "Бустер стейкинга",
-		"comingSoon": "Скоро",
-		"stakingBoostDetail": "Застейкайте $DEPTH на 30, 90 или 360 дней, чтобы разблокировать множитель до 2.0x на все ежедневные награды за торговый майнинг.",
-		"disabledTitle": "Майнинг отключен",
-		"disabledDesc": "Функции майнинга временно отключены администратором.",
-		"uidLinkedNotice": "Ваш UID биржи будет автоматически определен и привязан с помощью ваших активных API-ключей при запуске майнинга.",
-		"miningActivated": "Торговый майнинг успешно активирован! Ваш UID биржи был автоматически определен и привязан.",
-		"nodeWallet": "EVM Кошелёк",
-		"walletTitle": "Web3 Идентификация Ноды (EVM Кошелёк)",
-		"walletSubtitle": "Подключите ваш EVM кошелёк (MetaMask / Web3) для защиты наград майнинга и идентификатора ноды.",
-		"walletNoticeEVM": "Ваш приватный ключ никогда не покидает ваш кошелёк. Сервер проверяет владение через криптографическую подпись сообщения. Награды и миграция ноды на 100% под вашим контролем.",
-		"connectedWallet": "Подключённый Web3 кошелёк",
-		"switchWallet": "Сменить кошелёк",
-		"disconnect": "Отключить",
-		"signingMessage": "Подписание сообщения...",
-		"connectMetaMask": "Подключить EVM кошелёк (MetaMask)",
-		"connectEVMWallet": "Подключить Web3 EVM кошелёк (MetaMask)",
-		"metaMaskNotFound": "Web3 кошелёк (MetaMask) не обнаружен. Пожалуйста, установите расширение MetaMask.",
-		"noAccountSelected": "Аккаунт EVM не выбран.",
-		"walletConnectedSuccess": "Кошелёк успешно подтверждён и подключён!",
-		"userRejectedSignature": "Запрос подписи был отклонён в кошельке.",
-		"walletDisconnected": "Кошелёк успешно отключён.",
-		"addressCopied": "Адрес кошелька скопирован!",
-		"nodeDeployCommand": "Команда однокликового деплоя ноды",
-		"commandCopied": "Команда деплоя скопирована в буфер обмена!",
-		"supportedExchanges": "Поддерживаемые биржи и рибейты",
-		"supportedExchangesDesc": "Награды за майнинг начисляются за реальные сделки, исполняемые на следующих биржах:",
-		"supportedExchangesRebateNote": "Размер наград напрямую привязан к сгенерированному комиссионному ребейту: чем выше процент ребейта на бирже, тем выше начисление $DEPTH соответственно. Центральный хаб верифицирует каждую сделку через официальные брокерские API бирж.",
-		"okxRebateTip": "Базовая ставка (30%), на чужой рефке — всего 7.5%. При переходе по нашей ссылке ребейты суммируются (+7.5%), давая в 5х больше токенов.",
-		"bybitRebateTip": "Базовая ставка (50%), на чужой рефке — всего 10%. При переходе по нашей ссылке ребейты суммируются (+10%), максимизируя доход майнинга."
-	},
-	"communityMemory": {
-		"title": "Банк памяти агента",
-		"communityPool": "Общий пул знаний",
-		"optInTooltip": "О коллективной памяти",
-		"all": "Все",
-		"myMemories": "Моя память",
-		"community": "Сообщество",
-		"confirmedCount": "Подтверждено: {{count}}x",
-		"cannotDeleteCommunity": "Инсайты сообщества сохраняются в общем пуле.",
-		"modalTitle": "Пул коллективной памяти DepthSight",
-		"modalSubtitle": "Децентрализованный роевой интеллект для торговых агентов",
-		"modalDesc": "Участвуйте в обмене опытом на принципах бартера. Когда вы проводите успешные бэктесты (≥30 сделок, ≥28 дней), обобщённые рыночные выводы анонимно передаются в сеть. В ответ ваш агент получает доступ к проверенным сетапам и правилам, найденным другими трейдерами по всему миру.",
-		"modalPrivacy": "Гарантия конфиденциальности: параметры стратегий, конфиденциальные настройки и API-ключи полностью удаляются. Передаются только общие уроки и статистика.",
-		"modalQuality": "Контроль качества: в пул попадают только проверенные прибыльные стратегии с бэктестом от 30 сделок и от 28 дней.",
-		"modalTransfer": "Межрыночный перенос: учитесь на паттернах BTC, ETH и альткоинов, даже если вы ещё не торговали эти активы.",
-		"modalLater": "Только локальная память",
-		"modalJoin": "Подключиться к пулу",
-		"shareWithCommunity": "Поделиться с сообществом (требуется ≥ 30 сделок)",
-		"shareSuccess": "Запись успешно добавлена в общий пул сообщества!",
-		"shareError": "Не удалось поделиться записью с сообществом",
-		"retroactiveSuccess": "Общий пул включен! {{count}} проверенных стратегий добавлено в пул."
-	}
+  "common": {
+    "error": "Ошибка: {{message}}",
+    "dark": "темную",
+    "light": "светлую",
+    "russian": "русский",
+    "english": "английский"
+  },
+  "loadingScreen": "Загрузка...",
+  "logo": {
+    "depth": "Depth",
+    "sight": "Sight"
+  },
+  "header": {
+    "depthsightAI": "DepthSight AI",
+    "dashboard": "Панель управления",
+    "strategies": "Стратегии",
+    "research": "Исследования",
+    "analytics": "Аналитика",
+    "notifications": "Уведомления",
+    "aiChat": "AI Ассистент",
+    "editor": "Редактор стратегий",
+    "backtestResult": "Результаты бэктеста",
+    "profile": "Профиль",
+    "settings": "Настройки",
+    "notificationsEnabledTitle": "Отключить push-уведомления",
+    "notificationsDisabledTitle": "Включить push-уведомления"
+  },
+  "nav": {
+    "dashboard": "Главная",
+    "strategies": "Стратегии",
+    "research": "Исследования",
+    "notifications": "Уведомления"
+  },
+  "buttons": {
+    "save": "Сохранить",
+    "saving": "Сохранение...",
+    "cancel": "Отмена",
+    "add": "Добавить",
+    "adding": "Добавление...",
+    "close": "Закрыть",
+    "delete": "Удалить"
+  },
+  "auth": {
+    "loginToAccount": "Вход в аккаунт",
+    "createAccount": "Создать аккаунт",
+    "email": "Email",
+    "username": "Имя пользователя",
+    "password": "Пароль",
+    "confirmPassword": "Подтвердите пароль",
+    "login": "Войти",
+    "register": "Зарегистрироваться",
+    "noAccount": "Нет аккаунта?",
+    "alreadyHaveAccount": "Уже есть аккаунт?",
+    "create": "Создать",
+    "invalidCredentials": "Неверные учетные данные.",
+    "registrationError": "Ошибка регистрации.",
+    "passwordsDoNotMatch": "Пароли не совпадают.",
+    "usernameTaken": "Это имя пользователя уже занято.",
+    "emailTaken": "Эта электронная почта уже зарегистрирована.",
+    "registrationSuccessTitle": "Регистрация успешна",
+    "confirmEmailPrompt": "Остался один шаг...",
+    "confirmEmailInstructions": "Мы отправили ссылку для подтверждения на ваш адрес электронной почты. Пожалуйста, перейдите по ссылке, чтобы активировать свой аккаунт.",
+    "backToLogin": "Вернуться ко входу",
+    "resendEmail": "Отправить письмо повторно",
+    "resendingEmail": "Отправка...",
+    "resendEmailTimer": "Повторная отправка через {{seconds}} сек",
+    "resendFailedDescription": "Не удалось отправить письмо. Попробуйте позже.",
+    "emailConfirmation": "Подтверждение Email",
+    "tokenNotFound": "Токен подтверждения не найден.",
+    "loginSuccess": "Успешный вход в систему.",
+    "successMessageDefault": "Ваш email успешно подтвержден!",
+    "errorMessageDefault": "Ссылка для подтверждения недействительна или истекла.",
+    "connectionError": "Ошибка соединения. Попробуйте снова.",
+    "errorTitle": "Ошибка подтверждения",
+    "loadingText": "Подтверждаем ваш email...",
+    "redirecting": "Перенаправление на главную...",
+    "referralCode": "Реферальный код (необязательно)",
+    "referralCodePlaceholder": "Введите реферальный код",
+    "forgotPassword": "Забыли пароль?",
+    "forgotPasswordTitle": "Восстановление пароля",
+    "forgotPasswordDescription": "Введите ваш email, и мы отправим ссылку для сброса пароля.",
+    "sendResetLink": "Отправить ссылку",
+    "resetLinkSent": "Если этот email зарегистрирован, вы получите ссылку для сброса пароля.",
+    "resetPasswordTitle": "Новый пароль",
+    "resetPasswordDescription": "Введите новый пароль ниже.",
+    "newPassword": "Новый пароль",
+    "confirmResetPassword": "Подтвердите пароль",
+    "resetPassword": "Сбросить пароль",
+    "passwordResetSuccess": "Пароль успешно изменён. Теперь вы можете войти.",
+    "passwordMismatch": "Пароли не совпадают",
+    "invalidResetLink": "Ссылка недействительна или истекла."
+  },
+  "twoFactor": {
+    "title": "Двухфакторная аутентификация",
+    "cardTitle": "Двухфакторная аутентификация (2FA)",
+    "pwaCardSub": "Защита аккаунта кодами из Google Authenticator",
+    "cardDescription": "Защитите свои биржевые ключи и торговых ботов подтверждением входа через TOTP-код.",
+    "badgeEnabled": "Активна",
+    "badgeDisabled": "Не включена",
+    "recoveryCodesCountLabel": "Доступно резервных кодов:",
+    "remaining": "осталось",
+    "lowCodesWarning": "Осталось мало резервных кодов. Рекомендуется сгенерировать новые.",
+    "btnRegenerateCodes": "Сгенерировать коды",
+    "btnDisable": "Отключить 2FA",
+    "btnEnable": "Включить 2FA аутентификацию",
+    "enterBackupCode": "Введите один из ваших 8-значных резервных кодов восстановления",
+    "enterAuthenticatorCode": "Введите 6-значный код из вашего приложения аутентификатора",
+    "backupCode": "Резервный код",
+    "backupCodeLabel": "Резервный код восстановления",
+    "code": "Код аутентификатора",
+    "enterCodeLabel": "Введите 6-значный код",
+    "verifyAndLogin": "Подтвердить и войти",
+    "useAuthenticatorCode": "Использовать код из приложения",
+    "useBackupCode": "Нет доступа к телефону? Использовать резервный код",
+    "modalSetupTitle": "Настройка 2FA",
+    "modalSetupDesc": "Отсканируйте QR-код в Google Authenticator или Aegis и введите 6-значный код.",
+    "manualKeyLabel": "Не удается отсканировать? Введите ключ вручную:",
+    "btnConfirmAndEnable": "Подтвердить и включить",
+    "modalBackupCodesTitle": "Сохраните резервные коды",
+    "modalBackupCodesDesc": "Если вы потеряете телефон или доступ к приложению, эти коды — единственный способ восстановить доступ.",
+    "backupWarningText": "Эти коды показываются только один раз. Сохраните их в надежном месте.",
+    "btnCopyCodes": "Скопировать все коды",
+    "btnSavedDone": "Я сохранил коды",
+    "modalDisableTitle": "Отключение 2FA",
+    "modalDisableDesc": "Для отключения 2FA введите текущий 6-значный код из приложения или пароль от аккаунта.",
+    "codeOrBackupLabel": "Код из приложения или резервный код",
+    "accountPasswordLabel": "Пароль от аккаунта",
+    "btnConfirmDisable": "Подтвердить отключение",
+    "modalRegenTitle": "Генерация новых резервных кодов",
+    "modalRegenDesc": "Это действие аннулирует все старые резервные коды. Введите текущий 6-значный код из приложения для подтверждения.",
+    "btnRegenConfirm": "Сгенерировать коды",
+    "setupError": "Не удалось начать настройку 2FA",
+    "enabledSuccess": "2FA успешно включена!",
+    "disabledSuccess": "2FA отключена",
+    "regenSuccess": "Новые резервные коды успешно сгенерированы",
+    "invalidCode": "Неверный код подтверждения",
+    "disableError": "Не удалось отключить 2FA",
+    "keyCopied": "Секретный ключ скопирован",
+    "codesCopied": "Резервные коды скопированы!",
+    "copied": "Скопировано!",
+    "copyFailed": "Не удалось скопировать ключ",
+    "btnOpenInApp": "Открыть в приложении Authenticator",
+    "btnCopyKeyFull": "Скопировать секретный ключ",
+    "btnCopyKey": "Скопировать",
+    "clickToCopy": "Нажмите, чтобы скопировать",
+    "manualKeyHelp": "Введите этот ключ в Google Authenticator или Aegis, если нет возможности отсканировать QR-код."
+  },
+  "dashboard": {
+    "live": "Live",
+    "paper": "Paper",
+    "realtimeLive": "live",
+    "realtimePolling": "опрос",
+    "totalBalance": "Общий баланс",
+    "dailyPnl": "Дневной PnL",
+    "unrealizedPnl": "Нереализованный PnL",
+    "pnlChart": "График PnL",
+    "1d": "1Д",
+    "7d": "7Д",
+    "mtd": "МТД",
+    "loadingChart": "Загрузка графика...",
+    "pnl": "PnL",
+    "noDataToDisplay": "Нет данных для отображения.",
+    "activePositions": "Активные позиции",
+    "size": "Размер",
+    "noActivePositions": "Нет активных позиций.",
+    "closePosition": "Закрыть позицию {{symbol}}",
+    "confirmClosePosition": "Вы уверены, что хотите закрыть позицию по {{symbol}}?",
+    "closePositionCommandSent": "Команда на закрытие позиции по {{symbol}} отправлена.",
+    "errorClosingPosition": "Ошибка при закрытии позиции по {{symbol}}.",
+    "failedToLoadData": "Не удалось загрузить данные.",
+    "maxDrawdown": "Макс. просадка",
+    "sharpeRatio": "Коэф. Шарпа",
+    "connectApiKeysMessage": "Подключите API ключи в десктопной версии приложения"
+  },
+  "analytics": {
+    "pageTitle": "Аналитика",
+    "overview": {
+      "netProfit": "Чистый PnL",
+      "winRate": "Винрейт",
+      "profitFactor": "Профит-фактор",
+      "expectancy": "Мат. ожидание",
+      "sharpeRatio": "Коэф. Шарпа",
+      "totalCommission": "Комиссия",
+      "avgWinLossRatio": "W/L соотн.",
+      "volume": "Объем",
+      "perTrade": "В среднем за сделку",
+      "annualized": "Годовой",
+      "needsMoreDays": "Нужно 2+ дня",
+      "totalFees": "Всего комиссий",
+      "avgWinVsLoss": "Ср. W vs L",
+      "tradedVolume": "Проторговано"
+    },
+    "tabs": {
+      "cumulativePnl": "Кривая капитала",
+      "hourlyPerformance": "По часам",
+      "dailyPerformance": "По дням"
+    }
+  },
+  "strategies": {
+    "realtimeLive": "live",
+    "realtimePolling": "опрос",
+    "status": {
+      "running": "Активные",
+      "stopped": "Сохраненные"
+    },
+    "run": "Запустить",
+    "backtest": "Бэктест",
+    "edit": "Изменить",
+    "delete": "Удалить",
+    "stop": "Остановить",
+    "stopCommandSent": "Команда на остановку стратегии отправлена.",
+    "errorStopping": "Ошибка при остановке стратегии.",
+    "deleteSuccess": "Стратегия успешно удалена.",
+    "deleteError": "Ошибка при удалении стратегии."
+  },
+  "research": {
+    "netPnl": "Чистая PnL",
+    "winRate": "Процент побед",
+    "inProgress": "В процессе...",
+    "failedToLoad": "Не удалось загрузить бэктесты.",
+    "noBacktests": "Вы еще не запускали бэктесты.",
+    "status": {
+      "completed": "Завершен",
+      "running": "В процессе",
+      "pending": "В очереди",
+      "failed": "Ошибка"
+    }
+  },
+  "backtestResultScreen": {
+    "resultsNotFound": "Результаты бэктеста не найдены.",
+    "equityChart": "График капитала",
+    "noData": "Нет данных для отображения графика.",
+    "runLive": "Запустить вживую",
+    "analyzeWithAI": "Анализ с AI",
+    "openInEditor": "Открыть в редакторе",
+    "share": "Поделиться",
+    "trades": "Сделки",
+    "buy": "Покупка",
+    "sell": "Продажа",
+    "exit": "Выход",
+    "tradesNotFound": "Сделки не найдены.",
+    "page": "Страница",
+    "back": "Назад",
+    "forward": "Вперед",
+    "toast": {
+      "failedToLoadDetails": "Не удалось загрузить детали бэктеста.",
+      "backtestStarted": "Бэктест запущен. Результаты появятся в Исследованиях.",
+      "errorStartingBacktest": "Ошибка при запуске бэктеста.",
+      "strategySavedAndLaunched": "Стратегия '{{strategyName}}' сохранена и запущена.",
+      "errorLaunchingStrategy": "Ошибка при запуске стратегии."
+    }
+  },
+  "editor": {
+    "aiAssistantGreeting": "Привет! Я ваш AI-ассистент. Как я могу помочь с этой стратегией?",
+    "errorLoadingStrategy": "Ошибка загрузки стратегии.",
+    "strategyGenerated": "Стратегия сгенерирована и загружена в конструктор.",
+    "bestStrategyConfigured": "Лучшая стратегия настроена",
+    "backtestStarted": "Бэктест запущен.",
+    "strategySaved": "Стратегия '{{strategyName}}' успешно сохранена.",
+    "errorSavingStrategy": "Ошибка сохранения стратегии.",
+    "defaultStrategyName": "Новая стратегия",
+    "constructor": "Конструктор",
+    "aiAssistant": "AI Ассистент",
+    "strategyInfo": "Информация о стратегии",
+    "strategyName": "Название стратегии",
+    "namePlaceholder": "Например, Пробой EMA 50",
+    "description": "Описание",
+    "descriptionPlaceholder": "Краткое описание логики стратегии...",
+    "filtersSectionTitle": "Фильтры",
+    "entryConditionsSectionTitle": "Условия входа",
+    "positionManagementSectionTitle": "Управление позицией",
+    "foundationsAndWeights": "Основания и веса",
+    "useWeights": "Использовать веса",
+    "minWeightThreshold": "Мин. порог веса:",
+    "foundationsWeightsButton": "Настроить веса оснований",
+    "runBacktest": "Запустить бэктест",
+    "add": "Добавить",
+    "addConditionTo": "Добавить условие в",
+    "showAllBlocks": "Показать все блоки",
+    "initialization": "Инициализация сделки",
+    "direction": "Направление",
+    "positionSize": "Размер позиции",
+    "percentBalance": "% от баланса",
+    "fixedUsd": "Фиксир. USD",
+    "orderType": "Тип ордера",
+    "market": "Рыночный",
+    "limitRetest": "Лимитный ретест",
+    "entryPrice": "Цена входа",
+    "stopLoss": "Стоп-лосс",
+    "atrMultiplier": "ATR множитель",
+    "percentFromPrice": "% от цены",
+    "takeProfit": "Тейк-профит",
+    "rrMultiplier": "R:R множитель",
+    "partialExits": "Частичные выходы",
+    "atTP": "При достижении TP:",
+    "addPartialExit": "Добавить частичный выход",
+    "configPanel": {
+      "paramsTitle": "Параметры"
+    }
+  },
+  "profile": {
+    "profileTitle": "Профиль",
+    "accountTab": "Аккаунт",
+    "securityTab": "Безопасность",
+    "achievementsTab": "Достижения",
+    "error": "Ошибка: ",
+    "failedToLoadProfileData": "Не удалось загрузить данные профиля.",
+    "myPlan": "Мой план",
+    "planActiveUntil": "План активен до {{date}}",
+    "noActivePlan": "У вас нет активного плана.",
+    "changePlan": "Сменить план",
+    "paperAccount": "Paper-счет",
+    "resetting": "Сброс...",
+    "reset": "Сбросить",
+    "quotas": "Квоты",
+    "unlimited": "∞",
+    "referrals": "Рефералы",
+    "referralCode": "Ваш реферальный код",
+    "copy": "Копировать",
+    "copied": "Готово!",
+    "codeCopied": "Код скопирован.",
+    "referralLink": "Ваша реферальная ссылка",
+    "linkCopied": "Ссылка скопирована.",
+    "geneticsLaboratory": "Генетическая лаборатория",
+    "genesDiscovered": "Обнаружено генов",
+    "dangerZone": "Опасная зона",
+    "deleteAccountTitle": "Удаление аккаунта",
+    "deleteAccountDescription": "Это действие необратимо. Все ваши данные будут удалены.",
+    "deleteAccount": "Удалить аккаунт",
+    "deleting": "Удаление...",
+    "paperAccountResetSuccess": "Paper-счет успешно сброшен.",
+    "failedToResetPaperAccount": "Не удалось сбросить Paper-счет.",
+    "accountDeleted": "Аккаунт успешно удален.",
+    "failedToDeleteAccount": "Не удалось удалить аккаунт.",
+    "copiedToClipboard": "Скопировано в буфер обмена.",
+    "failedToCopyValue": "Не удалось скопировать.",
+    "pleaseWait": "Пожалуйста, подождите...",
+    "choosePlan": "Выберите ваш план",
+    "upgradePlanDescription": "Повысьте уровень, чтобы разблокировать больше возможностей.",
+    "failedToLoadPlans": "Не удалось загрузить тарифные планы.",
+    "failedToOpenPaymentPage": "Не удалось открыть страницу оплаты.",
+    "failedToInitiatePayment": "Не удалось инициировать платеж.",
+    "perMonth": "/ мес.",
+    "currentPlanLabel": "Текущий план",
+    "transitioning": "Переходим...",
+    "select": "Выбрать",
+    "continueAgreeing": "Продолжая, вы соглашаетесь с нашими",
+    "termsAndConditions": "Условиями предоставления услуг",
+    "and": "и",
+    "privacyPolicy": "Политикой конфиденциальности",
+    "confirmResetTitle": "Подтвердить сброс",
+    "confirmResetMessage": "Вы уверены, что хотите сбросить свой Paper-счет? Баланс вернется к значению по умолчанию.",
+    "resetAccount": "Сбросить счет",
+    "confirmDeleteTitle": "Подтвердить удаление",
+    "confirmDeleteMessage": "Вы уверены, что хотите удалить свой аккаунт? Это действие нельзя будет отменить.",
+    "deleteMyAccount": "Удалить мой аккаунт",
+    "noActivePositions": "Нет активных позиций",
+    "noAchievements": "Вы еще не получали достижений."
+  },
+  "achievements": {
+    "grandmaster": "Грандмастер",
+    "legend": "Легенда",
+    "master": "Мастер",
+    "analyst": "Аналитик",
+    "apprentice": "Ученик",
+    "novice": "Новичок",
+    "level": "Уровень {{level}}",
+    "experience": "Опыт",
+    "xpToNextLevel": "{{xpToNext}} XP до уровня {{level}}",
+    "totalXp": "Всего XP",
+    "genesFound": "Найдено генов",
+    "currentLevel": "Текущий уровень",
+    "achievementsUnlocked": "Достижений",
+    "totalAvailable": "Всего доступно",
+    "collectionProgress": "Прогресс",
+    "xpReward": "+{{xp}} XP",
+    "rarityDisplay": "Редкость: {{rarity}}",
+    "noAchievements": "У вас пока нет разблокированных достижений.",
+    "list": {
+      "first_backtest": {
+        "name": "Первопроходец",
+        "description": "Запустить свой первый бэктест"
+      },
+      "first_save": {
+        "name": "Первый чертеж",
+        "description": "Сохранить свою первую конфигурацию стратегии"
+      },
+      "used_ai_assistant": {
+        "name": "Диалог с машиной",
+        "description": "Использовать AI-ассистента для создания или анализа стратегии"
+      },
+      "first_optimization": {
+        "name": "В поисках идеала",
+        "description": "Запустить первую оптимизацию параметров"
+      },
+      "first_api_key": {
+        "name": "Ключник",
+        "description": "Добавить свой первый API ключ для торговли"
+      },
+      "two_factor_enabled": {
+        "name": "Чемпион безопасности",
+        "description": "Включить двухфакторную аутентификацию (2FA)"
+      },
+      "first_paper_trade": {
+        "name": "Бумажный тигр",
+        "description": "Запустить первую стратегию в режиме Paper Trading"
+      },
+      "reset_paper": {
+        "name": "С чистого листа",
+        "description": "Сбросить баланс своего Paper Trading счета"
+      },
+      "10_backtests": {
+        "name": "Младший научный сотрудник",
+        "description": "Провести 10 бэктестов"
+      },
+      "100_backtests": {
+        "name": "Старший научный сотрудник",
+        "description": "Провести 100 бэктестов"
+      },
+      "500_backtests": {
+        "name": "Заведующий лабораторией",
+        "description": "Провести 500 бэктестов"
+      },
+      "1000_trades_backtests": {
+        "name": "Ветеран рынка",
+        "description": "Симулировать 1000 сделок в бэктестах"
+      },
+      "10000_trades_backtests": {
+        "name": "Легенда Уолл-стрит",
+        "description": "Симулировать 10,000 сделок в бэктестах"
+      },
+      "50_optimizations": {
+        "name": "Безумный ученый",
+        "description": "Провести 50 оптимизаций"
+      },
+      "save_10_strategies": {
+        "name": "Стратег",
+        "description": "Сохранить 10 различных конфигураций стратегий"
+      },
+      "sniper": {
+        "name": "Снайпер",
+        "description": "Завершить бэктест (мин. 20 сделок) с Win Rate > 80%"
+      },
+      "marathon_runner": {
+        "name": "Марафонец",
+        "description": "Провести успешный бэктест на периоде более 1 года"
+      },
+      "hard_nut": {
+        "name": "Крепкий орешек",
+        "description": "Завершить бэктест (мин. 50 сделок) с макс. просадкой < 5%"
+      },
+      "alpha_hunter": {
+        "name": "Охотник за Альфой",
+        "description": "Завершить бэктест с Sharpe Ratio > 2.0"
+      },
+      "money_printer": {
+        "name": "Печатный станок",
+        "description": "Завершить бэктест с Profit Factor > 3.0"
+      },
+      "winning_streak": {
+        "name": "На волне успеха",
+        "description": "Получить 10 прибыльных сделок подряд в одном бэктесте"
+      },
+      "phoenix": {
+        "name": "Феникс",
+        "description": "Стратегия вышла из просадки >10% и достигла нового максимума эквити"
+      },
+      "flawless_victory": {
+        "name": "Безупречная победа",
+        "description": "Завершить бэктест (мин. 10 сделок) with Win Rate 100%"
+      },
+      "clairvoyant": {
+        "name": "Ясновидящий",
+        "description": "Использовать Визуализатор Оснований"
+      },
+      "diversifier": {
+        "name": "Диверсификатор",
+        "description": "Запустить первый портфельный бэктест"
+      },
+      "show_off": {
+        "name": "Выставочный образец",
+        "description": "Поделиться результатом своего бэктеста"
+      },
+      "contender": {
+        "name": "Претендент",
+        "description": "Опубликовать свой результат в Лидерборде"
+      },
+      "the_intervention": {
+        "name": "Вмешательство",
+        "description": "Закрыть позицию вручную через интерфейс"
+      },
+      "pulling_the_plug": {
+        "name": "Дернуть за шнур",
+        "description": "Использовать функцию экстренной остановки (Emergency Stop)"
+      },
+      "the_professor": {
+        "name": "Профессор",
+        "description": "Обучить свою первую модель в Лаборатории Моделей"
+      },
+      "strategy_5_blocks": {
+        "name": "Конструктор",
+        "description": "Создать стратегию, используя 5+ блоков"
+      },
+      "the_architect": {
+        "name": "Архитектор",
+        "description": "Создать стратегию, используя 15+ блоков"
+      },
+      "logician": {
+        "name": "Логик",
+        "description": "Использовать одновременно и AND, и OR логику в условиях входа"
+      },
+      "inventor": {
+        "name": "Изобретатель",
+        "description": "Создать стратегию, используя 5+ разных типов \"оснований\""
+      },
+      "order_flow_purist": {
+        "name": "Адепт потока",
+        "description": "Создать стратегию, где основания входа состоят только из анализа ленты и стакана"
+      },
+      "prudent_manager": {
+        "name": "Расчетливый менеджер",
+        "description": "Использовать блок частичного закрытия позиции (Partial Exits)"
+      },
+      "10_strategies_discovery": {
+        "name": "Золотоискатель",
+        "description": "Найти 10 уникальных стратегий в Лаборатории Открытий"
+      },
+      "the_spark": {
+        "name": "Искра жизни",
+        "description": "Открыть свой первый ген стратегии"
+      },
+      "gem_hunter": {
+        "name": "Охотник за самоцветами",
+        "description": "Открыть ген Редкого (RARE) качества"
+      },
+      "treasure_hunter": {
+        "name": "Охотник за сокровищами",
+        "description": "Открыть ген Эпического (EPIC) качества"
+      },
+      "myth_buster": {
+        "name": "Разрушитель мифов",
+        "description": "Открыть ген Легендарного (LEGENDARY) качества"
+      },
+      "gene_collector": {
+        "name": "Коллекционер генов",
+        "description": "Собрать 20 уникальных генов в своей библиотеке"
+      },
+      "geneticist": {
+        "name": "Генетик",
+        "description": "Скрестить две стратегии в Лаборатории Скрещивания"
+      },
+      "natural_selection": {
+        "name": "Естественный отбор",
+        "description": "Создать стратегию 5-го поколения в Древе Эволюции"
+      },
+      "recruiter": {
+        "name": "Рекрутер",
+        "description": "Пригласить первого пользователя по своей реферальной ссылке"
+      },
+      "first_commission": {
+        "name": "Первая комиссия",
+        "description": "Получить первое вознаграждение по партнерской программе"
+      },
+      "partner": {
+        "name": "Партнер",
+        "description": "Заработать $100 в рамках партнерской программы"
+      },
+      "underminer": {
+        "name": "Подрыв устоев",
+        "description": "Создать бэктест с Sharpe Ratio < -2.0"
+      },
+      "the_pacifist": {
+        "name": "Пацифист",
+        "description": "Провести бэктест, который не совершил ни одной сделки"
+      },
+      "perfectly_balanced": {
+        "name": "Идеальный баланс",
+        "description": "Завершить бэктест (мин. 50 сделок) с Win Rate ровно 50% (+/- 1%)"
+      },
+      "diamond_hands": {
+        "name": "Алмазные руки",
+        "description": "Назвать стратегию 'HODL' и запустить с ней бэктест"
+      },
+      "mining_activated": {
+        "name": "Генезис",
+        "description": "Активировать Trade Mining и принять условия передачи телеметрии"
+      },
+      "mining_wallet_linked": {
+        "name": "Web3-гражданин",
+        "description": "Привязать и верифицировать EVM-кошелек для майнинга"
+      },
+      "mining_first_trade": {
+        "name": "Первая искра",
+        "description": "Совершить первую сделку, успешно верифицированную в пуле майнинга"
+      },
+      "welcome_bonus_claimed": {
+        "name": "Золотой билет",
+        "description": "Сгенерировать $1.0 комиссии и забрать Welcome Bonus (1,000 $DEPTH)"
+      },
+      "mining_volume_1k": {
+        "name": "Проходчик",
+        "description": "Достичь $1,000 суммарного торгового объема в майнинге"
+      },
+      "mining_volume_10k": {
+        "name": "Горный мастер",
+        "description": "Достичь $10,000 суммарного объема в майнинге"
+      },
+      "mining_volume_100k": {
+        "name": "Карьерный гигант",
+        "description": "Достичь $100,000 суммарного объема в майнинге"
+      },
+      "mining_volume_1m": {
+        "name": "Крипто-кит",
+        "description": "Достичь $1,000,000 суммарного объема в майнинге"
+      },
+      "mining_volume_10m": {
+        "name": "Маркет-мейкер",
+        "description": "Достичь $10,000,000 суммарного объема в майнинге"
+      },
+      "mining_daily_volume_10k": {
+        "name": "Ударник труда",
+        "description": "Наторговать $10,000 объема за одну 24-часовую эпоху"
+      },
+      "mining_daily_volume_100k": {
+        "name": "Шторм на бирже",
+        "description": "Наторговать $100,000 объема за сутки"
+      },
+      "mining_daily_top_miner": {
+        "name": "Царь горы",
+        "description": "Занять 1-е место по объему среди всех нод по итогам эпохи"
+      },
+      "mining_daily_top5_miner": {
+        "name": "Высшая лига",
+        "description": "Войти в топ-5 майнеров дня по торговому объему"
+      },
+      "mining_first_referral": {
+        "name": "Партнер сети",
+        "description": "Пригласить первого пользователя, активировавшего майнинг"
+      },
+      "mining_5_referrals": {
+        "name": "Лидер звена",
+        "description": "Пригласить 5 активных майнеров"
+      },
+      "mining_10_referrals": {
+        "name": "Бригадир",
+        "description": "Пригласить 10 активных майнеров"
+      },
+      "mining_50_referrals": {
+        "name": "Синдикат",
+        "description": "Построить сеть из 50 активных нод"
+      },
+      "mining_active_squad": {
+        "name": "Спящих нет",
+        "description": "Иметь как минимум 5 рефералов, торгующих одновременно в один день"
+      },
+      "mining_mentor_bonus": {
+        "name": "Наставник",
+        "description": "Твой реферал впервые заклеймил свой Welcome Bonus"
+      },
+      "mining_ref_volume_100k": {
+        "name": "Голос сети",
+        "description": "Совокупный торговый объем рефералов превысил $100,000"
+      },
+      "mining_ref_earnings_100k": {
+        "name": "Пассивный доход",
+        "description": "Заработать суммарно 100,000 $DEPTH на 10% реферальных бонусах"
+      },
+      "mining_streak_7d": {
+        "name": "Недельный марафон",
+        "description": "Участвовать в распределении эмиссии 7 эпох подряд"
+      },
+      "mining_streak_30d": {
+        "name": "Железная дисциплина",
+        "description": "Непрерывный майнинг на протяжении 30 эпох подряд"
+      },
+      "mining_epochs_100": {
+        "name": "Ветеран сети",
+        "description": "Принять участие в 100 дневных эпохах суммарно"
+      },
+      "mining_halving_survivor": {
+        "name": "Свидетель халвинга",
+        "description": "Быть активным майнером в момент наступления халвинга пула"
+      },
+      "mining_depth_1k": {
+        "name": "Первая тысяча",
+        "description": "Добыть суммарно 1,000 $DEPTH"
+      },
+      "mining_depth_10k": {
+        "name": "Золотой запас",
+        "description": "Добыть суммарно 10,000 $DEPTH"
+      },
+      "mining_depth_100k": {
+        "name": "Крипто-магнат",
+        "description": "Добыть суммарно 100,000 $DEPTH"
+      },
+      "mining_jackpot_epoch": {
+        "name": "Сорвать куш",
+        "description": "Получить более 5,000 $DEPTH за одну дневную эпоху"
+      },
+      "mining_flawless_telemetry": {
+        "name": "Идеальный поток",
+        "description": "50 сделок подряд без единого отклонения верификатором"
+      },
+      "mining_high_speed_turnover": {
+        "name": "Высокая частота",
+        "description": "Совершить 50+ верифицированных сделок за один день"
+      },
+      "mining_profitable": {
+        "name": "Плюс на плюс",
+        "description": "10 закрытых майнинговых сделок подряд с положительным PnL"
+      },
+      "mining_multi_exchange": {
+        "name": "Арбитражер",
+        "description": "Промайнить сделки на 2+ разных биржах за одну неделю"
+      },
+      "mining_all_exchanges": {
+        "name": "Вездесущий",
+        "description": "Привязать UID и майнить на всех поддерживаемых биржах"
+      },
+      "mining_node_operator": {
+        "name": "Свой дата-центр",
+        "description": "Запустить серверную ноду, обслуживающую других майнеров"
+      },
+      "mining_boost_active": {
+        "name": "Форсаж",
+        "description": "Активировать любой повышающий множитель майнинга"
+      },
+      "mining_diamond_staker": {
+        "name": "Алмазный стейкер",
+        "description": "Залочить $DEPTH на 360 дней под максимальный множитель 2.0x"
+      }
+    }
+  },
+  "settings": {
+    "riskManagement": "Управление рисками",
+    "liveTrading": "Live торговля",
+    "backtesting": "Бэктестинг",
+    "liveTradingRiskManagement": "Управление рисками (Live)",
+    "riskManagementDescription": "Настройте параметры управления рисками для реальной торговли.",
+    "backtestingRiskManagement": "Управление рисками (Бэктест)",
+    "backtestingRiskManagementDescription": "Настройте параметры управления рисками для бэктестирования.",
+    "maxDrawdown": "Макс. просадка (%)",
+    "dailyMaxLossPercent": "Дневной макс. убыток (%)",
+    "maxConsecutiveLosses": "Макс. последовательных убытков",
+    "maxConcurrentTrades": "Макс. одновременных сделок",
+    "enableStopLoss": "Включить Stop Loss по умолчанию",
+    "defaultStopLossPercent": "Stop Loss по умолчанию (%)",
+    "maxStopDistancePercent": "Макс. расстояние до Stop Loss (%)",
+    "adaptiveRiskManagement": "Адаптивное управление рисками",
+    "enableAdaptiveRM": "Включить адаптивное управление",
+    "windowSize": "Размер окна (кол-во сделок)",
+    "minTrades": "Мин. сделок для оценки",
+    "pnlThreshold": "Порог PnL (%)",
+    "winRateThreshold": "Порог Win Rate (%)",
+    "recoveryWins": "Побед для восстановления",
+    "recoveryPnl": "PnL для восстановления (%)",
+    "cooldownSeconds": "Время 'остывания' (сек)"
+  },
+  "aiChat": {
+    "initialGreeting": "Привет! Я ваш AI-ассистент. Опишите, какую стратегию вы хотите создать, или выберите бэктест для анализа.",
+    "errorMessage": "Произошла ошибка. Пожалуйста, попробуйте еще раз.",
+    "loadToEditor": "Загрузить в редактор",
+    "askPlaceholder": "Спросите что-нибудь...",
+    "generateStrategy": "Да, сгенерируй эту стратегию",
+    "strategyGenerated": "Конфигурация стратегии успешно сгенерирована!",
+    "analyzeBacktestPrompt": "Проанализируй, пожалуйста, этот бэктест: {{strategyName}}"
+  },
+  "shareDialog": {
+    "title": "Поделиться бэктестом",
+    "description": "Создайте публичную ссылку, чтобы поделиться результатами вашего бэктеста.",
+    "successMessage": "Ваша публичная ссылка сгенерирована.",
+    "showStrategyName": "Показывать название стратегии",
+    "showParameters": "Показывать параметры",
+    "publishToLeaderboard": "Опубликовать в таблице лидеров",
+    "generateLinkButton": "Сгенерировать ссылку",
+    "toast": {
+      "successTitle": "Ссылка сгенерирована",
+      "successDescription": "Теперь вы можете поделиться результатами бэктеста.",
+      "copied": "Ссылка скопирована в буфер обмена."
+    }
+  },
+  "notifications": {
+    "pushNotSupported": "Push-уведомления не поддерживаются в этом браузере.",
+    "notificationsDisabled": "Уведомления отключены.",
+    "unsubscribeFailedLocal": "Не удалось отписаться. Уведомления отключены локально.",
+    "notificationsEnabled": "Уведомления включены.",
+    "subscribeFailed": "Не удалось подписаться на уведомления.",
+    "permissionBlocked": "Разрешение на уведомления заблокировано. Измените настройки браузера.",
+    "achievementUnlocked": "Получено достижение!",
+    "backtestCompleted": "Бэктест завершен",
+    "markAllAsRead": "Отметить все прочитанными",
+    "clearAll": "Очистить всё",
+    "empty": {
+      "title": "Нет уведомлений",
+      "description": "Здесь будут отображаться уведомления о бэктестах, позициях и достижениях"
+    },
+    "time": {
+      "justNow": "Только что",
+      "minutesAgo_one": "{{count}} мин. назад",
+      "minutesAgo_few": "{{count}} мин. назад",
+      "minutesAgo_many": "{{count}} мин. назад",
+      "hoursAgo_one": "{{count}} ч. назад",
+      "hoursAgo_few": "{{count}} ч. назад",
+      "hoursAgo_many": "{{count}} ч. назад",
+      "daysAgo_one": "{{count}} д. назад",
+      "daysAgo_few": "{{count}} д. назад",
+      "daysAgo_many": "{{count}} д. назад"
+    }
+  },
+  "sideMenu": {
+    "account": "Аккаунт",
+    "allAccounts": "Все аккаунты",
+    "unknown": "Неизвестно",
+    "profile": "Профиль",
+    "settings": "Настройки",
+    "mining": "Торговый майнинг",
+    "theme": "Тема",
+    "toggleThemeLabel": "Переключить на {{theme}} тему",
+    "language": "Язык",
+    "toggleLanguageLabel": "Переключить на {{language}} язык",
+    "english": "EN",
+    "russian": "RU",
+    "fullWebsiteVersion": "Полная версия сайта",
+    "termsOfService": "Условия использования",
+    "privacyPolicy": "Политика конфиденциальности",
+    "logout": "Выйти"
+  },
+  "modal": {
+    "addBlock": "Добавить блок",
+    "configureFoundationWeights": "Настроить веса оснований",
+    "noFoundationsForWeights": "В условиях входа нет блоков 'Оснований' для настройки весов."
+  },
+  "addApiKeyModal": {
+    "title": "Добавить API ключ",
+    "apiKeyLabel": "API Ключ",
+    "apiKeyPlaceholder": "Введите ваш API ключ",
+    "apiSecretLabel": "API Секрет",
+    "apiSecretPlaceholder": "Введите ваш API секрет"
+  },
+  "backtestModal": {
+    "fillAllFields": "Пожалуйста, заполните все поля.",
+    "strategyBacktest": "Бэктест стратегии",
+    "symbol": "Символ",
+    "startDate": "Дата начала",
+    "endDate": "Дата окончания",
+    "runBacktest": "Запустить бэктест",
+    "quickPresets": "Быстрый период",
+    "availableHistory": "Доступно на истории",
+    "noHistory": "История не найдена в хранилище",
+    "presets": {
+      "all": "Весь период",
+      "lastYear": "Прошлый год",
+      "thisYear": "Этот год",
+      "sixMonths": "Полгода",
+      "threeMonths": "3 месяца",
+      "oneMonth": "Месяц",
+      "lastMonth": "Прошлый месяц"
+    }
+  },
+  "launchStrategyModal": {
+    "fillSymbolsForStatic": "Пожалуйста, укажите символы для статического режима.",
+    "launchStrategy": "Запуск стратегии",
+    "tradingMode": "Режим торговли",
+    "paperTrading": "Paper Trading",
+    "paperTradingDescription": "Симуляция торговли без реального риска.",
+    "liveTrading": "Live Trading",
+    "liveTradingDescription": "Торговля на реальные средства. Будьте осторожны.",
+    "symbolSelection": "Выбор символов",
+    "dynamicFromScreener": "Динамический (из скринера)",
+    "dynamicFromScreenerDescription": "Автоматический выбор символов по заданным фильтрам.",
+    "staticManualList": "Статический (ручной список)",
+    "staticManualListDescription": "Торговля только по указанным символам.",
+    "symbolList": "Список символов",
+    "symbolPlaceholder": "BTCUSDT, ETHUSDT, ...",
+    "separateByCommas": "Разделяйте символы запятыми.",
+    "dynamicSettings": "Настройки динамического выбора",
+    "oracleFilter": "Фильтр Oracle",
+    "lowVolatilityNatr": "Низкая волатильность (NATR)",
+    "requiredRegime": "Требуемый режим",
+    "minConfidence": "Мин. уверенность (%)",
+    "minNatr": "Мин. NATR",
+    "maxConcurrentSymbols": "Макс. одновременных символов",
+    "advancedSettings": "Расширенные настройки",
+    "enableMlConfirmation": "Включить подтверждение ML",
+    "breakevenOnRegimeChange": "Breakeven при смене режима",
+    "oracleRegimeParanoiaFull": "0: Паранойя (Trend-following/Sideways)",
+    "oracleRegimeAmnesiaFull": "1: Амнезия (News/Trend)",
+    "oracleRegimeSchizophreniaFull": "2: Шизофрения (Volatile)"
+  },
+  "bottomSheet": {
+    "editBlock": "Редактирование: {{blockName}}"
+  },
+  "errors": {
+    "popoverTrigger": "PopoverTrigger must be used within a Popover.",
+    "popoverContent": "PopoverContent must be used within a Popover."
+  },
+  "palette": {
+    "groups": {
+      "filters": "Фильтры",
+      "foundations": "Основания",
+      "indicators": "Индикаторы",
+      "logic": "Логика",
+      "management": "Управление позицией"
+    }
+  },
+  "blocks": {
+    "standardParams": "Стандартные параметры",
+    "dynamicParam": "[динамич.]",
+    "AND": {
+      "title": "Группа «И»"
+    },
+    "OR": {
+      "title": "Группа «ИЛИ»"
+    },
+    "trading_session": {
+      "title": "Торг. сессия",
+      "desc": "Фильтр по времени торговых сессий (Лондон, Нью-Йорк и т.д.).",
+      "text": "Торговать в сессию",
+      "modes": {
+        "session": "По сессиям",
+        "hours": "По часам"
+      },
+      "sessions": {
+        "london": "Лондон",
+        "new_york": "Нью-Йорк",
+        "asia": "Азия",
+        "sydney": "Сидней"
+      },
+      "include": "Включить",
+      "exclude": "Исключить"
+    },
+    "volatility_filter": {
+      "title": "Фильтр волатильности",
+      "desc": "Разрешает торговлю только при определенном уровне волатильности (ATR, BBW).",
+      "text": "Когда"
+    },
+    "trend_filter": {
+      "title": "Фильтр тренда",
+      "desc": "Определяет наличие тренда с помощью индикаторов, таких как ADX.",
+      "text": "Тренд по"
+    },
+    "senior_tf_confluence": {
+      "title": "Старший ТФ",
+      "desc": "Проверяет выполнение вложенных условий на старшем таймфрейме.",
+      "text": "На таймфрейме"
+    },
+    "btc_state_filter": {
+      "title": "Состояние BTC",
+      "desc": "Фильтр по текущему состоянию рынка BTC (тренд, флэт).",
+      "required_state": "Требуемое состояние BTC",
+      "states": {
+        "consolidation": "Консолидация",
+        "trending_up": "Восходящий тренд",
+        "trending_down": "Нисходящий тренд",
+        "any": "Любое"
+      }
+    },
+    "correlation": {
+      "title": "Корреляция",
+      "desc": "Проверяет корреляцию инструмента с BTC или другим активом.",
+      "correlation_with": "Корреляция с",
+      "for": "за",
+      "bars": "баров"
+    },
+    "natr_filter": {
+      "title": "NATR Фильтр",
+      "desc": "Фильтрует сделки на основе нормализованного ATR.",
+      "text": "NATR (14) должен быть >"
+    },
+    "rel_vol_filter": {
+      "title": "Относит. объем",
+      "desc": "Фильтрует сделки на основе относительного объема.",
+      "text": "Относительный объем >"
+    },
+    "tape_analysis": {
+      "title": "Анализ ленты",
+      "desc": "Обнаруживает ускорение ленты сделок (по объему или количеству). Предоставляет данные для сравнения.",
+      "text": "Анализ ленты за",
+      "provides_data": "предоставляет данные"
+    },
+    "tape_condition": {
+      "title": "Условие по ленте",
+      "desc": "Анализирует активность в ленте сделок в реальном времени.",
+      "for": "Временное окно",
+      "check": "Проверяемая метрика",
+      "absolute_value": "Абсолютное значение",
+      "multiplier_value": "Множитель от среднего",
+      "of_average": "от среднего",
+      "metrics": {
+        "delta_volume_usd": "Дельта объема ($)",
+        "buy_volume_usd": "Объем покупок ($)",
+        "sell_volume_usd": "Объем продаж ($)",
+        "total_volume_usd": "Суммарный объем ($)",
+        "buy_sell_ratio_volume": "Соотношение покупок/продаж",
+        "acceleration_multiplier_volume": "Ускорение объема"
+      }
+    },
+    "order_book_zone_condition": {
+      "title": "Условие по стакану",
+      "desc": "Анализирует плотность заявок в указанной зоне стакана.",
+      "metric": "Проверяемая метрика",
+      "in": "в",
+      "in_range": "в диапазоне",
+      "metrics": {
+        "total_volume_usd": "Суммарный объем ($)",
+        "largest_level_usd": "Крупнейший уровень ($)",
+        "level_count": "Количество уровней"
+      },
+      "sides": {
+        "bids": "бидах (спросе)",
+        "asks": "асках (предложении)"
+      },
+      "range_types": {
+        "atr_multiplier": "x ATR",
+        "ticks": "тиках"
+      }
+    },
+    "level_proximity_condition": {
+      "title": "Близость к уровню",
+      "desc": "Проверяет, находится ли цена близко к локальному уровню.",
+      "price": "Источник цены",
+      "near_level_on": "ТФ для поиска уровня",
+      "tf_for": "Период поиска",
+      "bars_within": "баров",
+      "within_proximity": "В пределах",
+      "price_sources": {
+        "close": "Close",
+        "high": "High",
+        "low": "Low"
+      }
+    },
+    "order_book_zone": {
+      "title": "Зона в стакане",
+      "desc": "Анализирует плотность заявок в указанной зоне стакана. Предоставляет данные для сравнения.",
+      "text_1": "Анализ зоны",
+      "text_2": "в пределах",
+      "options": {
+        "bids": "спроса (bids)",
+        "asks": "предложения (asks)"
+      },
+      "range_type_percentage": "% от цены",
+      "range_type_atr": "x ATR",
+      "range_type_ticks": "тиков",
+      "provides_data": "предоставляет данные"
+    },
+    "l2_microstructure_check": {
+      "title": "Микроструктура L2",
+      "desc": "Анализирует события в стакане, такие как крупные заявки или спуфинг.",
+      "text_1": "Проверить на",
+      "options": {
+        "large_order": "крупную заявку"
+      }
+    },
+    "local_level": {
+      "title": "Локальный уровень",
+      "desc": "Определяет локальные максимумы/минимумы на заданном таймфрейме.",
+      "text_1": "Цена около локального уровня на",
+      "text_2": "за последние",
+      "text_3": "баров, в пределах",
+      "is_data_provider_label": "Использовать как поставщик данных (отключить проверку близости)"
+    },
+    "significant_level": {
+      "title": "Значимый уровень",
+      "desc": "Определяет дневные/недельные максимумы/минимумы.",
+      "text_1": "Цена около уровня",
+      "levels": {
+        "daily_high": "Дневной максимум",
+        "daily_low": "Дневной минимум",
+        "weekly_high": "Недельный максимум",
+        "weekly_low": "Недельный минимум"
+      },
+      "text_2": "в пределах",
+      "options": {
+        "atr_multiplier": "x ATR",
+        "percentage": "%"
+      }
+    },
+    "round_level": {
+      "title": "Круглый уровень",
+      "desc": "Проверяет близость цены к круглому ценовому уровню.",
+      "text": "Цена около круглого уровня",
+      "options": {
+        "percentage": "%",
+        "pips": "пипсов"
+      }
+    },
+    "trend_direction": {
+      "title": "Направление тренда",
+      "desc": "Определяет тренд по комбинации SMA и RSI.",
+      "text_on_tf": "Тренд на",
+      "is": "является",
+      "trends": {
+        "long": "Лонговым",
+        "short": "Шортовым",
+        "any_trend": "Любым (не флэт)",
+        "flat": "Флэтом"
+      }
+    },
+    "classic_pattern": {
+      "title": "Классический паттерн",
+      "desc": "Распознает свечные паттерны, такие как поглощение, пин-бар и т.д.",
+      "text": "Обнаружен паттерн",
+      "bullish_engulfing": "Бычье поглощение",
+      "bearish_engulfing": "Медвежье поглощение",
+      "pin_bar": "Пин-бар",
+      "doji": "Доджи",
+      "inside_bar": "Внутренний бар",
+      "sides": {
+        "any": "Любой",
+        "bullish": "Бычий",
+        "bearish": "Медвежий"
+      }
+    },
+    "volume_confirmation": {
+      "title": "Подтверждение объемом",
+      "desc": "Проверяет, превышает ли объем свечи среднее значение.",
+      "text": "Объем свечи превышает средний в",
+      "x_average": "раз"
+    },
+    "price_consolidation": {
+      "title": "Консолидация",
+      "desc": "Определяет, находится ли цена в узком диапазоне (флэте).",
+      "text1": "Цена консолидируется последние",
+      "text2": "баров в диапазоне <",
+      "text3": "x ATR"
+    },
+    "open_interest": {
+      "title": "Открытый интерес",
+      "desc": "Анализирует изменение или абсолютное значение открытого интереса.",
+      "analyze": "Анализировать",
+      "for": "за",
+      "bars": "баров",
+      "analysis_types": {
+        "change_pct": "Изменение в %",
+        "absolute_value": "Абсолютное значение"
+      }
+    },
+    "ma_cross_condition": {
+      "title": "Пересечение MA",
+      "desc": "Условие на пересечение двух скользящих средних.",
+      "ma": "MA(",
+      "crosses": ") пересекает",
+      "shift": "(сдвиг",
+      "brackets": ")"
+    },
+    "rsi_condition": {
+      "title": "Условие RSI",
+      "desc": "Проверяет значение RSI (выше/ниже определенного уровня).",
+      "text": "RSI(",
+      "shift": "(сдвиг",
+      "brackets": ")"
+    },
+    "value_comparison": {
+      "title": "Сравнение значений",
+      "desc": "Сравнивает два динамических значения (индикаторы, цены, результаты блоков)."
+    },
+    "macd_condition": {
+      "title": "Условие MACD",
+      "desc": "Проверяет пересечение линий MACD или значение гистограммы.",
+      "macd": "MACD(",
+      "shift": "(сдвиг",
+      "brackets": ")"
+    },
+    "bollinger_bands_condition": {
+      "title": "Полосы Боллинджера",
+      "desc": "Проверяет положение цены относительно полос Боллинджера.",
+      "price": "Цена",
+      "shift": "(сдвиг",
+      "brackets": ")"
+    },
+    "stochastic_condition": {
+      "title": "Стохастик",
+      "desc": "Проверяет пересечение линий стохастика или их положение.",
+      "stochastic": "Стохастик(",
+      "shift": "(сдвиг",
+      "brackets": ")"
+    },
+    "price_vs_level": {
+      "title": "Цена против Уровня",
+      "desc": "Сравнивает цену с динамическим уровнем из другого блока."
+    },
+    "and": {
+      "title": "И (AND)",
+      "desc": "Группирует условия. Должны выполниться ВСЕ вложенные условия."
+    },
+    "or": {
+      "title": "ИЛИ (OR)",
+      "desc": "Группирует условия. Должно выполниться ХОТЯ БЫ ОДНО вложенное условие."
+    },
+    "trailing_stop": {
+      "title": "Трейлинг-стоп",
+      "desc": "Перемещает стоп-лосс вслед за ценой для защиты прибыли.",
+      "text_1": "Активировать когда цена достигнет",
+      "text_2": "и двигать стоп с отступом"
+    },
+    "move_to_breakeven": {
+      "title": "Перевод в Б/У",
+      "desc": "Перемещает стоп-лосс в безубыток при достижении цели.",
+      "text_1": "Перевести в безубыток, когда цена достигнет"
+    },
+    "conditional_exit": {
+      "title": "Условный выход",
+      "desc": "Закрывает позицию при выполнении определенных условий."
+    },
+    "scale_in": {
+      "title": "Добор позиции",
+      "desc": "Добавляет объем к открытой позиции при выполнении условий.",
+      "text_1": "Добавить",
+      "text_2": "от риска, макс.",
+      "text_3": "входов"
+    },
+    "conditional_management": {
+      "title": "Условное управление",
+      "desc": "Применяет действия (трейлинг-стоп, БУ), если выполняются условия."
+    },
+    "modify_stop_loss": {
+      "title": "Изменить стоп-лосс",
+      "desc": "Изменяет стоп-лосс на новое динамическое значение.",
+      "text_1": "Переместить стоп-лосс на"
+    },
+    "return_to_level": {
+      "title": "Возврат к уровню",
+      "desc": "Ожидает возврата цены к ранее определенному уровню.",
+      "text1": "Возврат к уровню из",
+      "within": "в течение",
+      "seconds": "сек",
+      "types": {
+        "touch": "Касание",
+        "breakout_retest": "Пробой и ретест"
+      },
+      "directions": {
+        "any": "Любое направление",
+        "from_above": "Сверху",
+        "from_below": "Снизу"
+      }
+    },
+    "volatility_squeeze": {
+      "title": "Сжатие Волатильности",
+      "desc": "Определяет сужение торгового диапазона."
+    },
+    "market_activity": {
+      "title": "Активность Рынка",
+      "desc": "Проверка NATR / Относительного Объема."
+    },
+    "dca_management": {
+      "title": "DCA Усреднение",
+      "desc": "Автоматическое усреднение позиции по мартингейлу или условиям."
+    },
+    "grid_management": {
+      "title": "GRID Сетка",
+      "desc": "Размещение сетки лимитных ордеров в заданном диапазоне."
+    },
+    "tradingview_signal": {
+      "title": "Сигнал TradingView",
+      "desc": "Ожидание вебхука от TradingView с указанным ID."
+    },
+    "price_action_analyzer": {
+      "title": "Price Action Анализатор",
+      "desc": "Распознавание структурных паттернов (HH/HL, LH/LL)."
+    },
+    "level_touch_analyzer": {
+      "title": "Касание Уровня",
+      "desc": "Точное касание, ложный пробой или ретест уровня."
+    },
+    "modify_take_profit": {
+      "title": "Изменить Тейк-Профит",
+      "desc": "Переместить TP на новую цену."
+    },
+    "close_position": {
+      "title": "Закрыть Позицию",
+      "desc": "Закрыть позицию по рынку."
+    },
+    "unknown_block": "Неизвестный блок",
+    "confirm_delete_block": "Вы уверены, что хотите удалить этот блок?",
+    "select_block_to_configure": "Выберите блок для настройки.",
+    "delete": "Удалить",
+    "showAdvancedMode": "Расширенные настройки",
+    "showSimpleMode": "Простые настройки"
+  },
+  "dynamicInput": {
+    "linked": "🔗 Связано",
+    "block": "Блок",
+    "candle": "Свеча",
+    "market": "Рынок",
+    "staticValue": "Статичное значение..."
+  },
+  "dynamicPicker": {
+    "categories": {
+      "position": "Позиция",
+      "candle": "Свеча",
+      "blocks": "Блоки",
+      "market": "Рынок"
+    },
+    "noBlocks": "Нет доступных блоков с результатами."
+  },
+  "dynamic_sources": {
+    "position_state": {
+      "entry_price": "Цена входа",
+      "current_size_qty": "Текущий размер",
+      "unrealized_pnl_pct": "Нереализованный PnL (%)",
+      "time_in_trade_sec": "Время в сделке (сек)",
+      "number_of_entries": "Количество входов"
+    },
+    "candle": {
+      "open": "Цена открытия (Open)",
+      "high": "Максимум (High)",
+      "low": "Минимум (Low)",
+      "close": "Цена закрытия (Close)",
+      "volume": "Объем (Volume)"
+    },
+    "market": {
+      "btc_dominance": "Доминация BTC",
+      "funding_rate": "Ставка финансирования"
+    },
+    "block_results": {
+      "title": "Результаты блоков"
+    }
+  },
+  "quotas": {
+    "run_vector_backtest_per_day": "Векторные бэктесты в день",
+    "run_kline_backtest_per_day": "Свечные (Kline) бэктесты в день",
+    "run_backtest_per_day": "Бэктесты в день",
+    "use_ai_assistant_per_day": "Запросы к AI в день",
+    "run_portfolio_backtest_per_day": "Портфельные бэктесты в день",
+    "run_optimization_per_month": "Оптимизации в месяц",
+    "run_genetic_search_per_month": "Генетические поиски в месяц",
+    "generate_dataset_per_month": "Генерации датасетов в месяц",
+    "train_model_per_month": "Тренировки моделей в месяц"
+  },
+  "mining": {
+    "nodeSharingPolicy": "Политика распределения наград ноды",
+    "nodeSharingPolicyDesc": "Награды распределяются в реальном времени в соответствии с долей объёма торгов и политикой ноды.",
+    "nodeSharePercentage": "Процент распределения наград",
+    "yourVolumeShare": "Ваша доля объема (сегодня)",
+    "yourTotalVolume": "Ваш общий объем торгов",
+    "subtitle": "Передавайте телеметрию сделок и зарабатывайте токены $DEPTH на каждой сделке.",
+    "privacyTitle": "Какие данные передаются",
+    "privacyDesc": "Необходимо при активном майнинге: ваши закрытые сделки (символ, цены входа/выхода, объём, PnL, длительность, ID ордеров) и параметры стратегий передаются в Центральный Хаб с привязкой к адресу кошелька ноды и UID биржи. Биржевые API-ключи, пароли и балансы никогда не передаются. Отключить можно деактивацией торгового майнинга.",
+    "enterReferrerCode": "Реферальный код (опционально)",
+    "activating": "Активация...",
+    "activateButton": "Активировать и начать майнинг",
+    "totalMined": "Всего добыто",
+    "todayEstReward": "Ожидаемая награда",
+    "todayRebates": "Суточные рибейты",
+    "dailyEmission": "Суточная эмиссия",
+    "totalDistributed": "Всего распределено",
+    "totalDistributedSubtitle": "Общая эмиссия за все эпохи",
+    "welcomeBonus": "Приветственный бонус",
+    "welcomeBonusClaimedBadge": "Получен",
+    "welcomeBonusDesc": "Сгенерируйте не менее $1.0 кумулятивного рибейта, чтобы получить приветственный бонус 1000 $DEPTH.",
+    "welcomeBonusClaimed": "Приветственный бонус получен!",
+    "welcomeBonusClaimedDesc": "1000 $DEPTH зачислено на баланс.",
+    "welcomeBonusProgress": "Рибейты: ${{current}} / ${{target}}",
+    "referralLinkCardTitle": "Реферальная ссылка",
+    "referralProgramDesc": "Приглашайте друзей запускать ноды и получайте +10% ежедневного буста, а также приветственные награды!",
+    "yourReferralCode": "Ваш реферальный код",
+    "referralLink": "Реферальная ссылка",
+    "stakingBoost": "Бустер стейкинга",
+    "comingSoon": "Скоро",
+    "stakingBoostDetail": "Застейкайте $DEPTH на 30, 90 или 360 дней, чтобы разблокировать множитель до 2.0x на все ежедневные награды за торговый майнинг.",
+    "disabledTitle": "Майнинг отключен",
+    "disabledDesc": "Функции майнинга временно отключены администратором.",
+    "uidLinkedNotice": "Ваш UID биржи будет автоматически определен и привязан с помощью ваших активных API-ключей при запуске майнинга.",
+    "miningActivated": "Торговый майнинг успешно активирован! Ваш UID биржи был автоматически определен и привязан.",
+    "nodeWallet": "EVM Кошелёк",
+    "walletTitle": "Web3 Идентификация Ноды (EVM Кошелёк)",
+    "walletSubtitle": "Подключите ваш EVM кошелёк (MetaMask / Web3) для защиты наград майнинга и идентификатора ноды.",
+    "walletNoticeEVM": "Ваш приватный ключ никогда не покидает ваш кошелёк. Сервер проверяет владение через криптографическую подпись сообщения. Награды и миграция ноды на 100% под вашим контролем.",
+    "connectedWallet": "Подключённый Web3 кошелёк",
+    "switchWallet": "Сменить кошелёк",
+    "disconnect": "Отключить",
+    "signingMessage": "Подписание сообщения...",
+    "connectMetaMask": "Подключить EVM кошелёк (MetaMask)",
+    "connectEVMWallet": "Подключить Web3 EVM кошелёк (MetaMask)",
+    "metaMaskNotFound": "Web3 кошелёк (MetaMask) не обнаружен. Пожалуйста, установите расширение MetaMask.",
+    "noAccountSelected": "Аккаунт EVM не выбран.",
+    "walletConnectedSuccess": "Кошелёк успешно подтверждён и подключён!",
+    "userRejectedSignature": "Запрос подписи был отклонён в кошельке.",
+    "walletDisconnected": "Кошелёк успешно отключён.",
+    "addressCopied": "Адрес кошелька скопирован!",
+    "nodeDeployCommand": "Команда однокликового деплоя ноды",
+    "commandCopied": "Команда деплоя скопирована в буфер обмена!",
+    "supportedExchanges": "Поддерживаемые биржи и рибейты",
+    "supportedExchangesDesc": "Награды за майнинг начисляются за реальные сделки, исполняемые на следующих биржах:",
+    "supportedExchangesRebateNote": "Размер наград напрямую привязан к сгенерированному комиссионному ребейту: чем выше процент ребейта на бирже, тем выше начисление $DEPTH соответственно. Центральный хаб верифицирует каждую сделку через официальные брокерские API бирж.",
+    "futuresRebate": "Ребейты на фьючерсах",
+    "spotRebate": "Ребейты на споте",
+    "okxRebateTip": "Базовая ставка (30%), на чужой рефке — всего 7.5%. При переходе по нашей ссылке ребейты суммируются (+7.5%), давая в 5х больше токенов.",
+    "bybitRebateTip": "Базовая ставка (50%), на чужой рефке — всего 10%. При переходе по нашей ссылке ребейты суммируются (+10%), максимизируя доход майнинга.",
+    "bitgetRebateTip": "Базовая ставка (35%) + множитель x2.0 майнинга! Торговля по нашей ссылке даёт в 2 раза больше $DEPTH за каждый доллар ребейта.",
+    "partnerBoostTitle": "Буст майнинга Bitget",
+    "partnerBoostDesc": "Получайте x2 $DEPTH за каждый доллар ребейта при торговле на Bitget!",
+    "promoBannerTitle": "Bitget Launch Airdrop — 10,000,000 $DEPTH",
+    "promoBannerSubtitle": "Подключите API ключи Bitget и торгуйте для получения до 25,000 $DEPTH за квест.",
+    "promoSlotsLeft": "Слотов осталось",
+    "promoClaimed": "$DEPTH заклеймлено",
+    "promoQuestsTitle": "Bitget Launch Квесты",
+    "promoQuestsDescription": "Выполняйте квесты, чтобы заработать токены $DEPTH из промо-пула на 10M токенов. Награда за каждый квест выдается один раз на уникальный Bitget master UID.",
+    "promoPoolRemaining": "Осталось в пуле Airdrop",
+    "promoRewardClaimed": "Награда получена",
+    "promoClaimSuccess": "Награда успешно заклеймлена на баланс ноды!",
+    "promoCompleteReqs": "Выполните все условия для клейма",
+    "promoSecurityUid": "Один клейм на уникальный Master UID биржи",
+    "promoSecuritySlots": "Кампания длится до исчерпания слотов",
+    "promoSecurityVolume": "Учитывается только верифицированный торговый объем",
+    "backToMining": "Назад к майнингу",
+    "subtabQuests": "Квесты",
+    "adminPreviewBadge": "ADMIN PREVIEW",
+    "liveBadge": "LIVE",
+    "promoOfTotalPool": "из {{total}} $DEPTH",
+    "questSlotsClaimed": "Слотов получено",
+    "questClaimedBadge": "✓ Получено",
+    "questReadyToClaim": "Готово к получению!",
+    "questSlotsRemaining": "{{remaining}} осталось",
+    "questRewardLabel": "награда",
+    "questClaimedLabel": "получено",
+    "questApiPioneerTitle": "Bitget API Pioneer",
+    "questNodeRunnerTitle": "Node Runner Veteran",
+    "questReqApiKey": "API-ключ {{exchange}} подключен (Master UID)",
+    "questStatusConnected": "Подключен",
+    "questStatusNotConnected": "Не подключен",
+    "questReqWallet": "Кошелек привязан и верифицирован",
+    "questStatusLinked": "Привязан",
+    "questStatusMissing": "Не привязан",
+    "questReqPhysicalNode": "Сервер онлайн сейчас, нода зарегистрирована ≥ {{days}} дн. назад",
+    "questNodeAgeDays": "{{days}} дн.",
+    "questStatusNotRunning": "Не запущена",
+    "questReqActiveMining": "Активный майнинг (сделка за последние 7 дней)",
+    "questStatusActive": "Активен",
+    "questStatusNoTrades": "Нет недавних сделок",
+    "questReqVolume": "Достичь объема ${{threshold}}",
+    "questReqVolumePhysical": "Достичь объема ${{threshold}} на своём сервере",
+    "questRewardClaimedBtn": "Награда получена — {{amount}} $DEPTH начислено",
+    "questClaimBtn": "🎉 Забрать {{amount}} $DEPTH",
+    "questClaiming": "Обработка...",
+    "questCompleteRequirements": "Выполните все условия для получения",
+    "questFootnoteUid": "Один клейм на уникальный мастер-UID биржи",
+    "questFootnoteDuration": "Кампания длится до исчерпания всех слотов",
+    "questFootnoteVerification": "Учитывается только верифицированный брокером объем",
+    "questClaimSuccessDesc": "🎉 {{amount}} $DEPTH успешно зачислены на баланс вашей ноды!",
+    "questClaimFailedDesc": "Не удалось получить награду. Пожалуйста, проверьте выполнение всех условий.",
+    "questVolumeVerifyingBtn": "Верификация торгового объёма...",
+    "questVolumePendingVerification": "Объём набран • Ожидается верификация брокером",
+    "questVerifiedSuffix": "верифицировано",
+    "questVolumeVerifyingBadge": "Верификация..."
+  },
+  "communityMemory": {
+    "title": "Банк памяти агента",
+    "communityPool": "Общий пул знаний",
+    "optInTooltip": "О коллективной памяти",
+    "all": "Все",
+    "myMemories": "Моя память",
+    "community": "Сообщество",
+    "confirmedCount": "Подтверждено: {{count}}x",
+    "cannotDeleteCommunity": "Инсайты сообщества сохраняются в общем пуле.",
+    "modalTitle": "Пул коллективной памяти DepthSight",
+    "modalSubtitle": "Децентрализованный роевой интеллект для торговых агентов",
+    "modalDesc": "Участвуйте в обмене опытом на принципах бартера. Когда вы проводите успешные бэктесты (≥30 сделок, ≥28 дней), обобщённые рыночные выводы анонимно передаются в сеть. В ответ ваш агент получает доступ к проверенным сетапам и правилам, найденным другими трейдерами по всему миру.",
+    "modalPrivacy": "Гарантия конфиденциальности: параметры стратегий, конфиденциальные настройки и API-ключи полностью удаляются. Передаются только общие уроки и статистика.",
+    "modalQuality": "Контроль качества: в пул попадают только проверенные прибыльные стратегии с бэктестом от 30 сделок и от 28 дней.",
+    "modalTransfer": "Межрыночный перенос: учитесь на паттернах BTC, ETH и альткоинов, даже если вы ещё не торговали эти активы.",
+    "modalLater": "Только локальная память",
+    "modalJoin": "Подключиться к пулу",
+    "shareWithCommunity": "Поделиться с сообществом (требуется ≥ 30 сделок)",
+    "shareSuccess": "Запись успешно добавлена в общий пул сообщества!",
+    "shareError": "Не удалось поделиться записью с сообществом",
+    "retroactiveSuccess": "Общий пул включен! {{count}} проверенных стратегий добавлено в пул."
+  }
 }

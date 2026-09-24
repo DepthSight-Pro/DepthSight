@@ -7,7 +7,7 @@ import { Input } from "../components/ui/Input";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../services/api";
 import ForgotPasswordScreen from "./ForgotPasswordScreen";
-import { GoogleLogin } from "@react-oauth/google";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 const AuthScreen: React.FC = () => {
 	const [isLogin, setIsLogin] = useState(true);
@@ -141,7 +141,7 @@ const AuthScreen: React.FC = () => {
 		}
 	};
 
-	const handleGoogleSuccess = async (credentialResponse: any) => {
+	const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
 		if (!credentialResponse.credential) return;
 
 		setLoading(true);
@@ -279,8 +279,8 @@ const AuthScreen: React.FC = () => {
 			});
 			loginWithTokenAndUser(tokenData, userData);
 			toast.success(t("auth.loginSuccess") || "Logged in successfully");
-		} catch (err: any) {
-			setError(err.message || t("twoFactor.invalidCode") || "Invalid verification code");
+		} catch (err) {
+			setError((err as Error)?.message || t("twoFactor.invalidCode") || "Invalid verification code");
 		} finally {
 			setLoading(false);
 		}

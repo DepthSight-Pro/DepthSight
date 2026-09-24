@@ -150,6 +150,19 @@ async def add_api_key(
                         await auto_resolve_bybit_uid(db, current_user.id)
                     except Exception:
                         pass
+                elif db_api_key.exchange in [
+                    "bitget",
+                    "bitget_futures",
+                    "bitget_spot",
+                    "bitget_usdtm",
+                    "bitget_linear",
+                ]:
+                    try:
+                        from .config import auto_resolve_bitget_uid
+
+                        await auto_resolve_bitget_uid(db, current_user.id)
+                    except Exception:
+                        pass
                 logger.info(
                     f"Successfully set '{db_api_key.name}' as the active key for user {current_user.id}."
                 )
@@ -584,6 +597,19 @@ async def test_api_key(
                 from .config import auto_resolve_bybit_uid
 
                 await auto_resolve_bybit_uid(db, current_user.id)
+            except Exception:
+                pass
+        elif updated_key.exchange in [
+            "bitget",
+            "bitget_futures",
+            "bitget_spot",
+            "bitget_usdtm",
+            "bitget_linear",
+        ]:
+            try:
+                from .config import auto_resolve_bitget_uid
+
+                await auto_resolve_bitget_uid(db, current_user.id)
             except Exception:
                 pass
 

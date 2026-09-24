@@ -4,13 +4,7 @@ import { AlertCircle } from "lucide-react";
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+
 import {
 	Table,
 	TableBody,
@@ -158,11 +152,13 @@ export const BacktestStructuredAnalyticsTab: React.FC<
 
 	return (
 		<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-			<Card>
-				<CardHeader>
-					<CardTitle>{t("structuredReport.eventCountersTitle")}</CardTitle>
-				</CardHeader>
-				<CardContent>
+			<div className="rounded-2xl border border-white/10 glass shadow-xl p-6 flex flex-col">
+				<div className="pb-4 border-b border-white/5 mb-4">
+					<h3 className="text-lg font-bold text-white tracking-wide">
+						{t("structuredReport.eventCountersTitle")}
+					</h3>
+				</div>
+				<div>
 					<Table>
 						<TableHeader>
 							<TableRow>
@@ -180,7 +176,7 @@ export const BacktestStructuredAnalyticsTab: React.FC<
 									<React.Fragment key={event}>
 										<TableRow>
 											<TableCell
-												className={`${isBold ? "font-bold" : ""} ${isSub ? "pl-8" : ""}`}
+												className={`${isBold ? "font-bold text-white" : ""} ${isSub ? "pl-8 text-white/80" : ""}`}
 											>
 												{event}
 											</TableCell>
@@ -189,10 +185,10 @@ export const BacktestStructuredAnalyticsTab: React.FC<
 										{subRows &&
 											Object.entries(subRows).map(([reason, reasonCount]) => (
 												<TableRow key={`${event}-${reason}`}>
-													<TableCell className="pl-12 text-muted-foreground">
+													<TableCell className="pl-12 text-white/50">
 														{reason}
 													</TableCell>
-													<TableCell className="text-right text-muted-foreground">
+													<TableCell className="text-right text-white/50">
 														{reasonCount as number}
 													</TableCell>
 												</TableRow>
@@ -202,17 +198,19 @@ export const BacktestStructuredAnalyticsTab: React.FC<
 							)}
 						</TableBody>
 					</Table>
-				</CardContent>
-			</Card>
+				</div>
+			</div>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>{t("structuredReport.foundationTriggersTitle")}</CardTitle>
-					<CardDescription>
+			<div className="rounded-2xl border border-white/10 glass shadow-xl p-6 flex flex-col">
+				<div className="pb-4 border-b border-white/5 mb-4">
+					<h3 className="text-lg font-bold text-white tracking-wide">
+						{t("structuredReport.foundationTriggersTitle")}
+					</h3>
+					<p className="text-xs text-white/50 mt-1">
 						{t("structuredReport.foundationTriggersDescription")}
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
+					</p>
+				</div>
+				<div>
 					{foundationTriggers.length > 0 ? (
 						<Table>
 							<TableHeader>
@@ -235,18 +233,20 @@ export const BacktestStructuredAnalyticsTab: React.FC<
 							</TableBody>
 						</Table>
 					) : (
-						<p className="text-muted-foreground text-sm">
+						<p className="text-white/50 text-sm">
 							{t("structuredReport.noFoundationTriggers")}
 						</p>
 					)}
-				</CardContent>
-			</Card>
+				</div>
+			</div>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>{t("structuredReport.anomaliesTitle")}</CardTitle>
-				</CardHeader>
-				<CardContent>
+			<div className="lg:col-span-2 rounded-2xl border border-white/10 glass shadow-xl p-6 flex flex-col">
+				<div className="pb-4 border-b border-white/5 mb-4">
+					<h3 className="text-lg font-bold text-white tracking-wide">
+						{t("structuredReport.anomaliesTitle")}
+					</h3>
+				</div>
+				<div>
 					{anomalies && anomalies.length > 0 ? (
 						<Table>
 							<TableHeader>
@@ -283,12 +283,12 @@ export const BacktestStructuredAnalyticsTab: React.FC<
 							</TableBody>
 						</Table>
 					) : (
-						<p className="text-muted-foreground">
+						<p className="text-white/50 text-sm">
 							{t("structuredReport.noAnomalies")}
 						</p>
 					)}
-				</CardContent>
-			</Card>
+				</div>
+			</div>
 		</div>
 	);
 };

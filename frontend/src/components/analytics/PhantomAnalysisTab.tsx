@@ -18,6 +18,7 @@ import {
 import type React from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AppLoader } from "@/components/shared/AppLoader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,8 +61,8 @@ export const PhantomAnalysisTab: React.FC = () => {
 
 	if (statsLoading) {
 		return (
-			<div className="text-center p-8">
-				{t("common:loading", "Loading data...")}
+			<div className="flex flex-col items-center justify-center min-h-[calc(100vh-220px)] w-full">
+				<AppLoader size="xl" fullLogo text={t("common:loading", "Loading data...")} />
 			</div>
 		);
 	}

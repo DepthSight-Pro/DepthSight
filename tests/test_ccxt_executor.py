@@ -128,8 +128,11 @@ def test_to_execution_report_maps_ccxt_order_without_name_error():
 
 
 @pytest.mark.asyncio
-async def test_start_user_data_stream_skips_unreliable_sandbox_private_ws():
-    executor = make_executor("gateio")
+@pytest.mark.parametrize("exchange_id", ["gateio", "bitget"])
+async def test_start_user_data_stream_skips_unreliable_sandbox_private_ws(
+    exchange_id,
+):
+    executor = make_executor(exchange_id)
     executor.sandbox = True
     executor._exchange_pro = SimpleNamespace()
 
@@ -340,6 +343,8 @@ async def test_place_order_uses_ccxt_hedged_param_for_bitget_futures_close():
 
 @pytest.mark.asyncio
 async def test_place_order_translates_bitget_tpsl_side_to_position_side():
+    # Hedge mode (default): close side is sent as-is, holdSide is explicit.
+    # LONG SL: SELL -> holdSide=long (was inverted to buy/short -> 45122).
     executor = make_executor("bitget")
     executor._exchange.create_order = AsyncMock(
         return_value={
@@ -348,7 +353,7 @@ async def test_place_order_translates_bitget_tpsl_side_to_position_side():
             "symbol": "BTC/USDT:USDT",
             "status": "open",
             "type": "market",
-            "side": "buy",
+            "side": "sell",
             "amount": 1,
             "filled": 0,
         }
@@ -365,12 +370,68 @@ async def test_place_order_translates_bitget_tpsl_side_to_position_side():
     )
 
     call = executor._exchange.create_order.call_args.kwargs
-    assert call["side"] == "buy"
+    assert call["side"] == "sell"
     assert call["params"]["hedged"] is True
+    assert call["params"]["holdSide"] == "long"
     assert call["params"]["stopLossPrice"] == 90000.0
     assert call["params"]["reduceOnly"] is True
     assert "tradeSide" not in call["params"]
     assert "positionSide" not in call["params"]
+
+
+@pytest.mark.asyncio
+async def test_place_order_bitget_tpsl_short_and_tp_and_one_way():
+    # SHORT SL in hedge mode: BUY -> holdSide=short.
+    executor = make_executor("bitget")
+    executor._exchange.create_order = AsyncMock(
+        return_value={"id": "o1", "clientOrderId": "c1", "symbol": "BTC/USDT:USDT"}
+    )
+    await executor.place_order(
+        "BTCUSDT",
+        "BUY",
+        "STOP_MARKET",
+        quantity="1",
+        stopPrice="95000",
+        reduceOnly=True,
+        newClientOrderId="c1",
+    )
+    call = executor._exchange.create_order.call_args.kwargs
+    assert call["side"] == "buy"
+    assert call["params"]["hedged"] is True
+    assert call["params"]["holdSide"] == "short"
+
+    # LONG TP in hedge mode: SELL -> holdSide=long, takeProfitPrice set.
+    executor._exchange.create_order.reset_mock()
+    await executor.place_order(
+        "BTCUSDT",
+        "SELL",
+        "TAKE_PROFIT_MARKET",
+        quantity="1",
+        stopPrice="100000",
+        reduceOnly=True,
+        newClientOrderId="c2",
+    )
+    call = executor._exchange.create_order.call_args.kwargs
+    assert call["side"] == "sell"
+    assert call["params"]["holdSide"] == "long"
+    assert call["params"]["takeProfitPrice"] == 100000.0
+
+    # One-way mode: SELL TPSL -> holdSide=buy, hedged=False, no inversion.
+    executor._bitget_is_unilateral = True
+    executor._exchange.create_order.reset_mock()
+    await executor.place_order(
+        "BTCUSDT",
+        "SELL",
+        "STOP_MARKET",
+        quantity="1",
+        stopPrice="90000",
+        reduceOnly=True,
+        newClientOrderId="c3",
+    )
+    call = executor._exchange.create_order.call_args.kwargs
+    assert call["side"] == "sell"
+    assert call["params"]["hedged"] is False
+    assert call["params"]["holdSide"] == "buy"
 
 
 @pytest.mark.asyncio
@@ -1264,6 +1325,60 @@ async def test_okx_broker_id_injection(monkeypatch):
             == "bb39c7c267cfBCDEscalein12345"
         )
         assert called_kwargs_custom["params"]["tag"] == "bb39c7c267cfBCDE"
+
+    finally:
+        await executor.close()
+
+
+@pytest.mark.asyncio
+async def test_bitget_broker_id_injection(monkeypatch):
+    from bot_module import config
+
+    monkeypatch.setattr(config, "BITGET_BROKER_ID", "bg_broker_123")
+
+    executor = CcxtExecutor(
+        "bitget",
+        "key-value",
+        "secret-value",
+        password="my-passphrase",
+        market_type="futures_usdtm",
+        sandbox=False,
+    )
+    try:
+        # 1. Verify broker ID is injected into options
+        assert executor._exchange.options["brokerId"] == "bg_broker_123"
+
+        # 2. Verify placing order includes the brokerId in params passed to CCXT
+        executor._exchange.create_order = AsyncMock(return_value={"id": "order-123"})
+        executor._exchange.amount_to_precision = lambda symbol, amount: str(amount)
+        executor._exchange.price_to_precision = lambda symbol, price: str(price)
+
+        await executor.place_order(
+            symbol="BTCUSDT",
+            side="buy",
+            order_type="market",
+            quantity=0.1,
+        )
+
+        executor._exchange.create_order.assert_called_once()
+        called_kwargs = executor._exchange.create_order.call_args.kwargs
+        assert called_kwargs["params"]["brokerId"] == "bg_broker_123"
+
+        # 3. Verify placing order with custom client order ID gets formatted
+        executor._exchange.create_order.reset_mock()
+        await executor.place_order(
+            symbol="BTCUSDT",
+            side="buy",
+            order_type="market",
+            quantity=0.1,
+            newClientOrderId="scalein12345",
+        )
+        called_kwargs_custom = executor._exchange.create_order.call_args.kwargs
+        assert (
+            called_kwargs_custom["params"]["clientOrderId"]
+            == "bg_broker_123scalein12345"
+        )
+        assert called_kwargs_custom["params"]["brokerId"] == "bg_broker_123"
 
     finally:
         await executor.close()

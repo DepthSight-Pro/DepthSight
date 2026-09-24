@@ -1,7 +1,10 @@
 // frontend/src/components/common/AiCopilotWidget.tsx
 
 import {
+	Blocks,
+	Bot,
 	Loader2,
+	MessageSquareText,
 	Paperclip,
 	Rocket,
 	Send,
@@ -10,26 +13,13 @@ import {
 	X,
 } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetTitle,
-} from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Segmented } from "@/components/ui/quant-ui";
 import {
 	type AIChatRequest,
 	useGetChatHistory,
@@ -106,33 +96,7 @@ const processImageFile = (file: File): Promise<SelectedImage> => {
 	});
 };
 
-// --- Component 1: Launcher Button ---
-const AiCopilotLauncher: React.FC<{ onClick: () => void }> = ({ onClick }) => {
-	const { t } = useTranslation("navigation");
-	return (
-		<TooltipProvider>
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<div className="fixed bottom-4 right-4 z-50">
-						<Button
-							size="icon"
-							className="rounded-full w-14 h-14 shadow-lg relative overflow-hidden bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:shadow-xl transition-shadow duration-300 ease-in-out before:content-[''] before:absolute before:top-0 before:-left-full before:w-full before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/30 before:to-transparent before:animate-[shimmer_2s_infinite]"
-							onClick={onClick}
-							aria-label={t("ai_assistant.ariaLabel")}
-						>
-							<WandSparkles className="h-7 w-7" />
-						</Button>
-					</div>
-				</TooltipTrigger>
-				<TooltipContent>
-					<p>{t("ai_assistant.ariaLabel", "Open AI Co-Pilot")}</p>
-				</TooltipContent>
-			</Tooltip>
-		</TooltipProvider>
-	);
-};
-
-// --- Component 2: Chat Window ---
+// --- Chat Window ---
 interface AiCopilotChatWindowProps {
 	isOpen: boolean;
 	onClose: () => void;
@@ -143,7 +107,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 }) => {
 	const { t } = useTranslation(["navigation", "strategy-editor"]);
 	const [input, setInput] = useState("");
-	const [isAutopilotMode, setIsAutopilotMode] = useState(false);
+	const [activeView, setActiveView] = useState<"chat" | "agent">("chat");
 	const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(
 		null,
 	);
@@ -237,6 +201,21 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 	const chatContainerRef = useRef<HTMLDivElement>(null);
 	const [width, setWidth] = useState(540);
 	const isResizing = useRef(false);
+	// True while the user stays near the bottom — new messages then auto-scroll.
+	// Opening the window always resets it so a long chat starts at the last message.
+	const stickToBottomRef = useRef(true);
+
+	const scrollChatToBottom = useCallback(() => {
+		const el = chatContainerRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, []);
+
+	const handleChatScroll = useCallback(() => {
+		const el = chatContainerRef.current;
+		if (!el) return;
+		stickToBottomRef.current =
+			el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+	}, []);
 
 	const initialMessage = t("ai_assistant.initialMessage");
 
@@ -259,6 +238,25 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 		isResizing.current = false;
 		document.removeEventListener("mousemove", handleMouseMove);
 		document.removeEventListener("mouseup", handleMouseUp);
+	};
+
+	const switchView = (view: "chat" | "agent") => {
+		setActiveView(view);
+		if (view === "agent") {
+			// Agent workspace needs more room; on mobile just use full width
+			setWidth(
+				window.innerWidth < 640
+					? window.innerWidth
+					: Math.max(540, Math.round(window.innerWidth / 2)),
+			);
+		} else {
+			setWidth(540);
+		}
+	};
+
+	const openMcpSettings = () => {
+		onClose();
+		navigate("/settings?tab=mcp");
 	};
 
 	const handleGenerateStrategy = () => {
@@ -433,7 +431,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 	};
 
 	const handleLoadStrategy = (
-		strategyJson: any,
+		strategyJson: Record<string, unknown> | null | undefined,
 	) => {
 		if (!strategyJson) return;
 		const finalConfig = strategyJson.config_data || strategyJson;
@@ -442,21 +440,39 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 		onClose();
 	};
 
+	useLayoutEffect(() => {
+		// Window (re)mounted = opened: always start at the latest message.
+		stickToBottomRef.current = true;
+		scrollChatToBottom();
+	}, [scrollChatToBottom]);
+
+	useLayoutEffect(() => {
+		// Follow new messages / typing indicator, unless the user scrolled up.
+		// Also runs when switching back to the chat tab (freshly mounted list).
+		if (activeView === "chat" && stickToBottomRef.current)
+			scrollChatToBottom();
+	}, [messages, isTyping, activeView, scrollChatToBottom]);
+
+	// Close with Escape (no modal overlay anymore, the site header stays usable).
 	useEffect(() => {
-		if (chatContainerRef.current) {
-			chatContainerRef.current.scrollTop =
-				chatContainerRef.current.scrollHeight;
-		}
-	}, []);
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") onClose();
+		};
+		window.addEventListener("keydown", handleKeyDown);
+		return () => window.removeEventListener("keydown", handleKeyDown);
+	}, [onClose]);
 
 	return (
-		<Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-			<SheetContent
-				style={{ width: `${width}px` }}
-				className={cn(
-					"flex flex-col p-0 border-l !max-w-none",
-					isDraggingImage && "ring-2 ring-primary ring-inset",
-				)}
+		// Docked panel (non-modal): sits below the site header so it never covers
+		// it, and the header Co-Pilot toggle stays clickable to close it.
+		<div
+			role="complementary"
+			aria-label={t("ai_assistant.title")}
+			style={{ width: `min(${width}px, 100vw)`, maxWidth: "100vw" }}
+			className={cn(
+				"fixed right-0 top-12 bottom-0 sm:top-14 z-50 flex flex-col gap-0 border-l border-t border-white/10 bg-[#0b0e14]/85 backdrop-blur-xl shadow-2xl rounded-tl-2xl animate-in fade-in-0 slide-in-from-right duration-300",
+				isDraggingImage && "ring-2 ring-primary ring-inset",
+			)}
 				onPaste={handlePaste}
 				onDragOver={(e) => {
 					if (
@@ -477,51 +493,63 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 				}}
 				onDrop={handleDrop}
 			>
-				<style>{`[data-radix-dialog-content] > button[aria-label="Close"] { display: none; }`}</style>
 				<div
 					onMouseDown={handleMouseDown}
-					className="absolute top-0 left-0 h-full w-2 cursor-ew-resize"
+					className="absolute top-0 left-0 h-full w-2 cursor-ew-resize hidden sm:block"
 					title={t("ai_assistant.resizeHandleTitle")}
 				/>
-				<SheetHeader className="p-4 border-b shrink-0 pl-6">
-					<div className="flex justify-between items-center mr-6">
-						<SheetTitle className="flex items-center">
-							<WandSparkles className="mr-2 animate-pulse text-indigo-400" />
-							{t("ai_assistant.title")}
-						</SheetTitle>
-						<Button
-							variant={isAutopilotMode ? "default" : "secondary"}
-							size="sm"
-							onClick={() => {
-								const nextMode = !isAutopilotMode;
-								setIsAutopilotMode(nextMode);
-								if (nextMode) {
-									setWidth(Math.max(540, Math.round(window.innerWidth / 2)));
-								} else {
-									setWidth(540);
-								}
-							}}
-							className={cn(
-								"rounded-full text-xs font-bold flex items-center gap-1.5 transition-all duration-300",
-								isAutopilotMode && "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20 shadow-lg"
-							)}
+				<div className="px-3 sm:px-4 py-2.5 border-b border-white/5 shrink-0">
+					<div className="flex items-center gap-1.5 sm:gap-2">
+						<span className="sr-only">{t("ai_assistant.title")}</span>
+						<Segmented<"chat" | "agent">
+							size="xs"
+							value={activeView}
+							onChange={switchView}
+							options={[
+								{
+									value: "chat",
+									label: t("ai_assistant.chatTab", "Chat"),
+									icon: <MessageSquareText size={12} />,
+								},
+								{
+									value: "agent",
+									label: t("ai_assistant.agentTab", "Agent"),
+									icon: <Bot size={12} />,
+								},
+							]}
+						/>
+						<div className="flex-1" />
+						<button
+							type="button"
+							onClick={openMcpSettings}
+							title={t("ai_assistant.mcpSettings", "MCP settings")}
+							className="flex h-7 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-[11px] font-medium text-white/60 transition-all hover:border-cyan/40 hover:text-cyan"
 						>
-							🚀 Autopilot (Pro)
-						</Button>
-						<SheetDescription className="sr-only">
-							{t("ai_assistant.srDescription")}
-						</SheetDescription>
+							<Blocks size={13} />
+							<span className="hidden sm:inline">
+								{t("ai_assistant.mcpSettings", "MCP settings")}
+							</span>
+						</button>
+						<button
+							type="button"
+							onClick={onClose}
+							aria-label="Close"
+							className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white"
+						>
+							<X size={15} />
+						</button>
 					</div>
-				</SheetHeader>
-				{isAutopilotMode ? (
-					<div className="flex-1 overflow-hidden p-4 bg-background">
+				</div>
+				{activeView === "agent" ? (
+					<div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
 						<AgentWorkspace onStrategyGenerated={handleLoadStrategy} />
 					</div>
 				) : (
 					<>
 						<div
 							ref={chatContainerRef}
-							className="flex-1 overflow-y-auto p-4 space-y-6"
+							onScroll={handleChatScroll}
+							className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-5"
 						>
 							{messages.map((msg, index) => {
 								const hasGenerationTrigger =
@@ -569,10 +597,10 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 												)}
 												<div
 													className={cn(
-														"rounded-lg px-4 py-2 max-w-[90%]",
+														"rounded-lg px-4 py-2 max-w-[90%] border",
 														msg.role === "user"
-															? "bg-primary text-primary-foreground"
-															: "bg-muted",
+															? "bg-primary text-primary-foreground border-transparent"
+															: "bg-white/[0.04] border-white/5",
 													)}
 												>
 													{msg.image_base64 && (
@@ -601,6 +629,10 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 																	)}
 																	alt="Uploaded chart"
 																	className="max-h-60 w-full object-contain"
+																	onLoad={() => {
+																		if (stickToBottomRef.current)
+																			scrollChatToBottom();
+																	}}
 																/>
 															</button>
 														</div>
@@ -627,7 +659,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 										{/* Show 'Open in Editor' button instead of JSON */}
 										{hasStrategyJson && (
 											<div className="flex justify-start">
-												<div className="rounded-lg px-4 py-2 bg-muted">
+												<div className="rounded-lg px-4 py-2 bg-white/[0.04] border border-white/5">
 													<p className="text-sm mb-2">
 														{t(
 															"ai_assistant.strategyGenerated",
@@ -649,7 +681,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 									<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground font-bold text-sm translate-y-px">
 										DS
 									</div>
-									<div className="rounded-lg px-4 py-2 bg-muted flex items-center space-x-2">
+									<div className="rounded-lg px-4 py-2 bg-white/[0.04] border border-white/5 flex items-center space-x-2">
 										<Loader2 className="h-5 w-5 animate-spin" />
 										<span>{t("ai_assistant.analyzing")}</span>
 									</div>
@@ -657,7 +689,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 							)}
 						</div>
 						{/* Bottom Chat Input Form */}
-						<div className="p-4 border-t border-border flex flex-col space-y-2 shrink-0 bg-background">
+						<div className="p-3 sm:p-4 border-t border-white/5 flex flex-col space-y-2 shrink-0">
 							{/* Image Preview (attached above textarea) */}
 							{selectedImage && (
 								<div className="flex items-center gap-2 border border-border rounded-xl p-2 bg-muted/40 max-w-fit animate-in fade-in">
@@ -688,7 +720,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 							)}
 
 							{/* Classic Multi-line Chat Textarea */}
-							<div className="relative rounded-2xl border border-border bg-background/90 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 shadow-lg transition-all">
+							<div className="relative rounded-2xl border border-white/10 bg-white/[0.03] focus-within:border-cyan/50 focus-within:ring-1 focus-within:ring-cyan/20 shadow-lg transition-all">
 								<textarea
 									id="copilot-prompt-input"
 									value={input}
@@ -724,7 +756,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 											type="button"
 											onClick={handleClear}
 											disabled={isTyping}
-											className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/40 transition disabled:opacity-50 flex items-center gap-1 text-xs cursor-pointer"
+											className="p-1.5 rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground hover:text-destructive hover:border-destructive/40 transition disabled:opacity-50 flex items-center gap-1 text-xs cursor-pointer"
 											title={t("ai_assistant.newChat", "Start new chat")}
 										>
 											<Trash2 className="w-3.5 h-3.5" />
@@ -736,7 +768,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 											type="button"
 											onClick={() => fileInputRef.current?.click()}
 											disabled={isTyping}
-											className="p-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary transition disabled:opacity-50 flex items-center gap-1 text-xs cursor-pointer"
+											className="p-1.5 rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground hover:text-foreground hover:border-cyan/40 transition disabled:opacity-50 flex items-center gap-1 text-xs cursor-pointer"
 											title={t("ai_assistant.uploadImage", "Upload chart screenshot")}
 										>
 											<Paperclip className="w-3.5 h-3.5" />
@@ -769,18 +801,17 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 								</div>
 							</div>
 
-							<p className="text-[10px] text-muted-foreground/60 text-center leading-tight mb-0.5 px-2">
-								{t("ai.disclaimer", { ns: "strategy-editor" })}
-							</p>
-						</div>
-					</>
-				)}
-			</SheetContent>
-		</Sheet>
+						<p className="text-[10px] text-muted-foreground/60 text-center leading-tight mb-0.5 px-2">
+							{t("ai.disclaimer", { ns: "strategy-editor" })}
+						</p>
+					</div>
+				</>
+			)}
+		</div>
 	);
 };
 
-// --- Component 3: Main Widget ---
+// --- Main Widget ---
 export const AiCopilotWidget: React.FC = () => {
 	const { widgetState, setWidgetState, sessionId, loadInitialSession } =
 		useAiCopilotStore();
@@ -802,7 +833,7 @@ export const AiCopilotWidget: React.FC = () => {
 	}, [sessionId]);
 
 	if (widgetState === "minimized") {
-		return <AiCopilotLauncher onClick={() => setWidgetState("open")} />;
+		return null;
 	}
 
 	if (widgetState === "open") {

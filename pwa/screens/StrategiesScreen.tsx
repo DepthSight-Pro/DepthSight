@@ -1,15 +1,23 @@
 // src/screens/StrategiesScreen.tsx
 
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import LaunchStrategyModal, {
 	type LaunchFormData,
 } from "../components/LaunchStrategyModal";
 import { Logo } from "../components/ui/logo";
 import { ICONS } from "../constants";
+import { useLiveMarks } from "../hooks/useLiveMarks";
+import {
+	applyLiveMarksToPositions,
+	overlayLiveStrategyPnl,
+	readExchangeOf,
+} from "../lib/livePnl";
+import { resolveStrategyTimeframe } from "../lib/strategyMeta";
 import { api } from "../services/api";
-import type { DisplayStrategy } from "../types";
+import { useRealtimeStore } from "../stores/realtimeStore";
+import type { DisplayStrategy, StrategyConfigDB } from "../types";
 
 interface StrategyItemProps {
 	strategy: DisplayStrategy;
@@ -40,6 +48,7 @@ const StrategyItem: React.FC<StrategyItemProps> = ({
 		runningInstance?.symbol ??
 		strategy.config_data?.name?.split("•")[0].trim() ??
 		"N/A";
+	const timeframe = resolveStrategyTimeframe(strategy.config_data) ?? "15m";
 	const { t } = useTranslation("pwa-common");
 	return (
 		<div className="p-4 bg-[hsl(var(--card))] rounded-xl mb-3 shadow-sm">
@@ -49,6 +58,8 @@ const StrategyItem: React.FC<StrategyItemProps> = ({
 						{name}
 					</div>
 					<div className="text-sm text-[hsl(var(--muted-foreground))]">
+						<span className="font-mono uppercase">{timeframe}</span>
+						{" · "}
 						{symbol}
 					</div>
 				</div>
@@ -170,7 +181,7 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 	onEditStrategy,
 }) => {
 	const [tab, setTab] = useState<"active" | "saved">("active");
-	const [strategies, setStrategies] = useState<DisplayStrategy[]>([]);
+	const [savedConfigs, setSavedConfigs] = useState<StrategyConfigDB[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [launchModalOpen, setLaunchModalOpen] = useState(false);
@@ -195,20 +206,8 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 				api.getSavedStrategies(),
 				api.getRunningStrategies(),
 			]);
-			const savedConfigs = savedRes;
-			const runningInstances = runningRes;
-			const merged: DisplayStrategy[] = savedConfigs.map((config) => {
-				const matching = runningInstances.filter(
-					(r) => (r.config_id || r.id) === config.id,
-				);
-				return {
-					...config,
-					isRunning: matching.length > 0,
-					runningInstance: matching[0],
-					runningInstances: matching,
-				};
-			});
-			setStrategies(merged);
+			setSavedConfigs(savedRes ?? []);
+			useRealtimeStore.getState().setStrategies(runningRes ?? []);
 		} catch (err) {
 			console.error(err);
 			setError(t("profile.failedToLoadPlans"));
@@ -223,6 +222,114 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 		}, 0);
 		return () => clearTimeout(timer);
 	}, [fetchStrategies]);
+
+	// Snapshot positions for the live PnL overlay (both modes, shared store).
+	const setStorePositions = useRealtimeStore((s) => s.setPositions);
+	useEffect(() => {
+		let cancelled = false;
+		Promise.all([api.getPositions("live"), api.getPositions("paper")])
+			.then(([liveRes, paperRes]) => {
+				if (cancelled) return;
+				setStorePositions("live", liveRes || []);
+				setStorePositions("paper", paperRes || []);
+			})
+			.catch((err) => console.error("Failed to fetch positions:", err));
+		return () => {
+			cancelled = true;
+		};
+	}, [setStorePositions]);
+
+	const storeStrategies = useRealtimeStore((s) => s.strategies);
+	const tradesSeq = useRealtimeStore((s) => s.tradesSeq);
+	const wsConnected = useRealtimeStore((s) => s.wsConnected);
+	const snapshotPositions = useRealtimeStore((s) => [
+		...s.positionsByMode.live,
+		...s.positionsByMode.paper,
+	]);
+
+	// Live mark-prices straight from exchanges (zero backend load).
+	// useLiveMarks reconnects only when the symbol set actually changes.
+	const { marks: strategyMarks } = useLiveMarks(
+		snapshotPositions.map((p) => ({
+			symbol: String(p.symbol),
+			exchange: readExchangeOf(p),
+		})),
+	);
+	const liveSnapshotPositions = useMemo(
+		() => applyLiveMarksToPositions(snapshotPositions, strategyMarks),
+		[snapshotPositions, strategyMarks],
+	);
+	const liveRunningStrategies = useMemo(
+		() =>
+			overlayLiveStrategyPnl(
+				storeStrategies,
+				snapshotPositions,
+				liveSnapshotPositions,
+			) ?? storeStrategies,
+		[storeStrategies, snapshotPositions, liveSnapshotPositions],
+	);
+
+	// Trades push (position closed) → refresh the running list.
+	useEffect(() => {
+		if (tradesSeq === 0) return;
+		let cancelled = false;
+		api
+			.getRunningStrategies()
+			.then((res) => {
+				if (!cancelled)
+					useRealtimeStore.getState().setStrategies(res || []);
+			})
+			.catch((err) => console.error("Failed to refresh strategies:", err));
+		return () => {
+			cancelled = true;
+		};
+	}, [tradesSeq]);
+
+	// Fallback polling while the socket is down (realtime is push-driven).
+	useEffect(() => {
+		if (wsConnected) return;
+		const id = setInterval(async () => {
+			try {
+				const [runningRes, liveRes, paperRes] = await Promise.all([
+					api.getRunningStrategies(),
+					api.getPositions("live"),
+					api.getPositions("paper"),
+				]);
+				useRealtimeStore.getState().setStrategies(runningRes || []);
+				setStorePositions("live", liveRes || []);
+				setStorePositions("paper", paperRes || []);
+			} catch (err) {
+				console.error("Failed fallback refresh:", err);
+			}
+		}, 5000);
+		return () => clearInterval(id);
+	}, [wsConnected, setStorePositions]);
+
+	// Combine saved configs with (live-overlaid) running instances.
+	const strategies = useMemo((): DisplayStrategy[] => {
+		const instancesByConfig = new Map<
+			string,
+			(typeof liveRunningStrategies)[number][]
+		>();
+		for (const inst of liveRunningStrategies) {
+			const key = inst.config_id || inst.id;
+			const arr = instancesByConfig.get(key) ?? [];
+			arr.push(inst);
+			instancesByConfig.set(key, arr);
+		}
+		return savedConfigs.map((config) => {
+			const instances = instancesByConfig.get(config.id) ?? [];
+			const primary = instances[0];
+			return {
+				...config,
+				...primary,
+				id: config.id,
+				name: config.name,
+				status: instances.length ? primary?.status || "RUNNING" : "STOPPED",
+				instances,
+			} as unknown as DisplayStrategy;
+		});
+	}, [savedConfigs, liveRunningStrategies]);
 
 	const handleStartStrategy = (id: string) => {
 		const strategy = strategies.find((s) => s.id === id);
@@ -338,6 +445,19 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 	return (
 		// --- 3. Apply handlers to the main container ---
 		<div {...swipeHandlers} className="p-4">
+			<div className="flex justify-end mb-2">
+				<span
+					className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
+						wsConnected
+							? "border-emerald-400/30 text-emerald-600"
+							: "border-amber-400/30 text-amber-600"
+					}`}
+				>
+					{wsConnected
+						? t("strategies.realtimeLive", "live")
+						: t("strategies.realtimePolling", "polling")}
+				</span>
+			</div>
 			<div className="flex gap-2 mb-4 p-1 bg-[hsl(var(--secondary))] rounded-lg">
 				<button
 					onClick={() => setTab("active")}

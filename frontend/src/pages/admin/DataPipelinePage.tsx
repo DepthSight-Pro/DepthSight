@@ -32,7 +32,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 
 interface StorageSymbol {
@@ -49,6 +48,24 @@ interface StorageSymbol {
   has_oi: boolean;
   has_depth: boolean;
 }
+
+/**
+ * Payload of /admin/data-pipeline/storage-info. apiClient unwraps the top-level
+ * `data` field, so the symbol list normally arrives under `symbols`.
+ */
+interface StorageInfoResponse {
+  symbols?: StorageSymbol[];
+  data?: { symbols?: StorageSymbol[] };
+}
+
+/** Safely extract a human-readable message from an unknown catch value. */
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+};
 
 const DataPipelinePage: React.FC = () => {
   // Config state
@@ -135,12 +152,12 @@ const DataPipelinePage: React.FC = () => {
       const url = force
         ? "/admin/data-pipeline/storage-info?force_refresh=true"
         : "/admin/data-pipeline/storage-info";
-      const res = await apiClient<any>(url);
-      const list = res?.symbols || res?.data?.symbols || (Array.isArray(res) ? res : []);
+      const res = await apiClient<StorageInfoResponse | StorageSymbol[]>(url);
+      const list = Array.isArray(res) ? res : (res.symbols ?? res.data?.symbols ?? []);
       setStorageData(list);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error fetching storage info:", error);
-      toast.error(`Storage load error: ${error?.message || error}`);
+      toast.error(`Storage load error: ${getErrorMessage(error) || "Unknown error"}`);
     }
   };
 
@@ -184,8 +201,8 @@ const DataPipelinePage: React.FC = () => {
       toast.success("Pipeline started");
       setIsRunning(true);
       setActiveTab("terminal");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to start pipeline");
+    } catch (error) {
+      toast.error(getErrorMessage(error) || "Failed to start pipeline");
     } finally {
       setIsLoading(false);
     }
@@ -197,8 +214,8 @@ const DataPipelinePage: React.FC = () => {
       await apiClient("/admin/data-pipeline/stop", { method: "POST" });
       toast.success("Pipeline stopped");
       setIsRunning(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to stop pipeline");
+    } catch (error) {
+      toast.error(getErrorMessage(error) || "Failed to stop pipeline");
     } finally {
       setIsLoading(false);
     }
@@ -207,7 +224,7 @@ const DataPipelinePage: React.FC = () => {
   const handleCatchUp = async () => {
     try {
       setIsLoading(true);
-      const res: any = await apiClient("/admin/data-pipeline/catch-up", { 
+      const res = await apiClient<{ message?: string }>("/admin/data-pipeline/catch-up", { 
         method: "POST",
         body: JSON.stringify({ delete_aggtrades: catchUpDeleteAggtrades })
       });
@@ -218,8 +235,8 @@ const DataPipelinePage: React.FC = () => {
          setIsRunning(true);
          setActiveTab("terminal");
       }
-    } catch (error: any) {
-      toast.error(error.message || "Failed to start catch-up");
+    } catch (error) {
+      toast.error(getErrorMessage(error) || "Failed to start catch-up");
     } finally {
       setIsLoading(false);
     }
@@ -462,7 +479,7 @@ const DataPipelinePage: React.FC = () => {
                       </Button>
                     )}
                   </div>
-                  <Button variant="outline" className="w-full" onClick={fetchStorageInfo}>
+                  <Button variant="outline" className="w-full" onClick={() => fetchStorageInfo()}>
                     <RefreshCw className="mr-2 h-4 w-4" /> Refresh Storage Map
                   </Button>
                 </CardContent>

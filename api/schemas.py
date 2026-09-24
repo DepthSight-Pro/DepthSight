@@ -1110,6 +1110,10 @@ class PositionResponseItem(BaseModel):
     take_profit: Optional[float] = None
     market_type: Optional[str] = None
     api_key_id: Optional[int] = None
+    exchange: Optional[str] = None
+    config_id: Optional[str] = Field(
+        None, description="Source strategy config id (position attribution)"
+    )
     signal_details_json: Optional[Dict[str, Any]] = None
     executions: Optional[List[TradeExecution]] = None
     partial_tp_orders: Optional[List[Dict[str, Any]]] = None
@@ -1151,6 +1155,9 @@ class StrategyInfo(StrategyRunRequest):  # For response
     mode: Optional[str] = Field("paper", description="Trading mode: live or paper")
     api_key_id: Optional[int] = Field(
         None, description="ID of the API key (subaccount) running this strategy"
+    )
+    exchange: Optional[str] = Field(
+        None, description="Exchange id (bitget, bybit, weex, okx, binance)"
     )
     name: Optional[str] = Field(
         None, description="User-defined name for the strategy instance"
@@ -2736,6 +2743,7 @@ class HubNodeRegister(BaseModel):
     # verifier uses it to reject orders belonging to a different account.
     bybit_uid: Optional[str] = Field(None, max_length=32)
     okx_uid: Optional[str] = Field(None, max_length=50)
+    bitget_uid: Optional[str] = Field(None, max_length=50)
     is_mining_server: Optional[bool] = None
     user_reward_share_percent: Optional[float] = None
     public_domain: Optional[str] = Field(None, max_length=255)
@@ -2924,6 +2932,7 @@ class MiningStatusResponse(BaseModel):
     is_mining_enabled: bool
     eligible_exchanges: List[str]
     rebate_rates: Dict[str, float] = Field(default_factory=dict)
+    exchange_multipliers: Dict[str, float] = Field(default_factory=dict)
     current_epoch_date: str
     daily_emission: float
     your_total_mined: float
@@ -2974,6 +2983,7 @@ class MiningConfigPublic(BaseModel):
     referral_mining_boost: float
     daily_emission_base: float = 547945.21
     rebate_rates: Dict[str, float] = Field(default_factory=dict)
+    exchange_multipliers: Dict[str, float] = Field(default_factory=dict)
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -2993,6 +3003,7 @@ class MiningConfigUpdate(BaseModel):
     quality_gate_operator: Optional[str] = None
     referral_mining_boost: Optional[float] = None
     rebate_rates: Optional[Dict[str, float]] = None
+    exchange_multipliers: Optional[Dict[str, float]] = None
 
     @field_validator("quality_gate_operator", mode="before")
     @classmethod
@@ -3236,3 +3247,84 @@ class PersonalAccessTokenInfo(BaseModel):
 
 class PersonalAccessTokenCreated(PersonalAccessTokenInfo):
     token: str  # Plain token, returned ONCE upon creation!
+
+
+# --- Universal Promo & Airdrop Campaign Schemas ---
+class PromoQuestProgress(BaseModel):
+    quest_type: str
+    title: str
+    description: str
+    reward: float
+    total_slots: int
+    claimed_slots: int
+    remaining_slots: int
+    is_claimed: bool
+    requirements: Dict[str, Any]
+    all_requirements_met: bool
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoStatusResponse(BaseModel):
+    has_active_campaign: bool
+    campaign_id: Optional[str] = None
+    campaign_name: Optional[str] = None
+    description: Optional[str] = None
+    exchange_id: Optional[str] = None
+    is_active: bool = False
+    is_admin_preview: bool = False
+    total_pool: float = 0.0
+    distributed: float = 0.0
+    remaining_pool: float = 0.0
+    quests: List[PromoQuestProgress] = []
+    ui_config: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoClaimRequest(BaseModel):
+    campaign_id: str
+    quest_type: str
+
+
+class PromoClaimResponse(BaseModel):
+    success: bool
+    message: str
+    reward_amount: float
+    quest_type: str
+    claimed_at: datetime
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoCampaignAdminResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    exchange_id: str
+    total_pool: float
+    distributed: float
+    admin_only: bool
+    is_active: bool
+    quests: List[Dict[str, Any]]
+    ui_config: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        from_attributes=True, alias_generator=to_camel, populate_by_name=True
+    )
+
+
+class PromoCampaignCreateOrUpdate(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    exchange_id: str = "bitget"
+    total_pool: float
+    admin_only: bool = True
+    is_active: bool = False
+    quests: List[Dict[str, Any]]
+    ui_config: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)

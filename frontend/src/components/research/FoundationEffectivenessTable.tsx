@@ -155,21 +155,21 @@ export const FoundationEffectivenessTable: React.FC<{
 	};
 
 	return (
-		<div className="flex-grow overflow-auto">
+		<div className="flex-grow overflow-x-auto">
 			{sortedData.length === 0 ? (
 				<div className="flex items-center justify-center h-full text-sm text-muted-foreground">
 					{t("combinationsPerformance.noTrades")}
 				</div>
 			) : (
-				<Table>
+				<Table className="min-w-[380px]">
 					<TableHeader>
 						<TableRow>
-							<TableHead>
+							<TableHead className="whitespace-nowrap">
 								{t("foundationEffectiveness.header.foundation")}
 							</TableHead>
 							<TableHead
 								onClick={() => handleSort("pnl")}
-								className="cursor-pointer text-right"
+								className="cursor-pointer text-right whitespace-nowrap"
 							>
 								<div className="flex items-center justify-end">
 									{t("foundationEffectiveness.header.pnl")}{" "}
@@ -178,7 +178,7 @@ export const FoundationEffectivenessTable: React.FC<{
 							</TableHead>
 							<TableHead
 								onClick={() => handleSort("winRate")}
-								className="cursor-pointer text-right"
+								className="cursor-pointer text-right whitespace-nowrap"
 							>
 								<div className="flex items-center justify-end">
 									{t("foundationEffectiveness.header.winRate")}{" "}
@@ -187,7 +187,7 @@ export const FoundationEffectivenessTable: React.FC<{
 							</TableHead>
 							<TableHead
 								onClick={() => handleSort("totalTrades")}
-								className="cursor-pointer text-right"
+								className="cursor-pointer text-right whitespace-nowrap"
 							>
 								<div className="flex items-center justify-end">
 									{t("foundationEffectiveness.header.totalTrades")}{" "}
@@ -199,20 +199,20 @@ export const FoundationEffectivenessTable: React.FC<{
 					<TableBody>
 						{sortedData.map((data, index) => (
 							<TableRow key={index}>
-								<TableCell>
+								<TableCell className="whitespace-nowrap">
 									<Badge variant="outline">
 										{data.foundationId.replace("w_", "")}
 									</Badge>
 								</TableCell>
 								<TableCell
-									className={`text-right font-medium ${data.pnl > 0 ? "text-green-500" : "text-red-500"}`}
+									className={`text-right font-medium whitespace-nowrap ${data.pnl > 0 ? "text-green-500" : "text-red-500"}`}
 								>
 									{data.pnl.toFixed(2)}
 								</TableCell>
-								<TableCell className="text-right">
+								<TableCell className="text-right whitespace-nowrap">
 									{data.winRate.toFixed(2)}%
 								</TableCell>
-								<TableCell className="text-right">{data.totalTrades}</TableCell>
+								<TableCell className="text-right whitespace-nowrap">{data.totalTrades}</TableCell>
 							</TableRow>
 						))}
 					</TableBody>

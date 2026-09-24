@@ -50,6 +50,7 @@ const protectedUserTopicPatterns = [
 	/^depthsight:events:positions:(\d+)$/,
 	/^depthsight:events:strategies:(\d+)$/,
 	/^depthsight:events:portfolio:(\d+)$/,
+	/^depthsight:events:trades:(\d+)$/,
 ];
 
 const getTopicUserId = (topic: string): number | null => {
@@ -66,9 +67,10 @@ const isUserScopedTopic = (topic: string) =>
 	topic.startsWith("depthsight:events:positions") ||
 	topic.startsWith("depthsight:events:strategies") ||
 	topic.startsWith("depthsight:events:portfolio") ||
+	topic.startsWith("depthsight:events:trades") ||
 	topic.startsWith("depthsight:events:log");
 
-const getSocketUrl = (token: string | null) => {
+const getSocketUrl = (token: string | null, reconnectKey = 0) => {
 	// If there is no token, do not attempt to connect
 	if (!token) {
 		console.warn(
@@ -100,8 +102,11 @@ const getSocketUrl = (token: string | null) => {
 		finalUrl = `${protocol}//${host}/ws`;
 	}
 
-	// Add the token to the final URL
-	return `${finalUrl}?token=${encodeURIComponent(token)}`;
+	// Add the token to the final URL.
+	// `reconnectKey` is intentionally part of the URL so manual reconnects
+	// produce a new value and force `react-use-websocket` to reconnect.
+	const separator = finalUrl.includes("?") ? "&" : "?";
+	return `${finalUrl}${separator}token=${encodeURIComponent(token)}&_r=${reconnectKey}`;
 };
 
 export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -121,13 +126,19 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 	});
 	const [reconnectKey, setReconnectKey] = useState<number>(0);
 	const isHandlingAuthClose = useRef<boolean>(false);
+	const lastSeq = useRef<Record<string, number>>({});
+	const lastPortfolioByKey = useRef<
+		Record<
+			string,
+			{ equity: number; wallet: number; unrealized: number; today: number }
+		>
+	>({});
 
-	// Synchronize when authToken from useAuth() updates
-	useEffect(() => {
-		if (authToken && authToken !== currentToken) {
-			setCurrentToken(authToken);
-		}
-	}, [authToken, currentToken]);
+	// Synchronize when authToken from useAuth() updates.
+	// Adjusted during render (not in an effect) to avoid cascading renders.
+	if (authToken && authToken !== currentToken) {
+		setCurrentToken(authToken);
+	}
 
 	// Listen for auth:token-refreshed event across the app
 	useEffect(() => {
@@ -162,7 +173,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 	// Re-check token before building URL
 	const socketUrl = useMemo(() => {
 		const tokenToUse = currentToken || localStorage.getItem("authToken");
-		return getSocketUrl(tokenToUse);
+		return getSocketUrl(tokenToUse, reconnectKey);
 	}, [currentToken, reconnectKey]);
 
 	const { lastMessage, readyState, sendMessage } = useBaseWebSocket(
@@ -312,6 +323,217 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 			);
 		};
 
+		// Stale-drop for out-of-order push snapshots (reconnect/resubscribe).
+		// Seq is per-controller, so scope by api_key_id for multi-account.
+		const isFresh = (key: string, seq: unknown, apiKey?: unknown): boolean => {
+			const n = typeof seq === "number" ? seq : Number(seq);
+			if (!Number.isFinite(n)) return true; // legacy payload without seq
+			const scope =
+				apiKey === null || apiKey === undefined
+					? key
+					: `${key}:${String(apiKey)}`;
+			if ((lastSeq.current[scope] ?? -1) > n) return false;
+			lastSeq.current[scope] = n;
+			return true;
+		};
+
+		interface PushPayload {
+			user_id?: number;
+			api_key_id?: number | null;
+			seq?: number;
+			data?: unknown;
+		}
+
+		const normMode = (m: unknown): string => String(m ?? "").toLowerCase();
+
+		/**
+		 * Push snapshots are per-controller (user + api_key), while list queries
+		 * may aggregate several accounts ("all"). Merge by api_key_id instead of
+		 * replacing, otherwise one account's snapshot wipes the others.
+		 *
+		 * Snapshots may be truncated (backend sends core fields only, heavy
+		 * traces stay in the REST state keys). Rows are therefore merged
+		 * per identity, so fields missing from the push — `executions`,
+		 * `signal_details_json`, `partial_tp_orders`, `dca_orders` — keep the
+		 * values loaded via REST. Without this the live deal chart loses the
+		 * limit/partial order rails after the first push (~8 s).
+		 */
+		const rowIdentity = (row: Record<string, unknown>): string => {
+			const id = row.id ?? row.__id;
+			if (id !== null && id !== undefined && String(id) !== "") {
+				return `id:${String(id)}`;
+			}
+			// Positions without a client order id fall back to their
+			// book-keeping key: symbol + account + mode.
+			return `sym:${String(row.symbol ?? "")}|${String(
+				row.api_key_id ?? "",
+			)}|${normMode(row.mode)}`;
+		};
+
+		const mergeListPush = <T extends Record<string, unknown>>(
+			rootKey: string,
+			queryModeIndex: number,
+			queryApiKeyIndex: number,
+			payload: PushPayload,
+			rows: T[],
+		): void => {
+			const apiKey =
+				payload.api_key_id === null || payload.api_key_id === undefined
+					? null
+					: Number(payload.api_key_id);
+			const cache = queryClient.getQueryCache();
+			const queries = cache.findAll({ queryKey: [rootKey] });
+			if (queries.length === 0) {
+				queryClient.setQueryData(authScopedQueryKey(rootKey), rows);
+				return;
+			}
+			for (const q of queries) {
+				const key = q.queryKey as unknown[];
+				const qMode = key[queryModeIndex] as string | undefined;
+				const qApiKey = key[queryApiKeyIndex] as number | "all" | undefined;
+				// A single-account query shows only its own controller data.
+				if (
+					typeof qApiKey === "number" &&
+					apiKey !== null &&
+					Number(qApiKey) !== apiKey
+				) {
+					continue;
+				}
+				let incoming = rows;
+				if (qMode) {
+					const filtered = rows.filter(
+						(r) => !r.mode || normMode(r.mode) === normMode(qMode),
+					);
+					// Never wipe on mode mismatch — keep payload as-is.
+					if (filtered.length > 0 || rows.length === 0) incoming = filtered;
+				}
+				queryClient.setQueryData(key as readonly unknown[], (old: unknown) => {
+					if (!Array.isArray(old)) return incoming;
+					const oldRows = old as T[];
+					const cachedByIdentity = new Map<string, T>();
+					for (const row of oldRows) {
+						cachedByIdentity.set(rowIdentity(row), row);
+					}
+					// Fresh push values win, but cached-only fields survive
+					// (closed positions simply disappear from `incoming`).
+					const merged = incoming.map((row) => {
+						const cachedRow = cachedByIdentity.get(rowIdentity(row));
+						return cachedRow ? { ...cachedRow, ...row } : row;
+					});
+					if (apiKey === null) return merged;
+					const rest = oldRows.filter(
+						(o) => Number(o.api_key_id) !== apiKey,
+					);
+					return [...rest, ...merged];
+				});
+			}
+		};
+
+		const applyPositionsPush = (payload: unknown) => {
+			const p = payload as PushPayload;
+			if (!isFresh("positions", p?.seq, p?.api_key_id)) return;
+			if (!Array.isArray(p?.data)) {
+				queryClient.invalidateQueries({ queryKey: ["positions"] });
+				return;
+			}
+			// ["positions", authScope, mode, apiKeyId, marketType]
+			mergeListPush("positions", 2, 3, p, p.data as Record<string, unknown>[]);
+		};
+
+		const applyStrategiesPush = (payload: unknown) => {
+			const p = payload as PushPayload;
+			if (!isFresh("strategies", p?.seq, p?.api_key_id)) return;
+			if (!Array.isArray(p?.data)) {
+				queryClient.invalidateQueries({ queryKey: ["strategies"] });
+				return;
+			}
+			const mapped = (p.data as Array<Record<string, unknown>>).map((s) => ({
+				...s,
+				name: (s.name ?? s.strategy_name ?? "") as string,
+			}));
+			// ["strategies", authScope, mode, apiKeyId]
+			mergeListPush("strategies", 2, 3, p, mapped);
+		};
+
+		// Per-controller portfolio numbers for "all accounts" aggregation.
+		const portfolioStore = lastPortfolioByKey.current;
+
+		const applyPortfolioPush = (payload: unknown) => {
+			const p = payload as PushPayload;
+			if (!isFresh("portfolio", p?.seq, p?.api_key_id)) return;
+			const d = p?.data as Record<string, unknown> | undefined;
+			if (!d || typeof d !== "object") {
+				queryClient.invalidateQueries({ queryKey: ["portfolioStatus"] });
+				return;
+			}
+			const numbers = {
+				equity: Number(d.total_equity ?? d.total_wallet_balance ?? 0),
+				wallet: Number(d.total_wallet_balance ?? 0),
+				unrealized: Number(d.total_unrealized_pnl ?? 0),
+				today: Number(d.today_pnl ?? 0),
+			};
+			const apiKey =
+				p.api_key_id === null || p.api_key_id === undefined
+					? null
+					: String(p.api_key_id);
+			if (apiKey !== null) portfolioStore[apiKey] = numbers;
+			const toMapped = (n: typeof numbers) => ({
+				balance: n.equity,
+				today_pnl: n.today,
+				is_trading_allowed: (d.is_trading_allowed as boolean) ?? true,
+				consecutive_losses: Number(d.consecutive_losses ?? 0),
+				timestamp_utc: (d.updated_at as string) ?? new Date().toISOString(),
+				total_unrealized_pnl: n.unrealized,
+				totalUnrealizedPnl: n.unrealized,
+			});
+			// ["portfolioStatus", authScope, mode, apiKeyId, marketType]
+			const queries = queryClient
+				.getQueryCache()
+				.findAll({ queryKey: ["portfolioStatus"] });
+			if (queries.length === 0) {
+				queryClient.setQueryData(
+					authScopedQueryKey("portfolioStatus"),
+					toMapped(numbers),
+				);
+				return;
+			}
+			for (const q of queries) {
+				const key = q.queryKey as unknown[];
+				const qApiKey = key[3] as number | "all" | undefined;
+				let n = numbers;
+				if (
+					(qApiKey === "all" || qApiKey === undefined) &&
+					apiKey !== null &&
+					Object.keys(portfolioStore).length > 0
+				) {
+					// Aggregated view: sum across known controllers.
+					n = Object.values(portfolioStore).reduce(
+						(acc, v) => ({
+							equity: acc.equity + v.equity,
+							wallet: acc.wallet + v.wallet,
+							unrealized: acc.unrealized + v.unrealized,
+							today: acc.today + v.today,
+						}),
+						{ equity: 0, wallet: 0, unrealized: 0, today: 0 },
+					);
+				} else if (
+					typeof qApiKey === "number" &&
+					apiKey !== null &&
+					Number(qApiKey) !== Number(apiKey)
+				) {
+					continue; // another account's query
+				}
+				const mapped = toMapped(n);
+				queryClient.setQueryData(
+					key as readonly unknown[],
+					(old: unknown) => ({
+						...((old as Record<string, unknown>) ?? {}),
+						...mapped,
+					}),
+				);
+			}
+		};
+
 		if (lastMessage !== null) {
 			try {
 				const message = JSON.parse(lastMessage.data);
@@ -327,28 +549,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 					return;
 				}
 
-				if (subscriptions.current.has(topic)) {
-					subscriptions.current.get(topic)?.forEach((callback) => {
-						try {
-							callback(payload);
-						} catch (e) {
-							console.error(
-								`Error in websocket callback for topic ${topic}`,
-								e,
-							);
-						}
-					});
-					return;
-				}
-
-				// Handle user-scoped channels (channels with user_id suffix)
-				// Pattern: depthsight:events:positions:{user_id}
+				// Global push handling runs first so caches stay fresh even when
+				// a component also listens on the same topic (no early return).
 				if (topic.startsWith("depthsight:events:portfolio:")) {
-					queryClient.invalidateQueries({ queryKey: ["portfolioStatus"] });
+					applyPortfolioPush(payload);
 				} else if (topic.startsWith("depthsight:events:strategies:")) {
-					queryClient.invalidateQueries({ queryKey: ["strategies"] });
+					applyStrategiesPush(payload);
 				} else if (topic.startsWith("depthsight:events:positions:")) {
-					queryClient.invalidateQueries({ queryKey: ["positions"] });
+					applyPositionsPush(payload);
+				} else if (topic.startsWith("depthsight:events:trades:")) {
+					queryClient.invalidateQueries({ queryKey: ["tradeHistory"] });
+					queryClient.invalidateQueries({ queryKey: ["portfolioEquity"] });
 				} else if (
 					topic.startsWith("depthsight:events:log") ||
 					topic.startsWith("user_logs:")
@@ -372,6 +583,19 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 					default:
 						break;
 				}
+
+				if (subscriptions.current.has(topic)) {
+					subscriptions.current.get(topic)?.forEach((callback) => {
+						try {
+							callback(payload);
+						} catch (e) {
+							console.error(
+								`Error in websocket callback for topic ${topic}`,
+								e,
+							);
+						}
+					});
+				}
 			} catch (e) {
 				console.error(
 					"Failed to parse WebSocket message",
@@ -382,6 +606,25 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 			}
 		}
 	}, [lastMessage, queryClient, user?.id]);
+
+	// Engine push channels live for the whole session. The WS server forwards
+	// ONLY subscribed topics, so without this nothing would ever arrive.
+	// Cache updates happen in the global message handler above; the callback
+	// is a noop placeholder.
+	const noopPushCallback = useCallback(() => {}, []);
+	useEffect(() => {
+		if (!user?.id) return;
+		const channels = [
+			`depthsight:events:positions:${user.id}`,
+			`depthsight:events:strategies:${user.id}`,
+			`depthsight:events:portfolio:${user.id}`,
+			`depthsight:events:trades:${user.id}`,
+		];
+		channels.forEach((c) => subscribe(c, noopPushCallback));
+		return () => {
+			channels.forEach((c) => unsubscribe(c, noopPushCallback));
+		};
+	}, [user?.id, subscribe, unsubscribe, noopPushCallback]);
 
 	return (
 		<WebSocketContext.Provider

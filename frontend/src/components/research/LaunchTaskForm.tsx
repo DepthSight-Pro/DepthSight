@@ -9,13 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import { Segmented } from "@/components/ui/quant-ui";
 import {
 	Form,
 	FormControl,
@@ -34,7 +28,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 // --- API AND TYPE IMPORTS ---
@@ -382,26 +375,31 @@ export const LaunchTaskForm: React.FC = () => {
 	};
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>{t("launchTask.title")}</CardTitle>
-				<CardDescription>{t("launchTask.description")}</CardDescription>
-			</CardHeader>
-			<CardContent>
-				<Tabs value={activeTab} onValueChange={setActiveTab}>
-					<TabsList className="grid w-full grid-cols-3">
-						<TabsTrigger value="backtest">
-							{t("launchForm.tabBacktest")}
-						</TabsTrigger>
-						<TabsTrigger value="optimization">
-							{t("launchForm.tabOptimization")}
-						</TabsTrigger>
-						<TabsTrigger value="portfolio_backtest">
-							{t("launchForm.tabPortfolio")}
-						</TabsTrigger>
-					</TabsList>
+		<div className="rounded-2xl border border-white/10 glass shadow-xl overflow-hidden">
+			<div className="p-6 border-b border-white/5">
+				<h2 className="text-base font-bold text-white tracking-tight">
+					{t("launchTask.title")}
+				</h2>
+				<p className="text-xs text-white/50 mt-1">
+					{t("launchTask.description")}
+				</p>
+			</div>
+			<div className="p-6">
+				<div className="mb-6">
+					<Segmented<"backtest" | "optimization" | "portfolio_backtest">
+						size="md"
+						value={activeTab as "backtest" | "optimization" | "portfolio_backtest"}
+						onChange={(v) => setActiveTab(v)}
+						options={[
+							{ value: "backtest", label: t("launchForm.tabBacktest") },
+							{ value: "optimization", label: t("launchForm.tabOptimization") },
+							{ value: "portfolio_backtest", label: t("launchForm.tabPortfolio") },
+						]}
+					/>
+				</div>
 
-					<TabsContent value="backtest" className="pt-4">
+				{activeTab === "backtest" && (
+					<div className="animate-fade-up">
 						<Form {...backtestForm}>
 							<form
 								onSubmit={backtestForm.handleSubmit(handleBacktestSubmit)}
@@ -518,7 +516,7 @@ export const LaunchTaskForm: React.FC = () => {
 								<Button
 									type="submit"
 									disabled={isBacktesting}
-									className="w-full"
+									className="w-full h-10 font-semibold bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_20px_-5px_rgba(0,212,255,0.7)] hover:shadow-[0_0_25px_-3px_rgba(0,212,255,0.9)] hover:brightness-110 rounded-xl transition-all"
 								>
 									{isBacktesting && (
 										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -529,9 +527,11 @@ export const LaunchTaskForm: React.FC = () => {
 								</Button>
 							</form>
 						</Form>
-					</TabsContent>
+					</div>
+				)}
 
-					<TabsContent value="optimization" className="pt-4">
+				{activeTab === "optimization" && (
+					<div className="animate-fade-up">
 						<Form {...optimizationForm}>
 							<form
 								onSubmit={optimizationForm.handleSubmit(
@@ -647,7 +647,7 @@ export const LaunchTaskForm: React.FC = () => {
 								<Button
 									type="submit"
 									disabled={isOptimizing}
-									className="w-full"
+									className="w-full h-10 font-semibold bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_20px_-5px_rgba(0,212,255,0.7)] hover:shadow-[0_0_25px_-3px_rgba(0,212,255,0.9)] hover:brightness-110 rounded-xl transition-all"
 								>
 									{isOptimizing && (
 										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -658,9 +658,11 @@ export const LaunchTaskForm: React.FC = () => {
 								</Button>
 							</form>
 						</Form>
-					</TabsContent>
+					</div>
+				)}
 
-					<TabsContent value="portfolio_backtest" className="pt-4">
+				{activeTab === "portfolio_backtest" && (
+					<div className="animate-fade-up">
 						<Form {...portfolioBacktestForm}>
 							<form
 								onSubmit={portfolioBacktestForm.handleSubmit(
@@ -804,7 +806,7 @@ export const LaunchTaskForm: React.FC = () => {
 								<Button
 									type="submit"
 									disabled={isPortfolioLoading}
-									className="w-full"
+									className="w-full h-10 font-semibold bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_20px_-5px_rgba(0,212,255,0.7)] hover:shadow-[0_0_25px_-3px_rgba(0,212,255,0.9)] hover:brightness-110 rounded-xl transition-all"
 								>
 									{isPortfolioLoading && (
 										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -815,9 +817,9 @@ export const LaunchTaskForm: React.FC = () => {
 								</Button>
 							</form>
 						</Form>
-					</TabsContent>
-				</Tabs>
-			</CardContent>
-		</Card>
+					</div>
+				)}
+			</div>
+		</div>
 	);
 };

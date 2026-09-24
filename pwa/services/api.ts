@@ -44,6 +44,197 @@ import type {
 
 export const API_BASE_URL = ""; // The proxy will handle the full URL
 
+// --- Typed payloads for PWA API (no explicit `any`) ---
+
+interface ApiErrorPayload {
+	detail?: string;
+	error?: string;
+	message?: string;
+	[key: string]: unknown;
+}
+
+interface PwaMiningStats {
+	eligibleExchanges?: string[];
+	eligible_exchanges?: string[];
+	rebateRates?: Record<string, number>;
+	rebate_rates?: Record<string, number>;
+	exchangeMultipliers?: Record<string, number>;
+	exchange_multipliers?: Record<string, number>;
+	dailyEmission?: number;
+	daily_emission?: number;
+	yourEpochReward?: number;
+	your_epoch_reward?: number;
+	epochTotalRebates?: number;
+	epoch_total_rebates?: number;
+	yourCumulativeRebates?: number;
+	your_cumulative_rebates?: number;
+	userCumulativeRebate?: number;
+	user_cumulative_rebate?: number;
+	cumulativeRebates?: number;
+	totalDistributed?: number;
+	total_distributed?: number;
+	serverTotalMined?: number;
+	server_total_mined?: number;
+	serverTotalVolume?: number;
+	server_total_volume?: number;
+	yourVolumeShare?: number;
+	your_volume_share?: number;
+	yourDailyVolume?: number;
+	your_daily_volume?: number;
+	serverDailyVolume?: number;
+	server_daily_volume?: number;
+	[key: string]: unknown;
+}
+
+interface PwaMiningStatus {
+	isMiningEnabled: boolean;
+	is_mining_enabled?: boolean;
+	isGlobalMiningEnabled?: boolean;
+	is_global_mining_enabled?: boolean;
+	nodeUuid?: string;
+	node_uuid?: string;
+	nodeName?: string;
+	node_name?: string;
+	registeredOnHub?: boolean;
+	registered_on_hub?: boolean;
+	nodeReferralCode?: string;
+	node_referral_code?: string;
+	referrerNodeUuid?: string;
+	referrer_node_uuid?: string;
+	referrerReferralCode?: string;
+	referrer_referral_code?: string;
+	hasWelcomeBonus?: boolean;
+	has_welcome_bonus?: boolean;
+	totalMined?: number;
+	total_mined?: number;
+	totalDistributed?: number;
+	total_distributed?: number;
+	serverTotalMined?: number;
+	server_total_mined?: number;
+	dailyEmission?: number;
+	daily_emission?: number;
+	yourEpochReward?: number;
+	your_epoch_reward?: number;
+	epochTotalRebates?: number;
+	epoch_total_rebates?: number;
+	userCumulativeRebate?: number;
+	user_cumulative_rebate?: number;
+	userRewardSharePercent?: number;
+	user_reward_share_percent?: number;
+	userTradeVolume?: number;
+	user_trade_volume?: number;
+	userEstimatedRebate?: number;
+	user_estimated_rebate?: number;
+	config?: Record<string, unknown>;
+	stats?: PwaMiningStats;
+	exchangeMultipliers?: Record<string, number>;
+	exchange_multipliers?: Record<string, number>;
+	[key: string]: unknown;
+}
+
+interface PwaPromoQuestRequirements {
+	hasExchangeKey?: boolean;
+	exchangeUid?: string | null;
+	isMasterAccount?: boolean;
+	verifiedVolume?: number;
+	volumeThreshold?: number;
+	totalVolume?: number;
+	currentVolume?: number;
+	isVolumeVerifying?: boolean;
+	isVolumeVerified?: boolean;
+	isPhysicalNode?: boolean;
+	nodeAgeDays?: number;
+	minNodeAgeDays?: number;
+	hasWallet?: boolean;
+	hasActiveMining?: boolean;
+	[key: string]: unknown;
+}
+
+interface PwaPromoQuestProgress {
+	questType: string;
+	title?: string;
+	description?: string;
+	reward?: number;
+	totalSlots?: number;
+	claimedSlots?: number;
+	remainingSlots?: number;
+	isClaimed?: boolean;
+	allRequirementsMet?: boolean;
+	requirements?: PwaPromoQuestRequirements;
+	[key: string]: unknown;
+}
+
+interface PwaPromoStatus {
+	hasActiveCampaign: boolean;
+	has_active_campaign?: boolean;
+	campaignId?: string;
+	campaign_id?: string;
+	campaignName?: string;
+	campaign_name?: string;
+	description?: string;
+	exchangeId?: string;
+	exchange_id?: string;
+	isActive?: boolean;
+	isAdminPreview?: boolean;
+	is_admin_preview?: boolean;
+	totalPool?: number;
+	distributed?: number;
+	remainingPool?: number;
+	rebateMultiplier?: number;
+	quests?: PwaPromoQuestProgress[];
+	uiConfig?: Record<string, unknown>;
+	ui_config?: Record<string, unknown>;
+	[key: string]: unknown;
+}
+
+interface PwaPromoClaimResponse {
+	success: boolean;
+	message: string;
+	rewardAmount?: number;
+	reward_amount?: number;
+	questType?: string;
+	quest_type?: string;
+	claimedAt?: string;
+	claimed_at?: string;
+	[key: string]: unknown;
+}
+
+interface PwaMiningReferralItem {
+	id: string;
+	name?: string;
+	createdAt?: string;
+	created_at?: string;
+	tradeVolumeUsdt?: number;
+	trade_volume_usdt?: number;
+	totalMinedDepth?: number;
+	total_mined_depth?: number;
+	referralBonusEarned?: number;
+	referral_bonus_earned?: number;
+	hasWelcomeBonus?: boolean;
+	has_welcome_bonus?: boolean;
+	status?: string;
+	[key: string]: unknown;
+}
+
+interface PwaMiningReferralsResponse {
+	totalInvited?: number;
+	total_invited?: number;
+	activeReferrals?: number;
+	active_referrals?: number;
+	totalReferralRewardsDepth?: number;
+	total_referral_rewards_depth?: number;
+	totalReferralVolumeUsdt?: number;
+	total_referral_volume_usdt?: number;
+	referrals?: PwaMiningReferralItem[];
+	[key: string]: unknown;
+}
+
+interface PwaMiningDeactivateResponse {
+	success: boolean;
+	message?: string;
+	[key: string]: unknown;
+}
+
 // --- Helper Functions ---
 
 const getAuthToken = (): string | null => {
@@ -148,16 +339,22 @@ const apiFetch = async <T = unknown>(
 	}
 
 	if (!response.ok) {
-		let errorData: any;
+		let errorData: ApiErrorPayload;
 		try {
-			errorData = await response.json();
+			errorData = (await response.json()) as ApiErrorPayload;
 		} catch {
 			errorData = { error: `HTTP error! status: ${response.status}` };
 		}
 		console.error(`API Error on ${endpoint}:`, errorData);
-		throw new Error(
-			errorData.detail || errorData.error || `Request failed with status ${response.status}`,
-		);
+		const detailMessage =
+			typeof errorData.detail === "string" && errorData.detail
+				? errorData.detail
+				: typeof errorData.error === "string" && errorData.error
+					? errorData.error
+					: typeof errorData.message === "string" && errorData.message
+						? errorData.message
+						: `Request failed with status ${response.status}`;
+		throw new Error(detailMessage);
 	}
 
 	if (response.status === 204) {
@@ -220,33 +417,31 @@ export const api = {
 			return res.json();
 		}),
 	getTotpStatus: (): Promise<TotpStatusResponse> =>
-		apiFetch<any>("/auth/2fa/status").then((r) =>
-			r && r.data !== undefined ? r.data : r,
-		),
+		apiFetch<TotpStatusResponse>("/auth/2fa/status"),
 	setupTotp: (): Promise<TotpSetupResponse> =>
-		apiFetch<any>("/auth/2fa/setup", {
+		apiFetch<TotpSetupResponse>("/auth/2fa/setup", {
 			method: "POST",
-		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+		}),
 	confirmTotp: (payload: {
 		secret: string;
 		code: string;
 	}): Promise<TotpConfirmResponse> =>
-		apiFetch<any>("/auth/2fa/confirm", {
+		apiFetch<TotpConfirmResponse>("/auth/2fa/confirm", {
 			method: "POST",
 			body: JSON.stringify(payload),
-		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+		}),
 	disableTotp: (payload: TotpDisablePayload): Promise<{ message: string }> =>
-		apiFetch<any>("/auth/2fa/disable", {
+		apiFetch<{ message: string }>("/auth/2fa/disable", {
 			method: "POST",
 			body: JSON.stringify(payload),
-		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+		}),
 	regenerateBackupCodes: (
 		payload: TotpRegenerateBackupCodesPayload,
 	): Promise<TotpBackupCodesResponse> =>
-		apiFetch<any>("/auth/2fa/regenerate-backup-codes", {
+		apiFetch<TotpBackupCodesResponse>("/auth/2fa/regenerate-backup-codes", {
 			method: "POST",
 			body: JSON.stringify(payload),
-		}).then((r) => (r && r.data !== undefined ? r.data : r)),
+		}),
 	register: (userData: Record<string, unknown>): Promise<{ token: Token; user: User }> =>
 		apiFetch("/register", {
 			method: "POST",
@@ -297,6 +492,23 @@ export const api = {
 		apiFetch<{ message: string }>(`/positions/${symbol}`, {
 			method: "DELETE",
 		}),
+	// Last close price for a symbol via backend ccxt proxy (WEEX tick fallback).
+	getProxyKlines: (
+		symbol: string,
+		interval: string,
+		exchange: string,
+		limit = 1,
+	): Promise<Array<[number, number, number, number, number, number]>> => {
+		const q = new URLSearchParams({
+			symbol: symbol.replace(/[^a-zA-Z0-9]/g, "").toUpperCase(),
+			interval,
+			exchange,
+			limit: String(limit),
+		});
+		return apiFetch<Array<[number, number, number, number, number, number]>>(
+			`/proxy/klines?${q.toString()}`,
+		);
+	},
 
 	// --- AI Chat ---
 	aiChat: (request: AiChatRequest): Promise<AiChatResponse> =>
@@ -520,18 +732,39 @@ export const api = {
 		return apiFetch<{ trades: TradeData[]; total: number }>(`/trades?${queryParams.toString()}`);
 	},
 
-	getMiningStatus: (): Promise<any> => apiFetch<any>("/mining/status"),
-	getMiningReferrals: (): Promise<any> => apiFetch<any>("/hub/mining/referrals"),
-	activateMining: (referrerCode?: string): Promise<any> =>
-		apiFetch<any>("/mining/activate", {
+	getMiningStatus: (): Promise<PwaMiningStatus> =>
+		apiFetch<PwaMiningStatus>("/mining/status"),
+	getPromoStatus: (nodeUuid?: string): Promise<PwaPromoStatus> =>
+		apiFetch<PwaPromoStatus>(
+			`/hub/promo/status${nodeUuid ? `?node_uuid=${encodeURIComponent(nodeUuid)}` : ""}`,
+		),
+	claimPromoQuest: (
+		campaignId: string,
+		questType: string,
+		nodeUuid?: string,
+	): Promise<PwaPromoClaimResponse> =>
+		apiFetch<PwaPromoClaimResponse>(
+			`/hub/promo/claim${nodeUuid ? `?node_uuid=${encodeURIComponent(nodeUuid)}` : ""}`,
+			{
+				method: "POST",
+				body: JSON.stringify({
+					campaign_id: campaignId,
+					quest_type: questType,
+				}),
+			},
+		),
+	getMiningReferrals: (): Promise<PwaMiningReferralsResponse> =>
+		apiFetch<PwaMiningReferralsResponse>("/hub/mining/referrals"),
+	activateMining: (referrerCode?: string): Promise<PwaMiningStatus> =>
+		apiFetch<PwaMiningStatus>("/mining/activate", {
 			method: "POST",
 			body: JSON.stringify({
 				referrer_code: referrerCode,
 				referrerCode: referrerCode,
 			}),
 		}),
-	deactivateMining: (): Promise<any> =>
-		apiFetch<any>("/mining/deactivate", {
+	deactivateMining: (): Promise<PwaMiningDeactivateResponse> =>
+		apiFetch<PwaMiningDeactivateResponse>("/mining/deactivate", {
 			method: "POST",
 		}),
 	getWalletNonce: (address: string): Promise<{ nonce: string; message: string }> =>

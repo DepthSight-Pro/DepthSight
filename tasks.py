@@ -3397,24 +3397,32 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
             reports_res = await session.execute(reports_stmt)
             reports = reports_res.scalars().all()
 
-            if not reports:
-                pending_stmt = (
-                    select(models.HubTelemetryReport.id)
-                    .where(
-                        models.HubTelemetryReport.verification_status == "PENDING",
-                        models.HubTelemetryReport.created_at <= yesterday_end,
-                    )
-                    .limit(1)
+            # The epoch waits for EVERYONE: manual (cabinet XLSX upload) and
+            # automatic (broker API) confirmations alike. Never finalize while
+            # PENDING reports for the epoch window remain — even if other
+            # trades are already VERIFIED. Pending auto-exchange reports clear
+            # by themselves (48h grace -> REJECTED); manual-exchange reports
+            # wait for the operator upload (or --reject-ids for junk).
+            pending_stmt = (
+                select(models.HubTelemetryReport.id)
+                .where(
+                    models.HubTelemetryReport.verification_status == "PENDING",
+                    models.HubTelemetryReport.created_at <= yesterday_end,
+                    models.HubTelemetryReport.epoch_date.is_(None),
                 )
-                pending_exists = (
-                    await session.execute(pending_stmt)
-                ).scalars().first() is not None
-                if pending_exists:
-                    logger.warning(
-                        f"[MINING] Epoch {yesterday} has unverified PENDING reports. "
-                        "Not finalizing; will retry on next run."
-                    )
-                    return
+                .limit(1)
+            )
+            pending_exists = (
+                await session.execute(pending_stmt)
+            ).scalars().first() is not None
+            if pending_exists:
+                logger.warning(
+                    f"[MINING] Epoch {yesterday} has unverified PENDING reports. "
+                    "Not finalizing; will retry on next run."
+                )
+                return
+
+            if not reports:
                 logger.info(
                     f"[MINING] No eligible trades reported for epoch {yesterday}."
                 )
@@ -3627,16 +3635,59 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 return None
 
             # 1. Aggregate basic stats
+            multipliers = getattr(config, "exchange_multipliers", {}) or {}
+
+            def _get_multiplier(exchange_id: Optional[str]) -> float:
+                if not exchange_id:
+                    return 1.0
+                ex = str(exchange_id).lower().strip()
+                if ex in multipliers:
+                    try:
+                        return max(0.1, float(multipliers[ex]))
+                    except (ValueError, TypeError):
+                        return 1.0
+                base = ex.split("_")[0]
+                if base in multipliers:
+                    try:
+                        return max(0.1, float(multipliers[base]))
+                    except (ValueError, TypeError):
+                        return 1.0
+                return 1.0
+
+            def _resolve_report_mult(report) -> float:
+                """
+                Effective multiplier for a stored report: prefer the LIVE
+                config entry for its exchange so a newly enabled multiplier
+                applies to the epoch being settled now; fall back to the value
+                stamped on the report at submission time, then 1.0.
+                """
+                ex = str(report.exchange_id or "").lower().strip()
+                if ex:
+                    key = ex if ex in multipliers else ex.split("_")[0]
+                    if key in multipliers:
+                        return _get_multiplier(ex)
+                stamped = getattr(report, "mining_multiplier", None)
+                try:
+                    stamped = float(stamped) if stamped is not None else 1.0
+                except (TypeError, ValueError):
+                    stamped = 1.0
+                if stamped <= 0:
+                    stamped = 1.0
+                return max(0.1, stamped)
+
             node_stats = {}
             for report in reports:
                 node_id = report.node_uuid
                 if not node_id:
                     continue
                 node_rebate = report.estimated_rebate_usdt or 0.0
+                mult = _resolve_report_mult(report)
+                weighted_pts = node_rebate * mult
 
                 if node_id not in node_stats:
                     node_stats[node_id] = {
                         "total_rebate": 0.0,
+                        "weighted_points": 0.0,
                         "trades_count": 0,
                         # Unique closed trades: partial closes / DCA produce
                         # several REPORTS for one logical trade, so counting
@@ -3644,6 +3695,7 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                         "trade_ids": set(),
                     }
                 node_stats[node_id]["total_rebate"] += node_rebate
+                node_stats[node_id]["weighted_points"] += weighted_pts
                 if report.broker_trade_id:
                     node_stats[node_id]["trade_ids"].add(report.broker_trade_id)
                 else:
@@ -3654,12 +3706,13 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
             total_network_points = 0.0
 
             for node_id, stats in list(node_stats.items()):
-                base_pts = stats["total_rebate"]
+                base_pts = stats["weighted_points"]
                 if node_id not in node_points:
                     node_points[node_id] = {
                         "base_points": 0.0,
                         "referral_points": 0.0,
                         "total_rebate": stats["total_rebate"],
+                        "weighted_points": stats["weighted_points"],
                         "trades_count": stats["trades_count"] + len(stats["trade_ids"]),
                     }
                 node_points[node_id]["base_points"] += base_pts
@@ -3677,6 +3730,7 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                             "base_points": 0.0,
                             "referral_points": 0.0,
                             "total_rebate": 0.0,
+                            "weighted_points": 0.0,
                             "trades_count": 0,
                         }
                     node_points[referrer_uuid]["referral_points"] += ref_pts
@@ -3703,6 +3757,9 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     "referral_bonus": points["referral_points"] * token_value_per_point,
                     "welcome_bonus": 0.0,
                     "total_rebate": points["total_rebate"],
+                    "weighted_points": points.get(
+                        "weighted_points", points["base_points"]
+                    ),
                     "trades_count": points["trades_count"],
                 }
 
@@ -3715,9 +3772,11 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     continue
 
                 node_rebate = report.estimated_rebate_usdt or 0.0
-                node_total_rebate = node_rewards[node_id]["total_rebate"]
-                if node_total_rebate > 0:
-                    report_share = node_rebate / node_total_rebate
+                mult = _resolve_report_mult(report)
+                trade_weighted = node_rebate * mult
+                node_total_weighted = node_rewards[node_id].get("weighted_points", 0.0)
+                if node_total_weighted > 0:
+                    report_share = trade_weighted / node_total_weighted
                     report.reward_tokens = (
                         node_rewards[node_id]["base_reward"] * report_share
                     )

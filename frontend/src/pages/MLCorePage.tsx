@@ -1097,36 +1097,39 @@ const MLCorePage: React.FC = () => {
 				onValueChange={handleTabChange}
 				className="h-full flex flex-col"
 			>
-				<TabsList className="grid w-full max-w-lg grid-cols-4 mb-6">
-					<TabsTrigger value="dataset" className="flex items-center gap-2">
-						<Database className="w-4 h-4" />
-						<span className="hidden sm:inline">
-							{t("launchForm.tabDataset", "Dataset")}
-						</span>
-					</TabsTrigger>
-					<TabsTrigger value="training" className="flex items-center gap-2">
-						<FlaskConical className="w-4 h-4" />
-						<span className="hidden sm:inline">
-							{t("launchForm.tabTraining", "Training")}
-						</span>
-					</TabsTrigger>
-					<TabsTrigger value="models" className="flex items-center gap-2">
-						<Activity className="w-4 h-4" />
-						<span className="hidden sm:inline">
-							{t("tasksTable.colType", "Models")}
-						</span>
-					</TabsTrigger>
-					<TabsTrigger
-						value="details"
-						className="flex items-center gap-2"
-						disabled={!selectedModelId}
-					>
-						<Layers className="w-4 h-4" />
-						<span className="hidden sm:inline">
-							{t("tasksTable.viewDetailsTooltip", "Details")}
-						</span>
-					</TabsTrigger>
-				</TabsList>
+				<div className="flex items-center overflow-x-auto pb-1 mb-6 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					<TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-white/[0.04] border border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
+						<TabsTrigger
+							value="dataset"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+						>
+							<Database className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("launchForm.tabDataset", "Dataset")}</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="training"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+						>
+							<FlaskConical className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("launchForm.tabTraining", "Training")}</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="models"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+						>
+							<Activity className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("tasksTable.colType", "Models")}</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="details"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap disabled:opacity-30 disabled:pointer-events-none"
+							disabled={!selectedModelId}
+						>
+							<Layers className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("tasksTable.viewDetailsTooltip", "Details")}</span>
+						</TabsTrigger>
+					</TabsList>
+				</div>
 
 				<div className="flex-1 min-h-0 overflow-y-auto">
 					<TabsContent value="dataset" className="mt-0">

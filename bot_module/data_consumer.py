@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import websockets  # Ensure it is imported
 from websockets.protocol import State  # Changed from websockets.enums
 from websockets.exceptions import (
@@ -3030,23 +3031,77 @@ class DataConsumer:
         calculated_metrics = {}
         now = pd.to_datetime(current_time_ms, unit="ms")
 
+        # Baseline 60s window for acceleration multipliers. The strategy
+        # tape blocks always compare against a 60s average
+        # (tape_accel_mult_*_{window}s_60s).
+        base_avg_window = 60
+        base_start = now - timedelta(seconds=base_avg_window)
+        base_df = trades_df[trades_df.index >= base_start]
+        base_volume_per_sec = (
+            float(base_df["volume_usd"].sum()) / base_avg_window
+            if not base_df.empty
+            else 0.0
+        )
+        base_count_per_sec = (
+            float(len(base_df)) / base_avg_window if not base_df.empty else 0.0
+        )
+
+        def _accel(value_per_sec: float, base_per_sec: float) -> float:
+            if base_per_sec > 0:
+                return float(value_per_sec) / float(base_per_sec)
+            return 1.0 if value_per_sec <= 0 else float(value_per_sec) / 1e-9
+
         for window in TAPE_METRIC_WINDOWS:
             start_time = now - timedelta(seconds=window)
             window_df = trades_df[trades_df.index >= start_time]
 
             if not window_df.empty:
-                calculated_metrics[f"tape_count_{window}s"] = len(window_df)
-                calculated_metrics[f"tape_volume_{window}s"] = window_df[
-                    "volume_usd"
-                ].sum()
+                buy_mask = ~window_df["m"].astype(bool)
+                buy_volume = float(window_df.loc[buy_mask, "volume_usd"].sum())
+                sell_volume = float(window_df.loc[~buy_mask, "volume_usd"].sum())
+                buy_count = int(buy_mask.sum())
+                sell_count = int((~buy_mask).sum())
+                total_volume = buy_volume + sell_volume
+                total_count = buy_count + sell_count
+                volume_per_sec = total_volume / window
+                count_per_sec = total_count / window
+
+                calculated_metrics[f"tape_count_{window}s"] = total_count
+                calculated_metrics[f"tape_volume_{window}s"] = total_volume
                 calculated_metrics[f"tape_delta_{window}s"] = window_df[
                     "signed_volume"
                 ].sum()
                 calculated_metrics[f"tape_avg_volume_per_sec_{window}s"] = (
-                    window_df["volume_usd"].sum() / window
+                    volume_per_sec
                 )
-                calculated_metrics[f"tape_avg_count_per_sec_{window}s"] = (
-                    len(window_df) / window
+                calculated_metrics[f"tape_avg_count_per_sec_{window}s"] = count_per_sec
+                # Strategy-facing names (tape_analysis / tape_condition blocks).
+                calculated_metrics[f"tape_buy_volume_usd_{window}s"] = buy_volume
+                calculated_metrics[f"tape_sell_volume_usd_{window}s"] = sell_volume
+                calculated_metrics[f"tape_total_volume_usd_{window}s"] = total_volume
+                calculated_metrics[f"tape_buy_count_{window}s"] = buy_count
+                calculated_metrics[f"tape_sell_count_{window}s"] = sell_count
+                calculated_metrics[f"tape_total_count_{window}s"] = total_count
+                calculated_metrics[f"tape_delta_volume_usd_{window}s"] = (
+                    buy_volume - sell_volume
+                )
+                calculated_metrics[f"tape_delta_count_{window}s"] = (
+                    buy_count - sell_count
+                )
+                calculated_metrics[f"tape_buy_sell_ratio_volume_{window}s"] = (
+                    buy_volume / sell_volume if sell_volume > 0 else 1.0
+                )
+                calculated_metrics[f"tape_buy_sell_ratio_count_{window}s"] = (
+                    buy_count / sell_count if sell_count > 0 else 1.0
+                )
+                calculated_metrics[f"tape_avg_trade_size_usd_{window}s"] = (
+                    total_volume / total_count if total_count > 0 else 0.0
+                )
+                calculated_metrics[f"tape_accel_mult_volume_{window}s_60s"] = _accel(
+                    volume_per_sec, base_volume_per_sec
+                )
+                calculated_metrics[f"tape_accel_mult_count_{window}s_60s"] = _accel(
+                    count_per_sec, base_count_per_sec
                 )
             else:
                 calculated_metrics[f"tape_count_{window}s"] = 0
@@ -3054,6 +3109,19 @@ class DataConsumer:
                 calculated_metrics[f"tape_delta_{window}s"] = 0.0
                 calculated_metrics[f"tape_avg_volume_per_sec_{window}s"] = 0.0
                 calculated_metrics[f"tape_avg_count_per_sec_{window}s"] = 0.0
+                calculated_metrics[f"tape_buy_volume_usd_{window}s"] = 0.0
+                calculated_metrics[f"tape_sell_volume_usd_{window}s"] = 0.0
+                calculated_metrics[f"tape_total_volume_usd_{window}s"] = 0.0
+                calculated_metrics[f"tape_buy_count_{window}s"] = 0
+                calculated_metrics[f"tape_sell_count_{window}s"] = 0
+                calculated_metrics[f"tape_total_count_{window}s"] = 0
+                calculated_metrics[f"tape_delta_volume_usd_{window}s"] = 0.0
+                calculated_metrics[f"tape_delta_count_{window}s"] = 0
+                calculated_metrics[f"tape_buy_sell_ratio_volume_{window}s"] = 1.0
+                calculated_metrics[f"tape_buy_sell_ratio_count_{window}s"] = 1.0
+                calculated_metrics[f"tape_avg_trade_size_usd_{window}s"] = 0.0
+                calculated_metrics[f"tape_accel_mult_volume_{window}s_60s"] = 1.0
+                calculated_metrics[f"tape_accel_mult_count_{window}s_60s"] = 1.0
 
         # 3. Update central cache
         async with _global_pairs_lock:
@@ -3234,12 +3302,36 @@ class DataConsumer:
         # 1. Calculation of indicators via pandas_ta
         ta_indicators_to_run = []
         custom_indicators = set()
+        natr_periods = set()
+        rel_vol_period = 20
         for ind_name in required_indicators:
             parsed = self._parse_indicator_string(ind_name)
             if parsed:
                 ta_indicators_to_run.append(parsed)
-            elif ind_name.upper() in ["NATR_30", "RELATIVE_VOLUME", "IS_VOLUME_SPIKE"]:
-                custom_indicators.add(ind_name.upper())
+                continue
+            upper_name = ind_name.upper()
+            natr_match = re.match(r"NATR_(\d+)$", upper_name)
+            if natr_match:
+                # natr_filter may request any period (NATR_14 default);
+                # previously only the literal NATR_30 was honored.
+                try:
+                    natr_periods.add(int(natr_match.group(1)))
+                except (TypeError, ValueError):
+                    natr_periods.add(30)
+            elif upper_name in ["NATR_30", "RELATIVE_VOLUME", "IS_VOLUME_SPIKE"]:
+                custom_indicators.add(upper_name)
+            elif ind_name.upper().startswith("VOL_LOOKBACK_"):
+                # Declared by VisualBuilder rel_vol_filter / volume_confirmation /
+                # market_activity blocks (see strategy._get_all_required_indicators_from_json).
+                # Maps to the 'relative_volume' column so live pair_info carries real values
+                # instead of the 1.0 fallback used by _check_filter_rel_vol.
+                custom_indicators.add("RELATIVE_VOLUME")
+                try:
+                    lookback = int(ind_name.upper().split("VOL_LOOKBACK_")[1])
+                    if lookback > 0:
+                        rel_vol_period = max(rel_vol_period, lookback)
+                except (ValueError, IndexError):
+                    pass
 
         if ta_indicators_to_run:
             try:
@@ -3279,23 +3371,32 @@ class DataConsumer:
 
         # 2. Calculation of custom indicators
         if "NATR_30" in custom_indicators:
+            natr_periods.add(30)
+        for natr_period in sorted(natr_periods):
             try:
                 # Calculating scalping NATR using the methodology from utils.py
-                kline_df = calculate_scalper_natr(kline_df, period=30)
+                kline_df = calculate_scalper_natr(kline_df, period=natr_period)
+                # calculate_scalper_natr always writes the 'natr' column;
+                # duplicate it under the period-specific name so checkers
+                # reading NATR_{period} find their exact key.
+                try:
+                    kline_df[f"NATR_{natr_period}"] = kline_df["natr"]
+                except Exception:
+                    pass
                 logger.debug(
-                    f"[IndicatorCalc:{uc_symbol}] NATR_30 calculated (scalper formula)."
+                    f"[IndicatorCalc:{uc_symbol}] NATR_{natr_period} calculated (scalper formula)."
                 )
             except Exception as e:
                 logger.error(
-                    f"[IndicatorCalc:{uc_symbol}] Error calculating NATR_30: {e}",
+                    f"[IndicatorCalc:{uc_symbol}] Error calculating NATR_{natr_period}: {e}",
                     exc_info=True,
                 )
 
         if "RELATIVE_VOLUME" in custom_indicators:
             try:
-                kline_df = add_relative_volume(kline_df, period=20)
+                kline_df = add_relative_volume(kline_df, period=rel_vol_period)
                 logger.debug(
-                    f"[IndicatorCalc:{uc_symbol}] relative_volume calculated (period=20)."
+                    f"[IndicatorCalc:{uc_symbol}] relative_volume calculated (period={rel_vol_period})."
                 )
             except Exception as e:
                 logger.error(
@@ -3346,9 +3447,17 @@ class DataConsumer:
                         val = last_candle[col]
                         if pd.notna(val):
                             val_float = float(val)
-                            calculated_indicators[col.lower()] = val_float
-                            global_pair_state[col.lower()] = val_float
-                            local_pair_state[col.lower()] = val_float
+                            # Store under both cases: producers (pandas_ta,
+                            # custom NATR_{period} columns) are UPPERCASE while
+                            # legacy readers use lowercase. Previously only the
+                            # lowercase key was saved, so checkers reading e.g.
+                            # ADX_14 / STOCHk_* / NATR_14 never hit the cache
+                            # and silently recomputed (or worse, fell back to
+                            # neutral defaults in tests that pre-fill pair_info).
+                            for key in {col.lower(), col.upper()}:
+                                calculated_indicators[key] = val_float
+                                global_pair_state[key] = val_float
+                                local_pair_state[key] = val_float
 
                             # Accounting for ATRr and ATR
                             col_upper = col.upper()
@@ -4108,13 +4217,16 @@ class DataConsumer:
                     trades = await ccxt_pro_client.watch_trades(ccxt_symbol)
                     if trades:
                         for trade in trades:
-                            # Reformat to Binance payload
+                            # Reformat to Binance payload.
+                            # NOTE: some exchanges (e.g. WEEX) omit "side"
+                            # (None) — str(or "") keeps the loop alive instead
+                            # of raising AttributeError on every trade.
                             payload = {
                                 "e": "aggTrade",
                                 "T": trade.get("timestamp", int(time.time() * 1000)),
                                 "p": str(trade.get("price", "0")),
                                 "q": str(trade.get("amount", "0")),
-                                "m": trade.get("side", "").lower()
+                                "m": str(trade.get("side") or "").lower()
                                 == "sell",  # Sell order filled
                             }
                             await self._update_local_cache(

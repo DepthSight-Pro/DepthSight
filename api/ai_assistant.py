@@ -605,9 +605,7 @@ async def enrich_market_context_for_ai(text_prompt: str) -> str:
                         oracle_text = "0 (Flat / Consolidation)"
 
                     price = (
-                        data.get("price")
-                        or data.get("last_price")
-                        or data.get("close")
+                        data.get("price") or data.get("last_price") or data.get("close")
                     )
                     price_line = (
                         f"- Current price ($): {price}\n" if price is not None else ""

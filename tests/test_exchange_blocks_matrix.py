@@ -4,7 +4,7 @@ Multi-Exchange Block Matrix & Combinatorial Fuzzing Test Suite.
 Verifies that all visual builder blocks, complex multi-block chains,
 multi-timeframe confluences, position management lifecycle, dynamic parameter linking,
 short-selling symmetry, and micro-price / memecoin asset regimes function seamlessly
-across Bybit, OKX, and Weex data feeds.
+across Bybit, OKX, Weex, and Bitget data feeds.
 """
 
 import copy
@@ -32,12 +32,12 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     # --- Oscillators ---
     {
         "id": "node_rsi",
-        "type": "RSI",
+        "type": "rsi_condition",
         "params": {"period": 14, "operator": "lt", "value": 30.0},
     },
     {
         "id": "node_macd",
-        "type": "MACD",
+        "type": "macd_condition",
         "params": {
             "fast_period": 12,
             "slow_period": 26,
@@ -47,19 +47,20 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     },
     {
         "id": "node_stoch",
-        "type": "STOCHASTIC",
+        "type": "stochastic_condition",
         "params": {
             "k_period": 14,
             "d_period": 3,
             "smooth_k": 3,
             "operator": "lt",
-            "threshold": 20,
+            "value": 20,
+            "line": "k",
         },
     },
     # --- Volatility & Range ---
     {
         "id": "node_bollinger",
-        "type": "BOLLINGER",
+        "type": "bollinger_bands_condition",
         "params": {
             "period": 20,
             "std_dev": 2.0,
@@ -69,12 +70,12 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     },
     {
         "id": "node_natr",
-        "type": "NATR",
+        "type": "natr_filter",
         "params": {"period": 14, "operator": "gt", "value": 1.0},
     },
     {
         "id": "node_vol_squeeze",
-        "type": "VOLATILITY_SQUEEZE",
+        "type": "volatility_squeeze",
         "params": {
             "bb_period": 20,
             "bb_std": 2.0,
@@ -85,60 +86,78 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     },
     {
         "id": "node_volatility",
-        "type": "VOLATILITY",
-        "params": {"threshold_percent": 1.0},
+        "type": "volatility_filter",
+        "params": {"indicator": "ATR", "operator": "gt", "value": 0.0},
     },
     # --- Trend & Momentum ---
     {
         "id": "node_adx",
-        "type": "ADX",
+        "type": "adx_filter",
         "params": {"period": 14, "threshold": 25, "operator": "gt"},
     },
     {
         "id": "node_ma_cross",
-        "type": "MA_CROSS",
+        "type": "ma_cross_condition",
         "params": {"fast_period": 10, "slow_period": 50, "ma_type": "sma"},
     },
     {
         "id": "node_trend_dir",
-        "type": "TREND_DIRECTION",
+        "type": "trend_direction",
         "params": {"fast_period": 10, "slow_period": 50, "required_trend": "LONG"},
     },
-    {"id": "node_trend_str", "type": "TREND_STRENGTH", "params": {"min_strength": 0.5}},
+    {
+        "id": "node_trend_str",
+        "type": "trend_filter",
+        "params": {"indicator": "ADX", "threshold": 25.0},
+    },
     # --- Price Action & Levels ---
     {
         "id": "node_price_action",
-        "type": "PRICE_ACTION",
-        "params": {"pattern": "pinbar"},
+        "type": "price_action_analyzer",
+        "params": {"structure_type": "higher_lows", "lookback_candles": 30},
     },
     {
         "id": "node_consolidation",
-        "type": "PRICE_CONSOLIDATION",
-        "params": {"period": 20, "threshold_pct": 1.0},
+        "type": "price_consolidation",
+        "params": {"lookback_period": 20, "max_range_atr": 1.0},
     },
     {
         "id": "node_level_touch",
-        "type": "LEVEL_TOUCH",
-        "params": {"lookback": 50, "touch_range_pct": 0.1},
+        "type": "level_touch_analyzer",
+        "params": {
+            "lookback_candles": 50,
+            "touch_tolerance_atr": 0.15,
+            # Far-away constant level: must evaluate cleanly to False.
+            "level_price": 1e12,
+        },
     },
     {
         "id": "node_return_to_level",
-        "type": "RETURN_TO_LEVEL",
-        "params": {"lookback": 50, "return_range_pct": 0.2},
+        "type": "return_to_level",
+        "params": {
+            # Constant level resolvable without upstream block_result links.
+            "level_source": {"source": "constant", "value": 1e12},
+            "retest_type": "touch",
+            "approach_direction": "any",
+        },
     },
     {
         "id": "node_price_vs_level",
-        "type": "PRICE_VS_LEVEL",
-        "params": {"level_type": "rolling_high", "lookback": 50, "operator": "lt"},
+        "type": "price_vs_level",
+        "params": {
+            "price_source": {"source": "candle", "key": "close", "shift": 0},
+            "operator": "lt",
+            "level_source": {"source": "constant", "value": 0},
+        },
     },
     {
         "id": "node_local_level",
-        "type": "LOCAL_LEVEL",
-        "params": {"lookback": 50, "level_type": "support"},
+        "type": "local_level",
+        "params": {"lookback": 50, "level_type": "low"},
     },
     {
         "id": "node_value_comp",
-        "type": "VALUE_COMPARISON",
+        "type": "value_comparison",
         "params": {
             "left": {"source": "candle", "key": "close"},
             "operator": "gt",
@@ -148,64 +167,68 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     # --- Microstructure & Tape ---
     {
         "id": "node_tape_cond",
-        "type": "TAPE_CONDITION",
+        "type": "tape_condition",
         "params": {
             "metric": "delta_volume",
-            "window_sec": "30",
+            "window_sec": 30,
             "operator": "gt",
             "threshold": 0,
         },
     },
     {
         "id": "node_ob_zone",
-        "type": "ORDER_BOOK_ZONE",
-        "params": {"metric": "obi_1p", "operator": "gt", "threshold": 0},
+        "type": "order_book_zone",
+        "params": {"side": "bids", "range_type": "Percentage", "range_value": 1.0},
     },
     {
         "id": "node_oi",
-        "type": "OPEN_INTEREST",
+        "type": "open_interest",
         "params": {"analyze": "absolute_value", "operator": "gt", "value": 0},
     },
     # --- Market Filters ---
     {
         "id": "node_session",
-        "type": "TRADING_SESSION",
-        "params": {"allowed_sessions": ["London", "New York", "Tokyo", "Sydney"]},
+        "type": "trading_session",
+        "params": {"filter_mode": "session", "session": "london"},
     },
-    {"id": "node_market_act", "type": "MARKET_ACTIVITY", "params": {"min_trades": 10}},
-    {"id": "node_btc_state", "type": "BTC_STATE", "params": {"required_state": "Any"}},
+    {"id": "node_market_act", "type": "market_activity", "params": {}},
+    {
+        "id": "node_btc_state",
+        "type": "btc_state_filter",
+        "params": {"required_state": "Any"},
+    },
     {
         "id": "node_corr",
-        "type": "CORRELATION",
+        "type": "correlation",
         "params": {"lookback": 20, "operator": "gt", "value": -1.0},
     },
     # --- Foundations ---
     {
         "id": "node_classic_pat",
-        "type": "CLASSIC_PATTERN",
-        "params": {"pattern_type": "double_bottom"},
+        "type": "classic_pattern",
+        "params": {"pattern_name": "pin_bar", "side": "ANY"},
     },
     {
         "id": "node_vol_conf",
-        "type": "VOLUME_CONFIRMATION",
-        "params": {"period": 20, "threshold": 1.5},
+        "type": "volume_confirmation",
+        "params": {"lookback_period": 20, "multiplier": 1.5},
     },
     {
         "id": "node_round_lvl",
-        "type": "ROUND_NUMBER_LEVEL",
-        "params": {"proximity_pct": 0.1},
+        "type": "round_level",
+        "params": {"proximity_type": "percentage", "proximity_value": 0.1},
     },
     {
         "id": "node_l2_micro",
-        "type": "L2_MICROSTRUCTURE",
+        "type": "l2_microstructure",
         "params": {"imbalance_threshold": 0.2},
     },
-    {"id": "node_tape_ana", "type": "TAPE_ANALYSIS", "params": {"window_sec": 30}},
+    {"id": "node_tape_ana", "type": "tape_analysis", "params": {"window_sec": 30}},
 ]
 
 
 # ============================================================================================
-# 2. MULTI-EXCHANGE CONTEXT GENERATOR (Bybit, OKX, Weex)
+# 2. MULTI-EXCHANGE CONTEXT GENERATOR (Bybit, OKX, Weex, Bitget)
 # ============================================================================================
 def create_exchange_context(
     exchange: str,
@@ -215,7 +238,7 @@ def create_exchange_context(
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Constructs highly realistic, exchange-calibrated market_data and pair_info
-    simulating WebSocket & REST feeds from Bybit, OKX, or Weex.
+    simulating WebSocket & REST feeds from Bybit, OKX, Weex, or Bitget.
     Supports BTCUSDT, ETHUSDT, DOGEUSDT, and high-precision memecoins like PEPEUSDT.
     """
     now = datetime.now(timezone.utc)
@@ -398,17 +421,28 @@ def create_exchange_context(
 
 
 # ============================================================================================
-# 3. TEST 1: ALL INDIVIDUAL BLOCKS EVALUATION ACROSS ALL 3 EXCHANGES
+# 3. TEST 1: ALL INDIVIDUAL BLOCKS EVALUATION ACROSS ALL 4 EXCHANGES
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+# NOTE: registry entries must use production lowercase block types
+# (rsi_condition, trend_direction, ...) — UPPERCASE aliases never reach
+# condition_checkers and only produce "Unknown node_type".
+
+# tape_analysis is a live fail-closed provider: the shared fixture carries no
+# tape_* columns, so with is_live_mode=True it must return False + error
+# (never True-with-Nones).
+TAPE_PROVIDER_TYPES = {"tape_analysis"}
+
+
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.parametrize("block_config", ALL_BLOCKS_REGISTRY, ids=lambda b: b["type"])
 def test_all_individual_blocks_across_exchanges(
     exchange: str, block_config: Dict[str, Any]
 ):
     """
     Passes every single visual builder block through VisualBuilderStrategy
-    under Bybit, OKX, and Weex data feeds.
-    Fails if any block throws an unhandled exception or produces NaN values.
+    under Bybit, OKX, Weex, and Bitget data feeds.
+    Fails on unhandled exceptions, NaN values, Unknown node types, and
+    True-with-None details (silent default masking).
     """
     pair_info, market_data = create_exchange_context(exchange=exchange)
     strategy = VisualBuilderStrategy(params={"enabled": True})
@@ -431,10 +465,37 @@ def test_all_individual_blocks_across_exchanges(
 
     # Ensure no NaN errors were quietly produced in details
     details = trace.get("details", {})
+    for key, val in details.items():
+        if isinstance(val, float) and pd.isna(val):
+            raise AssertionError(
+                f"Block {block_config['type']} detail '{key}' is NaN on {exchange}: {details}"
+            )
+
     if "error" in details:
-        err_str = str(details["error"]).lower()
-        assert "not enough" in err_str or "warmup" in err_str or "unknown" in err_str, (
-            f"Unexpected error in block {block_config['type']} on {exchange}: {details['error']}"
+        err_str = str(details["error"])
+        assert "Unknown node_type" not in err_str, (
+            f"Block {block_config['type']} uses an unregistered type on {exchange}: {err_str}"
+        )
+        if block_config["type"] in TAPE_PROVIDER_TYPES:
+            assert result is False and "missing" in err_str.lower(), (
+                f"tape_analysis must fail closed in live mode on {exchange}: {details}"
+            )
+        else:
+            err_low = err_str.lower()
+            assert (
+                "not enough" in err_low
+                or "warmup" in err_low
+                or "missing" in err_low
+                or "not available" in err_low
+                or "could not resolve" in err_low
+            ), (
+                f"Unexpected error in block {block_config['type']} on {exchange}: {details['error']}"
+            )
+    elif block_config["type"] not in TAPE_PROVIDER_TYPES:
+        # A passing block must carry measured values, never silent Nones.
+        none_keys = [k for k, v in details.items() if v is None]
+        assert not none_keys or result is False, (
+            f"Block {block_config['type']} returned True with None details on {exchange}: {none_keys}"
         )
 
 
@@ -450,7 +511,7 @@ STRATEGY_CHAINS = [
             "children": [
                 {
                     "id": "c1",
-                    "type": "TREND_DIRECTION",
+                    "type": "trend_direction",
                     "params": {
                         "fast_period": 10,
                         "slow_period": 50,
@@ -459,12 +520,12 @@ STRATEGY_CHAINS = [
                 },
                 {
                     "id": "c2",
-                    "type": "ORDER_BOOK_ZONE",
+                    "type": "order_book_zone",
                     "params": {"metric": "obi_1p", "operator": "gt", "threshold": 0.2},
                 },
                 {
                     "id": "c3",
-                    "type": "TAPE_CONDITION",
+                    "type": "tape_condition",
                     "params": {
                         "metric": "delta_volume",
                         "window_sec": "30",
@@ -474,7 +535,7 @@ STRATEGY_CHAINS = [
                 },
                 {
                     "id": "c4",
-                    "type": "NATR",
+                    "type": "natr_filter",
                     "params": {"period": 14, "operator": "gt", "value": 0.5},
                 },
             ],
@@ -492,7 +553,7 @@ STRATEGY_CHAINS = [
                     "children": [
                         {
                             "id": "b1",
-                            "type": "BOLLINGER",
+                            "type": "bollinger_bands_condition",
                             "params": {
                                 "period": 20,
                                 "std_dev": 2.0,
@@ -502,7 +563,7 @@ STRATEGY_CHAINS = [
                         },
                         {
                             "id": "b2",
-                            "type": "VOLATILITY_SQUEEZE",
+                            "type": "volatility_squeeze",
                             "params": {
                                 "bb_period": 20,
                                 "bb_std": 2.0,
@@ -515,17 +576,17 @@ STRATEGY_CHAINS = [
                 },
                 {
                     "id": "c_vol",
-                    "type": "VOLUME_CONFIRMATION",
+                    "type": "volume_confirmation",
                     "params": {"period": 20, "threshold": 1.2},
                 },
                 {
                     "id": "c_sess",
-                    "type": "TRADING_SESSION",
-                    "params": {"allowed_sessions": ["London", "New York"]},
+                    "type": "trading_session",
+                    "params": {"filter_mode": "session", "session": "london"},
                 },
                 {
                     "id": "c_corr",
-                    "type": "CORRELATION",
+                    "type": "correlation",
                     "params": {"lookback": 20, "operator": "gt", "value": -0.8},
                 },
             ],
@@ -539,28 +600,29 @@ STRATEGY_CHAINS = [
             "children": [
                 {
                     "id": "m1",
-                    "type": "RSI",
+                    "type": "rsi_condition",
                     "params": {"period": 14, "operator": "lt", "value": 40.0},
                 },
                 {
                     "id": "m2",
-                    "type": "STOCHASTIC",
+                    "type": "stochastic_condition",
                     "params": {
                         "k_period": 14,
                         "d_period": 3,
                         "smooth_k": 3,
                         "operator": "lt",
-                        "threshold": 30,
+                        "value": 30,
+                        "line": "k",
                     },
                 },
                 {
                     "id": "m3",
-                    "type": "L2_MICROSTRUCTURE",
+                    "type": "l2_microstructure",
                     "params": {"imbalance_threshold": 0.1},
                 },
                 {
                     "id": "m4",
-                    "type": "OPEN_INTEREST",
+                    "type": "open_interest",
                     "params": {
                         "analyze": "absolute_value",
                         "operator": "gt",
@@ -573,14 +635,14 @@ STRATEGY_CHAINS = [
 ]
 
 
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.parametrize("chain_def", STRATEGY_CHAINS, ids=lambda c: c["name"])
 def test_complex_strategy_chains_across_exchanges(
     exchange: str, chain_def: Dict[str, Any]
 ):
     """
     Verifies that complex, nested multi-block strategy trees execute smoothly
-    with full signal dispatch and trace collection on Bybit, OKX, and Weex.
+    with full signal dispatch and trace collection on Bybit, OKX, Weex, and Bitget.
     """
     pair_info, market_data = create_exchange_context(exchange=exchange)
 
@@ -655,12 +717,12 @@ def generate_random_ast_tree(
     }
 
 
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.parametrize("fuzz_seed", [101, 202, 303, 404, 505])
 def test_random_fuzzing_block_combinations_matrix(exchange: str, fuzz_seed: int):
     """
     Fuzz testing: Generates 5 distinct randomized AST trees and validates
-    that no combination of blocks crashes when evaluated against Bybit, OKX, or Weex.
+    that no combination of blocks crashes when evaluated against Bybit, OKX, Weex, or Bitget.
     """
     rng = random.Random(fuzz_seed)
     random_tree = generate_random_ast_tree(depth=1, max_depth=3, rng=rng)
@@ -686,7 +748,7 @@ def test_random_fuzzing_block_combinations_matrix(exchange: str, fuzz_seed: int)
 # ============================================================================================
 # 6. TEST 4: CONTEXT PROPAGATION & CROSS-BLOCK LINKING
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 def test_context_propagation_and_reference_linking(exchange: str):
     """
     Verifies that context (e.g. support levels, calculated ATR, density metrics)
@@ -701,21 +763,21 @@ def test_context_propagation_and_reference_linking(exchange: str):
         "children": [
             {
                 "id": "n_level",
-                "type": "LOCAL_LEVEL",
+                "type": "local_level",
                 "params": {"lookback": 50, "level_type": "support"},
             },
             {
                 "id": "n_price",
-                "type": "PRICE_VS_LEVEL",
+                "type": "price_vs_level",
                 "params": {
-                    "level_type": "rolling_low",
-                    "lookback": 50,
+                    "price_source": {"source": "candle", "key": "close", "shift": 0},
                     "operator": "gt",
+                    "level_source": {"source": "constant", "value": 0},
                 },
             },
             {
                 "id": "n_l2",
-                "type": "L2_MICROSTRUCTURE",
+                "type": "l2_microstructure",
                 "params": {"imbalance_threshold": 0.2},
             },
         ],
@@ -739,7 +801,7 @@ def test_context_propagation_and_reference_linking(exchange: str):
 # ============================================================================================
 # 7. TEST 5: MULTI-TIMEFRAME CONFLUENCE (senior_tf_confluence)
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.parametrize("htf", ["5m", "1h", "4h"])
 def test_senior_tf_confluence_across_exchanges(exchange: str, htf: str):
     """
@@ -756,12 +818,12 @@ def test_senior_tf_confluence_across_exchanges(exchange: str, htf: str):
         "children": [
             {
                 "id": "htf_rsi",
-                "type": "RSI",
+                "type": "rsi_condition",
                 "params": {"period": 14, "operator": "gt", "value": 40.0},
             },
             {
                 "id": "htf_ma",
-                "type": "MA_CROSS",
+                "type": "ma_cross_condition",
                 "params": {"fast_period": 10, "slow_period": 50, "ma_type": "sma"},
             },
         ],
@@ -784,7 +846,7 @@ def test_senior_tf_confluence_across_exchanges(exchange: str, htf: str):
 # ============================================================================================
 # 8. TEST 6: TRADINGVIEW WEBHOOK SIGNALS & WEIGHT EXTRACTION
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 def test_tradingview_signals_across_exchanges(exchange: str):
     """
     Verifies that TradingView webhook nodes register, properly handle TTL expirations,
@@ -806,7 +868,7 @@ def test_tradingview_signals_across_exchanges(exchange: str):
                 tv_node,
                 {
                     "id": "c_rsi",
-                    "type": "RSI",
+                    "type": "rsi_condition",
                     "params": {"period": 14, "operator": "lt", "value": 70.0},
                 },
             ],
@@ -842,7 +904,7 @@ def test_tradingview_signals_across_exchanges(exchange: str):
 # ============================================================================================
 # 9. TEST 7: FULL POSITION MANAGEMENT LIFECYCLE (DCA, Grid, Trailing, BE, Scale-in)
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.asyncio
 async def test_all_position_management_blocks_across_exchanges(exchange: str):
     """
@@ -899,7 +961,7 @@ async def test_all_position_management_blocks_across_exchanges(exchange: str):
                 "type": "conditional_management",
                 "if_conditions": {
                     "id": "c_rsi",
-                    "type": "RSI",
+                    "type": "rsi_condition",
                     "params": {"period": 14, "operator": "gt", "value": 20.0},
                 },
                 "then_actions": [
@@ -957,7 +1019,7 @@ async def test_all_position_management_blocks_across_exchanges(exchange: str):
 # ============================================================================================
 # 10. TEST 8: DYNAMIC PARAMETER RESOLVERS (_resolve_value)
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 def test_dynamic_reference_resolvers_across_exchanges(exchange: str):
     """
     Validates dynamic parameter resolution from all supported sources:
@@ -975,7 +1037,7 @@ def test_dynamic_reference_resolvers_across_exchanges(exchange: str):
         "market_data": market_data,
         "trace": {
             "id": "upstream_finder",
-            "type": "LOCAL_LEVEL",
+            "type": "local_level",
             "details": {"level_price": 59500.0, "touches": 3},
         },
         "position": BasePosition(
@@ -1024,7 +1086,7 @@ def test_dynamic_reference_resolvers_across_exchanges(exchange: str):
 # ============================================================================================
 # 11. TEST 9: SHORT POSITION SYMMETRY & SHORT LIFECYCLE ACROSS EXCHANGES
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.asyncio
 async def test_short_symmetry_chains_and_management_across_exchanges(exchange: str):
     """
@@ -1046,7 +1108,7 @@ async def test_short_symmetry_chains_and_management_across_exchanges(exchange: s
         "children": [
             {
                 "id": "s_trend",
-                "type": "TREND_DIRECTION",
+                "type": "trend_direction",
                 "params": {
                     "fast_period": 10,
                     "slow_period": 50,
@@ -1055,7 +1117,7 @@ async def test_short_symmetry_chains_and_management_across_exchanges(exchange: s
             },
             {
                 "id": "s_ob",
-                "type": "ORDER_BOOK_ZONE",
+                "type": "order_book_zone",
                 "params": {
                     "side": "asks",
                     "metric": "obi_1p",
@@ -1065,7 +1127,7 @@ async def test_short_symmetry_chains_and_management_across_exchanges(exchange: s
             },
             {
                 "id": "s_bb",
-                "type": "BOLLINGER",
+                "type": "bollinger_bands_condition",
                 "params": {
                     "period": 20,
                     "std_dev": 2.0,
@@ -1168,7 +1230,7 @@ async def test_short_symmetry_chains_and_management_across_exchanges(exchange: s
 # ============================================================================================
 # 12. TEST 10: MEMECOIN & MICRO-PRICE ASSETS (PEPE, DOGE) HIGH-PRECISION REGIME
 # ============================================================================================
-@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex"])
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
 @pytest.mark.parametrize("memecoin_symbol", ["PEPEUSDT", "DOGEUSDT"])
 @pytest.mark.asyncio
 async def test_memecoin_micro_price_precision_across_exchanges(
@@ -1252,3 +1314,139 @@ async def test_memecoin_micro_price_precision_across_exchanges(
     )
     assert isinstance(resolved_val, float)
     assert resolved_val > 0
+
+
+# ============================================================================================
+# 13. TEST 11: EMPTY pair_info DEFAULT-VALUE TRAP (live fail-closed)
+# ============================================================================================
+# Blocks below REQUIRE pair_info keys (no kline-df fallback). With an empty live
+# pair_info each of them must return False + error — never True and never a
+# neutral default (relative_volume 1.0, hour 12, atr 0) that silently masks a
+# broken live metrics pipeline while unit tests with pre-filled fixtures pass.
+EMPTY_TRAP_BLOCKS = [
+    {"id": "t_relvol", "type": "rel_vol_filter", "params": {}},
+    {"id": "t_activity", "type": "market_activity", "params": {}},
+    {
+        "id": "t_tapec",
+        "type": "tape_condition",
+        "params": {
+            "metric": "delta_volume",
+            "window_sec": 30,
+            "operator": "gt",
+            "threshold": 0,
+        },
+    },
+    {"id": "t_tapea", "type": "tape_analysis", "params": {"window_sec": 30}},
+    {
+        "id": "t_obz",
+        "type": "order_book_zone",
+        "params": {"side": "bids", "range_type": "Percentage", "range_value": 1.0},
+    },
+    {"id": "t_l2", "type": "l2_microstructure", "params": {}},
+    {
+        "id": "t_sess",
+        "type": "trading_session",
+        "params": {"filter_mode": "session", "session": "london"},
+    },
+    {
+        "id": "t_vol",
+        "type": "volatility_filter",
+        "params": {"indicator": "ATR", "operator": "gt", "value": 0.0},
+    },
+]
+
+
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
+@pytest.mark.parametrize("block_config", EMPTY_TRAP_BLOCKS, ids=lambda b: b["id"])
+def test_empty_pair_info_fails_closed_in_live(
+    exchange: str, block_config: Dict[str, Any]
+):
+    """Empty live pair_info must fail closed with an explicit error."""
+    pair_info_full, market_data_full = create_exchange_context(exchange=exchange)
+    # Depth-backed blocks get no depth at all here.
+    market_data = {
+        k: v for k, v in market_data_full.items() if not k.startswith("depth")
+    }
+    pair_info = {
+        "symbol": pair_info_full["symbol"],
+        "exchange": exchange,
+        "market_type": "futures_usdtm",
+        "candle_timeframe": "1m",
+        "is_live_mode": True,
+    }
+    strategy = VisualBuilderStrategy(params={"enabled": True})
+
+    result, trace = strategy._evaluate_condition_tree(
+        node=block_config,
+        pair_info=pair_info,
+        market_data=market_data,
+        prev_pair_info={},
+        context={},
+    )
+
+    details = trace.get("details", {})
+    assert result is False, (
+        f"Block {block_config['type']} passed on empty live pair_info "
+        f"on {exchange}: {details}"
+    )
+    assert "error" in details, (
+        f"Block {block_config['type']} failed without an error on empty live "
+        f"pair_info on {exchange}: {details}"
+    )
+
+
+@pytest.mark.parametrize("exchange", ["bybit", "okx", "weex", "bitget"])
+def test_indicator_decoys_do_not_leak_across_periods(exchange: str):
+    """A foreign-period value must never stand in for the requested one."""
+    _, market_data = create_exchange_context(exchange=exchange)
+    strategy = VisualBuilderStrategy(params={"enabled": True})
+    base_pi = {
+        "symbol": "BTCUSDT",
+        "exchange": exchange,
+        "market_type": "futures_usdtm",
+        "candle_timeframe": "1m",
+        "is_live_mode": True,
+    }
+
+    def run(block, pi):
+        return strategy._evaluate_condition_tree(
+            node=block,
+            pair_info=pi,
+            market_data=market_data,
+            prev_pair_info={},
+            context={},
+        )
+
+    # RSI_14 decoy (extreme oversold) must not decide an RSI_21 block.
+    rsi_block = {
+        "id": "d_rsi",
+        "type": "rsi_condition",
+        "params": {"period": 21, "operator": "lt", "value": 90},
+    }
+    res_plain, _ = run(rsi_block, dict(base_pi))
+    res_decoy, trace_decoy = run(rsi_block, {**base_pi, "RSI_14": 5.0})
+    assert res_plain == res_decoy, (
+        f"RSI_14 decoy leaked into RSI_21 evaluation on {exchange}: "
+        f"{trace_decoy.get('details')}"
+    )
+
+    # A lone STOCH K (extreme overbought) without D must take the dynamic
+    # path instead of the removed d=0.0 default.
+    stoch_block = {
+        "id": "d_stoch",
+        "type": "stochastic_condition",
+        "params": {
+            "k_period": 14,
+            "d_period": 3,
+            "smooth_k": 3,
+            "operator": "lt",
+            "value": 20,
+            "line": "k",
+        },
+    }
+    res_plain, _ = run(stoch_block, dict(base_pi))
+    res_decoy, trace_decoy = run(stoch_block, {**base_pi, "STOCHk_14_3_3": 90.0})
+    assert res_plain == res_decoy, (
+        f"Lone STOCH K leaked into evaluation on {exchange}: "
+        f"{trace_decoy.get('details')}"
+    )

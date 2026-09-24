@@ -30,14 +30,34 @@ interface AuthContextType {
 	updateUser: (updates: Partial<User>) => void;
 }
 
+// ============================================================================
+// DEV AUTH BYPASS:
+// Гарантированно выключен в продакшен-сборках (import.meta.env.PROD / npm run build).
+// В dev-режиме (npm run dev) включается ТОЛЬКО если явно указан VITE_DEV_AUTH_BYPASS=true
+// ============================================================================
+const DEV_AUTH_BYPASS =
+	import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH_BYPASS === "true";
+
+const MOCK_DEV_USER: User = {
+	id: 1,
+	username: "quant.admin",
+	email: "admin@depthsight.io",
+	createdAt: "2024-01-01T00:00:00Z",
+	plan: "pro",
+	role: "admin",
+	xp: 15400,
+	level: 42,
+	isTotpEnabled: false,
+};
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 	children,
 }) => {
-	const [user, setUser] = useState<User | null>(null);
-	const [token, setToken] = useState<string | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
+	const [user, setUser] = useState<User | null>(DEV_AUTH_BYPASS ? MOCK_DEV_USER : null);
+	const [token, setToken] = useState<string | null>(DEV_AUTH_BYPASS ? "dev-bypass-token" : null);
+	const [isLoading, setIsLoading] = useState(!DEV_AUTH_BYPASS);
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 
@@ -58,6 +78,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 	}, [navigate, queryClient]);
 
 	useEffect(() => {
+		if (DEV_AUTH_BYPASS) {
+			return;
+		}
+
 		const initializeAuth = async () => {
 			const storedToken = localStorage.getItem("authToken");
 			// --- Checking if there is an original token ---

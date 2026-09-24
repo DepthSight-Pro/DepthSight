@@ -1221,7 +1221,7 @@ class BinanceExecutor:
             )
             return None
 
-    async def get_open_positions(self) -> List[Dict[str, Any]]:
+    async def get_open_positions(self) -> Optional[List[Dict[str, Any]]]:
         log_prefix = f"[GetOpenPositions:{self.market_type}]"
 
         if self.market_type != "futures_usdtm":
@@ -1249,15 +1249,15 @@ class BinanceExecutor:
                 logger.error(
                     f"{log_prefix} API error while fetching positions: {response}"
                 )
-                return []
+                return None
 
             else:
                 logger.error(f"{log_prefix} Unexpected response format: {response}")
-                return []
+                return None
 
         except Exception as e:
             logger.error(f"{log_prefix} Exception occurred: {e}", exc_info=True)
-            return []
+            return None
 
     async def _user_data_keepalive_loop(self, listen_key: str):
         log_prefix = f"[UserDataKeepalive:{listen_key[-6:]}]"

@@ -2,7 +2,7 @@
 
 import type { TFunction } from "i18next";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { useSwipeable } from "react-swipeable";
@@ -17,8 +17,11 @@ import {
 } from "recharts";
 import { Logo } from "../components/ui/logo";
 import { ICONS } from "../constants";
+import { useLiveMarks } from "../hooks/useLiveMarks";
+import { applyLiveMarksToPositions, readExchangeOf } from "../lib/livePnl";
 import { api } from "../services/api";
-import type { PortfolioStatus, Position } from "../types";
+import { useRealtimeStore } from "../stores/realtimeStore";
+import type { PortfolioStatus } from "../types";
 
 type PnlPeriod = "1d" | "7d" | "mtd";
 
@@ -159,7 +162,6 @@ const DashboardScreen: React.FC = () => {
 	});
 	const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>("1d");
 	const [portfolio, setPortfolio] = useState<PortfolioStatus | null>(null);
-	const [positions, setPositions] = useState<Position[]>([]);
 	const [pnlHistory, setPnlHistory] = useState<{ name: string; pnl: number }[]>(
 		[],
 	);
@@ -167,6 +169,28 @@ const DashboardScreen: React.FC = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [isLiveModeAvailable, setIsLiveModeAvailable] = useState(false);
 	const { t } = useTranslation("pwa-common");
+
+	// Realtime engine pushes (merged per account in the shared store).
+	const wsConnected = useRealtimeStore((s) => s.wsConnected);
+	const portfolioSeq = useRealtimeStore((s) => s.portfolioSeq);
+	const tradesSeq = useRealtimeStore((s) => s.tradesSeq);
+	const snapshotPositions = useRealtimeStore((s) => s.positionsByMode[mode]);
+	const setStorePositions = useRealtimeStore((s) => s.setPositions);
+
+	// Live mark-prices straight from exchanges (zero backend load).
+	const liveSymbols = useMemo(
+		() =>
+			(snapshotPositions ?? []).map((p) => ({
+				symbol: String(p.symbol),
+				exchange: readExchangeOf(p),
+			})),
+		[snapshotPositions],
+	);
+	const { marks: liveMarks } = useLiveMarks(liveSymbols);
+	const positions = useMemo(
+		() => applyLiveMarksToPositions(snapshotPositions, liveMarks) ?? [],
+		[snapshotPositions, liveMarks],
+	);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -193,7 +217,7 @@ const DashboardScreen: React.FC = () => {
 				]);
 
 				setPortfolio(portfolioRes || null);
-				setPositions(positionsRes || []);
+				setStorePositions(currentMode, positionsRes || []);
 
 				let curve = equityRes || [];
 				if (curve.length === 0 && portfolioRes) {
@@ -205,14 +229,62 @@ const DashboardScreen: React.FC = () => {
 				console.error("Failed to fetch dashboard data:", err);
 				setError(t("dashboard.failedToLoadData"));
 				setPortfolio(null);
-				setPositions([]);
+				setStorePositions(mode, []);
 				setPnlHistory([]);
 			} finally {
 				setLoading(false);
 			}
 		};
 		fetchData();
-	}, [mode, pnlPeriod, t]);
+	}, [mode, pnlPeriod, t, setStorePositions]);
+
+	// Portfolio push (per-controller) → refetch the aggregated REST view.
+	useEffect(() => {
+		if (portfolioSeq === 0) return;
+		let cancelled = false;
+		api
+			.getPortfolio(mode)
+			.then((res) => {
+				if (!cancelled && res) setPortfolio(res);
+			})
+			.catch((err) => console.error("Failed to refresh portfolio:", err));
+		return () => {
+			cancelled = true;
+		};
+	}, [portfolioSeq, mode]);
+
+	// Trades push (position closed) → refresh the equity curve only.
+	useEffect(() => {
+		if (tradesSeq === 0) return;
+		let cancelled = false;
+		api
+			.getPortfolioEquity(mode, pnlPeriod)
+			.then((res) => {
+				if (!cancelled) setPnlHistory(transformEquityToPnl(res || [], pnlPeriod));
+			})
+			.catch((err) => console.error("Failed to refresh equity:", err));
+		return () => {
+			cancelled = true;
+		};
+	}, [tradesSeq, mode, pnlPeriod]);
+
+	// Fallback polling while the socket is down (realtime is push-driven).
+	useEffect(() => {
+		if (wsConnected) return;
+		const id = setInterval(async () => {
+			try {
+				const [portfolioRes, positionsRes] = await Promise.all([
+					api.getPortfolio(mode),
+					api.getPositions(mode),
+				]);
+				if (portfolioRes) setPortfolio(portfolioRes);
+				setStorePositions(mode, positionsRes || []);
+			} catch (err) {
+				console.error("Failed fallback refresh:", err);
+			}
+		}, 5000);
+		return () => clearInterval(id);
+	}, [wsConnected, mode, setStorePositions]);
 
 	const handleSetMode = (newMode: "live" | "paper") => {
 		if (newMode === "live" && !isLiveModeAvailable) {
@@ -236,8 +308,9 @@ const DashboardScreen: React.FC = () => {
 		try {
 			await api.closePosition(symbol);
 			alert(t("dashboard.closePositionCommandSent", { symbol }));
+			// Burst push removes it right away; poll once as a safety net.
 			setTimeout(() => {
-				api.getPositions(mode).then((res) => setPositions(res || []));
+				api.getPositions(mode).then((res) => setStorePositions(mode, res || []));
 			}, 2000);
 		} catch (err) {
 			console.error(err);
@@ -351,9 +424,22 @@ const DashboardScreen: React.FC = () => {
 				</div>
 
 				<div className="bg-[hsl(var(--card))] rounded-xl p-4 shadow-sm">
-					<h3 className="text-base font-medium mb-1 text-[hsl(var(--card-foreground))]">
-						{t("dashboard.activePositions")}
-					</h3>
+					<div className="flex justify-between items-center mb-1">
+						<h3 className="text-base font-medium text-[hsl(var(--card-foreground))]">
+							{t("dashboard.activePositions")}
+						</h3>
+						<span
+							className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
+								wsConnected
+									? "border-emerald-400/30 text-emerald-600"
+									: "border-amber-400/30 text-amber-600"
+							}`}
+						>
+							{wsConnected
+								? t("dashboard.realtimeLive", "live")
+								: t("dashboard.realtimePolling", "polling")}
+						</span>
+					</div>
 					<div className="divide-y divide-[hsl(var(--border))]">
 						{positions.length > 0 ? (
 							positions.map((pos) => (

@@ -13,6 +13,23 @@ export interface Kline {
 
 export type KlineInterval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
+export interface BinanceSymbolFilter {
+	filterType: string;
+	tickSize?: string;
+	[key: string]: unknown;
+}
+
+export interface BinanceSymbolInfo {
+	symbol: string;
+	filters: BinanceSymbolFilter[];
+	[key: string]: unknown;
+}
+
+export interface BinanceExchangeInfo {
+	symbols?: BinanceSymbolInfo[];
+	[key: string]: unknown;
+}
+
 export const KLINE_INTERVALS: { value: KlineInterval; label: string }[] = [
 	{ value: "1m", label: "1m" },
 	{ value: "5m", label: "5m" },
@@ -90,9 +107,11 @@ export async function fetchKlines(
 	return [];
 }
 
-export async function fetchSymbolInfo(symbol: string): Promise<any> {
+export async function fetchSymbolInfo(
+	symbol: string,
+): Promise<BinanceExchangeInfo | null> {
 	try {
-		const response = await apiClient<any>(
+		const response = await apiClient<BinanceExchangeInfo>(
 			`/proxy/binance/exchange-info?symbol=${symbol.toUpperCase()}`,
 		);
 		return response;

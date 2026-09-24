@@ -1,5 +1,6 @@
 {
 	"pageTitle": "Mission Control",
+	"subtitle": "Autonomous multi-exchange execution & real-time telemetry",
 	"connectionStatus": {
 		"connecting": "Connecting...",
 		"live": "Live",

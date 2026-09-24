@@ -39,11 +39,11 @@ export const KBSearch: React.FC = () => {
 				className="relative max-w-xl mx-auto cursor-pointer group"
 				onClick={() => setOpen(true)}
 			>
-				<Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5 group-hover:text-primary transition-colors" />
-				<div className="flex items-center w-full h-14 pl-12 pr-4 bg-card/50 backdrop-blur-sm border border-primary/20 rounded-md shadow-lg text-muted-foreground group-hover:border-primary/50 transition-all">
+				<Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 w-5 h-5 group-hover:text-cyan transition-colors" />
+				<div className="flex items-center w-full h-14 pl-12 pr-4 glass border border-white/10 rounded-2xl shadow-xl text-white/50 group-hover:text-white/80 group-hover:border-cyan/40 transition-all">
 					{t("searchPlaceholder")}
 				</div>
-				<div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-mono text-muted-foreground">
+				<div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 bg-white/[0.04] text-[10px] font-mono text-white/60">
 					<span className="text-xs">⌘</span>K
 				</div>
 			</div>

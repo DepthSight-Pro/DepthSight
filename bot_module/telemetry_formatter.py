@@ -11,7 +11,9 @@ block types and parameters, and identifies primary signal bottlenecks.
 from typing import Any, Dict, List, Optional
 
 
-def _extract_nodes_map(strategy_config: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def _extract_nodes_map(
+    strategy_config: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
     """
     Recursively scans strategy configuration to map block IDs to their node dictionaries.
     """
@@ -236,20 +238,18 @@ def extract_rejection_telemetry(
             primary_bottleneck = f"Cooldown rejected {by_cooldown} signals ({pct:.1f}% of all rejections)."
         elif by_weight >= max(by_risk_mgr, by_calc, by_global_risk):
             pct = (by_weight / max(total_rejections, 1)) * 100
-            primary_bottleneck = (
-                f"Foundation weight threshold rejected {by_weight} signals ({pct:.1f}% of all rejections)."
-            )
+            primary_bottleneck = f"Foundation weight threshold rejected {by_weight} signals ({pct:.1f}% of all rejections)."
         elif by_risk_mgr >= max(by_calc, by_global_risk):
             rm_str = (
                 ", ".join(f"{k}: {v}" for k, v in rm_reasons.items())
                 if rm_reasons
                 else "risk manager limits"
             )
-            primary_bottleneck = f"Risk manager rejected {by_risk_mgr} signals ({rm_str})."
-        elif by_calc > 0:
             primary_bottleneck = (
-                f"Position calculation rejected {by_calc} signals (invalid price, stop distance, or quantity)."
+                f"Risk manager rejected {by_risk_mgr} signals ({rm_str})."
             )
+        elif by_calc > 0:
+            primary_bottleneck = f"Position calculation rejected {by_calc} signals (invalid price, stop distance, or quantity)."
         elif by_global_risk > 0:
             primary_bottleneck = f"Global risk limit rejected {by_global_risk} signals."
 
@@ -385,7 +385,9 @@ def format_event_log_markdown(
 
     if by_filter:
         for f in by_filter:
-            lines.append(f"  - {lbl_filter_pfx} - {f['label']} (`{f['id']}`): {f['count']}")
+            lines.append(
+                f"  - {lbl_filter_pfx} - {f['label']} (`{f['id']}`): {f['count']}"
+            )
     else:
         lines.append(f"  - {lbl_filter_pfx}: 0")
 

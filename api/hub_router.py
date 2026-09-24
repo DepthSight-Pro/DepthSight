@@ -7,7 +7,7 @@ import hashlib
 import httpx
 import random
 from datetime import date, datetime, timezone, timedelta
-from typing import List, Dict, Optional, Literal
+from typing import List, Dict, Optional, Literal, Any
 from fastapi import APIRouter, Body, Depends, HTTPException, status, Request, Header
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1374,6 +1374,7 @@ async def _register_hub_node_impl(
                         has_welcome_bonus=adopted.has_welcome_bonus or False,
                         weex_uid=adopted.weex_uid,
                         okx_uid=getattr(adopted, "okx_uid", None),
+                        bitget_uid=getattr(adopted, "bitget_uid", None),
                         wallet_address=wallet_addr or adopted.wallet_address,
                         is_operator=adopted.is_operator or False,
                         is_mining_server=adopted.is_mining_server or False,
@@ -1436,6 +1437,7 @@ async def _register_hub_node_impl(
                     weex_uid=node_in.weex_uid,
                     bybit_uid=node_in.bybit_uid,
                     okx_uid=node_in.okx_uid,
+                    bitget_uid=node_in.bitget_uid,
                     public_domain=node_in.public_domain,
                     wallet_address=wallet_addr,
                 )
@@ -1453,6 +1455,8 @@ async def _register_hub_node_impl(
             db_node.weex_uid = node_in.weex_uid
         if node_in.okx_uid:
             db_node.okx_uid = node_in.okx_uid
+        if node_in.bitget_uid:
+            db_node.bitget_uid = node_in.bitget_uid
         if node_in.public_domain:
             db_node.public_domain = node_in.public_domain
 
@@ -1932,6 +1936,7 @@ async def get_mining_config(db: AsyncSession = Depends(get_db)):
         referral_mining_boost=cfg.referral_mining_boost,
         daily_emission_base=cfg.daily_emission_base,
         rebate_rates=cfg.rebate_rates or {},
+        exchange_multipliers=getattr(cfg, "exchange_multipliers", {}) or {},
     )
 
 
@@ -2133,6 +2138,7 @@ async def get_mining_status(
         is_mining_enabled=cfg.is_mining_enabled,
         eligible_exchanges=cfg.eligible_exchanges,
         rebate_rates=cfg.rebate_rates or {},
+        exchange_multipliers=getattr(cfg, "exchange_multipliers", {}) or {},
         current_epoch_date=today.isoformat(),
         daily_emission=daily_emission,
         your_total_mined=your_total_mined,
@@ -2588,6 +2594,9 @@ async def _get_active_mining_config(db: AsyncSession) -> Optional[models.MiningC
                 "bybit",
                 "bybit_futures",
                 "bybit_spot",
+                "bitget",
+                "bitget_futures",
+                "bitget_spot",
             ],
             daily_emission_base=547945.21,
             halving_interval_days=365,
@@ -2605,6 +2614,17 @@ async def _get_active_mining_config(db: AsyncSession) -> Optional[models.MiningC
                 "bybit_spot": 0.50,
                 "bybit": 0.50,
                 "binance_futures": 0.25,
+                "bitget_futures": 0.35,
+                "bitget_spot": 0.35,
+                "bitget": 0.35,
+            },
+            exchange_multipliers={
+                "bitget": 2.0,
+                "bitget_futures": 2.0,
+                "bitget_spot": 2.0,
+                "bybit": 1.0,
+                "okx": 1.0,
+                "weex": 1.0,
             },
         )
         db.add(cfg)
@@ -2823,6 +2843,39 @@ async def _resolve_operator_root_id(db: AsyncSession) -> Optional[str]:
     return None
 
 
+def _resolve_report_multiplier(cfg, report) -> float:
+    """
+    Resolve the effective mining multiplier for a stored telemetry report.
+
+    Priority:
+      1. The LIVE MiningConfig entry for the report's exchange (exact or base
+         name). This makes newly enabled/changed multipliers apply immediately
+         to the Today's Est. Reward card and to any epoch that is not settled
+         yet, regardless of what was stamped on the report at submission time
+         (or left at the default 1.0 by paths that never stamp it, e.g.
+         crud.save_hub_telemetry_report).
+      2. The value stamped on the report at submission time (mining_multiplier),
+         used as a historical fallback when the current config has no entry for
+         this exchange.
+      3. 1.0.
+    """
+    multipliers = getattr(cfg, "exchange_multipliers", None) or {}
+    ex = str(getattr(report, "exchange_id", None) or "").lower().strip()
+    if ex:
+        key = ex if ex in multipliers else ex.split("_")[0]
+        if key in multipliers:
+            return _get_exchange_multiplier(cfg, ex)
+
+    stamped = getattr(report, "mining_multiplier", None)
+    try:
+        stamped_val = float(stamped) if stamped is not None else 1.0
+    except (TypeError, ValueError):
+        stamped_val = 1.0
+    if stamped_val <= 0:
+        stamped_val = 1.0
+    return max(0.1, stamped_val)
+
+
 async def estimate_live_epoch_reward(
     db: AsyncSession,
     cfg,
@@ -2844,25 +2897,27 @@ async def estimate_live_epoch_reward(
         return 0.0
 
     node_rebates = {}
+    node_weighted_points = {}
     for rep in reports:
         nid = rep.node_uuid
         if not nid:
             continue
-        node_rebates[nid] = node_rebates.get(nid, 0.0) + (
-            rep.estimated_rebate_usdt or 0.0
-        )
-    if not node_rebates:
+        reb = rep.estimated_rebate_usdt or 0.0
+        mult = _resolve_report_multiplier(cfg, rep)
+        node_rebates[nid] = node_rebates.get(nid, 0.0) + reb
+        node_weighted_points[nid] = node_weighted_points.get(nid, 0.0) + (reb * mult)
+    if not node_weighted_points:
         return 0.0
 
     base_pts = {}
     ref_pts = {}
     total_pts = 0.0
-    for nid, base_r in node_rebates.items():
-        base_pts[nid] = base_pts.get(nid, 0.0) + base_r
-        total_pts += base_r
+    for nid, w_pts in node_weighted_points.items():
+        base_pts[nid] = base_pts.get(nid, 0.0) + w_pts
+        total_pts += w_pts
         ref_uuid = await _resolve_mining_referrer(db, nid)
         if ref_uuid:
-            rp = base_r * cfg.referral_mining_boost
+            rp = w_pts * cfg.referral_mining_boost
             ref_pts[ref_uuid] = ref_pts.get(ref_uuid, 0.0) + rp
             total_pts += rp
 
@@ -2877,15 +2932,17 @@ async def estimate_live_epoch_reward(
 
     share_pct, server_shares = await _load_mining_share_config(db)
 
-    target_total = node_rebates.get(target_node_uuid, 0.0)
+    target_total_weighted = node_weighted_points.get(target_node_uuid, 0.0)
     net_base = 0.0
     for rep in reports:
         if rep.node_uuid != target_node_uuid:
             continue
         rb = rep.estimated_rebate_usdt or 0.0
-        if target_total <= 0 or rb <= 0:
+        mult = _resolve_report_multiplier(cfg, rep)
+        w_rb = rb * mult
+        if target_total_weighted <= 0 or w_rb <= 0:
             continue
-        report_ratio = rb / target_total
+        report_ratio = w_rb / target_total_weighted
         gross = gross_base * report_ratio
         server_share = server_shares.get(rep.source_node_uuid, share_pct)
         net_base += gross * server_share
@@ -3014,6 +3071,32 @@ def _estimate_rebate(
 
     estimated_rebate = report.trade_volume_usdt * fee_rate * rebate_rate
     return round(estimated_rebate, 6)
+
+
+def _get_exchange_multiplier(
+    config: Optional[models.MiningConfig], exchange_id: Optional[str]
+) -> float:
+    """
+    Returns the mining reward point multiplier for a given exchange.
+    Checks exact match first (e.g. 'bitget_futures'), then base name ('bitget').
+    Defaults to 1.0 (minimum allowed 0.1).
+    """
+    if not config or not exchange_id:
+        return 1.0
+    multipliers = getattr(config, "exchange_multipliers", None) or {}
+    ex = str(exchange_id).lower().strip()
+    if ex in multipliers:
+        try:
+            return max(0.1, float(multipliers[ex]))
+        except (ValueError, TypeError):
+            return 1.0
+    base = ex.split("_")[0]
+    if base in multipliers:
+        try:
+            return max(0.1, float(multipliers[base]))
+        except (ValueError, TypeError):
+            return 1.0
+    return 1.0
 
 
 @router.get("/mining/node-trades")
@@ -3221,10 +3304,11 @@ async def post_telemetry_report(
         ]
 
         exch_lower = (report.exchange_id or "").lower()
-        verifiable_exchanges = {"weex", "bybit", "okx"}
-        initial_v_status = (
-            "PENDING" if exch_lower in verifiable_exchanges else "SKIPPED"
+        is_verifiable = any(
+            ex in exch_lower for ex in ("weex", "bybit", "okx", "bitget")
         )
+        initial_v_status = "PENDING" if is_verifiable else "SKIPPED"
+        mining_mult = _get_exchange_multiplier(mining_cfg, report.exchange_id)
 
         db_report = None
         if report.broker_trade_id:
@@ -3275,6 +3359,7 @@ async def post_telemetry_report(
             db_report.trade_volume_usdt = report.trade_volume_usdt
             db_report.score = score
             db_report.is_verified = initial_v_status == "SKIPPED"
+            db_report.mining_multiplier = mining_mult
 
             # Only upgrade status from LOCAL_ONLY to PENDING/SKIPPED
             if db_report.verification_status == "LOCAL_ONLY":
@@ -3312,6 +3397,7 @@ async def post_telemetry_report(
                 verification_status=initial_v_status,
                 is_mining_eligible=is_mining_eligible,
                 estimated_rebate_usdt=estimated_rebate,
+                mining_multiplier=mining_mult,
                 verification_error=gate_reason,
             )
             db.add(db_report)
@@ -3709,3 +3795,1154 @@ async def contribute_community_memories(
         "accepted": accepted,
         "confirmed": confirmed,
     }
+
+
+# ==============================================================================
+# UNIVERSAL PROMO & AIRDROP ENGINE ENDPOINTS
+# ==============================================================================
+
+
+async def _verify_admin_access_async(authorization: Optional[str], db: AsyncSession):
+    is_authorized = False
+    if authorization and authorization.startswith("Bearer "):
+        key = authorization.split(" ")[1]
+        if HUB_ADMIN_API_KEY and key == HUB_ADMIN_API_KEY:
+            is_authorized = True
+        else:
+            try:
+                from .auth import get_current_user_from_token
+
+                user = await get_current_user_from_token(key, db)
+                if user and user.role == "admin":
+                    is_authorized = True
+            except Exception:
+                pass
+    if not is_authorized:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin credentials required to manage promo campaigns.",
+        )
+
+
+async def _resolve_requesting_node(
+    db: AsyncSession,
+    x_node_uuid: Optional[str] = None,
+    authorization: Optional[str] = None,
+    node_uuid: Optional[str] = None,
+) -> tuple[Optional[models.HubNode], Optional[models.User]]:
+    current_user_obj = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            from .auth import get_current_user_from_token
+
+            current_user_obj = await get_current_user_from_token(token, db)
+        except Exception:
+            pass
+
+    target_uuid = node_uuid or x_node_uuid
+    if target_uuid:
+        stmt = select(models.HubNode).where(models.HubNode.node_uuid == target_uuid)
+        res = await db.execute(stmt)
+        node = res.scalars().first()
+        if node:
+            return node, current_user_obj
+
+    if current_user_obj:
+        if current_user_obj.referral_code:
+            stmt = select(models.HubNode).where(
+                models.HubNode.node_referral_code == current_user_obj.referral_code
+            )
+            res = await db.execute(stmt)
+            node = res.scalars().first()
+            if node:
+                return node, current_user_obj
+
+        # NOTE: affiliate User.payout_address is deliberately NOT used here.
+        # Only the MetaMask-bound wallet (exchange_settings / HubNode.wallet)
+        # identifies mining nodes; payout belongs to affiliate payouts.
+
+        cfg_stmt = select(models.AppConfig).where(
+            models.AppConfig.user_id == current_user_obj.id
+        )
+        cfg_res = await db.execute(cfg_stmt)
+        cfg = cfg_res.scalars().first()
+        if cfg and cfg.exchange_settings:
+            settings = cfg.exchange_settings
+            m_uuid = (
+                (settings.get("bybit") or {}).get("mining_node_uuid")
+                or (settings.get("okx") or {}).get("mining_node_uuid")
+                or (settings.get("weex") or {}).get("mining_node_uuid")
+                or (settings.get("bitget") or {}).get("mining_node_uuid")
+                or (settings.get("binance") or {}).get("mining_node_uuid")
+                or settings.get("mining_node_uuid")
+            )
+            if m_uuid:
+                stmt = select(models.HubNode).where(models.HubNode.node_uuid == m_uuid)
+                res = await db.execute(stmt)
+                node = res.scalars().first()
+                if node:
+                    return node, current_user_obj
+
+    return None, current_user_obj
+
+
+def _get_node_exchange_uid(
+    node: Optional[models.HubNode], exchange_id: str
+) -> Optional[str]:
+    if not node:
+        return None
+    ex = exchange_id.lower()
+    if "bitget" in ex:
+        return node.bitget_uid
+    elif "bybit" in ex:
+        return node.bybit_uid
+    elif "okx" in ex:
+        return node.okx_uid
+    elif "weex" in ex:
+        return node.weex_uid
+    return None
+
+
+def _datetime_diff_days(dt: Optional[datetime]) -> int:
+    if not dt:
+        return 0
+    now = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0, (now - dt).days)
+
+
+async def _lookup_user_exchange_uid(
+    db: AsyncSession, user_id: int, exchange_id: str
+) -> Optional[str]:
+    ex = exchange_id.lower()
+    stmt = select(models.AppConfig).where(models.AppConfig.user_id == user_id)
+    res = await db.execute(stmt)
+    cfg = res.scalars().first()
+    if cfg and cfg.exchange_settings:
+        ex_settings = cfg.exchange_settings.get(exchange_id) or {}
+        uid = ex_settings.get(f"{exchange_id}_uid") or ex_settings.get("uid")
+        if uid:
+            return str(uid)
+        for k, v in cfg.exchange_settings.items():
+            if isinstance(v, dict) and ex in k.lower():
+                var_uid = (
+                    v.get(f"{exchange_id}_uid") or v.get(f"{k}_uid") or v.get("uid")
+                )
+                if var_uid:
+                    return str(var_uid)
+
+    # Attempt to auto-resolve UID via exchange API if keys exist in database
+    try:
+        from .routes import config as config_routes
+
+        if "bitget" in ex:
+            resolved = await config_routes.auto_resolve_bitget_uid(db, user_id)
+            if resolved:
+                return str(resolved)
+        elif "bybit" in ex:
+            resolved = await config_routes.auto_resolve_bybit_uid(db, user_id)
+            if resolved:
+                return str(resolved)
+        elif "okx" in ex:
+            resolved = await config_routes.auto_resolve_okx_uid(db, user_id)
+            if resolved:
+                return str(resolved)
+        elif "weex" in ex:
+            resolved = await config_routes.auto_resolve_weex_uid(db, user_id)
+            if resolved:
+                return str(resolved)
+    except Exception as e:
+        logger.debug(
+            f"Failed to auto-resolve UID for user {user_id} on {exchange_id}: {e}"
+        )
+
+    return None
+
+
+async def _resolve_user_promo_identity(
+    db: AsyncSession,
+    current_user_obj: Optional["models.User"],
+    exchange_id: str,
+) -> Dict[str, Any]:
+    """Per-user promo identity: aggregates ALL nodes/keys of the user.
+
+    Wallet semantics: ONLY the MetaMask-bound wallet counts
+    (``AppConfig.exchange_settings.*.wallet_address`` + ``HubNode.wallet_address``
+    written by ``/node/wallet/verify``). The affiliate ``User.payout_address``
+    is unrelated to mining/promo and is deliberately ignored here.
+
+    Returns dict with:
+      - node_uuids: owned HubNode uuids (never чужые ноды)
+      - uids: master-UIDs of this user on target exchange
+      - primary_uid: main UID to display/bind claims
+      - has_key / has_wallet: strictly per-user flags
+      - wallet: normalized MetaMask address or None
+
+    Volume, claims and key checks must use this — never the single
+    requesting ``node`` resolved from ``X-Node-UUID``/``?node_uuid``,
+    which may belong to another user (that was the cross-user leak).
+    """
+    empty: Dict[str, Any] = {
+        "node_uuids": [],
+        "uids": [],
+        "primary_uid": None,
+        "has_key": False,
+        "has_wallet": False,
+        "wallet": None,
+    }
+    if current_user_obj is None:
+        return empty
+
+    from sqlalchemy import func as _func
+
+    ex = (exchange_id or "bitget").lower()
+
+    # 1. AppConfig.exchange_settings: UIDs, mining_node_uuids, MetaMask wallets.
+    settings_uids: List[str] = []
+    mining_node_uuids: List[str] = []
+    settings_wallets: List[str] = []
+    try:
+        cfg_stmt = select(models.AppConfig).where(
+            models.AppConfig.user_id == current_user_obj.id
+        )
+        cfg_res = await db.execute(cfg_stmt)
+        cfg = cfg_res.scalars().first()
+        if cfg and cfg.exchange_settings:
+            for k, v in cfg.exchange_settings.items():
+                if not isinstance(v, dict):
+                    continue
+                m_uuid = v.get("mining_node_uuid")
+                if m_uuid and str(m_uuid) not in mining_node_uuids:
+                    mining_node_uuids.append(str(m_uuid))
+                w_addr = v.get("wallet_address")
+                if w_addr and str(w_addr).strip().lower() not in [
+                    w.lower() for w in settings_wallets
+                ]:
+                    settings_wallets.append(str(w_addr).strip())
+                if ex in k.lower() or k.lower() in ex:
+                    for uid_key in (f"{exchange_id}_uid", f"{k}_uid", "uid"):
+                        uid_val = v.get(uid_key)
+                        if uid_val and str(uid_val) not in settings_uids:
+                            settings_uids.append(str(uid_val))
+            top_m = cfg.exchange_settings.get("mining_node_uuid")
+            if top_m and str(top_m) not in mining_node_uuids:
+                mining_node_uuids.append(str(top_m))
+            top_w = cfg.exchange_settings.get("wallet_address")
+            if top_w and str(top_w).strip().lower() not in [
+                w.lower() for w in settings_wallets
+            ]:
+                settings_wallets.append(str(top_w).strip())
+    except Exception as e:
+        logger.debug(f"promo identity settings lookup failed: {e}")
+
+    # 2. Auto-resolved UID via exchange API (user's own keys).
+    auto_uid: Optional[str] = None
+    try:
+        auto_uid = await _lookup_user_exchange_uid(db, current_user_obj.id, exchange_id)
+    except Exception as e:
+        logger.debug(f"promo identity auto-resolve failed: {e}")
+
+    known_uids: List[str] = []
+    for u in settings_uids + ([str(auto_uid)] if auto_uid else []):
+        if u and u not in known_uids:
+            known_uids.append(u)
+
+    # 3. Owned nodes: by referral_code / MetaMask wallets / mining_node_uuid.
+    # UID-based discovery + UID collection run to a fixpoint (max 3 rounds):
+    # a node found by UID may carry another UID linking a further node.
+    node_uuids: List[str] = []
+    uid_col = None
+    if "bitget" in ex:
+        uid_col = models.HubNode.bitget_uid
+    elif "bybit" in ex:
+        uid_col = models.HubNode.bybit_uid
+    elif "okx" in ex:
+        uid_col = models.HubNode.okx_uid
+    elif "weex" in ex:
+        uid_col = models.HubNode.weex_uid
+
+    try:
+        if getattr(current_user_obj, "referral_code", None):
+            r = await db.execute(
+                select(models.HubNode.node_uuid).where(
+                    models.HubNode.node_referral_code == current_user_obj.referral_code
+                )
+            )
+            for nu in r.scalars().all():
+                if nu and nu not in node_uuids:
+                    node_uuids.append(nu)
+        for sw in settings_wallets:
+            w = await db.execute(
+                select(models.HubNode.node_uuid).where(
+                    _func.lower(models.HubNode.wallet_address) == _func.lower(sw)
+                )
+            )
+            for nu in w.scalars().all():
+                if nu and nu not in node_uuids:
+                    node_uuids.append(nu)
+        for m_uuid in mining_node_uuids:
+            if m_uuid not in node_uuids:
+                node_uuids.append(m_uuid)
+
+        queried_uids: set = set()
+        for _round in range(3):
+            new_uids = [u for u in known_uids if u not in queried_uids]
+            if uid_col is not None and new_uids:
+                uq = await db.execute(
+                    select(models.HubNode.node_uuid).where(uid_col.in_(new_uids))
+                )
+                for nu in uq.scalars().all():
+                    if nu and nu not in node_uuids:
+                        node_uuids.append(nu)
+                queried_uids.update(new_uids)
+            if not node_uuids or uid_col is None:
+                break
+            # Extra UIDs stored on owned nodes (user traded via another client).
+            nq = await db.execute(
+                select(uid_col).where(models.HubNode.node_uuid.in_(node_uuids))
+            )
+            added = False
+            for uv in nq.scalars().all():
+                if uv and str(uv) not in known_uids:
+                    known_uids.append(str(uv))
+                    added = True
+            if not added:
+                break
+    except Exception as e:
+        logger.debug(f"promo identity node lookup failed: {e}")
+
+    # 5. MetaMask wallets on owned nodes (covers binds where settings row
+    # is on another server sharing the same central DB).
+    node_wallets: List[str] = []
+    try:
+        if node_uuids:
+            wq = await db.execute(
+                select(models.HubNode.wallet_address).where(
+                    models.HubNode.node_uuid.in_(node_uuids),
+                    models.HubNode.wallet_address.is_not(None),
+                    models.HubNode.wallet_address != "",
+                )
+            )
+            for wv in wq.scalars().all():
+                if wv and str(wv).strip().lower() not in [
+                    w.lower() for w in node_wallets
+                ]:
+                    node_wallets.append(str(wv).strip())
+    except Exception as e:
+        logger.debug(f"promo identity node-wallet lookup failed: {e}")
+
+    # 6. Active API key strictly of this user.
+    has_key_in_db = False
+    try:
+        kq = await db.execute(
+            select(models.ApiKey.id)
+            .where(
+                models.ApiKey.user_id == current_user_obj.id,
+                models.ApiKey.is_active == True,  # noqa: E712
+                _func.lower(models.ApiKey.exchange).like(f"%{ex}%"),
+            )
+            .limit(1)
+        )
+        has_key_in_db = kq.scalars().first() is not None
+    except Exception as e:
+        logger.debug(f"promo identity key lookup failed: {e}")
+
+    wallet = (settings_wallets + node_wallets or [None])[0]
+    has_key = bool(has_key_in_db or known_uids)
+    return {
+        "node_uuids": node_uuids,
+        "uids": known_uids,
+        "primary_uid": known_uids[0] if known_uids else None,
+        "has_key": has_key,
+        "has_wallet": bool(wallet),
+        "wallet": wallet,
+    }
+
+
+def _is_physical_node(
+    node: Optional[models.HubNode], max_ping_age_hours: int = 48
+) -> bool:
+    """Checks whether a HubNode represents a real running physical server node in the network.
+
+    A physical node:
+    1. Must exist.
+    2. Must have an IP address recorded (not empty, not localhost/127.0.0.1/::1).
+    3. Must have an active heartbeat ping history (last_ping is not None).
+    4. Must have been active recently (last_ping within max_ping_age_hours).
+    """
+    if not node:
+        return False
+    ip = (node.ip_address or "").strip().lower()
+    if not ip or ip in ("127.0.0.1", "localhost", "none", "::1"):
+        return False
+    if not node.last_ping:
+        return False
+    now = datetime.now(timezone.utc)
+    last_ping = node.last_ping
+    if last_ping.tzinfo is None:
+        last_ping = last_ping.replace(tzinfo=timezone.utc)
+    if (now - last_ping).total_seconds() > max_ping_age_hours * 3600:
+        return False
+    return True
+
+
+@router.get("/promo/status", response_model=schemas.PromoStatusResponse)
+async def get_promo_status(
+    authorization: Optional[str] = Header(None),
+    x_node_uuid: Optional[str] = Header(None, alias="X-Node-UUID"),
+    node_uuid: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns current active promo campaign details, slot limits, and per-quest progress
+
+    for the requesting node or user.
+    """
+    node, current_user_obj = await _resolve_requesting_node(
+        db, x_node_uuid=x_node_uuid, authorization=authorization, node_uuid=node_uuid
+    )
+
+    is_admin = False
+    if authorization and authorization.startswith("Bearer "):
+        key = authorization.split(" ")[1]
+        if HUB_ADMIN_API_KEY and key == HUB_ADMIN_API_KEY:
+            is_admin = True
+        elif current_user_obj and current_user_obj.role == "admin":
+            is_admin = True
+
+    # 1. Fetch active campaign
+    stmt = (
+        select(models.PromoCampaign)
+        .where(models.PromoCampaign.is_active == True)  # noqa: E712
+        .order_by(models.PromoCampaign.created_at.desc())
+    )
+    res = await db.execute(stmt)
+    campaign = res.scalars().first()
+
+    if not campaign:
+        return schemas.PromoStatusResponse(has_active_campaign=False)
+
+    # If admin_only is enabled and caller is not admin, hide campaign
+    if campaign.admin_only and not is_admin:
+        return schemas.PromoStatusResponse(has_active_campaign=False)
+
+    is_admin_preview = bool(campaign.admin_only and is_admin)
+
+    # 2. Per-user identity: aggregate ALL nodes/keys of this user.
+    # The single `node` from X-Node-UUID/?node_uuid is NOT trusted for
+    # personal data — it may belong to another user.
+    target_exchange = campaign.exchange_id or "bitget"
+    identity = await _resolve_user_promo_identity(db, current_user_obj, target_exchange)
+    user_node_uuids: List[str] = identity["node_uuids"]
+    user_uids: List[str] = identity["uids"]
+    exchange_uid: Optional[str] = identity["primary_uid"]
+    has_key = bool(identity["has_key"])
+    has_wallet = bool(identity["has_wallet"])
+
+    # Legacy fallback: an explicitly passed node context is honored only
+    # when the user has no owned identity at all (no nodes, UIDs, keys or
+    # wallet — e.g. node-credential flows / first binding). It is never
+    # merged into someone else's data.
+    if (
+        not user_node_uuids
+        and not user_uids
+        and not has_key
+        and not has_wallet
+        and node is not None
+    ):
+        user_node_uuids = [node.node_uuid]
+        node_uid_legacy = _get_node_exchange_uid(node, target_exchange)
+        if node_uid_legacy:
+            user_uids = [str(node_uid_legacy)]
+            exchange_uid = str(node_uid_legacy)
+            has_key = True
+        if node.wallet_address:
+            has_wallet = True
+
+    # 3. Volumes are split by context:
+    #  - non-physical nodes (central hub, personal wallet node) feed quest 1,
+    #  - physical server nodes feed quest 2.
+    # Volume earned in one context does NOT count toward the other quest.
+    from sqlalchemy import func
+
+    owned_nodes: List[models.HubNode] = []
+    if user_node_uuids:
+        try:
+            owned_res = await db.execute(
+                select(models.HubNode).where(
+                    models.HubNode.node_uuid.in_(user_node_uuids)
+                )
+            )
+            owned_nodes = list(owned_res.scalars().all())
+        except Exception as e:
+            logger.debug(f"promo owned nodes lookup failed: {e}")
+
+    physical_uuids = [n.node_uuid for n in owned_nodes if _is_physical_node(n)]
+    central_uuids = [
+        n.node_uuid for n in owned_nodes if n.node_uuid not in physical_uuids
+    ]
+    # Nodes referenced by uuid but missing from DB (e.g. mining_node_uuid not
+    # yet registered) count as central context so their future volume lands
+    # in quest 1, never leaking into quest 2.
+    for nu in user_node_uuids:
+        if nu not in physical_uuids and nu not in central_uuids:
+            central_uuids.append(nu)
+
+    async def _sum_volumes(uuids: List[str]) -> tuple:
+        if not uuids:
+            return 0.0, 0.0
+        total_stmt = select(
+            func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
+        ).where(
+            models.HubTelemetryReport.node_uuid.in_(uuids),
+            models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+            models.HubTelemetryReport.verification_status != "REJECTED",
+        )
+        verified_stmt = select(
+            func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
+        ).where(
+            models.HubTelemetryReport.node_uuid.in_(uuids),
+            models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+            models.HubTelemetryReport.verification_status == "VERIFIED",
+        )
+        total_r = await db.execute(total_stmt)
+        verified_r = await db.execute(verified_stmt)
+        return float(total_r.scalar() or 0.0), float(verified_r.scalar() or 0.0)
+
+    central_total, central_verified = await _sum_volumes(central_uuids)
+    physical_total, physical_verified = await _sum_volumes(physical_uuids)
+
+    # Quest 2 activity: verified trade on a physical node in the last 7 days
+    # (same verified set the claim enforces — no PENDING optimism here).
+    recent_trade_exists = False
+    if physical_uuids:
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        trade_stmt = (
+            select(models.HubTelemetryReport.id)
+            .where(
+                models.HubTelemetryReport.node_uuid.in_(physical_uuids),
+                models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+                (
+                    models.HubTelemetryReport.verification_status.in_(
+                        ["VERIFIED", "ACCEPTED", "SKIPPED"]
+                    )
+                    | (models.HubTelemetryReport.is_verified == True)  # noqa: E712
+                ),
+                models.HubTelemetryReport.created_at >= seven_days_ago,
+            )
+            .limit(1)
+        )
+        trade_res = await db.execute(trade_stmt)
+        recent_trade_exists = trade_res.scalars().first() is not None
+
+    # Owned physical nodes (for node_runner quest): oldest physical wins,
+    # so quest 1 done on central hub doesn't block quest 2 from own server.
+    physical_node: Optional[models.HubNode] = None
+    physical_cands = [n for n in owned_nodes if _is_physical_node(n)]
+    if physical_cands:
+
+        def _age_days(n: models.HubNode) -> int:
+            return _datetime_diff_days(getattr(n, "created_at", None))
+
+        physical_node = max(physical_cands, key=_age_days)
+
+    # 4. Compute per-quest progress
+    quests_progress = []
+    quests_cfg = campaign.quests or []
+    if isinstance(quests_cfg, dict):
+        quests_cfg = [quests_cfg]
+
+    for q in quests_cfg:
+        q_type = q.get("quest_type", "api_volume")
+        q_title = q.get("title", "Bitget Quest")
+        q_desc = q.get("description", "")
+        q_reward = float(q.get("reward", 5000.0))
+        q_total_slots = int(q.get("total_slots", 1000))
+        q_vol_threshold = float(q.get("volume_threshold", 1000.0))
+
+        slot_count_stmt = select(func.count(models.PromoClaim.id)).where(
+            models.PromoClaim.campaign_id == campaign.id,
+            models.PromoClaim.quest_type == q_type,
+        )
+        slot_res = await db.execute(slot_count_stmt)
+        claimed_slots = int(slot_res.scalar() or 0)
+        remaining_slots = max(0, q_total_slots - claimed_slots)
+
+        is_claimed = False
+        # Legacy node wallet is considered only when the user has no owned
+        # identity at all (same condition as the fallback above) — never
+        # merge a чужой node's wallet into an identified user's view.
+        legacy_wallet = None
+        if (
+            not identity["node_uuids"]
+            and not identity["uids"]
+            and not identity["has_key"]
+            and not identity["has_wallet"]
+            and node is not None
+        ):
+            legacy_wallet = getattr(node, "wallet_address", None) or None
+        claim_wallet = identity["wallet"] or legacy_wallet
+        if user_uids or claim_wallet:
+            from sqlalchemy import or_
+
+            claim_filters = []
+            for u in user_uids:
+                claim_filters.append(models.PromoClaim.exchange_uid == str(u))
+            if claim_wallet:
+                claim_filters.append(
+                    func.lower(models.PromoClaim.wallet_address)
+                    == func.lower(claim_wallet)
+                )
+
+            if claim_filters:
+                claim_check_stmt = (
+                    select(models.PromoClaim.id)
+                    .where(
+                        models.PromoClaim.campaign_id == campaign.id,
+                        models.PromoClaim.quest_type == q_type,
+                        or_(*claim_filters),
+                    )
+                    .limit(1)
+                )
+                claim_res = await db.execute(claim_check_stmt)
+                is_claimed = claim_res.scalars().first() is not None
+
+        # Per-quest volume context: quest 1 counts central (non-physical)
+        # volume only, quest 2 counts physical-server volume only.
+        # Unknown quest types default to the central context.
+        if q_type == "node_runner":
+            total_volume = physical_total
+            verified_volume = physical_verified
+        else:
+            total_volume = central_total
+            verified_volume = central_verified
+        vol_met = verified_volume >= q_vol_threshold
+        total_vol_met = total_volume >= q_vol_threshold
+        is_volume_verifying = total_vol_met and not vol_met
+        all_met = False
+
+        reqs: Dict[str, Any] = {
+            "has_exchange_key": has_key,
+            "hasExchangeKey": has_key,
+            "exchange_uid": exchange_uid,
+            "exchangeUid": exchange_uid,
+            "is_master_account": True,
+            "isMasterAccount": True,
+            "has_wallet": has_wallet,
+            "hasWallet": has_wallet,
+            "verified_volume": verified_volume,
+            "verifiedVolume": verified_volume,
+            "total_volume": total_volume,
+            "totalVolume": total_volume,
+            "current_volume": total_volume,
+            "currentVolume": total_volume,
+            "volume_threshold": q_vol_threshold,
+            "volumeThreshold": q_vol_threshold,
+            "is_volume_verified": vol_met,
+            "isVolumeVerified": vol_met,
+            "is_volume_verifying": is_volume_verifying,
+            "isVolumeVerifying": is_volume_verifying,
+            "linked_uids": user_uids,
+            "linkedUidCount": len(user_uids),
+            "linked_node_count": len(user_node_uuids),
+            "linkedNodeCount": len(user_node_uuids),
+            "volume_context": "physical" if q_type == "node_runner" else "central",
+            "volumeContext": "physical" if q_type == "node_runner" else "central",
+        }
+
+        if q_type == "api_volume":
+            all_met = (
+                has_key
+                and vol_met
+                and has_wallet
+                and (remaining_slots > 0 or is_claimed)
+            )
+        elif q_type == "node_runner":
+            min_age = int(q.get("min_node_age_days", 14))
+            is_physical = physical_node is not None
+            physical_node_age = (
+                _datetime_diff_days(physical_node.created_at) if physical_node else 0
+            )
+            reqs["is_physical_node"] = is_physical
+            reqs["isPhysicalNode"] = is_physical
+            reqs["node_age_days"] = physical_node_age
+            reqs["nodeAgeDays"] = physical_node_age
+            reqs["min_node_age_days"] = min_age
+            reqs["minNodeAgeDays"] = min_age
+            reqs["has_active_mining"] = recent_trade_exists
+            reqs["hasActiveMining"] = recent_trade_exists
+
+            all_met = (
+                has_key
+                and vol_met
+                and is_physical
+                and has_wallet
+                and (physical_node_age >= min_age)
+                and recent_trade_exists
+                and (remaining_slots > 0 or is_claimed)
+            )
+
+        quests_progress.append(
+            schemas.PromoQuestProgress(
+                quest_type=q_type,
+                title=q_title,
+                description=q_desc,
+                reward=q_reward,
+                total_slots=q_total_slots,
+                claimed_slots=claimed_slots,
+                remaining_slots=remaining_slots,
+                is_claimed=is_claimed,
+                requirements=reqs,
+                all_requirements_met=all_met and not is_claimed,
+            )
+        )
+
+    remaining_pool = max(0.0, float(campaign.total_pool) - float(campaign.distributed))
+
+    return schemas.PromoStatusResponse(
+        has_active_campaign=True,
+        campaign_id=campaign.id,
+        campaign_name=campaign.name,
+        description=campaign.description,
+        exchange_id=campaign.exchange_id,
+        is_active=campaign.is_active,
+        is_admin_preview=is_admin_preview,
+        total_pool=float(campaign.total_pool),
+        distributed=float(campaign.distributed),
+        remaining_pool=remaining_pool,
+        quests=quests_progress,
+        ui_config=campaign.ui_config or {},
+    )
+
+
+@router.post("/promo/claim", response_model=schemas.PromoClaimResponse)
+async def claim_promo_quest(
+    payload: schemas.PromoClaimRequest,
+    authorization: Optional[str] = Header(None),
+    x_node_uuid: Optional[str] = Header(None, alias="X-Node-UUID"),
+    node_uuid: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Processes a quest claim: validates server-side requirements, prevents duplicate claims,
+
+    atomically increments distributed tokens, and credits tokens to the node.
+    """
+    stmt = select(models.PromoCampaign).where(
+        models.PromoCampaign.id == payload.campaign_id
+    )
+    res = await db.execute(stmt)
+    campaign = res.scalars().first()
+    if not campaign:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Promo campaign not found."
+        )
+
+    node, current_user_obj = await _resolve_requesting_node(
+        db, x_node_uuid=x_node_uuid, authorization=authorization, node_uuid=node_uuid
+    )
+    if not node and not current_user_obj:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No registered node found for this connection. Please connect or bind your node.",
+        )
+
+    is_admin = False
+    if authorization and authorization.startswith("Bearer "):
+        key = authorization.split(" ")[1]
+        if HUB_ADMIN_API_KEY and key == HUB_ADMIN_API_KEY:
+            is_admin = True
+        elif current_user_obj and current_user_obj.role == "admin":
+            is_admin = True
+
+    if campaign.admin_only and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This promo campaign is in preview mode.",
+        )
+
+    if not campaign.is_active and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Promo campaign is not active.",
+        )
+
+    # Find quest
+    quests_cfg = campaign.quests or []
+    target_quest = next(
+        (q for q in quests_cfg if q.get("quest_type") == payload.quest_type), None
+    )
+    if not target_quest:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Quest '{payload.quest_type}' not found in campaign.",
+        )
+
+    reward = float(target_quest.get("reward", 5000.0))
+    vol_threshold = float(target_quest.get("volume_threshold", 1000.0))
+    target_exchange = campaign.exchange_id or "bitget"
+    # Per-user identity (never trust a чужой X-Node-UUID for personal data).
+    identity = await _resolve_user_promo_identity(db, current_user_obj, target_exchange)
+    user_node_uuids: List[str] = list(identity["node_uuids"])
+    user_uids: List[str] = list(identity["uids"])
+
+    # Legacy fallback: explicit node context is honored only when the user
+    # has no owned identity at all (no nodes, UIDs, keys or wallet —
+    # node-credential flows / first binding). Never merged into someone else.
+    legacy_node_used = False
+    if (
+        not user_node_uuids
+        and not user_uids
+        and not identity["has_key"]
+        and not identity["has_wallet"]
+        and node is not None
+    ):
+        if node.node_uuid not in user_node_uuids:
+            user_node_uuids.append(node.node_uuid)
+        node_uid_legacy = _get_node_exchange_uid(node, target_exchange)
+        if node_uid_legacy and str(node_uid_legacy) not in user_uids:
+            user_uids.append(str(node_uid_legacy))
+        legacy_node_used = True
+
+    exchange_uid = user_uids[0] if user_uids else None
+    if not exchange_uid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No {target_exchange.upper()} UID found. Please connect your {target_exchange.upper()} API key.",
+        )
+
+    master_uid = str(exchange_uid)
+
+    # Quest volume context: api_volume counts central (non-physical) volume
+    # only, node_runner counts physical-server volume only. Volume earned in
+    # one context does NOT count toward the other quest.
+    from sqlalchemy import func
+
+    owned_claim_nodes: List[models.HubNode] = []
+    if user_node_uuids:
+        try:
+            owned_claim_res = await db.execute(
+                select(models.HubNode).where(
+                    models.HubNode.node_uuid.in_(user_node_uuids)
+                )
+            )
+            owned_claim_nodes = list(owned_claim_res.scalars().all())
+        except Exception as e:
+            logger.debug(f"promo claim owned nodes lookup failed: {e}")
+
+    owned_by_uuid = {n.node_uuid: n for n in owned_claim_nodes}
+    physical_uuids = [n.node_uuid for n in owned_claim_nodes if _is_physical_node(n)]
+    central_uuids = [nu for nu in user_node_uuids if nu not in physical_uuids]
+    quest_uuids = (
+        physical_uuids if payload.quest_type == "node_runner" else central_uuids
+    )
+
+    # Node runner structural requirements (owned physical nodes only).
+    # Checked BEFORE volume so a user with volume on central hub gets the
+    # accurate "not a physical node / too young" message instead of "$0".
+    physical_node: Optional[models.HubNode] = None
+    for cand in owned_claim_nodes:
+        if _is_physical_node(cand):
+            if physical_node is None or _datetime_diff_days(
+                cand.created_at
+            ) > _datetime_diff_days(physical_node.created_at):
+                physical_node = cand
+
+    if payload.quest_type == "node_runner":
+        if not physical_node:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Physical node requirement not met: you must deploy and run an active physical server node in the network.",
+            )
+
+        min_age = int(target_quest.get("min_node_age_days", 14))
+        node_age = _datetime_diff_days(physical_node.created_at)
+        if node_age < min_age:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Node age requirement not met: physical node active for {node_age} days (minimum {min_age} required).",
+            )
+
+    # Wallet requirement for all quests: strictly the user's wallet,
+    # with legacy fallback to the explicitly passed node wallet.
+    wallet_addr_to_check = identity["wallet"] or (
+        node.wallet_address if (node and legacy_node_used) else None
+    )
+    if not wallet_addr_to_check:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A linked and verified EVM wallet address is required to claim quest rewards.",
+        )
+
+    # Verify trading volume (strictly broker-verified) in quest context.
+    verified_volume = 0.0
+    if quest_uuids:
+        verified_vol_stmt = select(
+            func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
+        ).where(
+            models.HubTelemetryReport.node_uuid.in_(quest_uuids),
+            models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+            models.HubTelemetryReport.verification_status == "VERIFIED",
+        )
+        vol_res = await db.execute(verified_vol_stmt)
+        verified_volume = float(vol_res.scalar() or 0.0)
+
+    if verified_volume < vol_threshold:
+        # Check if user has sufficient reported volume that is still pending verification
+        total_volume = 0.0
+        if quest_uuids:
+            total_vol_stmt = select(
+                func.coalesce(
+                    func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0
+                )
+            ).where(
+                models.HubTelemetryReport.node_uuid.in_(quest_uuids),
+                models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+                models.HubTelemetryReport.verification_status != "REJECTED",
+            )
+            total_vol_res = await db.execute(total_vol_stmt)
+            total_volume = float(total_vol_res.scalar() or 0.0)
+
+        if total_volume >= vol_threshold:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Trading volume is currently undergoing broker verification: ${verified_volume:,.2f} / ${vol_threshold:,.2f} verified. Please wait for broker confirmation before claiming.",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Volume requirement not met: ${verified_volume:,.2f} / ${vol_threshold:,.2f} verified on {target_exchange.upper()}.",
+            )
+
+    # Reward target: never a чужой requesting node. Quest 1 credits the
+    # central owned node (where its volume lives), quest 2 the physical one.
+    # The explicitly passed node is used only in the legacy no-identity flow.
+    target_node: Optional[models.HubNode] = None
+    if payload.quest_type == "node_runner":
+        target_node = physical_node
+    else:
+        for nu in central_uuids:
+            if nu in owned_by_uuid:
+                target_node = owned_by_uuid[nu]
+                break
+        if target_node is None:
+            target_node = physical_node
+    if target_node is None and legacy_node_used:
+        target_node = node
+    if target_node is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No registered node found for this connection. Please connect or bind your node.",
+        )
+
+    if payload.quest_type == "node_runner":
+        # Physical presence + age already verified above; here only the
+        # 7-day verified activity on physical nodes remains.
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+        trade_stmt = (
+            select(models.HubTelemetryReport.id)
+            .where(
+                models.HubTelemetryReport.node_uuid.in_(physical_uuids),
+                models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+                (
+                    models.HubTelemetryReport.verification_status.in_(
+                        ["VERIFIED", "ACCEPTED", "SKIPPED"]
+                    )
+                    | (models.HubTelemetryReport.is_verified == True)  # noqa: E712
+                ),
+                models.HubTelemetryReport.created_at >= seven_days_ago,
+            )
+            .limit(1)
+        )
+        trade_res = await db.execute(trade_stmt)
+        if not trade_res.scalars().first():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Active trade mining requirement not met: no verified trades in the last 7 days.",
+            )
+
+    # Anti-fraud compound check (per quest_type): any of the user's UIDs
+    # or wallet already claimed -> 409. Node uuid is intentionally NOT
+    # used: one user = many nodes, one claim per (UID, wallet).
+    from sqlalchemy import or_
+
+    anti_fraud_filters = [models.PromoClaim.exchange_uid.in_(user_uids)]
+    if wallet_addr_to_check:
+        anti_fraud_filters.append(
+            func.lower(models.PromoClaim.wallet_address)
+            == func.lower(wallet_addr_to_check)
+        )
+
+    claim_check = (
+        select(models.PromoClaim)
+        .where(
+            models.PromoClaim.campaign_id == campaign.id,
+            models.PromoClaim.quest_type == payload.quest_type,
+            or_(*anti_fraud_filters),
+        )
+        .limit(1)
+    )
+    existing_claim = (await db.execute(claim_check)).scalars().first()
+    if existing_claim:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Reward already claimed for this account UID, wallet, or node.",
+        )
+
+    # Slot availability check
+    slot_count_stmt = select(func.count(models.PromoClaim.id)).where(
+        models.PromoClaim.campaign_id == campaign.id,
+        models.PromoClaim.quest_type == payload.quest_type,
+    )
+    total_claimed = int((await db.execute(slot_count_stmt)).scalar() or 0)
+    total_slots = int(target_quest.get("total_slots", 1000))
+    if total_claimed >= total_slots:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="All available slots for this quest have already been claimed.",
+        )
+
+    # Atomic allocation of pool tokens
+    from sqlalchemy import update
+
+    atomic_stmt = (
+        update(models.PromoCampaign)
+        .where(
+            models.PromoCampaign.id == campaign.id,
+            models.PromoCampaign.distributed + reward
+            <= models.PromoCampaign.total_pool,
+        )
+        .values(distributed=models.PromoCampaign.distributed + reward)
+    )
+    update_res = await db.execute(atomic_stmt)
+    if update_res.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign reward pool exhausted.",
+        )
+
+    # Create PromoClaim record (bound to master UID + wallet, credited
+    # to the user's primary node so the card aggregate shows it).
+    claim_record = models.PromoClaim(
+        campaign_id=campaign.id,
+        quest_type=payload.quest_type,
+        node_uuid=target_node.node_uuid,
+        exchange_uid=master_uid,
+        wallet_address=wallet_addr_to_check
+        or "0x0000000000000000000000000000000000000000",
+        reward_amount=reward,
+        verified_volume=verified_volume,
+        status="credited",
+    )
+    db.add(claim_record)
+
+    # Credit HubNode total_mined
+    target_node.total_mined = float(target_node.total_mined or 0.0) + reward
+
+    # Record in MiningLedger
+    today = datetime.now(timezone.utc).date()
+    ledger_stmt = select(models.MiningLedger).where(
+        models.MiningLedger.node_uuid == target_node.node_uuid,
+        models.MiningLedger.epoch_date == today,
+    )
+    ledger_entry = (await db.execute(ledger_stmt)).scalars().first()
+    if ledger_entry:
+        ledger_entry.total_reward = float(ledger_entry.total_reward or 0.0) + reward
+        ledger_entry.welcome_bonus = float(ledger_entry.welcome_bonus or 0.0) + reward
+    else:
+        new_ledger = models.MiningLedger(
+            node_uuid=target_node.node_uuid,
+            epoch_date=today,
+            total_reward=reward,
+            welcome_bonus=reward,
+            base_reward=0.0,
+            referral_bonus=0.0,
+        )
+        db.add(new_ledger)
+
+    await db.commit()
+
+    return schemas.PromoClaimResponse(
+        success=True,
+        message=f"Successfully claimed {reward:,.0f} $DEPTH!",
+        reward_amount=reward,
+        quest_type=payload.quest_type,
+        claimed_at=datetime.now(timezone.utc),
+    )
+
+
+@router.get(
+    "/promo/admin/campaigns",
+    response_model=List[schemas.PromoCampaignAdminResponse],
+)
+async def list_promo_campaigns_admin(
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: list all promo campaigns.
+
+    Strictly restricted to Central Federation Hub (IS_CENTRAL_HUB=true).
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Promo campaigns can only be managed on the Central Federation Hub.",
+        )
+    await _verify_admin_access_async(authorization, db)
+    stmt = select(models.PromoCampaign).order_by(models.PromoCampaign.created_at.desc())
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+@router.post(
+    "/promo/admin/campaigns",
+    response_model=schemas.PromoCampaignAdminResponse,
+)
+async def create_or_update_promo_campaign_admin(
+    payload: schemas.PromoCampaignCreateOrUpdate,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: create or update a promo campaign configuration.
+
+    Strictly restricted to Central Federation Hub (IS_CENTRAL_HUB=true).
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Promo campaigns can only be managed on the Central Federation Hub.",
+        )
+    await _verify_admin_access_async(authorization, db)
+
+    stmt = select(models.PromoCampaign).where(models.PromoCampaign.id == payload.id)
+    res = await db.execute(stmt)
+    campaign = res.scalars().first()
+
+    if campaign:
+        campaign.name = payload.name
+        campaign.description = payload.description
+        campaign.exchange_id = payload.exchange_id
+        campaign.total_pool = payload.total_pool
+        campaign.admin_only = payload.admin_only
+        campaign.is_active = payload.is_active
+        campaign.quests = payload.quests
+        campaign.ui_config = payload.ui_config
+    else:
+        campaign = models.PromoCampaign(
+            id=payload.id,
+            name=payload.name,
+            description=payload.description,
+            exchange_id=payload.exchange_id,
+            total_pool=payload.total_pool,
+            distributed=0.0,
+            admin_only=payload.admin_only,
+            is_active=payload.is_active,
+            quests=payload.quests,
+            ui_config=payload.ui_config,
+        )
+        db.add(campaign)
+
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign

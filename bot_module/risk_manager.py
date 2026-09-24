@@ -12,6 +12,7 @@ from collections import defaultdict, deque
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot_module import config
+from bot_module import config as global_config
 from bot_module.strategy import StrategySignal, SignalDirection
 from bot_module.exchanges import ExchangeExecutor
 from bot_module.paper_executor import PaperTradingExecutor
@@ -25,6 +26,8 @@ logger = logging.getLogger("bot_module.risk_manager")
 class TradeStats:
     start_of_day_balance: float = 0.0
     current_balance: float = 0.0
+    # Wall-clock timestamp of the last successful balance update.
+    current_balance_ts: float = 0.0
     today_pnl: float = 0.0
     consecutive_losses: int = 0
     last_trade_time: float = 0.0
@@ -242,6 +245,9 @@ class RiskManager:
         self._is_trading_allowed = True
         self._last_disabled_balance_check_ts: float = 0.0
         self._balance_lock = asyncio.Lock()
+        # Per-symbol cache of the DB-backed blacklist verdict:
+        # {SYMBOL: (timestamp, allowed_bool, valid_until_ts_or_None)}.
+        self._blacklist_cache: Dict[str, Tuple[float, bool, Optional[float]]] = {}
         self._reset_time_utc = dt_time(0, 1, 0, tzinfo=timezone.utc)
 
         # defaultdict will use the updated _strategy_symbol_window_size
@@ -658,6 +664,7 @@ class RiskManager:
                         logger.debug(
                             f"{log_prefix} Balance unchanged: ${self.stats.current_balance:.2f}"
                         )
+                    self.stats.current_balance_ts = time.time()
                     return True
                 else:
                     logger.warning(
@@ -977,7 +984,22 @@ class RiskManager:
                 logger.debug(f"[Blacklist:{symbol}] Trading globally disabled")
                 return False
 
-        # 2. Checking the blacklist (on-the-fly from the DB)
+        # 2. Checking the blacklist (on-the-fly from the DB, cached with TTL).
+        # The cache preserves "no restart needed" semantics (fresh read at most
+        # TTL seconds late) while removing the DB round trip from every signal.
+        _bl_ttl = getattr(global_config, "RISK_BLACKLIST_CACHE_TTL_SECONDS", 15.0)
+        _bl_now = time.time()
+        _bl_cached = self._blacklist_cache.get(symbol.upper())
+        if _bl_cached is not None:
+            _bl_ts, _bl_verdict, _bl_valid_until = _bl_cached
+            _bl_ttl_eff = _bl_ttl
+            if _bl_valid_until is not None:
+                _bl_ttl_eff = min(_bl_ttl_eff, max(0.0, _bl_valid_until - _bl_now))
+            if (_bl_now - _bl_ts) < _bl_ttl_eff:
+                logger.debug(
+                    f"[Blacklist:{symbol}] Using cached verdict={_bl_verdict} (age={_bl_now - _bl_ts:.1f}s)."
+                )
+                return _bl_verdict
         if self.db_session and crud and self.user_id:
             try:
                 # CRITICAL: Reset the SQLAlchemy session cache before the query.
@@ -1040,6 +1062,13 @@ class RiskManager:
                                                 symbol, reason, until_dt
                                             )
 
+                                            self._blacklist_cache[symbol.upper()] = (
+                                                time.time(),
+                                                False,
+                                                until_dt.timestamp()
+                                                if hasattr(until_dt, "timestamp")
+                                                else None,
+                                            )
                                             return False
                                         # else: period expired, symbol allowed
                                     except (ValueError, TypeError) as e:
@@ -1054,6 +1083,11 @@ class RiskManager:
                                             None,
                                         )
 
+                                        self._blacklist_cache[symbol.upper()] = (
+                                            time.time(),
+                                            False,
+                                            None,
+                                        )
                                         return False
                                 else:
                                     # until is None = permanent blacklist
@@ -1071,6 +1105,11 @@ class RiskManager:
                                     # Sending notification to Telegram
                                     await self._notify_blacklist(symbol, reason, None)
 
+                                    self._blacklist_cache[symbol.upper()] = (
+                                        time.time(),
+                                        False,
+                                        None,
+                                    )
                                     return False
             except Exception as e:
                 logger.error(
@@ -1078,6 +1117,7 @@ class RiskManager:
                 )
                 # In case of an error, allow trading so as not to block the bot's operation
 
+        self._blacklist_cache[symbol.upper()] = (time.time(), True, None)
         return True
 
     async def _notify_blacklist(
@@ -1263,6 +1303,10 @@ class RiskManager:
                 f"[AutoBlacklist:{symbol}] Symbol added to blacklist until {until_dt.isoformat() if until_dt else 'permanent'}. Reason: {reason}"
             )
 
+            # Invalidate the cached verdict so the block applies immediately
+            # instead of waiting for the blacklist TTL to expire.
+            self._blacklist_cache.pop(symbol.upper(), None)
+
             # Sending notification to Telegram
             if self.telegram_notifier:
                 try:
@@ -1354,14 +1398,19 @@ class RiskManager:
         logger.info(
             f"{log_prefix} --- STARTING SIGNAL ASSESSMENT (Mode: {mode.upper()}) ---"
         )
+        t_assess_start = time.monotonic()
 
         # BLACKLIST CHECK (on-the-fly)
         # Check the blacklist at an early stage to avoid wasting resources on further checks
+        t_blacklist = time.monotonic()
         if not await self.is_symbol_trading_allowed(signal.symbol):
             logger.warning(
                 f"{log_prefix} Signal REJECTED. Reason: Symbol is in blacklist or trading globally disabled."
             )
             return False, None, 0.0, "SYMBOL_BLACKLISTED"
+        logger.info(
+            f"{log_prefix} Timing: blacklist_check={(time.monotonic() - t_blacklist) * 1000:.0f}ms."
+        )
 
         current_balance_val = 0.0
         risk_per_trade_base = 0.0
@@ -1408,7 +1457,23 @@ class RiskManager:
                     )
                     balance_updated_successfully = False
             else:
-                balance_updated_successfully = await self.update_balance()
+                t_bal = time.monotonic()
+                balance_ttl = getattr(config, "RISK_BALANCE_CACHE_TTL_SECONDS", 15.0)
+                balance_age = time.time() - (self.stats.current_balance_ts or 0.0)
+                if self.stats.current_balance > 1e-9 and balance_age < balance_ttl:
+                    # Hot path: reuse the periodically refreshed balance instead
+                    # of a synchronous REST fetch (also avoids _balance_lock
+                    # contention with the background refresher).
+                    balance_updated_successfully = True
+                    logger.debug(
+                        f"{log_prefix} Using cached balance ${self.stats.current_balance:.2f} (age={balance_age:.1f}s)."
+                    )
+                else:
+                    balance_updated_successfully = await self.update_balance()
+                logger.info(
+                    f"{log_prefix} Timing: balance_stage={(time.monotonic() - t_bal) * 1000:.0f}ms "
+                    f"(cached={balance_age < balance_ttl})."
+                )
                 self._check_risk_limits()
                 current_balance_val = self.stats.current_balance
             risk_per_trade_base = self.live_risk_per_trade
@@ -1850,6 +1915,9 @@ class RiskManager:
             f"ActualFinalTradeRiskUSD: ${actual_risk_usd_final_trade:.2f} (this is the real $ risk with final qty)."
         )
         logger.info(f"{log_prefix} --- ASSESSMENT FINISHED: APPROVED ---")
+        logger.info(
+            f"{log_prefix} Timing: total_assessment={(time.monotonic() - t_assess_start) * 1000:.0f}ms."
+        )
 
         return True, final_quantity_float, initial_base_risk_usd_planned, None
 

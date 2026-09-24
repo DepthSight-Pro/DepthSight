@@ -17,7 +17,6 @@ import {
 	type Time,
 } from "lightweight-charts";
 import {
-	AlertCircle,
 	AlertTriangle,
 	BarChart3,
 	ChevronLeft,
@@ -42,20 +41,117 @@ import {
 	DecisionTraceTree,
 	type TraceNode,
 } from "@/components/research/DecisionTraceTree";
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useLiveMarks } from "@/hooks/useLiveMarks";
 import { apiClient } from "@/lib/apiClient";
+import { calcLivePnl, markKey } from "@/lib/livePnl";
 import { cn, estimateTickSize } from "@/lib/utils";
 import {
-	fetchKlines,
 	fetchSymbolInfo,
 	KLINE_INTERVALS,
 	type Kline,
 	type KlineInterval,
 } from "@/services/binanceService";
-import { fetchBybitKlines, fetchBybitSymbolInfo } from "@/services/bybitService";
-import type { PositionData, TradeExecution } from "@/types/api";
+import { fetchBybitSymbolInfo } from "@/services/bybitService";
+import { fetchExchangeKlinesWithFallback } from "@/services/exchangeKlineService";
+import { exchangeLabels, normalizeExchangeKey } from "@/lib/exchanges";
+import type { PositionData } from "@/types/api";
 import { useConfig } from "@/lib/api";
+
+interface PositionWithExchange extends PositionData {
+	exchange_id?: string | null;
+	decision_trace_json?: unknown;
+	opened_at?: string | number | null;
+	created_at?: string | number | null;
+	timestamp?: string | number | null;
+	open_time?: string | number | null;
+	start_time?: string | number | null;
+}
+
+interface BinanceSymbolInfo {
+	symbol: string;
+	filters: Array<{ filterType: string; tickSize?: string }>;
+}
+
+interface BinanceExchangeInfo {
+	symbols?: BinanceSymbolInfo[];
+}
+
+interface ExchangeKlineLike {
+	time: number;
+	open: number;
+	high: number;
+	low: number;
+	close: number;
+	volume?: number | string | null;
+}
+
+interface TraceNodeLike {
+	type?: unknown;
+	details?: unknown;
+	children?: unknown;
+	filters_trace?: unknown;
+	result?: unknown;
+}
+
+interface IndicatorRecord {
+	result: boolean;
+	price?: number;
+	levelType?: string;
+	value?: number;
+	k?: unknown;
+	d?: unknown;
+	upper?: number;
+	middle?: number | undefined;
+	lower?: number;
+	fastMa?: number;
+	slowMa?: number;
+	line?: number;
+	signal?: number;
+	histogram?: number;
+	threshold?: number | undefined;
+	startHour?: number | undefined;
+	endHour?: number | undefined;
+	currentHour?: number | undefined;
+	mode?: string;
+	direction?: string;
+	volume?: number | undefined;
+	rangePercent?: number | undefined;
+	detectedLevel?: number | undefined;
+	text?: string;
+	time?: unknown;
+	position?: "aboveBar" | "belowBar" | "inBar";
+	shape?: "circle" | "square" | "arrowUp" | "arrowDown";
+	color?: string;
+}
+
+interface ExtractedIndicators {
+	bbBands: IndicatorRecord[];
+	significantLevels: IndicatorRecord[];
+	localLevels: IndicatorRecord[];
+	roundLevels: IndicatorRecord[];
+	maCrossover: IndicatorRecord[];
+	stoch: IndicatorRecord[];
+	rsi: IndicatorRecord[];
+	macd: IndicatorRecord[];
+	adx: IndicatorRecord[];
+	natr: IndicatorRecord[];
+	atr: IndicatorRecord[];
+	timeFilter: IndicatorRecord[];
+	trendDirection: IndicatorRecord[];
+	volumeConfirmation: IndicatorRecord[];
+	priceConsolidation: IndicatorRecord[];
+	volatilitySqueeze: IndicatorRecord[];
+	levelTouch: IndicatorRecord[];
+	priceAction: IndicatorRecord[];
+	tapeAcceleration: IndicatorRecord[];
+	openInterest: IndicatorRecord[];
+	relativeVolume: IndicatorRecord[];
+	correlation: IndicatorRecord[];
+	pattern: IndicatorRecord[];
+}
 
 interface NormalizedExecution {
 	timestampSec: number;
@@ -71,6 +167,14 @@ const toTimestampSeconds = (
 
 	if (typeof value === "string") {
 		const trimmed = value.trim();
+		if (!trimmed) return null;
+		// If string contains only digits or decimals (epoch ms or s)
+		if (/^\d+(\.\d+)?$/.test(trimmed)) {
+			const num = Number(trimmed);
+			return Number.isFinite(num)
+				? Math.floor(num > 1000000000000 ? num / 1000 : num)
+				: null;
+		}
 		const hasExplicitTimezone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(trimmed);
 		const looksLikeIsoDateTime = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/.test(
 			trimmed,
@@ -238,37 +342,6 @@ const smaValues = (
 		}
 		if (count === period) result[i] = sum / period;
 	}
-
-	return result;
-};
-
-const emaValues = (
-	values: Array<number | null | undefined>,
-	period: number,
-): Array<number | null> => {
-	const result = new Array<number | null>(values.length).fill(null);
-	if (period <= 0) return result;
-
-	const multiplier = 2 / (period + 1);
-	let ema: number | null = null;
-	const seed: number[] = [];
-
-	values.forEach((value, index) => {
-		const numeric = toFiniteNumber(value);
-		if (numeric === undefined) return;
-
-		if (ema === null) {
-			seed.push(numeric);
-			if (seed.length === period) {
-				ema = seed.reduce((sum, item) => sum + item, 0) / period;
-				result[index] = ema;
-			}
-			return;
-		}
-
-		ema = (numeric - ema) * multiplier + ema;
-		result[index] = ema;
-	});
 
 	return result;
 };
@@ -469,12 +542,13 @@ interface PositionChartModalProps {
 }
 
 export const PositionChartModal: React.FC<PositionChartModalProps> = ({
-	position,
+	position: rawPosition,
 	isOpen,
 	onClose,
 	onSave,
 	isSaving = false,
 }) => {
+	const position = rawPosition as PositionWithExchange;
 	const { t } = useTranslation(["positions", "common", "analytics"]);
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const indicatorContainerRef = useRef<HTMLDivElement>(null);
@@ -486,10 +560,55 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	const crosshairTimeRef = useRef<number | null>(null);
 
 	const { data: config } = useConfig();
-	const apiKey = config?.apiKeys?.find((key) => key.id === position.api_key_id);
-	const exchange = apiKey?.exchange?.toLowerCase() || "binance";
+	const apiKey = config?.apiKeys?.find(
+		(key) => Number(key.id) === Number(position.api_key_id),
+	);
+	// Primary: exchange from backend (controller executor), secondary: ApiKey.
+	// Proxy default stays binance only as last resort for klines fetching.
+	const resolvedExchange =
+		normalizeExchangeKey(
+			position.exchange ?? position.exchange_id,
+		) ?? normalizeExchangeKey(apiKey?.exchange);
+	const exchange = resolvedExchange ?? "binance";
+
+	// Display venue (no "binance" fallback — unknown stays unknown, like elsewhere in the app).
+	const venueRaw = (position.exchange ?? position.exchange_id ?? null) as string | null;
+	const displayExchange = resolvedExchange ?? (venueRaw ? normalizeExchangeKey(venueRaw) : null);
+	const displayLabel =
+		(displayExchange ? exchangeLabels[displayExchange] : null) ?? venueRaw ?? "?";
+
+	// Live mark + PnL overlay — same direct-exchange ticks source as the
+	// Positions tab (backend snapshot stays the source of truth).
+	// Subscribe only while the modal is open.
+	const liveSymbols = useMemo(
+		() =>
+			isOpen
+				? [{ symbol: String(position.symbol), exchange: venueRaw }]
+				: [],
+		[isOpen, position.symbol, venueRaw],
+	);
+	const { marks } = useLiveMarks(liveSymbols);
+	const liveTick = marks[markKey(position.symbol, venueRaw)];
+	const isLive = Boolean(liveTick) && Number(liveTick?.price) > 0;
+	const liveMarkPrice = isLive ? Number(liveTick?.price) : 0;
+	// Effective mark: live tick wins, snapshot prop is the fallback.
+	const effectiveMark = isLive ? liveMarkPrice : position.mark_price || 0;
+	const livePnl = useMemo(() => {
+		const snapshotPnl = Number(position.pnl ?? 0);
+		if (!isLive) return snapshotPnl;
+		const entry = Number(position.entry_price) || 0;
+		const size = Number(position.size) || 0;
+		if (!(entry > 0) || !(size > 0)) return snapshotPnl;
+		return calcLivePnl(
+			String(position.direction ?? "LONG"),
+			entry,
+			liveMarkPrice,
+			size,
+		);
+	}, [isLive, liveMarkPrice, position.pnl, position.entry_price, position.size, position.direction]);
 
 	const [klines, setKlines] = useState<Kline[]>([]);
+	const [klineSource, setKlineSource] = useState<string>(exchange);
 	const [loading, setLoading] = useState(true);
 	const [selectedInterval, setSelectedInterval] = useState<KlineInterval>("1m");
 	const [tickSize, setTickSize] = useState<number | undefined>(undefined);
@@ -509,7 +628,6 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	const [foundationData, setFoundationData] =
 		useState<FoundationChartProps | null>(null);
 	const [foundationLoading, setFoundationLoading] = useState(false);
-	const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
 
 	// Ruler state
 	const [isRulerActive, setIsRulerActive] = useState(false);
@@ -574,29 +692,28 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 
 			// Strategy: Always try to get a range that includes both entry and now if possible.
 			// If not, priority is the latest data for "realtime" feel, user can change TF to see more.
-			const startTime = entryTime - 4 * 60 * 60 * 1000;
+		const startTime = entryTime - 4 * 60 * 60 * 1000;
 
-			let data: Kline[] = [];
-			if (exchange === "bybit") {
-				try {
-					data = await fetchBybitKlines(position.symbol, startTime, now, selectedInterval);
-				} catch (bybitErr) {
-					console.warn("Failed to load Bybit klines", bybitErr);
-				}
-				if (data.length === 0) {
-					data = await fetchKlines(position.symbol, startTime, now, selectedInterval);
-				}
-			} else {
-				data = await fetchKlines(position.symbol, startTime, now, selectedInterval);
-				if (data.length === 0) {
-					try {
-						data = await fetchBybitKlines(position.symbol, startTime, now, selectedInterval);
-					} catch (bybitErr) {
-						console.warn("Failed to load Bybit fallback klines", bybitErr);
-					}
-				}
+		// Single exchange-aware path: native exchange klines via unified
+		// /proxy/klines proxy (bitget/bybit/weex/okx/binance),
+		// with automatic Binance fallback inside.
+		const { klines: data, source } = await fetchExchangeKlinesWithFallback({
+			symbol: position.symbol,
+			interval: selectedInterval,
+			exchange,
+			startTime,
+			endTime: now,
+		});
+		setKlines(data);
+		setKlineSource(source);
+		// Fit chart on manual load or timeframe change, but never disrupt user scroll during background polling
+		if (!silent) {
+			try {
+				chartRef.current?.timeScale().scrollToRealTime();
+			} catch {
+				/* noop */
 			}
-			setKlines(data);
+		}
 		} catch (e) {
 			console.error("Failed to load chart data", e);
 			if (!silent) toast.error(t("common:errors.unknownError"));
@@ -639,14 +756,14 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 		};
 
 		const loadBinanceSymbolInfo = () => {
-			return fetchSymbolInfo(position.symbol).then((info) => {
+			return fetchSymbolInfo(position.symbol).then((info: BinanceExchangeInfo | null) => {
 				if (info && info.symbols) {
 					const symbolInfo = info.symbols.find(
-						(s: any) => s.symbol.toUpperCase() === cleanSymbol,
+						(s: BinanceSymbolInfo) => s.symbol.toUpperCase() === cleanSymbol,
 					);
 					if (symbolInfo) {
 						const priceFilter = symbolInfo.filters.find(
-							(f: any) => f.filterType === "PRICE_FILTER",
+							(f: { filterType: string }) => f.filterType === "PRICE_FILTER",
 						);
 						if (priceFilter && priceFilter.tickSize) {
 							setTickSize(parseFloat(priceFilter.tickSize));
@@ -658,18 +775,30 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			});
 		};
 
+		// bitget/okx/weex have no dedicated symbol-info fetcher here:
+		// precision comes from native klines via estimateTickSize (see below).
+		// bybit/binance keep explicit fetchers as secondary source.
 		if (exchange === "bybit") {
 			loadBybitSymbolInfo().then((success) => {
 				if (!success) loadBinanceSymbolInfo();
 			}).catch(() => {
 				loadBinanceSymbolInfo();
 			});
-		} else {
+		} else if (exchange === "binance") {
 			loadBinanceSymbolInfo().then((success) => {
 				if (!success) loadBybitSymbolInfo();
 			}).catch(() => {
 				loadBybitSymbolInfo();
 			});
+		} else {
+			// bitget / okx / weex: rely on estimateTickSize(klines); probe
+			// both info endpoints opportunistically without overriding it.
+			loadBybitSymbolInfo()
+				.then((success) => {
+					if (!success) return loadBinanceSymbolInfo();
+					return true;
+				})
+				.catch(() => undefined);
 		}
 	}, [isOpen, position.symbol, exchange]);
 
@@ -738,11 +867,14 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 		}
 
 		// 2. Check signal_details_json for execution_events or executions
+		interface SignalExecutions {
+			execution_events?: Array<Record<string, unknown>>;
+			executions?: Array<Record<string, unknown>>;
+			timestamp_signal?: string | number | null;
+			signal_time?: string | number | null;
+		}
 		const details = parseTraceObject(position.signal_details_json) as
-			| {
-					execution_events?: Array<Record<string, unknown>>;
-					executions?: Array<Record<string, unknown>>;
-			  }
+			| (SignalExecutions & Record<string, unknown>)
 			| null
 			| undefined;
 		const jsonExecutions =
@@ -761,8 +893,38 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			);
 		});
 
+		// Fallback: If no explicit ENTRY execution was found in executions payload,
+		// but position has entry_price > 0, synthesize an ENTRY execution so the entry
+		// triangle & E1 marker are always rendered on the chart!
+		const hasEntry = deduped.some((execution) => execution.type === "ENTRY");
+		if (!hasEntry && position.entry_price && position.entry_price > 0) {
+			const posAny = position as unknown as Record<string, unknown>;
+			const entryTimestampSec =
+				toTimestampSeconds(
+					position.entry_time ??
+						posAny.opened_at ??
+						posAny.created_at ??
+						posAny.timestamp ??
+						posAny.open_time ??
+						posAny.start_time ??
+						details?.timestamp_signal ??
+						details?.signal_time,
+				) ??
+				(klines.length > 0
+					? getKlineTimeSeconds(klines[0].time)
+					: Math.floor(Date.now() / 1000 - 3600));
+
+			if (entryTimestampSec !== null) {
+				deduped.push({
+					timestampSec: entryTimestampSec,
+					price: position.entry_price,
+					type: "ENTRY",
+				});
+			}
+		}
+
 		return assignSideIndexes(deduped);
-	}, [position]);
+	}, [position, klines]);
 
 	const executionPrices = useMemo(
 		() => normalizedExecutions.map((execution) => execution.price),
@@ -778,7 +940,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	}, []);
 
 	const entryPrice = position.entry_price || 0;
-	const exitPrice = position.mark_price || 0;
+	const exitPrice = effectiveMark || 0;
 	const isLong = ["LONG", "BUY"].includes(String(position.direction));
 
 
@@ -792,7 +954,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	}, [position]);
 
 	const extractIndicatorsFromTrace = useCallback(
-		(node: TraceNode, indicators: any) => {
+		(node: TraceNode, indicators: ExtractedIndicators) => {
 			if (!node || typeof node !== "object") return;
 
 			const type = String(node.type || "").toLowerCase();
@@ -994,31 +1156,31 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 		[],
 	);
 
-	const extractedIndicators = useMemo(() => {
-		const indicators = {
-			bbBands: [] as any[],
-			significantLevels: [] as any[],
-			localLevels: [] as any[],
-			roundLevels: [] as any[],
-			maCrossover: [] as any[],
-			stoch: [] as any[],
-			rsi: [] as any[],
-			macd: [] as any[],
-			adx: [] as any[],
-			natr: [] as any[],
-			atr: [] as any[],
-			timeFilter: [] as any[],
-			trendDirection: [] as any[],
-			volumeConfirmation: [] as any[],
-			priceConsolidation: [] as any[],
-			volatilitySqueeze: [] as any[],
-			levelTouch: [] as any[],
-			priceAction: [] as any[],
-			tapeAcceleration: [] as any[],
-			openInterest: [] as any[],
-			relativeVolume: [] as any[],
-			correlation: [] as any[],
-			pattern: [] as any[],
+	const extractedIndicators: ExtractedIndicators = useMemo(() => {
+		const indicators: ExtractedIndicators = {
+			bbBands: [] as IndicatorRecord[],
+			significantLevels: [] as IndicatorRecord[],
+			localLevels: [] as IndicatorRecord[],
+			roundLevels: [] as IndicatorRecord[],
+			maCrossover: [] as IndicatorRecord[],
+			stoch: [] as IndicatorRecord[],
+			rsi: [] as IndicatorRecord[],
+			macd: [] as IndicatorRecord[],
+			adx: [] as IndicatorRecord[],
+			natr: [] as IndicatorRecord[],
+			atr: [] as IndicatorRecord[],
+			timeFilter: [] as IndicatorRecord[],
+			trendDirection: [] as IndicatorRecord[],
+			volumeConfirmation: [] as IndicatorRecord[],
+			priceConsolidation: [] as IndicatorRecord[],
+			volatilitySqueeze: [] as IndicatorRecord[],
+			levelTouch: [] as IndicatorRecord[],
+			priceAction: [] as IndicatorRecord[],
+			tapeAcceleration: [] as IndicatorRecord[],
+			openInterest: [] as IndicatorRecord[],
+			relativeVolume: [] as IndicatorRecord[],
+			correlation: [] as IndicatorRecord[],
+			pattern: [] as IndicatorRecord[],
 		};
 
 		if (!decisionTrace) return indicators;
@@ -1039,21 +1201,24 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	const usedFoundations = useMemo(() => {
 		const foundations = new Set<string>();
 
-		const extractFromNode = (node: any) => {
+		const extractFromNode = (node: TraceNodeLike | null | undefined) => {
 			if (!node || typeof node !== "object") return;
-			const foundationType = normalizeFoundationType(node.type as string);
+			const foundationType = normalizeFoundationType(node.type);
 			if (foundationType) foundations.add(foundationType);
 
-			if (node.children && Array.isArray(node.children)) {
-				node.children.forEach((child: any) => {
-					extractFromNode(child);
+			if (Array.isArray(node.children)) {
+				node.children.forEach((child) => {
+					extractFromNode(child as TraceNodeLike);
 				});
 			}
-			if (node.filters_trace) extractFromNode(node.filters_trace);
+			if (node.filters_trace && typeof node.filters_trace === "object")
+				extractFromNode(node.filters_trace as TraceNodeLike);
 		};
 
 		if (decisionTrace) {
-			extractFromNode(decisionTrace.decision_trace || decisionTrace);
+			extractFromNode(
+				(decisionTrace.decision_trace || decisionTrace) as unknown as TraceNodeLike,
+			);
 		}
 
 		// Exclude static levels from preview diagnostics
@@ -2006,9 +2171,9 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			drawLine(tpPrice, "#22c55e", "TP");
 		}
 
-		// 4. Draw Real-time Mark Price
-		if (position.mark_price) {
-			drawLine(position.mark_price, "#f97316", "MARK", true, `MARK: ${position.mark_price}`); // Orange dashed line
+		// 4. Draw Real-time Mark Price (live tick when available, snapshot fallback)
+		if (effectiveMark) {
+			drawLine(effectiveMark, "#f97316", "MARK", true, `MARK: ${effectiveMark}${isLive ? " · live" : ""}`); // Orange dashed line
 		}
 
 		// 5. Draw Active Partial Take Profits and Entry Orders
@@ -2327,7 +2492,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 				});
 			}
 		}
-	}, [slPrice, tpPrice, position.entry_price, position.mark_price, position.partial_tp_orders, position.dca_orders, normalizedExecutions, showIndicators, extractedIndicators, foundationData]); // Removed isRulerActive dependency
+	}, [slPrice, tpPrice, position.entry_price, effectiveMark, isLive, position.partial_tp_orders, position.dca_orders, normalizedExecutions, showIndicators, extractedIndicators, foundationData, effectiveInterval, isLong, klines]);
 
 	// Keep ref updated with latest syncOverlay function
 	useEffect(() => {
@@ -2346,22 +2511,24 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			width: initialWidth,
 			height: initialHeight,
 			layout: {
-				textColor: "#9ca3af",
-				background: { type: ColorType.Solid, color: "#0a0a0a" },
+				textColor: "rgba(255, 255, 255, 0.45)",
+				background: { type: ColorType.Solid, color: "#07080b" },
 			},
 			grid: {
-				vertLines: { color: "#27272a" },
-				horzLines: { color: "#27272a" },
+				vertLines: { color: "rgba(255, 255, 255, 0.03)" },
+				horzLines: { color: "rgba(255, 255, 255, 0.03)" },
 			},
 			crosshair: { mode: CrosshairMode.Normal },
 			timeScale: {
-				borderColor: "#27272a",
+				borderColor: "rgba(255, 255, 255, 0.08)",
 				timeVisible: true,
 				secondsVisible: false,
+				rightOffset: 12,
+				shiftVisibleRangeOnNewBar: true,
 			},
 			rightPriceScale: {
-				borderColor: "#27272a",
-				minimumWidth: 60,
+				borderColor: "rgba(255, 255, 255, 0.08)",
+				minimumWidth: 65,
 			},
 			handleScroll: {
 				vertTouchDrag: false,
@@ -2384,13 +2551,13 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 					maxValue = Math.max(maxValue, exitPriceRef.current);
 				}
 
-				extractedIndicatorsRef.current.localLevels.forEach((lvl: any) => {
+				extractedIndicatorsRef.current.localLevels.forEach((lvl: IndicatorRecord) => {
 					if (lvl.price) {
 						minValue = Math.min(minValue, lvl.price);
 						maxValue = Math.max(maxValue, lvl.price);
 					}
 				});
-				extractedIndicatorsRef.current.significantLevels.forEach((lvl: any) => {
+				extractedIndicatorsRef.current.significantLevels.forEach((lvl: IndicatorRecord) => {
 					if (lvl.price) {
 						minValue = Math.min(minValue, lvl.price);
 						maxValue = Math.max(maxValue, lvl.price);
@@ -2509,7 +2676,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			time: (k.time > 1000000000000
 				? Math.floor(k.time / 1000)
 				: k.time) as Time,
-			value: Number((k as any).volume || 0),
+			value: Number((k as ExchangeKlineLike).volume || 0),
 			color: k.close >= k.open ? "rgba(34, 197, 94, 0.5)" : "rgba(239, 68, 68, 0.5)",
 		}));
 		volumeSeries.setData(volumeData);
@@ -2596,20 +2763,22 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 					width: initialIndWidth,
 					height: initialIndHeight,
 					layout: {
-						textColor: "#9ca3af",
-						background: { type: ColorType.Solid, color: "#0a0a0a" },
+						textColor: "rgba(255, 255, 255, 0.45)",
+						background: { type: ColorType.Solid, color: "#07080b" },
 					},
 					grid: {
-						vertLines: { color: "#27272a" },
-						horzLines: { color: "#27272a" },
+						vertLines: { color: "rgba(255, 255, 255, 0.03)" },
+						horzLines: { color: "rgba(255, 255, 255, 0.03)" },
 					},
 					timeScale: {
 						visible: true,
 						timeVisible: true,
 						secondsVisible: false,
-						borderColor: "#27272a",
+						borderColor: "rgba(255, 255, 255, 0.08)",
+						rightOffset: 12,
+						shiftVisibleRangeOnNewBar: true,
 					},
-					rightPriceScale: { borderColor: "#27272a", minimumWidth: 60 },
+					rightPriceScale: { borderColor: "rgba(255, 255, 255, 0.08)", minimumWidth: 65 },
 				});
 
 				resizeObserverInd = new ResizeObserver((entries) => {
@@ -2734,10 +2903,8 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 		chart.subscribeCrosshairMove((param) => {
 			if (param.time) {
 				crosshairTimeRef.current = param.time as number;
-				setCrosshairTime(param.time as number);
 			} else {
 				crosshairTimeRef.current = null;
-				setCrosshairTime(null);
 			}
 			syncOverlayRef.current();
 		});
@@ -2763,6 +2930,9 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			if (seriesRef.current === candlestickSeries) seriesRef.current = null;
 			if (overlayRef.current === svgOverlay) overlayRef.current = null;
 		};
+	// Chart setup effect intentionally omits klines: live klines are pushed via
+	// the update effect below, recreating the chart would reset zoom/scroll.
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [isOpen, showIndicators, foundationData, tickSize]);
 
 	// Update Data (including real-time updates)
@@ -2788,7 +2958,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 					time: (k.time > 1000000000000
 						? Math.floor(k.time / 1000)
 						: k.time) as Time,
-					value: Number((k as any).volume || 0),
+					value: Number((k as ExchangeKlineLike).volume || 0),
 					color: k.close >= k.open ? "rgba(34, 197, 94, 0.5)" : "rgba(239, 68, 68, 0.5)",
 				}));
 				volumeSeriesRef.current.setData(volumeData);
@@ -2938,31 +3108,63 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-			<div className="bg-card w-full max-w-7xl rounded-xl border border-border shadow-xl overflow-hidden flex flex-col h-[70vh]">
+		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4">
+			<div className="glass-strong relative w-full max-w-7xl rounded-none sm:rounded-3xl border-0 sm:border border-white/10 shadow-[0_0_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[100dvh] max-h-none sm:h-[85vh] sm:max-h-[960px] animate-fade-up">
+				{/* Top ambient glow */}
+				<div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[500px] h-32 bg-cyan/10 blur-3xl rounded-full" />
+
 				{/* Header */}
-				<div className="flex items-center justify-between p-4 border-b border-border bg-muted/30">
-					<div className="flex items-center gap-4">
-						<h2 className="text-xl font-bold flex items-center gap-2">
-							{position.symbol}
+				<div className="relative flex flex-wrap items-center justify-between gap-y-2 px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-white/[0.08] bg-white/[0.02]">
+					<div className="flex items-center gap-2 sm:gap-4 flex-wrap min-w-0">
+						<div className="flex items-center gap-2 min-w-0">
+							<h2 className="text-base sm:text-xl font-bold font-mono tracking-tight text-white flex items-center gap-2 truncate">
+								{position.symbol}
+							</h2>
 							<span
-								className={`text-sm px-2 py-0.5 rounded ${position.direction === "LONG" ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-500"}`}
+								className={cn(
+									"text-xs px-2.5 py-0.5 rounded-full font-semibold border shadow-sm",
+									position.direction === "LONG"
+										? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shadow-[0_0_12px_rgba(16,224,160,0.25)]"
+										: "bg-rose-500/15 text-rose-400 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.25)]",
+								)}
 							>
 								{position.direction}
 							</span>
-						</h2>
+							<span
+								className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] text-white/70 border border-white/10 font-mono"
+								title={`Klines source: ${klineSource}${klineSource !== exchange ? ` (requested ${exchange}, fallback)` : ""}`}
+							>
+								<ExchangeBadge exchange={displayExchange ?? venueRaw} size="xs" />
+								{displayLabel}
+								{klineSource !== exchange ? (
+									<span className="text-amber-400/80" title={`Klines source: ${klineSource} (requested ${exchange}, fallback)`}>
+										· fallback
+									</span>
+								) : null}
+							</span>
+							{normalizedExecutions.length <= 1 && (
+								<span
+									className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-amber-400/10 text-amber-400 border border-amber-400/25 font-mono"
+									title="Showing position entry point and SL/TP rails"
+								>
+									SL/TP active
+								</span>
+							)}
+						</div>
 
-						{/* Timeframe Switcher */}
-						<div className="flex items-center bg-background/50 border border-border rounded-lg p-0.5">
+						{/* Timeframe Switcher — its own scrollable row on phones */}
+						<div className="order-last w-full sm:order-none sm:w-auto inline-flex items-center rounded-lg bg-white/[0.04] border border-white/10 p-0.5 gap-0.5 overflow-x-auto no-scrollbar max-w-full">
 							{KLINE_INTERVALS.map((tf) => (
 								<button
 									key={tf.value}
+									type="button"
 									onClick={() => setSelectedInterval(tf.value)}
-									className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+									className={cn(
+										"shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-all",
 										selectedInterval === tf.value
-											? "bg-primary text-primary-foreground shadow-sm"
-											: "text-muted-foreground hover:text-foreground hover:bg-muted"
-									}`}
+											? "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] border border-white/15"
+											: "text-white/50 hover:text-white/80 hover:bg-white/[0.03]",
+									)}
 								>
 									{tf.label}
 								</button>
@@ -2970,54 +3172,69 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 						</div>
 
 						{hasChanges && (
-							<span className="text-xs text-amber-500 flex items-center gap-1 animate-pulse">
+							<span className="text-xs text-amber-400 flex items-center gap-1.5 animate-pulse bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-md font-mono">
 								<AlertTriangle size={12} />
 								Unsaved Changes
 							</span>
 						)}
 					</div>
-					<div className="flex items-center gap-2">
-						<Button
+
+					<div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+						<button
+							type="button"
 							onClick={() => setShowIndicators(!showIndicators)}
 							disabled={foundationLoading}
-							variant={showIndicators ? "default" : "secondary"}
-							size="sm"
-							className={cn("h-9 w-9 p-0 rounded-lg", foundationLoading && "opacity-80 cursor-wait")}
+							className={cn(
+								"inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-all",
+								showIndicators
+									? "bg-cyan/15 text-cyan border-cyan/40 shadow-[0_0_14px_rgba(0,212,255,0.35)]"
+									: "border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07]",
+								foundationLoading && "opacity-80 cursor-wait",
+							)}
 							title={`${t("analytics:showIndicators", "Show Indicators")} (${usedFoundations.length})`}
 						>
 							{foundationLoading ? (
-								<Loader2 className="w-4 h-4 animate-spin" />
+								<Loader2 className="w-4 h-4 animate-spin text-cyan" />
 							) : (
 								<BarChart3 className="w-4 h-4" />
 							)}
-						</Button>
-						<Button
-							variant="ghost"
-							size="sm"
+						</button>
+						<button
+							type="button"
 							onClick={() => loadData()}
-							className="text-muted-foreground"
+							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07] transition-all"
 							title="Refresh Data"
 						>
 							<RefreshCw
-								className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+								className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
 							/>
-						</Button>
-						<Button
-							variant={hasChanges ? "default" : "secondary"}
-							size="sm"
+						</button>
+						<button
+							type="button"
 							onClick={handleSave}
 							disabled={!hasChanges || isSaving}
+							className={cn(
+								"inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none",
+								hasChanges
+									? "bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_20px_-4px_rgba(0,212,255,0.7)] hover:brightness-110"
+									: "border border-white/10 bg-white/[0.03] text-white/40",
+							)}
 						>
 							{isSaving ? (
-								<RefreshCw className="w-4 h-4 animate-spin mr-2" />
+								<RefreshCw className="w-3.5 h-3.5 animate-spin" />
 							) : (
-								<Save className="w-4 h-4 mr-2" />
+								<Save className="w-3.5 h-3.5" />
 							)}
-							{t("common:save", "Save")}
-						</Button>
-						<Button variant="ghost" size="icon" onClick={onClose}>
-							<X className="w-5 h-5" />
-						</Button>
+							<span>{t("common:save", "Save")}</span>
+						</button>
+						<button
+							type="button"
+							onClick={onClose}
+							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-transparent hover:border-white/10 text-white/40 hover:text-white hover:bg-white/[0.06] transition-all ml-1"
+							aria-label="Close"
+						>
+							<X className="w-4 h-4" />
+						</button>
 					</div>
 				</div>
 
@@ -3047,13 +3264,16 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 								<>
 									<div
 										className={cn(
-											"flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden z-20 border-r border-border",
+											// Overlay panel on phones (chart keeps its size),
+											// static sidebar from sm up.
+											"flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden border-r border-border max-sm:bg-void",
+											"absolute inset-y-0 left-0 z-30 sm:static sm:inset-auto sm:z-20",
 											showTree
-												? "w-[350px] opacity-100"
+												? "w-full opacity-100 sm:w-[350px]"
 												: "w-0 opacity-0 pointer-events-none",
 										)}
 									>
-										<div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
+										<div className="flex items-center justify-between px-3 py-2.5 sm:p-3 border-b border-border bg-muted/30">
 											<h3 className="text-sm font-semibold flex items-center gap-2 truncate whitespace-nowrap">
 												<span className="w-1 h-5 bg-primary rounded-full" />
 												{t("decisionTree", "Decision Tree")}
@@ -3132,7 +3352,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 							{/* Right Column: Chart */}
 							<div
 								className={cn(
-									"flex-1 relative bg-zinc-950 flex flex-col overflow-hidden",
+									"flex-1 min-w-0 min-h-0 relative bg-zinc-950 flex flex-col overflow-hidden",
 									isRulerActive ? "cursor-crosshair" : "",
 								)}
 								onMouseDown={handleMouseDown}
@@ -3166,17 +3386,16 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 									Object.keys(foundationData.visualizations.subcharts || {}).length > 0 && (
 										<div
 											ref={indicatorContainerRef}
-											className="w-full border-t border-border bg-black/20"
-											style={{ height: "180px", flexShrink: 0 }}
+											className="w-full border-t border-border bg-black/20 h-[140px] sm:h-[180px] shrink-0"
 										/>
 									)}
 
-								{/* Instructions Overlay */}
-								<div className="absolute bottom-4 left-4 z-10 bg-black/70 backdrop-blur-sm p-3 rounded-lg border border-border/50 text-xs text-muted-foreground pointer-events-none flex flex-col gap-1.5 shadow-2xl">
+								{/* Instructions Overlay (pointer devices only) */}
+								<div className="hidden sm:flex absolute bottom-4 left-4 z-10 glass-strong p-3 rounded-xl border border-white/10 text-xs text-white/70 pointer-events-none flex-col gap-1.5 shadow-2xl backdrop-blur-xl">
 									<div className="flex items-center gap-2">
-										<div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-										<span className="text-foreground font-medium">
-											Last Update:{" "}
+										<div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
+										<span className="text-white font-medium font-mono text-[11px]">
+											Live · Update:{" "}
 											{klines.length > 0
 												? format(
 														new Date(klines[klines.length - 1].time),
@@ -3185,14 +3404,14 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 												: "--:--:--"}
 										</span>
 									</div>
-									<div className="h-px bg-border/50 my-1" />
-									<span>
+									<div className="h-px bg-white/10 my-0.5" />
+									<span className="text-[11px] text-white/60">
 										Drag the{" "}
-										<span className="text-green-500 font-bold">Green (TP)</span>{" "}
-										and <span className="text-red-500 font-bold">Red (SL)</span>{" "}
+										<span className="text-emerald-400 font-semibold">Green (TP)</span>{" "}
+										and <span className="text-rose-400 font-semibold">Red (SL)</span>{" "}
 										lines to adjust.
 									</span>
-									<span className="opacity-80">
+									<span className="text-[10px] text-white/40 font-mono">
 										📏 Shift+Click (or Middle Click) for ruler
 									</span>
 								</div>
@@ -3202,40 +3421,81 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 				})()}
 
 				{/* Footer / Current Details */}
-				<div className="p-3 border-t border-border bg-muted/10 grid grid-cols-4 gap-4 text-sm">
-					<div>
-						<span className="text-muted-foreground block text-xs">
+				<div className="relative p-2.5 sm:p-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:pb-4 border-t border-white/[0.08] bg-white/[0.015] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 text-xs">
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
 							Entry Price
 						</span>
-						<span className="font-mono">{position.entry_price}</span>
-					</div>
-					<div>
-						<span className="text-muted-foreground block text-xs">
-							Current Price
+						<span className="font-mono text-sm sm:text-base font-semibold text-white/90 tabular mt-1">
+							${position.entry_price ? position.entry_price.toLocaleString("en-US", { minimumFractionDigits: position.entry_price < 1 ? 4 : 2 }) : "—"}
 						</span>
-						<span className="font-mono">{position.mark_price}</span>
 					</div>
-					<div>
-						<span className="text-muted-foreground block text-xs">
-							Stop Loss
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan/70 flex items-center gap-1.5">
+							Current Price
+							{isLive && (
+								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live price" />
+							)}
+						</span>
+						<span className="font-mono text-sm sm:text-base font-semibold text-cyan tabular mt-1">
+							${effectiveMark ? effectiveMark.toLocaleString("en-US", { minimumFractionDigits: effectiveMark < 1 ? 4 : 2 }) : "—"}
+						</span>
+					</div>
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 flex items-center gap-1.5">
+							P&amp;L
+							{isLive && (
+								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live PnL" />
+							)}
 						</span>
 						<span
-							className={`font-mono ${slPrice !== position.stop_loss ? "text-amber-500 font-bold" : ""}`}
+							className={cn(
+								"font-mono text-sm sm:text-base font-semibold tabular mt-1",
+								livePnl >= 0 ? "text-emerald-400" : "text-rose-400",
+							)}
+						>
+							{`${livePnl >= 0 ? "+" : ""}$${livePnl.toFixed(2)}`}
+						</span>
+					</div>
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+						<div className="flex items-center justify-between">
+							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-400/80">
+								Stop Loss
+							</span>
+							{slPrice !== position.stop_loss && (
+								<span className="text-[9px] text-amber-400 font-mono font-medium">EDITED</span>
+							)}
+						</div>
+						<span
+							className={cn(
+								"font-mono text-sm sm:text-base font-semibold tabular mt-1",
+								slPrice ? "text-rose-400" : "text-white/30",
+								slPrice !== position.stop_loss && "text-amber-400",
+							)}
 						>
 							{slPrice
-								? slPrice.toFixed(position.entry_price < 10 ? 4 : 2)
+								? `$${slPrice.toFixed(position.entry_price < 10 ? 4 : 2)}`
 								: "None"}
 						</span>
 					</div>
-					<div>
-						<span className="text-muted-foreground block text-xs">
-							Take Profit
-						</span>
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+						<div className="flex items-center justify-between">
+							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-400/80">
+								Take Profit
+							</span>
+							{tpPrice !== position.take_profit && (
+								<span className="text-[9px] text-amber-400 font-mono font-medium">EDITED</span>
+							)}
+						</div>
 						<span
-							className={`font-mono ${tpPrice !== position.take_profit ? "text-amber-500 font-bold" : ""}`}
+							className={cn(
+								"font-mono text-sm sm:text-base font-semibold tabular mt-1",
+								tpPrice ? "text-emerald-400" : "text-white/30",
+								tpPrice !== position.take_profit && "text-amber-400",
+							)}
 						>
 							{tpPrice
-								? tpPrice.toFixed(position.entry_price < 10 ? 4 : 2)
+								? `$${tpPrice.toFixed(position.entry_price < 10 ? 4 : 2)}`
 								: "None"}
 						</span>
 					</div>

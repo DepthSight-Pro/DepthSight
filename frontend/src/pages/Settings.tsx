@@ -9,9 +9,11 @@ import {
 	BadgeX,
 	Bell,
 	Bot,
-	Database,
+	FlaskConical,
 	Key,
 	Plus,
+	PowerOff,
+	Radio,
 	Save,
 	Send,
 	Settings as SettingsIcon,
@@ -21,9 +23,11 @@ import {
 	Trash2,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 // --- UI & Layout Components ---
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { AddApiKeyModal } from "@/components/settings/AddApiKeyModal";
 import { BlacklistSection } from "@/components/settings/BlacklistSection";
@@ -54,18 +58,21 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "@/lib/apiClient";
+import { authScopedQueryKey } from "@/lib/queryKeys";
 // --- API & Types ---
 import {
 	useAddApiKey,
-	useAddSymbol,
 	useConfig,
 	useDeleteApiKey,
-	useDeleteSymbol,
 	useTelegramBindUrl,
 	useTestApiKey,
 	useTestTelegramNotification,
+	useToggleApiKeyStatus,
 	useUpdateConfig,
 } from "@/lib/api";
+import { exchangeMeta, normalizeExchangeKey } from "@/lib/exchanges";
 import type {
 	AddApiKeyPayload,
 	ApiKey as ApiKeyType,
@@ -105,10 +112,32 @@ const InfoPanel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 	<div className="bg-accent/50 p-4 rounded-lg space-y-4 h-fit">{children}</div>
 );
 
+// Valid top-level tab values (deep-linkable via `?tab=`).
+const SETTINGS_TABS = [
+	"api-keys",
+	"mcp",
+	"risk-management",
+	"notifications",
+] as const;
+
 // --- Main Page Component ---
 export default function Settings() {
 	const { t } = useTranslation(["settings", "common"]);
 	const { toast } = useToast();
+	const [searchParams] = useSearchParams();
+	// Deep-link support: `?tab=mcp` opens the MCP tab (e.g. via the AI widget MCP button).
+	// Synced during render (React-endorsed pattern for adjusting state on navigation),
+	// so same-page navigations like /settings -> /settings?tab=mcp also switch tabs.
+	const [activeSettingsTab, setActiveSettingsTab] =
+		useState<string>("api-keys");
+	const [syncedTabParam, setSyncedTabParam] = useState<string | null>(null);
+	const tabParam = searchParams.get("tab");
+	if (tabParam !== syncedTabParam) {
+		setSyncedTabParam(tabParam);
+		if (tabParam && (SETTINGS_TABS as readonly string[]).includes(tabParam)) {
+			setActiveSettingsTab(tabParam);
+		}
+	}
 	const { data: config, isLoading, isError, error } = useConfig();
 	const { mutate: updateConfig, isPending: isSavingConfig } = useUpdateConfig();
 	const { mutate: testTelegramNotification, isPending: isTestingNotification } =
@@ -119,20 +148,34 @@ export default function Settings() {
 	const { mutate: deleteApiKey, isPending: isDeletingApiKey } =
 		useDeleteApiKey();
 	const { mutate: testApiKey } = useTestApiKey();
-	const { mutate: addSymbol, isPending: isAddingSymbol } = useAddSymbol();
-	const { mutate: deleteSymbol, isPending: isDeletingSymbol } =
-		useDeleteSymbol();
+	const { mutate: toggleApiKeyStatus } = useToggleApiKeyStatus();
+	const queryClient = useQueryClient();
+	const [isWaitingTelegramBinding, setIsWaitingTelegramBinding] =
+		useState<boolean>(false);
+	const telegramPollRef = useRef<number | null>(null);
+
+	const stopTelegramPolling = () => {
+		if (telegramPollRef.current !== null) {
+			window.clearInterval(telegramPollRef.current);
+			telegramPollRef.current = null;
+		}
+		setIsWaitingTelegramBinding(false);
+	};
+
+	useEffect(() => {
+		return () => {
+			if (telegramPollRef.current !== null) {
+				window.clearInterval(telegramPollRef.current);
+				telegramPollRef.current = null;
+			}
+		};
+	}, []);
 
 	const [testingApiKeyId, setTestingApiKeyId] = useState<number | null>(null);
+	const [togglingApiKeyId, setTogglingApiKeyId] = useState<number | null>(null);
 	const [apiKeyToDelete, setApiKeyToDelete] = useState<ApiKeyType | null>(null);
 
 	const [isAddApiKeyModalOpen, setIsAddApiKeyModalOpen] = useState(false);
-	const [deletingSymbolValue, setDeletingSymbolValue] = useState<string | null>(
-		null,
-	);
-
-	const [symbols, setSymbols] = useState<string[]>([]);
-	const [newSymbol, setNewSymbol] = useState("");
 
 	const [riskMaxDrawdown, setRiskMaxDrawdown] = useState<number | string>("");
 	const [riskMaxConsecutiveLosses, setRiskMaxConsecutiveLosses] = useState<
@@ -229,7 +272,6 @@ export default function Settings() {
 	if (config !== prevConfig) {
 		setPrevConfig(config);
 		if (config) {
-			setSymbols(config.dataSources?.symbols || []);
 			const rm = config.riskManagement;
 			setRiskMaxDrawdown(rm?.maxDrawdown ?? "");
 			setRiskMaxConsecutiveLosses(rm?.maxConsecutiveLosses ?? "");
@@ -334,50 +376,14 @@ export default function Settings() {
 		});
 	};
 
-	const handleAddSymbolSubmit = () => {
-		const symbolToAdd = newSymbol.toUpperCase().trim();
-		if (symbolToAdd && !symbols.includes(symbolToAdd)) {
-			addSymbol(symbolToAdd, {
-				onSuccess: () => setNewSymbol(""),
-			});
-		} else if (symbols.includes(symbolToAdd)) {
-			toast({
-				title: t("toasts.symbolExistsTitle"),
-				description: t("toasts.symbolExistsDescription", {
-					symbol: symbolToAdd,
-				}),
-				variant: "default",
-			});
-		}
-	};
-
-	const handleDeleteSymbolConfirm = (symbolToDelete: string) => {
-		if (symbolToDelete) {
-			setConfirmAction((prev) => ({ ...prev, isLoading: true }));
-			deleteSymbol(symbolToDelete, {
-				onSettled: () => {
-					setConfirmAction({
-						open: false,
-						title: "",
-						description: "",
-						onConfirm: () => {},
-						isLoading: false,
-					});
-					setDeletingSymbolValue(null);
-				},
-			});
-		}
-	};
-
-	const openDeleteSymbolModal = (symbolToRemove: string) => {
-		setDeletingSymbolValue(symbolToRemove);
-		setConfirmAction({
-			open: true,
-			title: `Remove Symbol: ${symbolToRemove}`,
-			description: `Are you sure you want to remove ${symbolToRemove} from monitored symbols? The bot will stop collecting market data for it.`,
-			onConfirm: () => handleDeleteSymbolConfirm(symbolToRemove),
-			isLoading: false,
-		});
+	const handleToggleApiKey = (keyId: number, nextActive: boolean) => {
+		setTogglingApiKeyId(keyId);
+		toggleApiKeyStatus(
+			{ keyId, isActive: nextActive },
+			{
+				onSettled: () => setTogglingApiKeyId(null),
+			},
+		);
 	};
 
 	const handleSave = (section: string) => {
@@ -474,6 +480,8 @@ export default function Settings() {
 	};
 
 	const handleConnectTelegram = () => {
+		const baselineChatId = notifTelegramChatId;
+		const baselineUsername = notifTelegramUsername;
 		getTelegramBindUrl(undefined, {
 			onSuccess: (data) => {
 				if (data.url) {
@@ -482,6 +490,56 @@ export default function Settings() {
 						title: t("notifications.telegramBindingStartedTitle"),
 						description: t("notifications.telegramBindingStartedDesc"),
 					});
+					// Poll /config until the bot writes the new chat id
+					// (binding happens server-side, UI would otherwise stay stale).
+					stopTelegramPolling();
+					setIsWaitingTelegramBinding(true);
+					let attempts = 0;
+					const maxAttempts = 20; // ~60s with 3s interval
+					telegramPollRef.current = window.setInterval(async () => {
+						attempts += 1;
+						try {
+							const fresh = await apiClient<AppConfig>("/config");
+							const freshId = fresh?.notifications?.telegramChatId || "";
+							const freshUsername =
+								fresh?.notifications?.telegramUsername || "";
+							if (
+								freshId &&
+								(freshId !== baselineChatId ||
+									freshUsername !== baselineUsername)
+							) {
+								stopTelegramPolling();
+								await queryClient.invalidateQueries({
+									queryKey: authScopedQueryKey("config"),
+								});
+								toast({
+									title: t("notifications.telegramBindingSuccessTitle"),
+									description: t(
+										"notifications.telegramBindingSuccessDesc",
+									),
+								});
+							} else if (attempts >= maxAttempts) {
+								stopTelegramPolling();
+								toast({
+									title: t("notifications.telegramBindingTimeoutTitle"),
+									description: t(
+										"notifications.telegramBindingTimeoutDesc",
+									),
+								});
+							}
+						} catch {
+							if (attempts >= maxAttempts) {
+								stopTelegramPolling();
+								toast({
+									title: t("notifications.telegramBindingTimeoutTitle"),
+									description: t(
+										"notifications.telegramBindingTimeoutDesc",
+									),
+								});
+							}
+							// Transient fetch errors are ignored until attempts run out.
+						}
+					}, 3000);
 				}
 			},
 			onError: (err) => {
@@ -522,29 +580,43 @@ export default function Settings() {
 
 	return (
 		<PageLayout title={t("pageTitle")} icon={SettingsIcon}>
-			<Tabs defaultValue="api-keys" className="w-full">
-				<TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
-					<TabsTrigger value="api-keys">
-						<Key className="w-4 h-4 mr-2" />
-						{t("tabs.apiKeys")}
-					</TabsTrigger>
-					<TabsTrigger value="mcp">
-						<Bot className="w-4 h-4 mr-2" />
-						{t("tabs.mcp", "AI Agents (MCP)")}
-					</TabsTrigger>
-					<TabsTrigger value="risk-management">
-						<Shield className="w-4 h-4 mr-2" />
-						{t("tabs.risk")}
-					</TabsTrigger>
-					<TabsTrigger value="notifications">
-						<Bell className="w-4 h-4 mr-2" />
-						{t("tabs.notifications")}
-					</TabsTrigger>
-					<TabsTrigger value="data-sources">
-						<Database className="w-4 h-4 mr-2" />
-						{t("tabs.dataSources")}
-					</TabsTrigger>
-				</TabsList>
+			<Tabs
+			value={activeSettingsTab}
+			onValueChange={setActiveSettingsTab}
+			className="w-full"
+		>
+				<div className="flex items-center overflow-x-auto pb-1">
+					<TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-white/[0.04] border border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
+						<TabsTrigger
+							value="api-keys"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10"
+						>
+							<Key className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("tabs.apiKeys")}</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="mcp"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10"
+						>
+							<Bot className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("tabs.mcp", "AI Agents (MCP)")}</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="risk-management"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10"
+						>
+							<Shield className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("tabs.risk")}</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="notifications"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10"
+						>
+							<Bell className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+							<span>{t("tabs.notifications")}</span>
+						</TabsTrigger>
+					</TabsList>
+				</div>
 
 				{/* === API Keys Tab (UPDATED) === */}
 				<TabsContent value="api-keys" className="mt-6">
@@ -586,13 +658,14 @@ export default function Settings() {
 						) : (
 							<Table>
 								<TableHeader>
-									<TableRow>
-										<TableHead>{t("apiKeys.colName")}</TableHead>
-										<TableHead>{t("apiKeys.colExchange")}</TableHead>
-										<TableHead>{t("apiKeys.colPrefix")}</TableHead>
-										<TableHead>{t("apiKeys.colStatus")}</TableHead>
-										<TableHead>{t("apiKeys.colCreated")}</TableHead>
-										<TableHead className="text-right">
+									<TableRow className="border-white/10 hover:bg-transparent">
+										<TableHead className="text-white/60">{t("apiKeys.colName")}</TableHead>
+										<TableHead className="text-white/60">{t("apiKeys.colExchange")}</TableHead>
+										<TableHead className="text-white/60">{t("apiKeys.colPrefix")}</TableHead>
+										<TableHead className="text-white/60">{t("apiKeys.colStatus")}</TableHead>
+										<TableHead className="text-center text-white/60">{t("apiKeys.colActive")}</TableHead>
+										<TableHead className="text-white/60">{t("apiKeys.colCreated")}</TableHead>
+										<TableHead className="text-right text-white/60">
 											{t("common:actions")}
 										</TableHead>
 									</TableRow>
@@ -602,12 +675,24 @@ export default function Settings() {
 										const isCurrentlyTesting = testingApiKeyId === key.id;
 										const isCurrentlyDeleting =
 											isDeletingApiKey && apiKeyToDelete?.id === key.id;
+										const isCurrentlyToggling = togglingApiKeyId === key.id;
+										const isKeyActive =
+											key.isActive ??
+											(key as unknown as { is_active?: boolean }).is_active ??
+											true;
+
+										const baseKey = normalizeExchangeKey(key.exchange);
+										const isTestnet = key.exchange?.toLowerCase().includes("testnet");
+										const exchangeLabel =
+											baseKey && exchangeMeta[baseKey]
+												? exchangeMeta[baseKey].label
+												: (key.exchange || t("common:na"));
 
 										let statusBadge;
 										switch (key.status) {
 											case "valid":
 												statusBadge = (
-													<Badge className="bg-green-500 hover:bg-green-600">
+													<Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 shadow-[0_0_10px_-2px_rgba(16,185,129,0.3)]">
 														<BadgeCheck className="w-3 h-3 mr-1" />
 														{t("apiKeys.statusValid")}
 													</Badge>
@@ -615,7 +700,7 @@ export default function Settings() {
 												break;
 											case "invalid":
 												statusBadge = (
-													<Badge variant="destructive">
+													<Badge variant="destructive" className="bg-rose-500/20 text-rose-300 border border-rose-500/30">
 														<BadgeX className="w-3 h-3 mr-1" />
 														{t("apiKeys.statusInvalid")}
 													</Badge>
@@ -623,7 +708,7 @@ export default function Settings() {
 												break;
 											case "testing":
 												statusBadge = (
-													<Badge variant="secondary">
+													<Badge variant="secondary" className="bg-cyan/15 text-cyan border border-cyan/30">
 														<SpinnerIcon className="w-3 h-3 mr-1 animate-spin" />
 														{t("apiKeys.statusTesting")}
 													</Badge>
@@ -631,7 +716,7 @@ export default function Settings() {
 												break;
 											default:
 												statusBadge = (
-													<Badge variant="outline">
+													<Badge variant="outline" className="border-white/10 text-white/50 bg-white/[0.02]">
 														<BadgeHelp className="w-3 h-3 mr-1" />
 														{t("apiKeys.statusUntested")}
 													</Badge>
@@ -639,23 +724,83 @@ export default function Settings() {
 												break;
 										}
 										return (
-											<TableRow key={key.id}>
-												<TableCell>{key.name}</TableCell>
-												<TableCell>{key.exchange || t("common:na")}</TableCell>
-												<TableCell className="font-mono">
+											<TableRow
+												key={key.id}
+												className={`border-white/5 transition-opacity duration-200 ${
+													!isKeyActive ? "opacity-60 hover:opacity-90" : ""
+												}`}
+											>
+												<TableCell className="font-medium text-white/90">
+													{key.name}
+												</TableCell>
+												<TableCell>
+													<div className="flex items-center gap-2.5">
+														<ExchangeBadge exchange={key.exchange} size="sm" />
+														<div className="flex items-center gap-1.5 flex-wrap">
+															<span className="font-medium text-white/90">
+																{exchangeLabel}
+															</span>
+															{isTestnet && (
+																<span className="px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+																	Testnet
+																</span>
+															)}
+														</div>
+													</div>
+												</TableCell>
+												<TableCell className="font-mono text-xs text-white/70">
 													{key.keyPrefix}
 												</TableCell>
-												<TableCell>{statusBadge}</TableCell>
 												<TableCell>
+													<div className="flex items-center gap-1.5 flex-wrap">
+														{statusBadge}
+														{!isKeyActive && (
+															<Badge
+																variant="outline"
+																className="border-amber-500/25 text-amber-400/90 bg-amber-500/10 text-[11px] py-0 px-1.5 font-normal"
+															>
+																<PowerOff className="w-2.5 h-2.5 mr-1 text-amber-400/70" />
+																{t("apiKeys.statusDisabled")}
+															</Badge>
+														)}
+													</div>
+												</TableCell>
+												<TableCell className="text-center">
+													<div className="flex items-center justify-center gap-1.5">
+														<Switch
+															checked={isKeyActive}
+															disabled={
+																isCurrentlyToggling || isCurrentlyDeleting
+															}
+															onCheckedChange={(checked) =>
+																handleToggleApiKey(key.id, checked)
+															}
+															className="data-[state=checked]:bg-cyan"
+															aria-label={
+																isKeyActive
+																	? t("apiKeys.statusValid")
+																	: t("apiKeys.statusDisabled")
+															}
+														/>
+														{isCurrentlyToggling && (
+															<SpinnerIcon className="w-3.5 h-3.5 animate-spin text-cyan" />
+														)}
+													</div>
+												</TableCell>
+												<TableCell className="text-xs text-white/60">
 													{format(new Date(key.createdAt), "PP")}
 												</TableCell>
 												<TableCell className="text-right space-x-1">
 													<Button
 														variant="outline"
 														size="sm"
-														className="h-8"
+														className="h-8 rounded-lg border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.08] hover:text-white transition-colors"
 														onClick={() => handleTestApiKey(key.id)}
-														disabled={isCurrentlyTesting || isCurrentlyDeleting}
+														disabled={
+															isCurrentlyTesting ||
+															isCurrentlyDeleting ||
+															isCurrentlyToggling
+														}
 													>
 														{isCurrentlyTesting ? (
 															<SpinnerIcon className="w-4 h-4 animate-spin" />
@@ -669,9 +814,13 @@ export default function Settings() {
 													<Button
 														variant="ghost"
 														size="icon"
-														className="h-8 w-8 text-destructive hover:text-destructive"
+														className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-rose-500/10 transition-colors"
 														onClick={() => openDeleteApiKeyModal(key)}
-														disabled={isCurrentlyDeleting || isCurrentlyTesting}
+														disabled={
+															isCurrentlyDeleting ||
+															isCurrentlyTesting ||
+															isCurrentlyToggling
+														}
 													>
 														{isCurrentlyDeleting ? (
 															<SpinnerIcon className="h-4 w-4 animate-spin" />
@@ -694,143 +843,29 @@ export default function Settings() {
 					<McpSection />
 				</TabsContent>
 
-				{/* === Data Sources Tab === */}
-				<TabsContent value="data-sources" className="mt-6">
-					<SettingsSection
-						title={t("dataSources.title")}
-						description={t("dataSources.description")}
-					>
-						<div className="grid md:grid-cols-5 gap-8">
-							<div className="md:col-span-3 space-y-4">
-								<div>
-									<Label htmlFor="add-symbol">
-										{t("dataSources.addSymbolLabel")}
-									</Label>
-									<div className="flex space-x-2 mt-2">
-										<Input
-											id="add-symbol"
-											placeholder={t("dataSources.addSymbolPlaceholder")}
-											value={newSymbol}
-											onChange={(e) => setNewSymbol(e.target.value)}
-											onKeyDown={(e) =>
-												e.key === "Enter" && handleAddSymbolSubmit()
-											}
-										/>
-										<Button
-											onClick={handleAddSymbolSubmit}
-											disabled={!newSymbol.trim() || isAddingSymbol}
-										>
-											{isAddingSymbol ? (
-												<SpinnerIcon className="mr-2 h-4 w-4 animate-spin" />
-											) : (
-												<Plus className="w-4 h-4" />
-											)}
-											<span className="ml-1">{t("dataSources.addButton")}</span>
-										</Button>
-									</div>
-								</div>
-								<div className="space-y-2">
-									<Label>{t("dataSources.monitoredSymbolsLabel")}</Label>
-									<div className="p-2 border rounded-md min-h-[200px] max-h-[400px] overflow-y-auto">
-										{symbols.length > 0 ? (
-											<div className="flex flex-wrap gap-2">
-												{symbols.map((symbolItem) => (
-													<div
-														key={symbolItem}
-														className="flex items-center gap-1 bg-secondary py-1 pl-3 pr-1 rounded-full"
-													>
-														<span className="font-mono text-sm">
-															{symbolItem}
-														</span>
-														<Button
-															variant="ghost"
-															size="icon"
-															className="h-6 w-6 text-muted-foreground hover:text-destructive"
-															onClick={() => openDeleteSymbolModal(symbolItem)}
-															disabled={
-																deletingSymbolValue === symbolItem ||
-																isDeletingSymbol
-															}
-														>
-															{deletingSymbolValue === symbolItem &&
-															isDeletingSymbol ? (
-																<SpinnerIcon className="h-3 w-3 animate-spin" />
-															) : (
-																<Trash2 className="w-3 h-3" />
-															)}
-														</Button>
-													</div>
-												))}
-											</div>
-										) : (
-											<p className="text-sm text-muted-foreground text-center p-4">
-												{t("dataSources.noSymbols")}
-											</p>
-										)}
-									</div>
-								</div>
-							</div>
 
-							<div className="md:col-span-2 space-y-4">
-								<InfoPanel>
-									<h4 className="font-semibold">
-										{t("dataSources.statusPanelTitle")}
-									</h4>
-									{config.dataSources?.statuses.map((status) => (
-										<div
-											key={status.name}
-											className="space-y-2 text-sm p-2 border-b"
-										>
-											<div className="flex justify-between font-medium">
-												<span>{status.name}</span>{" "}
-												<span
-													className={`flex items-center gap-2 ${status.connected ? "text-profit" : "text-loss"}`}
-												>
-													<div
-														className={
-															"w-2 h-2 rounded-full " +
-															(status.connected ? "bg-profit" : "bg-loss")
-														}
-													></div>
-													{status.connected
-														? t("dataSources.statusConnected")
-														: t("dataSources.statusDisconnected")}
-												</span>
-											</div>
-											{status.lastSync && (
-												<div className="flex justify-between">
-													<span className="text-muted-foreground">
-														{t("dataSources.statusLastSync")}
-													</span>
-													<span>
-														{new Date(status.lastSync).toLocaleString()}
-													</span>
-												</div>
-											)}
-											{status.error && (
-												<div className="text-loss text-xs">{status.error}</div>
-											)}
-										</div>
-									))}
-									<div className="flex justify-between text-sm mt-2">
-										<span className="text-muted-foreground">
-											{t("dataSources.statusTotalSymbols")}
-										</span>
-										<span className="font-mono">{symbols.length}</span>
-									</div>
-								</InfoPanel>
-							</div>
-						</div>
-					</SettingsSection>
-				</TabsContent>
 
 				{/* === Risk Management Tab === */}
 				<TabsContent value="risk-management" className="mt-6">
 					<Tabs defaultValue="live-trading" className="w-full">
-						<TabsList className="grid w-full grid-cols-2">
-							<TabsTrigger value="live-trading">Live Trading</TabsTrigger>
-							<TabsTrigger value="backtesting">Backtesting</TabsTrigger>
-						</TabsList>
+						<div className="flex items-center overflow-x-auto pb-1 mb-6">
+							<TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-white/[0.04] border border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
+								<TabsTrigger
+									value="live-trading"
+									className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+								>
+									<Radio className="w-3.5 h-3.5 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+									<span>Live Trading</span>
+								</TabsTrigger>
+								<TabsTrigger
+									value="backtesting"
+									className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+								>
+									<FlaskConical className="w-3.5 h-3.5 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+									<span>Backtesting</span>
+								</TabsTrigger>
+							</TabsList>
+						</div>
 						<TabsContent value="live-trading" className="mt-6">
 							<SettingsSection
 								title={t("risk.live.title")}
@@ -1437,10 +1472,13 @@ export default function Settings() {
 																variant="outline"
 																size="sm"
 																onClick={handleConnectTelegram}
-																disabled={isGettingBindUrl}
+																disabled={
+																	isGettingBindUrl || isWaitingTelegramBinding
+																}
 																className="h-8 text-xs"
 															>
-																{isGettingBindUrl ? (
+																{isGettingBindUrl ||
+																isWaitingTelegramBinding ? (
 																	<SpinnerIcon className="mr-2 h-3 w-3 animate-spin" />
 																) : (
 																	<TestIcon className="mr-2 h-3 w-3" />
@@ -1468,10 +1506,13 @@ export default function Settings() {
 												) : (
 													<Button
 														onClick={handleConnectTelegram}
-														disabled={isGettingBindUrl}
+														disabled={
+															isGettingBindUrl || isWaitingTelegramBinding
+														}
 														className="w-full sm:w-fit py-5 px-6"
 													>
-														{isGettingBindUrl ? (
+														{isGettingBindUrl ||
+														isWaitingTelegramBinding ? (
 															<SpinnerIcon className="mr-2 h-5 w-5 animate-spin" />
 														) : (
 															<Send className="mr-2 h-5 w-5" />
@@ -1487,6 +1528,12 @@ export default function Settings() {
 													? t("notifications.telegramActiveDesc")
 													: t("notifications.telegramBotLinkDesc")}
 											</p>
+											{isWaitingTelegramBinding && (
+												<p className="text-xs text-muted-foreground leading-relaxed flex items-center gap-2">
+													<SpinnerIcon className="h-3 w-3 animate-spin" />
+													{t("notifications.telegramBindingWaitingDesc")}
+												</p>
+											)}
 										</div>
 									</div>
 
@@ -1616,8 +1663,8 @@ export default function Settings() {
 				}
 				title={confirmAction.title}
 				description={confirmAction.description}
-				onConfirm={confirmAction.onConfirm}
-				loading={isDeletingApiKey || isDeletingSymbol}
+			onConfirm={confirmAction.onConfirm}
+			loading={isDeletingApiKey}
 			/>
 			<AddApiKeyModal
 				isOpen={isAddApiKeyModalOpen}

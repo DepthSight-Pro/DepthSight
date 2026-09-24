@@ -59,19 +59,36 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 
 	// Sync local opt-in toggle when user profile loads or changes
 	useEffect(() => {
-		if (user) {
+		if (!user) return;
+		let active = true;
+		const syncOptIn = async () => {
+			await Promise.resolve();
+			if (!active) return;
 			setIsCommunityOptIn(
 				Boolean(user.shareCommunityMemories || user.share_community_memories)
 			);
-		}
-	}, [user?.shareCommunityMemories, user?.share_community_memories]);
+		};
+		void syncOptIn();
+		return () => {
+			active = false;
+		};
+	}, [user]);
 
 	// Auto-trigger onboarding popup on first visit if not yet opted in and never seen
 	useEffect(() => {
-		const seen = localStorage.getItem("depthsight_community_memory_modal_seen");
-		if (!seen && !user?.shareCommunityMemories && !user?.share_community_memories) {
-			setShowOnboardingModal(true);
-		}
+		let active = true;
+		const maybeShowOnboarding = async () => {
+			await Promise.resolve();
+			if (!active) return;
+			const seen = localStorage.getItem("depthsight_community_memory_modal_seen");
+			if (!seen && !user?.shareCommunityMemories && !user?.share_community_memories) {
+				setShowOnboardingModal(true);
+			}
+		};
+		void maybeShowOnboarding();
+		return () => {
+			active = false;
+		};
 	}, [user?.shareCommunityMemories, user?.share_community_memories]);
 
 	const [sharingId, setSharingId] = useState<string | null>(null);
@@ -81,8 +98,8 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 		if (updateUser) {
 			updateUser({
 				shareCommunityMemories: enabled,
-				...({ share_community_memories: enabled } as any),
-			});
+				share_community_memories: enabled,
+			} as Parameters<typeof updateUser>[0]);
 		}
 		setIsUpdatingSharing(true);
 		try {
@@ -103,8 +120,8 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 			if (updateUser) {
 				updateUser({
 					shareCommunityMemories: !enabled,
-					...({ share_community_memories: !enabled } as any),
-				});
+					share_community_memories: !enabled,
+				} as Parameters<typeof updateUser>[0]);
 			}
 		} finally {
 			setIsUpdatingSharing(false);
@@ -122,9 +139,9 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 				)
 			);
 			void fetchMemories();
-		} catch (e: any) {
+		} catch (e) {
 			alert(
-				e?.message ||
+				(e as Error)?.message ||
 					t(
 						"communityMemory.shareError",
 						"Could not share memory with community (requires >= 30 trades)."
@@ -516,7 +533,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 										extractedReasoning = parsed.config_data.reasoning;
 									}
 								}
-							} catch (e) {
+							} catch {
 								prettyConfig = configStr;
 							}
 						}

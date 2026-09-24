@@ -547,6 +547,7 @@ async def _sync_live_runtime_for_plan_change(
             limits.get("allow_free_bybit_trading", False)
             or limits.get("allow_free_weex_trading", False)
             or limits.get("allow_free_okx_trading", False)
+            or limits.get("allow_free_bitget_trading", False)
         )
 
     def allows_free_bybit(plan: str | None) -> bool:
@@ -573,17 +574,27 @@ async def _sync_live_runtime_for_plan_change(
             "allow_free_okx_trading", False
         ) and "allow_real_trading" not in plan_config.get("permissions", [])
 
+    def allows_free_bitget(plan: str | None) -> bool:
+        if not plan:
+            return False
+        plan_config = plans_config.get_plan(plan)
+        return plan_config.get("limits", {}).get(
+            "allow_free_bitget_trading", False
+        ) and "allow_real_trading" not in plan_config.get("permissions", [])
+
     prev_all = allows_all_keys(previous_plan)
     new_all = allows_all_keys(new_plan)
     prev_free = (
         allows_free_bybit(previous_plan)
         or allows_free_weex(previous_plan)
         or allows_free_okx(previous_plan)
+        or allows_free_bitget(previous_plan)
     )
     new_free = (
         allows_free_bybit(new_plan)
         or allows_free_weex(new_plan)
         or allows_free_okx(new_plan)
+        or allows_free_bitget(new_plan)
     )
 
     # Case 1: No live trading in previous plan, but live trading is allowed now
@@ -625,7 +636,7 @@ async def _sync_live_runtime_for_plan_change(
         )
         return
 
-    # Case 4: Downgrading from standard/pro to free (only Bybit/WEEX/OKX keys can run now)
+    # Case 4: Downgrading from standard/pro to free (only Bybit/WEEX/OKX/Bitget keys can run now)
     if prev_all and new_free:
         active_keys = await crud.get_active_api_keys_for_user(db, user_id=user_id)
         deactivated_count = 0
@@ -634,6 +645,7 @@ async def _sync_live_runtime_for_plan_change(
         allow_bybit = new_limits.get("allow_free_bybit_trading", False)
         allow_weex = new_limits.get("allow_free_weex_trading", False)
         allow_okx = new_limits.get("allow_free_okx_trading", False)
+        allow_bitget = new_limits.get("allow_free_bitget_trading", False)
 
         for key in active_keys:
             exch = key.exchange.lower() if key.exchange else ""
@@ -643,6 +655,8 @@ async def _sync_live_runtime_for_plan_change(
             elif allow_weex and exch.startswith("weex"):
                 keep = True
             elif allow_okx and exch.startswith("okx"):
+                keep = True
+            elif allow_bitget and exch.startswith("bitget"):
                 keep = True
 
             if not keep:
@@ -696,8 +710,11 @@ async def _enforce_live_strategy_limit(
     is_free_okx = target_exchange.startswith("okx") and limits.get(
         "allow_free_okx_trading", False
     )
+    is_free_bitget = target_exchange.startswith("bitget") and limits.get(
+        "allow_free_bitget_trading", False
+    )
     is_free_exchange = (
-        is_free_bybit or is_free_weex or is_free_okx
+        is_free_bybit or is_free_weex or is_free_okx or is_free_bitget
     ) and "allow_real_trading" not in plan_config.get("permissions", [])
 
     if is_free_exchange:
@@ -707,6 +724,8 @@ async def _enforce_live_strategy_limit(
             live_limit = int(limits.get("max_free_weex_live_strategies", 1))
         elif target_exchange.startswith("okx"):
             live_limit = int(limits.get("max_free_okx_live_strategies", 1))
+        elif target_exchange.startswith("bitget"):
+            live_limit = int(limits.get("max_free_bitget_live_strategies", 1))
 
     if live_limit is None or live_limit < 0:
         return
@@ -1515,6 +1534,12 @@ async def lifespan(app: FastAPI):
                 await conn.execute(
                     text(
                         "ALTER TABLE hub_nodes "
+                        "ADD COLUMN IF NOT EXISTS bitget_uid VARCHAR(50)"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_nodes "
                         "ADD COLUMN IF NOT EXISTS is_operator BOOLEAN DEFAULT false"
                     )
                 )
@@ -1546,6 +1571,18 @@ async def lifespan(app: FastAPI):
                     text(
                         "ALTER TABLE hub_nodes "
                         "ADD COLUMN IF NOT EXISTS public_plans JSON"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE mining_config "
+                        "ADD COLUMN IF NOT EXISTS exchange_multipliers JSON DEFAULT '{}'"
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE hub_telemetry_reports "
+                        "ADD COLUMN IF NOT EXISTS mining_multiplier FLOAT DEFAULT 1.0"
                     )
                 )
             except Exception:
@@ -1679,7 +1716,10 @@ async def add_security_headers(request: Request, call_next):
         f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
         f"frame-src 'self' https://accounts.google.com; "
         f"connect-src 'self' {ws_url} {public_base_url} https://accounts.google.com "
-        f"https://api.binance.com https://fapi.binance.com https://api.bybit.com; "
+        f"https://api.binance.com https://fapi.binance.com wss://fstream.binance.com wss://stream.binance.com "
+        f"https://api.bybit.com wss://stream.bybit.com "
+        f"https://www.okx.com https://aws.okx.com wss://ws.okx.com "
+        f"https://api.bitget.com wss://ws.bitget.com; "
         f"style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; "
         f"font-src 'self' data: https://fonts.gstatic.com; "
         f"img-src 'self' data: https://lh3.googleusercontent.com; "

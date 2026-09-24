@@ -49,6 +49,7 @@
 			"closeTime": "Close Time",
 			"symbol": "Symbol",
 			"strategy": "Strategy",
+			"exchange": "Exchange",
 			"direction": "Direction",
 			"quantity": "Amount",
 			"entryPrice": "Entry Price",

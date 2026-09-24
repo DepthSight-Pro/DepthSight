@@ -62,8 +62,18 @@ export interface StrategyData {
 	started_at: string;
 	params: Record<string, unknown>;
 	mode: "live" | "paper";
+	api_key_id?: number | null;
+	exchange?: string | null;
 	symbol_selection_mode?: "STATIC" | "DYNAMIC";
 	symbols?: string[];
+	// --- Dashboard/runtime fields returned by the /strategies endpoint ---
+	win_rate?: number | null;
+	total_pnl?: number | null;
+	trades_count?: number;
+	total_trades?: number;
+	timeframe?: string;
+	exchange_id?: string | null;
+	apiKeyId?: number;
 }
 
 // We import types from the editor to ensure their full consistency
@@ -79,6 +89,9 @@ export interface StrategyConfigData {
 	enabled?: boolean;
 	strategy_name: string;
 	symbol: string;
+	/** Legacy multi-symbol field still returned by the backend for some
+	 * configs and read by the Strategies list / launch modal. */
+	symbols?: string[];
 	signal_source?: "internal" | "tradingview_webhook";
 	marketType: "FUTURES" | "SPOT";
 	min_foundation_weight_threshold?: number;
@@ -127,6 +140,8 @@ export interface TradeData {
 	symbol: string;
 	strategy?: string;
 	strategy_config_id?: string;
+	api_key_id?: number | null; // Owning API key (subaccount) — for exchange/market scoping
+	market_type?: string | null; // "futures_usdtm" | "spot" when provided by backend
 	direction: "LONG" | "SHORT";
 	entry_price?: number; // Can be null for incomplete records
 	exit_price?: number; // Can be null for incomplete records
@@ -228,6 +243,11 @@ export interface PositionData {
 	marketType?: "futures_usdtm" | "spot";
 	signal_details_json?: Record<string, unknown>; // Decision trace for foundation analytics
 	api_key_id?: number;
+	exchange?: string | null;
+	/** Source strategy config id — the only unambiguous link between a
+	 * position and its strategy card (strategy names are class names shared
+	 * by many VisualBuilder strategies). */
+	config_id?: string | null;
 	executions?: TradeExecution[];
 	partial_tp_orders?: Array<{
 		target_price: number;
@@ -344,6 +364,9 @@ export interface BacktestRunDetailsData {
 	task_id: string;
 	strategy_name: string;
 	symbol: string;
+	/** Optional display fields returned by some backend versions. */
+	name?: string;
+	timeframe?: string;
 	status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 	created_at: string;
 	completed_at?: string;
@@ -499,6 +522,7 @@ export interface ApiKey {
 	lastUsed?: string;
 	status?: "active" | "revoked" | "untested" | "valid" | "invalid" | "testing";
 	exchange?: string;
+	marketType?: string;
 	isActive: boolean; // Multi-account support
 }
 
@@ -771,6 +795,7 @@ export interface User {
 	level: number;
 	isTotpEnabled?: boolean;
 	shareCommunityMemories?: boolean;
+	share_community_memories?: boolean;
 }
 
 export interface TotpStatusResponse {
@@ -818,6 +843,10 @@ export interface QuotaStatus {
 
 export interface BonusInfo {
 	featureName: string;
+	/** snake_case alias from the API (kept for robustness) */
+	feature_name?: string;
+	/** legacy alias */
+	feature?: string;
 	quantity: number;
 	status: string;
 }
@@ -1403,6 +1432,7 @@ export interface HubMiningConfig {
 	referralMiningBoost: number;
 	dailyEmissionBase?: number;
 	rebateRates?: Record<string, number>;
+	exchangeMultipliers?: Record<string, number>;
 }
 
 export interface HubMiningConfigUpdate {
@@ -1414,6 +1444,7 @@ export interface HubMiningConfigUpdate {
 	referralMiningBoost?: number;
 	dailyEmissionBase?: number;
 	rebateRates?: Record<string, number>;
+	exchangeMultipliers?: Record<string, number>;
 }
 
 // --- Admin Plans & AI Configuration Types ---
@@ -1455,6 +1486,8 @@ export interface PlanLimits {
 	max_free_weex_live_strategies?: number;
 	allow_free_okx_trading?: boolean;
 	max_free_okx_live_strategies?: number;
+	allow_free_bitget_trading?: boolean;
+	max_free_bitget_live_strategies?: number;
 	[key: string]: boolean | number | string | undefined;
 }
 
@@ -1521,7 +1554,7 @@ export interface AdminAIProviderConfig {
 	app_title?: string;
 	agent_id?: string;
 	endpoint?: string;
-	[key: string]: any;
+	[key: string]: unknown;
 }
 
 export interface AdminAISettings {
@@ -1548,4 +1581,149 @@ export interface AdminAITestResponse {
 	response?: string;
 	error?: string;
 }
+
+// --- Universal Promo Campaign & Quests Types ---
+export interface PromoQuestProgress {
+	questType: "api_volume" | "node_runner" | string;
+	title: string;
+	description: string;
+	reward: number;
+	totalSlots: number;
+	claimedSlots: number;
+	remainingSlots: number;
+	isClaimed: boolean;
+	requirements: {
+		hasExchangeKey?: boolean;
+		exchangeUid?: string | null;
+		isMasterAccount?: boolean;
+		verifiedVolume?: number;
+		volumeThreshold?: number;
+		totalVolume?: number;
+		currentVolume?: number;
+		isVolumeVerifying?: boolean;
+		isVolumeVerified?: boolean;
+		isPhysicalNode?: boolean;
+		nodeAgeDays?: number;
+		minNodeAgeDays?: number;
+		hasWallet?: boolean;
+		hasActiveMining?: boolean;
+		[key: string]: unknown;
+	};
+	allRequirementsMet: boolean;
+}
+
+export interface PromoStatusResponse {
+	hasActiveCampaign: boolean;
+	campaignId?: string;
+	campaignName?: string;
+	description?: string;
+	exchangeId?: string;
+	isActive?: boolean;
+	isAdminPreview?: boolean;
+	totalPool?: number;
+	distributed?: number;
+	remainingPool?: number;
+	/** Promo rebate multiplier for the active exchange (not yet returned by
+	 * the backend; typed optional so the MiningHub fallback reads cleanly). */
+	rebateMultiplier?: number;
+	quests?: PromoQuestProgress[];
+	uiConfig?: Record<string, unknown>;
+}
+
+export interface PromoClaimRequest {
+	campaign_id: string;
+	quest_type: string;
+}
+
+export interface PromoClaimResponse {
+	success: boolean;
+	message: string;
+	rewardAmount: number;
+	questType: string;
+	claimedAt: string;
+}
+
+export interface PromoCampaignAdmin {
+	id: string;
+	name: string;
+	description?: string;
+	exchangeId: string;
+	totalPool: number;
+	distributed: number;
+	adminOnly: boolean;
+	isActive: boolean;
+	quests: Array<{
+		quest_type: string;
+		title: string;
+		description?: string;
+		reward: number;
+		total_slots: number;
+		volume_threshold?: number;
+		min_node_age_days?: number;
+		trade_window_days?: number;
+		[key: string]: unknown;
+	}>;
+	uiConfig?: Record<string, unknown>;
+	createdAt: string;
+	updatedAt?: string;
+}
+
+/** Per-quest toggles and values edited in the admin promo form
+ *  (`PromoCampaignCreateOrUpdate.config.quests.<quest>`). */
+export interface PromoCampaignQuestConfig {
+	enabled?: boolean;
+	reward?: number;
+	total_slots?: number;
+	min_volume_usd?: number;
+	min_node_age_days?: number;
+	trade_window_days?: number;
+}
+
+/** `config.quests` of the admin promo form — one entry per backend quest id. */
+export interface PromoCampaignQuestsConfig {
+	api_pioneer?: PromoCampaignQuestConfig;
+	node_runner?: PromoCampaignQuestConfig;
+	[key: string]: PromoCampaignQuestConfig | undefined;
+}
+
+export interface PromoCampaignCreateOrUpdate {
+	campaign_id: string;
+	campaign_name: string;
+	target_exchange: string;
+	total_pool: number;
+	admin_only: boolean;
+	is_active: boolean;
+	start_date?: string | null;
+	end_date?: string | null;
+	config?: {
+		quests?: PromoCampaignQuestsConfig;
+		[key: string]: unknown;
+	};
+}
+
+/** Request body of `POST /hub/promo/admin/campaigns` — mirrors the backend
+ *  `schemas.PromoCampaignCreateOrUpdate` model (snake_case field names). The
+ *  admin page maps its form state into this payload before calling
+ *  `useCreateOrUpdatePromoCampaign`. */
+export interface PromoCampaignUpsertPayload {
+	id: string;
+	name: string;
+	description?: string | null;
+	exchange_id: string;
+	total_pool: number;
+	admin_only: boolean;
+	is_active: boolean;
+	quests: Array<{
+		quest_type: string;
+		title: string;
+		description?: string;
+		reward: number;
+		total_slots: number;
+		volume_threshold: number;
+		min_node_age_days?: number;
+		trade_window_days?: number;
+	}>;
+	ui_config?: Record<string, unknown> | null;
+}
+
 

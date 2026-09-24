@@ -14,7 +14,6 @@ import type {
 	AdminUser,
 	AdminUserExtendedDetails,
 	AdminUserUpdatePayload,
-	AdminAffiliatePayout,
 	AffiliateDashboardStats,
 	AffiliatePayout,
 	AIChatMessage,
@@ -56,6 +55,7 @@ import type {
 	PaginatedPhantomTradesResponse,
 	PaperWalletData,
 	PayoutDetailsPayload,
+	PlanLimits,
 	ProcessPayoutRequest,
 	PortfolioBacktestRequest,
 	PortfolioBacktestRunDetailsData,
@@ -68,6 +68,11 @@ import type {
 	StrategyConfig,
 	StrategyConfigCreatePayload,
 	StrategyConfigData,
+	PromoStatusResponse,
+	PromoClaimRequest,
+	PromoClaimResponse,
+	PromoCampaignAdmin,
+	PromoCampaignUpsertPayload,
 	StrategyData,
 	StrategyRunRequest,
 	SymbolSelectionConfig,
@@ -122,7 +127,7 @@ export interface Plan {
 	description: string;
 	features: string[];
 	quotas?: Record<string, number>;
-	limits?: Record<string, any>;
+	limits?: PlanLimits;
 	permissions?: string[];
 	billing?: {
 		monthly?: { price_usd: number; period_days: number };
@@ -182,7 +187,22 @@ import {
 	normalizeBlockRestrictions,
 } from "@/lib/strategyRestrictions";
 import { fetchBinanceKlines } from "./binanceApi";
+import {
+	fetchExchangeKlinesWithFallback,
+	normalizeKlineExchange,
+	type KlineExchangeSource,
+} from "@/services/exchangeKlineService";
+import type { Kline, KlineInterval } from "@/services/binanceService";
 import { authScopedQueryKey } from "./queryKeys";
+
+/**
+ * Defensive payload unwrap for endpoints that may arrive double-wrapped in an
+ * extra `{ data: ... }` envelope (some proxy/gateway deployments add one).
+ * `apiClient` already strips the top-level `data` field, so well-formed
+ * responses are returned untouched; this keeps the historical `res?.data || res`
+ * fallback without resorting to `any`.
+ */
+const unwrapData = <T>(res: T): T => (res as T & { data?: T })?.data || res;
 
 export interface TradeHistoryParams {
 	strategy?: string;
@@ -539,7 +559,10 @@ export const usePortfolioStatus = (params?: {
 			}
 			return apiClient<PortfolioData>(`/portfolio?${queryParams.toString()}`);
 		},
+		// Push-driven via WS snapshots; REST is initial load + fallback.
 		staleTime: Infinity,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
 	});
 export const usePositions = (options?: {
 	refetchInterval?: number | false;
@@ -565,8 +588,12 @@ export const usePositions = (options?: {
 			options?.marketType,
 		),
 		queryFn: () => apiClient<PositionData[]>(`/positions?${params.toString()}`),
-		staleTime: 5000, // Consider data fresh for 5 seconds
-		refetchInterval: options?.refetchInterval,
+		// Push-driven via WS snapshots + live marks; REST is initial load + fallback.
+		// Pass refetchInterval explicitly (e.g. when WS offline) to re-enable polling.
+		staleTime: Infinity,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
+		refetchInterval: options?.refetchInterval ?? false,
 	});
 };
 export const useConfig = () =>
@@ -819,6 +846,7 @@ export const useSystemResources = () =>
 export const useStrategies = (params?: {
 	mode?: "live" | "paper";
 	apiKeyId?: number | "all";
+	refetchInterval?: number | false;
 }) => {
 	const mode = params?.mode || "paper";
 	// Build query params
@@ -832,7 +860,12 @@ export const useStrategies = (params?: {
 		queryKey: authScopedQueryKey("strategies", mode, params?.apiKeyId),
 		queryFn: () =>
 			apiClient<StrategyData[]>(`/strategies?${queryParams.toString()}`),
-		refetchInterval: 5000,
+		// Push-driven via WS snapshots; no polling. REST is initial load + fallback.
+		// Pass refetchInterval explicitly (e.g. when WS offline) to re-enable polling.
+		staleTime: Infinity,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
+		refetchInterval: params?.refetchInterval ?? false,
 	});
 };
 // Retrieves a single strategy configuration. The returned data type has been updated.
@@ -1252,22 +1285,24 @@ export const useToggleApiKeyStatus = () => {
 				method: "PATCH",
 				body: JSON.stringify({ is_active: isActive }),
 			}),
-		onSuccess: (updatedKey, { isActive }) => {
+		onSuccess: (updatedKey, { keyId, isActive }) => {
 			queryClient.setQueryData<AppConfig>(authScopedQueryKey("config"), (oldConfig) => {
 				if (!oldConfig) return undefined;
 				return {
 					...oldConfig,
 					apiKeys: oldConfig.apiKeys.map((key) =>
-						key.id === updatedKey.id
-							? { ...key, isActive: updatedKey.isActive }
+						key.id === (updatedKey?.id ?? keyId)
+							? { ...key, isActive: updatedKey?.isActive ?? isActive }
 							: key,
 					),
 				};
 			});
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("config") });
+			queryClient.invalidateQueries({ queryKey: ["config"] });
 			queryClient.invalidateQueries({ queryKey: ["multiAccountBalances"] });
 			toast({
 				title: isActive ? "Account Activated" : "Account Deactivated",
-				description: `${updatedKey.name} has been ${isActive ? "activated" : "deactivated"}.`,
+				description: `${updatedKey?.name || "API Key"} has been ${isActive ? "activated" : "deactivated"}.`,
 			});
 		},
 		onError: (error) => {
@@ -1337,6 +1372,51 @@ export const useKlines = (
 	});
 	return queryResult;
 	};
+
+/**
+ * Exchange-aware klines via the unified GET /proxy/klines backend proxy.
+ * `exchange` accepts position/apiKey names ("bybit", "okx_futures", "WEEX", ...);
+ * unknown values fall back to "binance". On empty native data the service
+ * retries Binance automatically. Returns normalized Kline[] (not raw tuples).
+ */
+export const useExchangeKlines = (
+	params: {
+		symbol: string;
+		interval: string;
+		exchange?: string | null;
+		startTime?: number;
+		endTime?: number;
+		limit?: number;
+	},
+	options?: { enabled?: boolean; staleTime?: number },
+) => {
+	const { symbol, interval, exchange, startTime, endTime, limit } = params;
+	const source: KlineExchangeSource = normalizeKlineExchange(exchange);
+	const isHookEnabled =
+		options?.enabled !== false && !!symbol && !!interval;
+
+	return useQuery<Kline[], Error>({
+		queryKey: [
+			"exchangeKlines",
+			{ symbol, interval, source, startTime, endTime, limit },
+		],
+		queryFn: async () => {
+			const { klines } = await fetchExchangeKlinesWithFallback({
+				symbol,
+				interval: interval as KlineInterval,
+				exchange: source,
+				startTime,
+				endTime,
+				limit,
+			});
+			return klines;
+		},
+		enabled: isHookEnabled,
+		staleTime: options?.staleTime ?? 5 * 60 * 1000,
+		refetchOnWindowFocus: false,
+		retry: 1,
+	});
+};
 export const useStopStrategy = () => {
 	const queryClient = useQueryClient();
 	const { toast } = useToast();
@@ -2734,29 +2814,77 @@ export const useSendTicketMessage = () => {
 	});
 };
 
+/**
+ * Free-form mining statistics blob returned as `stats` by `/mining/status`.
+ * The hub and the local node emit both snake_case and camelCase aliases for the
+ * same values, so every known key is declared optional and unknown keys stay
+ * `unknown` (they are never read untyped).
+ */
+export interface LocalMiningStats {
+	eligibleExchanges?: string[];
+	eligible_exchanges?: string[];
+	rebateRates?: Record<string, number>;
+	rebate_rates?: Record<string, number>;
+	exchangeMultipliers?: Record<string, number>;
+	exchange_multipliers?: Record<string, number>;
+	dailyEmission?: number;
+	daily_emission?: number;
+	yourEpochReward?: number;
+	your_epoch_reward?: number;
+	epochTotalRebates?: number;
+	epoch_total_rebates?: number;
+	yourCumulativeRebates?: number;
+	your_cumulative_rebates?: number;
+	userCumulativeRebate?: number;
+	user_cumulative_rebate?: number;
+	cumulativeRebates?: number;
+	totalDistributed?: number;
+	serverTotalMined?: number;
+	totalNodeMined?: number;
+	serverTotalVolume?: number;
+	userRatio?: number;
+	yourVolumeShare?: number;
+	yourDailyVolume?: number;
+	serverDailyVolume?: number;
+	operatorFeeBalance?: number;
+	totalOperatorFeeCollected?: number;
+	userMetrics?: Array<{
+		username: string;
+		userId: string;
+		tradeVolume: number;
+		estimatedRebate: number;
+	}>;
+	[key: string]: unknown;
+}
+
 export interface LocalMiningStatusResponse {
 	isMiningEnabled: boolean;
 	nodeUuid?: string;
+	node_uuid?: string;
 	nodeName?: string;
 	registeredOnHub?: boolean;
 	nodeReferralCode?: string;
 	referrerNodeUuid?: string;
+	referrer_node_uuid?: string;
 	referrerReferralCode?: string;
 	referrer_referral_code?: string;
 	hasWelcomeBonus: boolean;
 	totalMined: number;
 	totalDistributed?: number;
-	config?: Record<string, any>;
-	stats?: Record<string, any>;
+	config?: Record<string, unknown>;
+	stats?: LocalMiningStats;
 	isGlobalMiningEnabled?: boolean;
 	userRewardSharePercent?: number;
 	userTradeVolume?: number;
 	userEstimatedRebate?: number;
 	userCumulativeRebate?: number;
+	exchangeMultipliers?: Record<string, number>;
+	exchange_multipliers?: Record<string, number>;
 }
 
 export interface MiningActivatePayload {
 	referrerCode?: string;
+	referrer_code?: string;
 }
 
 export interface NodeMiningConfigUpdate {
@@ -2895,6 +3023,13 @@ export const useUpdateNodeMiningConfig = () => {
 	});
 };
 
+/** Acknowledgement returned by the hub admin maintenance endpoints
+ *  (`POST /hub/mining/config`, `POST /hub/mining/process-epoch`). */
+export interface HubAdminActionResult {
+	status: string;
+	message: string;
+}
+
 export const useGetHubMiningConfig = (enabled: boolean = true) => {
 	return useQuery<HubMiningConfig, Error>({
 		queryKey: authScopedQueryKey("hubMiningConfig"),
@@ -2905,9 +3040,9 @@ export const useGetHubMiningConfig = (enabled: boolean = true) => {
 
 export const useUpdateHubMiningConfig = () => {
 	const queryClient = useQueryClient();
-	return useMutation<any, Error, HubMiningConfigUpdate>({
+	return useMutation<HubAdminActionResult, Error, HubMiningConfigUpdate>({
 		mutationFn: (payload) =>
-			apiClient<any>("/hub/mining/config", {
+			apiClient<HubAdminActionResult>("/hub/mining/config", {
 				method: "POST",
 				body: JSON.stringify(payload),
 			}),
@@ -3005,9 +3140,9 @@ export const useGetMiningTrades = (params: MiningTradesParams = {}, enabled: boo
 
 export const useTriggerMiningEpoch = () => {
 	const queryClient = useQueryClient();
-	return useMutation<any, Error, string | undefined>({
+	return useMutation<HubAdminActionResult, Error, string | undefined>({
 		mutationFn: (epochDate) =>
-			apiClient<any>("/hub/mining/process-epoch", {
+			apiClient<HubAdminActionResult>("/hub/mining/process-epoch", {
 				method: "POST",
 				body: epochDate ? JSON.stringify({ epoch_date: epochDate }) : undefined,
 			}),
@@ -3043,6 +3178,46 @@ export const useImportBybitXlsx = () => {
 			formData.append("file", file);
 			formData.append("dry_run", String(dryRun));
 			return apiClient<ImportBybitXlsxResult>("/mining/admin/import-bybit-xlsx", {
+				method: "POST",
+				body: formData,
+			});
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningTrades") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("hubMiningConfig") });
+		},
+	});
+};
+
+export interface ImportWeexXlsxResult {
+	success: boolean;
+	stats: {
+		total_groups: number;
+		matched_groups: number;
+		unmatched_groups: { uid: string; symbol: string; date: string; reason: string }[];
+		verified_reports: number;
+		skipped_gated_reports: number;
+		total_volume_verified: number;
+		total_rebate_distributed: number;
+		dates_processed: string[];
+	};
+	message: string;
+}
+
+export const useImportWeexXlsx = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		ImportWeexXlsxResult,
+		Error,
+		{ file: File; dryRun?: boolean; marketType?: string }
+	>({
+		mutationFn: async ({ file, dryRun = false, marketType = "futures" }) => {
+			const formData = new FormData();
+			formData.append("file", file);
+			formData.append("dry_run", String(dryRun));
+			formData.append("market_type", marketType);
+			return apiClient<ImportWeexXlsxResult>("/mining/admin/import-weex-xlsx", {
 				method: "POST",
 				body: formData,
 			});
@@ -3169,8 +3344,8 @@ export const useTotpStatus = () => {
 	return useQuery<TotpStatusResponse, Error>({
 		queryKey: authScopedQueryKey("totpStatus"),
 		queryFn: async () => {
-			const res = await apiClient<any>("/auth/2fa/status");
-			return res?.data || res;
+			const res = await apiClient<TotpStatusResponse>("/auth/2fa/status");
+			return unwrapData(res);
 		},
 	});
 };
@@ -3178,10 +3353,10 @@ export const useTotpStatus = () => {
 export const useSetupTotp = () => {
 	return useMutation<TotpSetupResponse, Error>({
 		mutationFn: async () => {
-			const res = await apiClient<any>("/auth/2fa/setup", {
+			const res = await apiClient<TotpSetupResponse>("/auth/2fa/setup", {
 				method: "POST",
 			});
-			return res?.data || res;
+			return unwrapData(res);
 		},
 	});
 };
@@ -3190,11 +3365,11 @@ export const useConfirmTotp = () => {
 	const queryClient = useQueryClient();
 	return useMutation<TotpConfirmResponse, Error, { secret: string; code: string }>({
 		mutationFn: async (payload) => {
-			const res = await apiClient<any>("/auth/2fa/confirm", {
+			const res = await apiClient<TotpConfirmResponse>("/auth/2fa/confirm", {
 				method: "POST",
 				body: JSON.stringify(payload),
 			});
-			return res?.data || res;
+			return unwrapData(res);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("totpStatus") });
@@ -3207,11 +3382,11 @@ export const useDisableTotp = () => {
 	const queryClient = useQueryClient();
 	return useMutation<{ message: string }, Error, TotpDisablePayload>({
 		mutationFn: async (payload) => {
-			const res = await apiClient<any>("/auth/2fa/disable", {
+			const res = await apiClient<{ message: string }>("/auth/2fa/disable", {
 				method: "POST",
 				body: JSON.stringify(payload),
 			});
-			return res?.data || res;
+			return unwrapData(res);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("totpStatus") });
@@ -3224,16 +3399,75 @@ export const useRegenerateBackupCodes = () => {
 	const queryClient = useQueryClient();
 	return useMutation<TotpBackupCodesResponse, Error, TotpRegenerateBackupCodesPayload>({
 		mutationFn: async (payload) => {
-			const res = await apiClient<any>("/auth/2fa/regenerate-backup-codes", {
+			const res = await apiClient<TotpBackupCodesResponse>("/auth/2fa/regenerate-backup-codes", {
 				method: "POST",
 				body: JSON.stringify(payload),
 			});
-			return res?.data || res;
+			return unwrapData(res);
 		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("totpStatus") });
 		},
 	});
 };
+
+// --- Universal Promo Campaign & Quests Hooks ---
+export const useGetPromoStatus = (options?: { refetchInterval?: number; nodeUuid?: string }) => {
+	return useQuery<PromoStatusResponse, Error>({
+		queryKey: authScopedQueryKey("promoStatus", options?.nodeUuid || ""),
+		queryFn: async () => {
+			const query = options?.nodeUuid ? `?node_uuid=${encodeURIComponent(options.nodeUuid)}` : "";
+			const res = await apiClient<PromoStatusResponse>(`/hub/promo/status${query}`);
+			return unwrapData(res);
+		},
+		refetchInterval: options?.refetchInterval ?? 15000,
+	});
+};
+
+export const useClaimPromoQuest = () => {
+	const queryClient = useQueryClient();
+	return useMutation<PromoClaimResponse, Error, PromoClaimRequest>({
+		mutationFn: async (payload) => {
+			const res = await apiClient<PromoClaimResponse>("/hub/promo/claim", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+			return unwrapData(res);
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("promoStatus") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+		},
+	});
+};
+
+export const useGetAdminPromoCampaigns = (enabled: boolean = true) => {
+	return useQuery<PromoCampaignAdmin[], Error>({
+		queryKey: authScopedQueryKey("adminPromoCampaigns"),
+		queryFn: async () => {
+			const res = await apiClient<PromoCampaignAdmin[]>("/hub/promo/admin/campaigns");
+			return unwrapData(res);
+		},
+		enabled,
+	});
+};
+
+export const useCreateOrUpdatePromoCampaign = () => {
+	const queryClient = useQueryClient();
+	return useMutation<PromoCampaignAdmin, Error, PromoCampaignUpsertPayload>({
+		mutationFn: async (payload) => {
+			const res = await apiClient<PromoCampaignAdmin>("/hub/promo/admin/campaigns", {
+				method: "POST",
+				body: JSON.stringify(payload),
+			});
+			return unwrapData(res);
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("adminPromoCampaigns") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("promoStatus") });
+		},
+	});
+};
+
 
 

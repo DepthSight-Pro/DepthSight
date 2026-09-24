@@ -112,6 +112,7 @@ def _user_is_live_eligible(user: models.User) -> bool:
             limits.get("allow_free_bybit_trading", False)
             or limits.get("allow_free_weex_trading", False)
             or limits.get("allow_free_okx_trading", False)
+            or limits.get("allow_free_bitget_trading", False)
         ):
             return True
     return _plan_allows_live_trading(plan)
@@ -146,7 +147,8 @@ async def _get_sharded_active_api_keys_for_user(
             allow_bybit = limits.get("allow_free_bybit_trading", False)
             allow_weex = limits.get("allow_free_weex_trading", False)
             allow_okx = limits.get("allow_free_okx_trading", False)
-            if allow_bybit or allow_weex or allow_okx:
+            allow_bitget = limits.get("allow_free_bitget_trading", False)
+            if allow_bybit or allow_weex or allow_okx or allow_bitget:
                 active_keys = [
                     k
                     for k in active_keys
@@ -159,6 +161,7 @@ async def _get_sharded_active_api_keys_for_user(
                     )
                     or (allow_weex and k.exchange.lower().startswith("weex"))
                     or (allow_okx and k.exchange.lower().startswith("okx"))
+                    or (allow_bitget and k.exchange.lower().startswith("bitget"))
                 ]
 
     return [
@@ -598,7 +601,15 @@ async def _run_command_listener(
                                     allow_okx = limits.get(
                                         "allow_free_okx_trading", False
                                     )
-                                    if allow_bybit or allow_weex or allow_okx:
+                                    allow_bitget = limits.get(
+                                        "allow_free_bitget_trading", False
+                                    )
+                                    if (
+                                        allow_bybit
+                                        or allow_weex
+                                        or allow_okx
+                                        or allow_bitget
+                                    ):
                                         exch = api_key_obj.exchange.lower()
                                         keep = False
                                         if allow_bybit and (
@@ -609,10 +620,12 @@ async def _run_command_listener(
                                             keep = True
                                         elif allow_okx and exch.startswith("okx"):
                                             keep = True
+                                        elif allow_bitget and exch.startswith("bitget"):
+                                            keep = True
 
                                         if not keep:
                                             logger.warning(
-                                                "[Shard %s] Ignoring ACTIVATE_API_KEY for user_id=%s, api_key_id=%s because plan '%s' only allows Bybit/WEEX/OKX key live trading.",
+                                                "[Shard %s] Ignoring ACTIVATE_API_KEY for user_id=%s, api_key_id=%s because plan '%s' only allows Bybit/WEEX/OKX/Bitget key live trading.",
                                                 shard_id,
                                                 user_id,
                                                 api_key_id,
@@ -733,6 +746,57 @@ async def _run_command_listener(
                         else:
                             logger.error(
                                 f"Invalid INITIALIZE_USER_CONTROLLER payload: missing user_id. Payload: {payload}"
+                            )
+
+                    elif command_type == "TEST_NOTIFICATION":
+                        # Handled centrally (not by per-user controllers) so the
+                        # Telegram test works even when the user has no active
+                        # trading controller. Only shard 0 acts to avoid
+                        # duplicate sends in multi-process mode.
+                        if shard_id != 0:
+                            continue
+                        test_chat_id = payload.get("chat_id")
+                        test_user_id = _coerce_int(payload.get("user_id"))
+                        if not test_chat_id:
+                            logger.error(
+                                f"Invalid TEST_NOTIFICATION payload: {payload}"
+                            )
+                        elif telegram_notifier_instance is None:
+                            logger.warning(
+                                "TEST_NOTIFICATION for user_id=%s ignored: TelegramNotifier not available.",
+                                test_user_id,
+                            )
+                        else:
+                            logger.info(
+                                "Handling TEST_NOTIFICATION for user_id=%s, chat_id=%s",
+                                test_user_id,
+                                test_chat_id,
+                            )
+
+                            async def _send_test_notification(
+                                _notifier=telegram_notifier_instance,
+                                _chat_id=str(test_chat_id),
+                                _user_id=test_user_id,
+                            ):
+                                try:
+                                    await _notifier.send_test_message(chat_id=_chat_id)
+                                    logger.info(
+                                        "TEST_NOTIFICATION delivered to chat %s for user_id=%s",
+                                        _chat_id,
+                                        _user_id,
+                                    )
+                                except Exception as e_test:
+                                    logger.error(
+                                        "Failed to send TEST_NOTIFICATION to chat %s for user_id=%s: %s",
+                                        _chat_id,
+                                        _user_id,
+                                        e_test,
+                                        exc_info=True,
+                                    )
+
+                            asyncio.create_task(
+                                _send_test_notification(),
+                                name=f"TestNotify_{test_user_id}",
                             )
 
                     # Other commands are handled by individual controllers

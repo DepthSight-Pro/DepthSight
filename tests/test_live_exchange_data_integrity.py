@@ -1,7 +1,7 @@
 # tests/test_live_exchange_data_integrity.py
 """
 Live Exchange Data Integrity & Visual Block Pipeline Verification.
-Connects directly to Binance, Bybit, OKX, and Weex public market APIs,
+Connects directly to Binance, Bybit, OKX, Weex, and Bitget public market APIs,
 downloads live candlestick streams, and evaluates all 30+ visual builder blocks,
 multi-timeframe confluences, position management lifecycle, and dynamic parameter links
 to guarantee complete data compatibility and zero runtime exceptions on live feeds.
@@ -30,11 +30,17 @@ load_dotenv()
 
 # We define a registry of EVERY block type in the system.
 # This ensures that ALL blocks are verified against live exchange data.
+# NOTE: entries must use production lowercase block types (the exact keys of
+# BaseStrategy.condition_checkers). UPPERCASE aliases never reach a checker and
+# only produce "Unknown node_type", which this test forbids.
 ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     # --- OSCILLATORS ---
-    {"type": "RSI", "params": {"period": 14, "operator": "lt", "value": 30.0}},
     {
-        "type": "MACD",
+        "type": "rsi_condition",
+        "params": {"period": 14, "operator": "lt", "value": 30.0},
+    },
+    {
+        "type": "macd_condition",
         "params": {
             "fast_period": 12,
             "slow_period": 26,
@@ -43,60 +49,85 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
         },
     },
     {
-        "type": "STOCHASTIC",
+        "type": "stochastic_condition",
         "params": {
             "k_period": 14,
             "d_period": 3,
             "smooth_k": 3,
             "operator": "lt",
-            "threshold": 20,
+            "value": 20,
+            "line": "k",
         },
     },
     # --- VOLATILITY & RANGE ---
     {
-        "type": "BOLLINGER",
-        "params": {
-            "period": 20,
-            "std_dev": 2.0,
-            "operator": "cross_above",
-            "band": "lower",
-        },
+        "type": "bollinger_bands_condition",
+        "params": {"period": 20, "std_dev": 2.0, "check_type": "price_below_lower"},
     },
-    {"type": "NATR", "params": {"period": 14, "operator": "gt", "value": 1.0}},
     {
-        "type": "VOLATILITY_SQUEEZE",
-        "params": {
-            "bb_period": 20,
-            "bb_std": 2.0,
-            "kc_period": 20,
-            "kc_mult": 1.5,
-            "operator": "sqz_on",
-        },
+        "type": "natr_filter",
+        "params": {"period": 14, "operator": "gt", "value": 0.5},
     },
-    {"type": "VOLATILITY", "params": {"threshold_percent": 1.0}},
+    {
+        "type": "volatility_squeeze",
+        "params": {"lookback_candles": 20, "squeeze_ratio": 0.6},
+    },
+    {
+        "type": "volatility_filter",
+        "params": {"indicator": "ATR", "operator": "gt", "value": 0.0},
+    },
     # --- TREND & MOMENTUM ---
-    {"type": "ADX", "params": {"period": 14, "threshold": 25, "operator": "gt"}},
     {
-        "type": "MA_CROSS",
-        "params": {"fast_period": 10, "slow_period": 50, "ma_type": "sma"},
+        "type": "adx_filter",
+        "params": {"period": 14, "threshold": 25, "operator": "gt"},
     },
     {
-        "type": "TREND_DIRECTION",
+        "type": "ma_cross_condition",
+        "params": {"fast_period": 10, "slow_period": 50},
+    },
+    {
+        "type": "trend_direction",
         "params": {"fast_period": 10, "slow_period": 50, "required_trend": "LONG"},
     },
-    {"type": "TREND_STRENGTH", "params": {"min_strength": 0.5}},
+    {"type": "trend_filter", "params": {"indicator": "ADX", "threshold": 25.0}},
     # --- PRICE ACTION & LEVELS ---
-    {"type": "PRICE_ACTION", "params": {"pattern": "pinbar"}},
-    {"type": "PRICE_CONSOLIDATION", "params": {"period": 20, "threshold_pct": 1.0}},
-    {"type": "LEVEL_TOUCH", "params": {"lookback": 50, "touch_range_pct": 0.1}},
-    {"type": "RETURN_TO_LEVEL", "params": {"lookback": 50, "return_range_pct": 0.2}},
     {
-        "type": "PRICE_VS_LEVEL",
-        "params": {"level_type": "rolling_high", "lookback": 50, "operator": "lt"},
+        "type": "price_action_analyzer",
+        "params": {"structure_type": "higher_lows", "lookback_candles": 30},
     },
-    {"type": "LOCAL_LEVEL", "params": {"lookback": 50, "level_type": "support"}},
     {
-        "type": "VALUE_COMPARISON",
+        "type": "price_consolidation",
+        "params": {"lookback_period": 20, "max_range_atr": 1.0},
+    },
+    {
+        "type": "level_touch_analyzer",
+        "params": {
+            "lookback_candles": 50,
+            "touch_tolerance_atr": 0.15,
+            # Far-away constant level: must evaluate cleanly to False.
+            "level_price": 1e12,
+        },
+    },
+    {
+        "type": "return_to_level",
+        "params": {
+            # Constant level resolvable without upstream block_result links.
+            "level_source": {"source": "constant", "value": 1e12},
+            "retest_type": "touch",
+            "approach_direction": "any",
+        },
+    },
+    {
+        "type": "price_vs_level",
+        "params": {
+            "price_source": {"source": "candle", "key": "close", "shift": 0},
+            "operator": "gt",
+            "level_source": {"source": "constant", "value": 0},
+        },
+    },
+    {"type": "local_level", "params": {"lookback": 50, "level_type": "low"}},
+    {
+        "type": "value_comparison",
         "params": {
             "left": {"source": "candle", "key": "close"},
             "operator": "gt",
@@ -105,37 +136,51 @@ ALL_BLOCKS_REGISTRY: List[Dict[str, Any]] = [
     },
     # --- MICROSTRUCTURE & TAPE ---
     {
-        "type": "TAPE_CONDITION",
+        "type": "tape_condition",
         "params": {
             "metric": "delta_volume",
-            "window_sec": "30",
+            "window_sec": 30,
             "operator": "gt",
             "threshold": 0,
         },
     },
     {
-        "type": "ORDER_BOOK_ZONE",
-        "params": {"metric": "obi_1p", "operator": "gt", "threshold": 0},
+        "type": "order_book_zone",
+        "params": {"side": "bids", "range_type": "Percentage", "range_value": 1.0},
     },
     {
-        "type": "OPEN_INTEREST",
+        "type": "open_interest",
         "params": {"analyze": "absolute_value", "operator": "gt", "value": 0},
     },
     # --- MARKET FILTERS ---
-    {"type": "TRADING_SESSION", "params": {"allowed_sessions": ["London", "New York"]}},
-    {"type": "MARKET_ACTIVITY", "params": {"min_trades": 100}},
-    {"type": "BTC_STATE", "params": {"required_state": "Any"}},
     {
-        "type": "CORRELATION",
+        "type": "trading_session",
+        "params": {"filter_mode": "session", "session": "london"},
+    },
+    {"type": "market_activity", "params": {}},
+    {"type": "btc_state_filter", "params": {"required_state": "Any"}},
+    {
+        "type": "correlation",
         "params": {"lookback": 20, "operator": "gt", "value": -1.0},
     },
     # --- FOUNDATIONS ---
-    {"type": "CLASSIC_PATTERN", "params": {"pattern_type": "double_bottom"}},
-    {"type": "VOLUME_CONFIRMATION", "params": {"period": 20, "threshold": 1.5}},
-    {"type": "ROUND_NUMBER_LEVEL", "params": {"proximity_pct": 0.1}},
-    {"type": "L2_MICROSTRUCTURE", "params": {"imbalance_threshold": 0.2}},
-    {"type": "TAPE_ANALYSIS", "params": {"window_sec": 30}},
+    {"type": "classic_pattern", "params": {"pattern_name": "pin_bar", "side": "ANY"}},
+    {
+        "type": "volume_confirmation",
+        "params": {"lookback_period": 20, "multiplier": 1.5},
+    },
+    {
+        "type": "round_level",
+        "params": {"proximity_type": "percentage", "proximity_value": 0.1},
+    },
+    {"type": "l2_microstructure", "params": {}},
+    {"type": "tape_analysis", "params": {"window_sec": 30}},
 ]
+
+# Blocks with no tape feed in this harness. The harness carries no tape_*
+# columns, so in live mode these must fail closed (False + error) — never
+# True-with-Nones.
+TAPE_BLOCK_TYPES = {"tape_condition", "tape_analysis"}
 
 
 def _get_api_keys(exchange: str):
@@ -157,6 +202,10 @@ def _get_api_keys(exchange: str):
         return os.getenv("TESTNET_WEEX_API_KEY", ""), os.getenv(
             "TESTNET_WEEX_API_SECRET", ""
         )
+    elif "bitget" in exchange:
+        return os.getenv("TESTNET_BITGET_API_KEY", ""), os.getenv(
+            "TESTNET_BITGET_API_SECRET", ""
+        )
     return "", ""
 
 
@@ -169,6 +218,7 @@ def _get_api_keys(exchange: str):
         ("bybit", "futures_usdtm", "BTCUSDT"),
         ("okx", "futures_usdtm", "BTC/USDT:USDT"),
         ("weex", "futures_usdtm", "BTCUSDT"),
+        ("bitget", "futures_usdtm", "BTCUSDT"),
     ],
 )
 async def test_all_visual_blocks_pipeline_no_fallbacks(
@@ -237,14 +287,73 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
         )
         df_klines = df_klines.dropna(subset=["close", "high", "low"]).tail(300)
 
-        # Precompute common technical series for live test
-        df_klines["SMA_10"] = df_klines["close"].rolling(10).mean().bfill()
-        df_klines["SMA_20"] = df_klines["close"].rolling(20).mean().bfill()
-        df_klines["SMA_50"] = df_klines["close"].rolling(50).mean().bfill()
-        df_klines["RSI_14"] = 50.0
-        df_klines["ADX_14"] = 28.0
-        df_klines["BBW_20_2"] = 0.04
-        df_klines["MACD_hist_12_26_9"] = 0.5
+        # Compute indicators with the SAME functions the live DataConsumer
+        # pipeline uses (bot_module.utils + pandas_ta) — never synthetic
+        # constants, so a broken pipeline cannot be masked by the fixture.
+        from bot_module.utils import (
+            add_relative_volume,
+            add_volume_percentile_rank,
+            calculate_scalper_natr,
+        )
+
+        df_klines.ta.sma(length=10, append=True)
+        df_klines.ta.sma(length=20, append=True)
+        df_klines.ta.sma(length=50, append=True)
+        df_klines.ta.rsi(length=14, append=True)
+        df_klines.ta.adx(length=14, append=True)
+        df_klines.ta.stoch(k=14, d=3, smooth_k=3, append=True)
+        df_klines.ta.bbands(length=20, std=2, append=True)
+        df_klines.ta.macd(fast=12, slow=26, signal=9, append=True)
+        df_klines.ta.atr(length=14, append=True)
+        df_klines = calculate_scalper_natr(df_klines, period=14)
+        natr_14_live = float(df_klines["natr"].iloc[-1])
+        df_klines = calculate_scalper_natr(df_klines, period=30)
+        df_klines = add_relative_volume(df_klines, period=20)
+        df_klines = add_volume_percentile_rank(df_klines, period=1000, percentile=90)
+
+        def _live_val(col: str, default=None):
+            if col in df_klines.columns:
+                val = df_klines[col].iloc[-1]
+                if pd.notna(val):
+                    return float(val)
+            # pandas_ta names the ATR column ATRr_14, not ATR_14.
+            if col in ("ATR_14", "atr"):
+                for alt in ("ATRr_14", "atr_14"):
+                    if alt in df_klines.columns:
+                        val = df_klines[alt].iloc[-1]
+                        if pd.notna(val):
+                            return float(val)
+            return default
+
+        live_indicators = {
+            "SMA_10": _live_val("SMA_10"),
+            "SMA_20": _live_val("SMA_20"),
+            "SMA_50": _live_val("SMA_50"),
+            "RSI_14": _live_val("RSI_14"),
+            "ADX_14": _live_val("ADX_14"),
+            "STOCHk_14_3_3": _live_val("STOCHk_14_3_3"),
+            "STOCHd_14_3_3": _live_val("STOCHd_14_3_3"),
+            "BBL_20_2.0": _live_val("BBL_20_2.0"),
+            "BBU_20_2.0": _live_val("BBU_20_2.0"),
+            "BBB_20_2.0": _live_val("BBB_20_2.0"),
+            "MACD_12_26_9": _live_val("MACD_12_26_9"),
+            "MACDh_12_26_9": _live_val("MACDh_12_26_9"),
+            "MACDs_12_26_9": _live_val("MACDs_12_26_9"),
+            "ATR_14": _live_val("ATR_14"),
+            "atr": _live_val("ATR_14"),
+            "NATR_14": natr_14_live,
+            "natr_14": natr_14_live,
+            "NATR_30": _live_val("natr"),
+            "natr": _live_val("natr"),
+            "relative_volume": _live_val("relative_volume"),
+            "is_volume_spike": bool(df_klines["is_volume_spike"].iloc[-1])
+            if "is_volume_spike" in df_klines.columns
+            else None,
+        }
+        missing_indicators = [k for k, v in live_indicators.items() if v is None]
+        assert not missing_indicators, (
+            f"Live indicator computation failed on {exchange} for: {missing_indicators}"
+        )
 
         # Multi-timeframe live resampling
         resample_agg = {
@@ -316,23 +425,14 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
             "high": float(df_klines["high"].iloc[-1]),
             "low": float(df_klines["low"].iloc[-1]),
             "close": last_price,
-            "atr": 100.0,
-            "natr": 1.5,
             "tick_size": 0.1,
-            "relative_volume": 2.0,
-            "is_volume_spike": True,
             "current_candle_index": len(df_klines) - 1,
             "timestamp_dt": datetime.now(timezone.utc),
-            "tape_delta_volume_usd_30s": 250000.0,
-            "obi_1p": 0.8,
             "is_live_mode": True,
-            "SMA_10": float(df_klines["SMA_10"].iloc[-1]),
-            "SMA_20": float(df_klines["SMA_20"].iloc[-1]),
-            "SMA_50": float(df_klines["SMA_50"].iloc[-1]),
-            "RSI_14": 50.0,
-            "ADX_14": 28.0,
-            "BBW_20_2": 0.04,
-            "MACD_hist_12_26_9": 0.5,
+            # Every indicator below is computed from the live klines above —
+            # no synthetic constants. A missing pipeline input must surface
+            # as False + error, never as a neutral default.
+            **live_indicators,
         }
 
         # 4. Test EVERY block in the registry via the core routing engine
@@ -348,12 +448,8 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
                     context={},
                 )
 
-                if "error" in details:
-                    error_msg = details["error"].lower()
-                    if "not enough" not in error_msg and "unknown" not in error_msg:
-                        failed_blocks.append(
-                            f"{block_type}: Возвращена ошибка: {details['error']}"
-                        )
+                # Normalize numpy bools so identity checks below are exact.
+                result = bool(result)
 
                 for key, val in details.items():
                     if isinstance(val, float) and pd.isna(val):
@@ -361,6 +457,39 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
                             f"{block_type}: Индикатор '{key}' вернул NaN. Details: {details}"
                         )
                         break
+
+                if "error" in details:
+                    err_str = str(details["error"])
+                    if "Unknown node_type" in err_str:
+                        failed_blocks.append(
+                            f"{block_type}: незарегистрированный тип блока: {err_str}"
+                        )
+                    elif block_type in TAPE_BLOCK_TYPES:
+                        # No tape feed in this harness: must fail closed.
+                        if result is not False or "missing" not in err_str.lower():
+                            failed_blocks.append(
+                                f"{block_type}: должен дать False + missing-error "
+                                f"без ленты, получено result={result}: {details}"
+                            )
+                    else:
+                        error_msg = err_str.lower()
+                        if (
+                            "not enough" not in error_msg
+                            and "missing" not in error_msg
+                            and "not available" not in error_msg
+                            and "could not resolve" not in error_msg
+                        ):
+                            failed_blocks.append(
+                                f"{block_type}: Возвращена ошибка: {details['error']}"
+                            )
+                elif block_type not in TAPE_BLOCK_TYPES and result is True:
+                    # A passing block must carry measured values, never Nones.
+                    none_keys = [k for k, v in details.items() if v is None]
+                    if none_keys:
+                        failed_blocks.append(
+                            f"{block_type}: True с None в details "
+                            f"(маскировка дефолта): {none_keys}"
+                        )
 
             except Exception as e:
                 failed_blocks.append(f"{block_type}: Падение с исключением: {e}")
@@ -374,16 +503,15 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
                 "children": [
                     {
                         "id": "h_rsi",
-                        "type": "RSI",
+                        "type": "rsi_condition",
                         "params": {"period": 14, "operator": "gt", "value": 30.0},
                     },
                     {
                         "id": "h_ma",
-                        "type": "MA_CROSS",
+                        "type": "ma_cross_condition",
                         "params": {
                             "fast_period": 10,
                             "slow_period": 50,
-                            "ma_type": "sma",
                         },
                     },
                 ],
@@ -497,6 +625,134 @@ async def test_all_visual_blocks_pipeline_no_fallbacks(
                 + "\n".join(failed_blocks)
             )
 
+    finally:
+        await executor.close()
+        await session.close()
+
+
+# Blocks below REQUIRE pair_info keys (no kline-df fallback). With an empty
+# live pair_info each of them must return False + error — never True and never
+# a neutral default (relative_volume 1.0, hour 12, atr 0).
+EMPTY_TRAP_BLOCKS: List[Dict[str, Any]] = [
+    {"id": "t_relvol", "type": "rel_vol_filter", "params": {}},
+    {"id": "t_activity", "type": "market_activity", "params": {}},
+    {
+        "id": "t_tapec",
+        "type": "tape_condition",
+        "params": {
+            "metric": "delta_volume",
+            "window_sec": 30,
+            "operator": "gt",
+            "threshold": 0,
+        },
+    },
+    {"id": "t_tapea", "type": "tape_analysis", "params": {"window_sec": 30}},
+    {
+        "id": "t_obz",
+        "type": "order_book_zone",
+        "params": {"side": "bids", "range_type": "Percentage", "range_value": 1.0},
+    },
+    {"id": "t_l2", "type": "l2_microstructure", "params": {}},
+    {
+        "id": "t_sess",
+        "type": "trading_session",
+        "params": {"filter_mode": "session", "session": "london"},
+    },
+    {
+        "id": "t_vol",
+        "type": "volatility_filter",
+        "params": {"indicator": "ATR", "operator": "gt", "value": 0.0},
+    },
+]
+
+
+@pytest.mark.live_api
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exchange, market_type, symbol",
+    [
+        ("binance", "spot", "BTC/USDT"),
+        ("bybit", "futures_usdtm", "BTCUSDT"),
+        ("okx", "futures_usdtm", "BTC/USDT:USDT"),
+        ("weex", "futures_usdtm", "BTCUSDT"),
+        ("bitget", "futures_usdtm", "BTCUSDT"),
+    ],
+)
+@pytest.mark.parametrize("block_config", EMPTY_TRAP_BLOCKS, ids=lambda b: b["id"])
+async def test_empty_pair_info_fails_closed_on_live_data(
+    exchange: str, market_type: str, symbol: str, block_config: Dict[str, Any]
+):
+    """Empty live pair_info must fail closed with an explicit error."""
+    api_key, api_secret = _get_api_keys(exchange)
+    import aiohttp
+
+    session = aiohttp.ClientSession()
+    executor = create_exchange_executor(
+        exchange=exchange,
+        api_key=api_key or "",
+        api_secret=api_secret or "",
+        session=session,
+        market_type=market_type,
+    )
+
+    try:
+        try:
+            ohlcv = await asyncio.wait_for(
+                executor.fetch_ohlcv(symbol, "1m", limit=300), timeout=10.0
+            )
+        except Exception:
+            ohlcv = None
+
+        if ohlcv and len(ohlcv) > 0:
+            df_klines = pd.DataFrame(
+                ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+            )
+            df_klines["timestamp"] = pd.to_datetime(
+                df_klines["timestamp"], unit="ms", utc=True
+            )
+            df_klines.set_index("timestamp", inplace=True)
+        else:
+            end_dt = datetime.now(timezone.utc)
+            start_dt = end_dt - timedelta(minutes=300)
+            df_klines = await download_klines(
+                symbol=symbol.replace("/", "").replace(":USDT", ""),
+                timeframe="1m",
+                start_dt=start_dt,
+                end_dt=end_dt,
+                market_type=market_type,
+            )
+
+        assert df_klines is not None and not df_klines.empty, (
+            f"Failed to retrieve live klines for {symbol} on {exchange}"
+        )
+        df_klines = df_klines.dropna(subset=["close", "high", "low"]).tail(300)
+
+        strategy = VisualBuilderStrategy(params={"enabled": True})
+        pair_info = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "market_type": market_type,
+            "candle_timeframe": "1m",
+            "is_live_mode": True,
+        }
+        market_data = {"kline_1m": df_klines}
+
+        result, trace = strategy._evaluate_condition_tree(
+            node=block_config,
+            pair_info=pair_info,
+            market_data=market_data,
+            prev_pair_info={},
+            context={},
+        )
+        details = trace.get("details", {})
+        assert bool(result) is False, (
+            f"Block {block_config['type']} passed on empty live pair_info "
+            f"on {exchange}: {details}"
+        )
+        assert "error" in details, (
+            f"Block {block_config['type']} failed without an error on empty "
+            f"live pair_info on {exchange}: {details}"
+        )
     finally:
         await executor.close()
         await session.close()

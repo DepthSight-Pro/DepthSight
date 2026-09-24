@@ -28,11 +28,11 @@ export function LanguageSwitcher() {
 				<Button
 					variant="ghost"
 					size="icon"
-					className={cn("rounded-lg")} // Match NavItem style
+					className={cn("h-8 w-8 rounded-lg text-white/50 hover:text-white hover:bg-white/5 transition-colors")}
 					onClick={handleToggle}
 				>
 					{/* Display current language abbreviation */}
-					<span className="text-sm font-semibold">
+					<span className="text-[11px] font-bold font-mono">
 						{currentLang.toUpperCase()}
 					</span>
 				</Button>

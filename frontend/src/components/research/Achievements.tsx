@@ -62,6 +62,7 @@ import {
 	Shuffle,
 	SlidersHorizontal,
 	Sparkles,
+	Star,
 	TestTube,
 	TestTubes,
 	Ticket,
@@ -73,17 +74,10 @@ import {
 	WandSparkles,
 	Zap,
 } from "lucide-react";
-import type React from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { AppLoader } from "@/components/shared/AppLoader";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Segmented } from "@/components/ui/quant-ui";
 import { useAuth } from "@/context/AuthContext";
 import { useMyGenes } from "@/lib/api";
 import { apiClient } from "@/lib/apiClient";
@@ -191,30 +185,18 @@ const iconMap: { [key: string]: React.ElementType } = {
 	mining_diamond_staker: HandHeart,
 };
 
-const getRarityColor = (rarity: string) => {
-	switch (rarity?.toLowerCase()) {
-		case "legendary":
-			return "from-yellow-500 to-orange-500";
-		case "epic":
-			return "from-purple-500 to-pink-500";
-		case "rare":
-			return "from-blue-500 to-cyan-500";
-		default:
-			return "from-gray-500 to-gray-600";
-	}
+const rarityColor: Record<string, string> = {
+	common: "#8b93a7",
+	rare: "#00d4ff",
+	epic: "#a78bfa",
+	legendary: "#ffb547",
 };
 
-const getRarityBadgeClass = (rarity: string) => {
-	switch (rarity?.toLowerCase()) {
-		case "legendary":
-			return "bg-yellow-500/10 text-yellow-500 border-yellow-500/30";
-		case "epic":
-			return "bg-purple-500/10 text-purple-500 border-purple-500/30";
-		case "rare":
-			return "bg-blue-500/10 text-blue-500 border-blue-500/30";
-		default:
-			return "bg-gray-500/10 text-gray-500 border-gray-500/30";
-	}
+const rarityIcon: Record<string, React.ElementType> = {
+	common: Medal,
+	rare: Star,
+	epic: Crown,
+	legendary: Trophy,
 };
 
 const Achievements = () => {
@@ -240,6 +222,26 @@ const Achievements = () => {
 		enabled: !!user,
 	});
 
+	const [filter, setFilter] = useState<"all" | "unlocked" | "locked">("all");
+
+	const unlockedAchievementIds = useMemo(
+		() => new Set(userAchievements?.map((ua) => ua.achievement_id)),
+		[userAchievements],
+	);
+	const unlockedCount = userAchievements?.length || 0;
+	const totalCount = allAchievements?.length || 0;
+
+	const filteredAchievements = useMemo(() => {
+		if (!allAchievements) return [];
+		if (filter === "unlocked") {
+			return allAchievements.filter((a) => unlockedAchievementIds.has(a.id));
+		}
+		if (filter === "locked") {
+			return allAchievements.filter((a) => !unlockedAchievementIds.has(a.id));
+		}
+		return allAchievements;
+	}, [allAchievements, filter, unlockedAchievementIds]);
+
 	if (isLoadingAll || isLoadingUser) {
 		return (
 			<div className="flex items-center justify-center h-[60vh]">
@@ -247,12 +249,6 @@ const Achievements = () => {
 			</div>
 		);
 	}
-
-	const unlockedAchievementIds = new Set(
-		userAchievements?.map((ua) => ua.achievement_id),
-	);
-	const unlockedCount = userAchievements?.length || 0;
-	const totalCount = allAchievements?.length || 0;
 
 	return (
 		<div className="space-y-6">
@@ -264,164 +260,147 @@ const Achievements = () => {
 			/>
 
 			{/* Achievement Stats */}
-			<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-				<Card>
-					<CardContent className="pt-6 text-center">
-						<div className="text-3xl font-bold text-primary">
-							{unlockedCount}
-						</div>
-						<div className="text-sm text-muted-foreground">
-							{t("achievements.unlocked")}
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="pt-6 text-center">
-						<div className="text-3xl font-bold text-muted-foreground">
-							{totalCount - unlockedCount}
-						</div>
-						<div className="text-sm text-muted-foreground">
-							{t("achievements.locked")}
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="pt-6 text-center">
-						<div className="text-3xl font-bold text-green-500">
-							{totalCount > 0
-								? Math.round((unlockedCount / totalCount) * 100)
-								: 0}
-							%
-						</div>
-						<div className="text-sm text-muted-foreground">
-							{t("achievements.progress")}
-						</div>
-					</CardContent>
-				</Card>
-				<Card>
-					<CardContent className="pt-6 text-center">
-						<div className="text-3xl font-bold text-yellow-500">
-							{user?.xp || 0}
-						</div>
-						<div className="text-sm text-muted-foreground">
-							{t("achievements.totalXP")}
-						</div>
-					</CardContent>
-				</Card>
+			<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+				<div className="glass rounded-2xl border border-white/10 p-4 text-center">
+					<div className="font-mono text-2xl font-bold text-cyan">
+						{unlockedCount}
+					</div>
+					<div className="text-[10.5px] uppercase tracking-wider text-white/40 mt-1 font-mono">
+						{t("achievements.unlocked", "Unlocked")}
+					</div>
+				</div>
+				<div className="glass rounded-2xl border border-white/10 p-4 text-center">
+					<div className="font-mono text-2xl font-bold text-white/40">
+						{totalCount - unlockedCount}
+					</div>
+					<div className="text-[10.5px] uppercase tracking-wider text-white/40 mt-1 font-mono">
+						{t("achievements.locked", "Locked")}
+					</div>
+				</div>
+				<div className="glass rounded-2xl border border-white/10 p-4 text-center">
+					<div className="font-mono text-2xl font-bold text-emerald-400">
+						{totalCount > 0
+							? Math.round((unlockedCount / totalCount) * 100)
+							: 0}%
+					</div>
+					<div className="text-[10.5px] uppercase tracking-wider text-white/40 mt-1 font-mono">
+						{t("achievements.progress", "Progress")}
+					</div>
+				</div>
+				<div className="glass rounded-2xl border border-white/10 p-4 text-center">
+					<div className="font-mono text-2xl font-bold text-amber-400">
+						{(user?.xp || 0).toLocaleString()}
+					</div>
+					<div className="text-[10.5px] uppercase tracking-wider text-white/40 mt-1 font-mono">
+						{t("achievements.totalXP", "Total XP")}
+					</div>
+				</div>
+			</div>
+
+			{/* Filter Header */}
+			<div className="flex items-center justify-between gap-3 flex-wrap pt-2">
+				<div className="text-xs font-semibold text-white/60 uppercase tracking-wider font-mono">
+					{t("achievementsListTitle", "Achievements")} ({filteredAchievements.length})
+				</div>
+				<Segmented
+					size="sm"
+					value={filter}
+					onChange={(v) => setFilter(v as "all" | "unlocked" | "locked")}
+					options={[
+						{ value: "all", label: `${t("filterAll", "All")} (${totalCount})` },
+						{ value: "unlocked", label: `${t("filterUnlocked", "Unlocked")} (${unlockedCount})` },
+						{ value: "locked", label: `${t("filterLocked", "Locked")} (${totalCount - unlockedCount})` },
+					]}
+				/>
 			</div>
 
 			{/* Achievements Grid */}
-			<TooltipProvider>
-				<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-					{allAchievements?.map((achievement) => {
-						const isUnlocked = unlockedAchievementIds.has(achievement.id);
-						const Icon = iconMap[achievement.id] || Award;
-						const rarityGradient = getRarityColor(achievement.rarity);
-						const userAchievement = userAchievements?.find(
-							(ua) => ua.achievement_id === achievement.id,
-						);
+			<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+				{filteredAchievements.map((achievement) => {
+					const isUnlocked = unlockedAchievementIds.has(achievement.id);
+					const rKey = achievement.rarity?.toLowerCase() || "common";
+					const c = rarityColor[rKey] || "#8b93a7";
+					const Icon = iconMap[achievement.id] || rarityIcon[rKey] || Award;
+					const userAchievement = userAchievements?.find(
+						(ua) => ua.achievement_id === achievement.id,
+					);
 
-						return (
-							<Tooltip key={achievement.id}>
-								<TooltipTrigger asChild>
-									<Card
-										className={cn(
-											"relative overflow-hidden transition-all cursor-pointer hover:scale-105",
-											isUnlocked
-												? "border-2 shadow-lg"
-												: "opacity-50 grayscale",
-										)}
-									>
-										{/* Rarity gradient top border */}
-										{isUnlocked && (
-											<div
-												className={cn(
-													"absolute top-0 left-0 right-0 h-1 bg-gradient-to-r",
-													rarityGradient,
-												)}
-											/>
-										)}
+					return (
+						<div
+							key={achievement.id}
+							className={cn(
+								"glass group relative overflow-hidden rounded-2xl p-4 flex items-center gap-4 transition-all hover:-translate-y-0.5",
+								!isUnlocked && "opacity-50 grayscale hover:opacity-80 hover:grayscale-0 transition-opacity",
+							)}
+						>
+							{/* Ambient glow in top-right */}
+							<div
+								className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl opacity-25"
+								style={{ background: c }}
+							/>
 
-										<CardContent className="p-6 flex flex-col items-center justify-center space-y-3">
-											{/* Icon */}
-											<div
-												className={cn(
-													"relative p-4 rounded-full",
-													isUnlocked
-														? cn("bg-gradient-to-br", rarityGradient)
-														: "bg-muted",
-												)}
-											>
-												{isUnlocked ? (
-													<Icon className="w-8 h-8 text-white" />
-												) : (
-													<Lock className="w-8 h-8 text-muted-foreground" />
-												)}
+							{/* Icon container with rarity border and neon glow */}
+							<div
+								className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border transition-all"
+								style={{
+									borderColor: c + "55",
+									background: c + "14",
+									boxShadow: isUnlocked ? `0 0 24px -6px ${c}` : undefined,
+								}}
+							>
+								{isUnlocked ? (
+									<Icon size={22} style={{ color: c }} />
+								) : (
+									<Lock size={18} className="text-white/40" />
+								)}
+							</div>
 
-												{/* Sparkle effect for unlocked */}
-												{isUnlocked && (
-													<Sparkles className="absolute -top-1 -right-1 w-4 h-4 text-yellow-400 animate-pulse" />
-												)}
-											</div>
-
-											{/* XP Badge */}
-											<Badge
-												variant={isUnlocked ? "default" : "secondary"}
-												className="text-xs"
-											>
-												+{achievement.xp_reward} XP
-											</Badge>
-
-											{/* Date unlocked */}
-											{isUnlocked && userAchievement && (
-												<div className="text-xs text-muted-foreground text-center">
-													{new Date(
-														userAchievement.unlocked_at,
-													).toLocaleDateString()}
-												</div>
-											)}
-										</CardContent>
-									</Card>
-								</TooltipTrigger>
-								<TooltipContent side="bottom" className="max-w-xs">
-									<div className="space-y-2">
-										<div className="font-bold flex items-center gap-2">
-											{t(`${achievement.id}.name`, {
-												defaultValue: achievement.name,
-											})}
-											<Badge
-												variant="outline"
-												className={cn(
-													"text-xs",
-													getRarityBadgeClass(achievement.rarity),
-												)}
-											>
-												{achievement.rarity}
-											</Badge>
-										</div>
-										<p className="text-sm text-muted-foreground">
-											{t(`${achievement.id}.description`, {
-												defaultValue: achievement.description,
-											})}
-										</p>
-										{isUnlocked ? (
-											<div className="text-xs text-green-500 flex items-center gap-1">
-												<Award className="w-3 h-3" />
-												{t("achievements.tooltip.unlocked")}
-											</div>
-										) : (
-											<div className="text-xs text-muted-foreground flex items-center gap-1">
-												<Lock className="w-3 h-3" />
-												{t("achievements.tooltip.locked")}
-											</div>
-										)}
+							{/* Text block */}
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center justify-between gap-2">
+									<span className="text-[13px] font-semibold text-white truncate">
+										{t(`${achievement.id}.name`, {
+											defaultValue: achievement.name,
+										})}
+									</span>
+									<div className="flex items-center gap-1.5 shrink-0">
+										<span
+											className="text-[9px] uppercase tracking-wider font-bold font-mono px-1.5 py-0.5 rounded border leading-none"
+											style={{
+												color: c,
+												borderColor: c + "40",
+												background: c + "12",
+											}}
+										>
+											{achievement.rarity}
+										</span>
+										<span className="text-[10px] font-mono text-cyan/90 font-medium">
+											+{achievement.xp_reward} XP
+										</span>
 									</div>
-								</TooltipContent>
-							</Tooltip>
-						);
-					})}
-				</div>
-			</TooltipProvider>
+								</div>
+
+								<div className="text-[11px] text-white/50 mt-1 leading-relaxed line-clamp-2">
+									{t(`${achievement.id}.description`, {
+										defaultValue: achievement.description,
+									})}
+								</div>
+
+								{isUnlocked && userAchievement && (
+									<div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono">
+										<CheckCircle2 className="w-3 h-3" />
+										<span>
+											{new Date(
+												userAchievement.unlocked_at,
+											).toLocaleDateString()}
+										</span>
+									</div>
+								)}
+							</div>
+						</div>
+					);
+				})}
+			</div>
 		</div>
 	);
 };

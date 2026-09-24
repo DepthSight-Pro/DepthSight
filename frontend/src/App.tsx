@@ -25,7 +25,6 @@ import { WebSocketProvider } from "@/context/WebSocketProvider";
 import AdminRoute from "./components/auth/AdminRoute";
 import { GeneDiscoveryNotification } from "./components/genome/GeneDiscoveryNotification";
 import OnboardingTutorial from "./components/OnboardingTutorial";
-import { PaperModeBanner } from "./components/shared/PaperModeBanner";
 import HftDashboardPage from "./features/hft-dashboard/HftDashboardPage";
 import AccountPage from "./pages/Account";
 import AffiliateDashboard from "./pages/AffiliateDashboard";
@@ -44,6 +43,7 @@ import ErrorLogsPage from "./pages/admin/ErrorLogsPage";
 import PlatformHealthPage from "./pages/admin/PlatformHealthPage";
 import DataPipelinePage from "./pages/admin/DataPipelinePage";
 import AdminMiningPage from "./pages/admin/AdminMiningPage";
+import AdminPromoPage from "./pages/admin/AdminPromoPage";
 import BacktestViewerPage from "./pages/BacktestViewer";
 import CommunityHub from "./pages/CommunityHub";
 import ConfirmEmailPage from "./pages/ConfirmEmail";
@@ -205,6 +205,10 @@ function App() {
 																path="mining"
 																element={<AdminMiningPage />}
 															/>
+															<Route
+																path="promo"
+																element={<AdminPromoPage />}
+															/>
 														</Route>
 													</Route>
 
@@ -238,7 +242,6 @@ function App() {
 															path="/discovery"
 															element={<GeneticCommandCenter />}
 														/>
-														<Route path="/model-lab" element={<MLCorePage />} />
 														<Route path="/logs" element={<EventLog />} />
 														<Route path="/settings" element={<Settings />} />
 														<Route path="/account" element={<AccountPage />} />
@@ -258,6 +261,10 @@ function App() {
 														/>
 														{/* Diagnostic / Admin only separate pages */}
 														<Route element={<AdminRoute />}>
+														<Route	
+															path="/model-lab"	
+															element={<MLCorePage />}	
+														/>	
 															<Route
 																path="/diagnostics/foundation-visualizer"
 																element={<FoundationVisualizerPage />}
@@ -276,7 +283,6 @@ function App() {
 											{/* Global components that are not pages */}
 											<OnboardingTutorial />
 											<GeneDiscoveryNotification />
-											<PaperModeBanner />
 
 											{/* Components for notifications */}
 											<Toaster />

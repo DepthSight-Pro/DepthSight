@@ -4,38 +4,40 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	Award,
+	Check,
 	Copy,
 	Dna,
+	ExternalLink,
+	Gauge,
 	Gift,
+	RefreshCw,
 	Shield,
+	ShieldAlert,
+	ShieldCheck,
+	Sparkles,
 	Terminal,
 	User,
 	Wallet,
+	Zap,
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import Achievements from "@/components/research/Achievements";
 import { SecuritySettings } from "@/components/account/SecuritySettings";
+import { PageLayout } from "@/components/layout/PageLayout";
+import Achievements from "@/components/research/Achievements";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
-import { Footer } from "@/components/layout/Footer";
 import { PricingModal } from "@/components/shared/PricingModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+	Badge,
+	Bar,
+	Btn,
+	Panel,
+	Segmented,
+} from "@/components/ui/quant-ui";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -46,6 +48,9 @@ import {
 	usePaperWallet,
 	useResetPaperAccount,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+type AccountTab = "account" | "security" | "achievements";
 
 const AccountPage: React.FC = () => {
 	const { t } = useTranslation(["account", "common"]);
@@ -68,7 +73,14 @@ const AccountPage: React.FC = () => {
 	const [showResetConfirm, setShowResetConfirm] = useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 	const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+	const [copiedField, setCopiedField] = useState<string | null>(null);
+
 	const [searchParams] = useSearchParams();
+	const tabParam = searchParams.get("tab");
+	const [activeTab, setActiveTab] = useState<AccountTab>(
+		tabParam === "security" || tabParam === "achievements" ? tabParam : "account",
+	);
+
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 
@@ -102,12 +114,14 @@ const AccountPage: React.FC = () => {
 		}
 	}, [navigate, queryClient, searchParams, t, toast]);
 
-	const copyToClipboard = (text: string, type: string) => {
+	const copyToClipboard = (text: string, fieldName: string) => {
 		navigator.clipboard.writeText(text).then(() => {
+			setCopiedField(fieldName);
 			toast({
-				title: t("common:copied"),
-				description: `${type} ${t("common:copiedToClipboard")}`,
+				title: t("common:copied", "Copied"),
+				description: `${fieldName} ${t("common:copiedToClipboard", "copied to clipboard")}`,
 			});
+			setTimeout(() => setCopiedField(null), 2500);
 		});
 	};
 
@@ -124,7 +138,6 @@ const AccountPage: React.FC = () => {
 	const handleDeleteConfirm = () => {
 		deleteAccount(undefined, {
 			onSuccess: () => {
-				// Logout and redirect are now handled by the AuthContext wrapper around logout
 				logout();
 			},
 		});
@@ -139,356 +152,675 @@ const AccountPage: React.FC = () => {
 
 	if (isLoading) {
 		return (
-			<div className="p-4 md:p-8 space-y-6">
-				<h1 className="text-3xl font-bold tracking-tight">{t("pageTitle")}</h1>
-				<div className="grid gap-6 md:grid-cols-2">
-					{[...Array(4)].map((_, i) => (
-						<Card key={i}>
-							<CardHeader>
-								<Skeleton className="h-6 w-3/4" />
-							</CardHeader>
-							<CardContent>
-								<Skeleton className="h-20 w-full" />
-							</CardContent>
-						</Card>
-					))}
+			<PageLayout title={t("pageTitle", "Account")} hideHeader>
+				<div className="space-y-6">
+					<div className="h-28 rounded-2xl bg-white/[0.03] animate-pulse border border-white/5" />
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+						{[...Array(4)].map((_, i) => (
+							<div
+								key={i}
+								className="h-56 rounded-2xl bg-white/[0.03] animate-pulse border border-white/5"
+							/>
+						))}
+					</div>
 				</div>
-			</div>
+			</PageLayout>
 		);
 	}
 
 	if (isError) {
 		return (
-			<div className="p-4 md:p-8">
-				<Alert variant="destructive">
+			<PageLayout title={t("pageTitle", "Account")} hideHeader>
+				<Alert variant="destructive" className="glass border-rose-500/30">
 					<Terminal className="h-4 w-4" />
-					<AlertTitle>{t("common:errorTitle")}</AlertTitle>
-					<AlertDescription>{error.message}</AlertDescription>
+					<AlertTitle>{t("common:errorTitle", "Error")}</AlertTitle>
+					<AlertDescription>{error?.message}</AlertDescription>
 				</Alert>
-			</div>
+			</PageLayout>
 		);
 	}
 
-	return (
-		<div className="p-4 md:p-8 space-y-6 flex flex-col min-h-full">
-			<div className="flex-1 space-y-6">
-				<h1 className="text-3xl font-bold tracking-tight flex items-center">
-					<User className="mr-3 h-8 w-8 text-primary" />
-					{t("pageTitle")}
-				</h1>
+	const planTone =
+		accountStatus?.planName === "pro"
+			? "cyan"
+			: accountStatus?.planName === "standard"
+				? "azure"
+				: "neutral";
 
-				<Tabs defaultValue="account">
-				<TabsList>
-					<TabsTrigger value="account">
-						<User className="mr-2 h-4 w-4" />
-						{t("accountTab")}
-					</TabsTrigger>
-					<TabsTrigger value="security">
-						<Shield className="mr-2 h-4 w-4" />
-						{t("securityTab", "Security")}
-					</TabsTrigger>
-					<TabsTrigger value="achievements">
-						<Award className="mr-2 h-4 w-4" />
-						{t("achievementsTab")}
-					</TabsTrigger>
-				</TabsList>
-				<TabsContent value="account">
-					<div className="grid gap-6 md:grid-cols-2 mt-4">
-						{/* Card 1: My Plan */}
-						<Card>
-							<CardHeader>
-								<CardTitle>{t("myPlanCard.title")}</CardTitle>
-								<CardDescription>
-									{accountStatus?.planExpiresAt
-										? `${t("myPlanCard.planActiveUntil")} ${new Date(accountStatus.planExpiresAt).toLocaleDateString()}`
-										: t("myPlanCard.description")}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="flex items-center justify-between">
-								<span className="text-2xl font-bold capitalize">
-									{t(`plans.${accountStatus?.planName}`, {
-										defaultValue: accountStatus?.planName,
-									})}
+	return (
+		<PageLayout title={t("pageTitle", "Account")} hideHeader>
+			<div className="space-y-6">
+				{/* Top Hero Profile Card */}
+				<div className="glass relative overflow-hidden rounded-2xl border border-white/10 p-5 md:p-6 shadow-2xl backdrop-blur-xl animate-fade-up">
+					{/* Ambient background glow */}
+					<div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-cyan/15 blur-3xl" />
+					<div className="pointer-events-none absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-azure/10 blur-3xl" />
+
+					<div className="relative flex flex-col md:flex-row md:items-center justify-between gap-5">
+						{/* User identity info */}
+						<div className="flex items-center gap-4">
+							<div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan/20 to-azure/20 border border-cyan/40 shadow-[0_0_24px_-6px_rgba(0,212,255,0.5)]">
+								<span className="font-mono text-xl font-bold text-cyan">
+									{user?.username ? user.username.charAt(0).toUpperCase() : "U"}
 								</span>
-								<Button onClick={() => setIsPricingModalOpen(true)}>
-									{t("myPlanCard.changePlanButton")}
-								</Button>
-							</CardContent>
-						</Card>
+								<div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-[#07080b] bg-emerald-400 shadow-[0_0_8px_#10e0a0]" />
+							</div>
+
+							<div className="min-w-0 space-y-1">
+								<div className="flex items-center gap-2.5 flex-wrap">
+									<h2 className="text-lg md:text-xl font-bold tracking-tight text-white truncate">
+										{user?.username || "Quant Trader"}
+									</h2>
+									<Badge
+										tone={planTone}
+										dot
+										pulse={accountStatus?.planName === "pro"}
+									>
+										{t(`plans.${accountStatus?.planName || "free"}`, {
+											defaultValue: (accountStatus?.planName || "free").toUpperCase(),
+										})}
+									</Badge>
+									{user?.role === "admin" && (
+										<Badge tone="amber">ADMIN</Badge>
+									)}
+								</div>
+								<div className="flex items-center gap-3 text-xs text-white/50 flex-wrap">
+									<span className="truncate">{user?.email}</span>
+									<span className="text-white/20">•</span>
+									<span className="font-mono text-white/70 flex items-center gap-1.5">
+										{user?.isTotpEnabled ? (
+											<>
+												<ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+												<span className="text-emerald-400">
+													{t("twoFactor.badgeEnabled", "2FA Active")}
+												</span>
+											</>
+										) : (
+											<>
+												<ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+												<span className="text-amber-400/80">
+													{t("twoFactor.badgeDisabled", "2FA Off")}
+												</span>
+											</>
+										)}
+									</span>
+								</div>
+							</div>
+						</div>
+
+						{/* Quick stats & upgrade action */}
+						<div className="flex items-center gap-3 flex-wrap md:justify-end">
+							<div className="flex items-center gap-2.5">
+								<div className="rounded-xl border border-white/5 bg-white/[0.02] px-3.5 py-2">
+									<div className="text-[10px] uppercase tracking-wider text-white/40 font-mono">
+										{t("paperAccountCard.title", "Demo Balance")}
+									</div>
+									<div className="font-mono text-base font-bold text-emerald-400">
+										{isLoadingPaperWallet
+											? "..."
+											: `$${usdtBalance.toLocaleString("en-US", {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2,
+												})}`}
+									</div>
+								</div>
+
+								<div className="rounded-xl border border-white/5 bg-white/[0.02] px-3.5 py-2">
+									<div className="text-[10px] uppercase tracking-wider text-white/40 font-mono">
+										{t("geneticsLabCard.title", "Genes")}
+									</div>
+									<div className="font-mono text-base font-bold text-cyan">
+										{genesData?.total || 0}
+									</div>
+								</div>
+							</div>
+
+							<Btn
+								variant="primary"
+								size="md"
+								icon={<Zap className="w-4 h-4" />}
+								onClick={() => setIsPricingModalOpen(true)}
+							>
+								{t("myPlanCard.changePlanButton", "Upgrade Plan")}
+							</Btn>
+						</div>
+					</div>
+				</div>
+
+				{/* Tab Navigation */}
+				<div className="flex items-center justify-between gap-4 flex-wrap pb-1">
+					<Segmented<AccountTab>
+						size="md"
+						value={activeTab}
+						onChange={setActiveTab}
+						options={[
+							{
+								value: "account",
+								label: t("accountTab", "Account"),
+								icon: <User className="h-4 w-4" />,
+							},
+							{
+								value: "security",
+								label: t("securityTab", "Security (2FA)"),
+								icon: <Shield className="h-4 w-4" />,
+							},
+							{
+								value: "achievements",
+								label: t("achievementsTab", "Achievements"),
+								icon: <Award className="h-4 w-4" />,
+							},
+						]}
+					/>
+				</div>
+
+				{/* TAB 1: Account overview */}
+				{activeTab === "account" && (
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-fade-up">
+						{/* Card 1: My Plan */}
+						<Panel
+							title={
+								<span className="flex items-center gap-2">
+									<Sparkles className="w-4 h-4 text-cyan" />
+									{t("myPlanCard.title", "My Plan")}
+								</span>
+							}
+							subtitle={
+								accountStatus?.planExpiresAt
+									? `${t("myPlanCard.planActiveUntil", "Active until")} ${new Date(
+											accountStatus.planExpiresAt,
+										).toLocaleDateString()}`
+									: t("myPlanCard.description", "Current subscription tier")
+							}
+							actions={
+								<Btn
+									variant="subtle"
+									size="sm"
+									icon={<Zap className="w-3.5 h-3.5" />}
+									onClick={() => setIsPricingModalOpen(true)}
+								>
+									{t("myPlanCard.changePlanButton", "Change Plan")}
+								</Btn>
+							}
+						>
+							<div className="space-y-4 pt-1">
+								<div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5">
+									<div>
+										<div className="text-[11px] uppercase tracking-wider text-white/40 font-mono">
+											{t("myPlanCard.title", "Current Tier")}
+										</div>
+										<div className="text-2xl font-bold font-mono tracking-tight text-white capitalize mt-0.5">
+											{t(`plans.${accountStatus?.planName}`, {
+												defaultValue: accountStatus?.planName || "Free",
+											})}
+										</div>
+									</div>
+									<Badge tone={planTone} dot className="text-xs px-2.5 py-1">
+										{accountStatus?.planName === "pro"
+											? "ULTRA QUANT"
+											: accountStatus?.planName === "standard"
+												? "TRADER"
+												: "BASIC"}
+									</Badge>
+								</div>
+
+								<div className="text-xs text-white/50 leading-relaxed">
+									{accountStatus?.planExpiresAt ? (
+										<div className="flex items-center gap-2 text-white/70">
+											<div className="h-2 w-2 rounded-full bg-emerald-400" />
+											<span>
+												{t("myPlanCard.planActiveUntil", "Plan active until")}:{" "}
+												<span className="font-mono font-medium text-white">
+													{new Date(accountStatus.planExpiresAt).toLocaleDateString()}
+												</span>
+											</span>
+										</div>
+									) : (
+										<span>{t("myPlanCard.description", "Full algorithmic trading suite access.")}</span>
+									)}
+								</div>
+							</div>
+						</Panel>
 
 						{/* Card 2: Paper Account */}
-						<Card>
-							<CardHeader>
-								<CardTitle className="flex items-center">
-									<Wallet className="mr-2" /> {t("paperAccountCard.title")}
-								</CardTitle>
-								<CardDescription>
-									{t("paperAccountCard.description")}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="flex items-center justify-between">
-								{isLoadingPaperWallet ? (
-									<Skeleton className="h-8 w-32" />
-								) : (
-									<span className="text-2xl font-bold font-mono">
-										$
-										{usdtBalance.toLocaleString("en-US", {
-											minimumFractionDigits: 2,
-											maximumFractionDigits: 2,
-										})}
-									</span>
-								)}
-								<Button
+						<Panel
+							title={
+								<span className="flex items-center gap-2">
+									<Wallet className="w-4 h-4 text-emerald-400" />
+									{t("paperAccountCard.title", "Paper Account")}
+								</span>
+							}
+							subtitle={t(
+								"paperAccountCard.description",
+								"Practice risk-free trading with a simulated balance.",
+							)}
+							actions={
+								<Btn
 									variant="outline"
+									size="sm"
+									icon={<RefreshCw className="w-3.5 h-3.5" />}
 									onClick={() => setShowResetConfirm(true)}
 									disabled={isReseting}
 								>
-									{t("paperAccountCard.resetButton")}
-								</Button>
-							</CardContent>
-						</Card>
-
-						{/* Card 3: Quotas & Bonuses */}
-						<Card>
-							<CardHeader>
-								<CardTitle>{t("quotaUsageCard.title")}</CardTitle>
-								<CardDescription>
-									{t("quotaUsageCard.description")}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								{accountStatus?.quotas.map((quota) => (
-									<div key={quota.name}>
-										<div className="flex justify-between text-sm mb-1">
-											<span className="font-medium">
-												{t(`quotas.${quota.name}`, {
-													defaultValue: quota.name,
-												})}
-											</span>
-											<span className="text-muted-foreground">
-												{quota.limit === -1
-													? `${quota.used} / ${t("quotaUsageCard.unlimited")}`
-													: `${quota.used} / ${quota.limit}`}
-											</span>
+									{t("paperAccountCard.resetButton", "Reset")}
+								</Btn>
+							}
+						>
+							<div className="space-y-4 pt-1">
+								<div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5">
+									<div>
+										<div className="text-[11px] uppercase tracking-wider text-white/40 font-mono">
+											USDT Paper Balance
 										</div>
-										{quota.limit !== -1 && (
-											<Progress value={(quota.used / quota.limit) * 100} />
+										{isLoadingPaperWallet ? (
+											<div className="h-8 w-36 rounded bg-white/10 animate-pulse mt-1" />
+										) : (
+											<div className="text-2xl sm:text-3xl font-bold font-mono tracking-tight text-emerald-400 mt-0.5">
+												$
+												{usdtBalance.toLocaleString("en-US", {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2,
+												})}
+											</div>
 										)}
 									</div>
-								))}
-							</CardContent>
-						</Card>
+									<Badge tone="profit" dot>
+										SIMULATED
+									</Badge>
+								</div>
+
+								<div className="flex items-center justify-between text-xs text-white/40">
+									<span>Simulated exchange environment</span>
+									<span className="font-mono text-white/60">Risk: 0.00%</span>
+								</div>
+							</div>
+						</Panel>
+
+						{/* Card 3: Quotas & Limits */}
+						<Panel
+							title={
+								<span className="flex items-center gap-2">
+									<Gauge className="w-4 h-4 text-cyan" />
+									{t("quotaUsageCard.title", "Quota Usage")}
+								</span>
+							}
+							subtitle={t("quotaUsageCard.description", "Your limits reset periodically.")}
+						>
+							<div className="space-y-4 pt-1">
+								{accountStatus?.quotas && accountStatus.quotas.length > 0 ? (
+									accountStatus.quotas.map((quota) => {
+										const isUnlimited = quota.limit === -1;
+										const ratio = isUnlimited ? 0 : quota.used / quota.limit;
+										const isNearLimit = !isUnlimited && ratio >= 0.8;
+
+										return (
+											<div key={quota.name} className="space-y-1.5">
+												<div className="flex justify-between items-center text-xs">
+													<span className="font-medium text-white/80">
+														{t(`quotas.${quota.name}`, {
+															defaultValue: quota.name,
+														})}
+													</span>
+													<span className="font-mono text-white/60 text-[11px]">
+														{isUnlimited ? (
+															<span className="text-cyan">
+																{quota.used} / {t("quotaUsageCard.unlimited", "Unlimited")}
+															</span>
+														) : (
+															<span className={cn(isNearLimit && "text-amber-400 font-semibold")}>
+																{quota.used} / {quota.limit}
+															</span>
+														)}
+													</span>
+												</div>
+												{!isUnlimited && (
+													<Bar
+														value={ratio}
+														color={
+															isNearLimit
+																? "linear-gradient(90deg, #f59e0b, #ef4444)"
+																: "linear-gradient(90deg, #0066ff, #00d4ff)"
+														}
+														height={5}
+													/>
+												)}
+											</div>
+										);
+									})
+								) : (
+									<div className="text-xs text-white/40 italic py-2">
+										No quota restrictions found for this plan.
+									</div>
+								)}
+
+								{/* Bonuses section if any exist */}
+								{(activeBonuses && activeBonuses.length > 0) ||
+								(pendingBonuses && pendingBonuses.length > 0) ? (
+									<div className="pt-3 border-t border-white/5 space-y-2">
+										<div className="text-[11px] font-semibold text-white/60 uppercase tracking-wider font-mono">
+											{t("bonusesCard.title", "Bonus Quotas")}
+										</div>
+									{activeBonuses?.map((b, idx) => {
+										const featureKey =
+											(b as unknown as Record<string, unknown>)
+												.featureName ??
+											(b as unknown as Record<string, unknown>)
+												.feature_name ??
+											(b as unknown as Record<string, unknown>).feature ??
+											"unknown";
+										const feature = String(featureKey);
+										return (
+											<div key={idx} className="flex justify-between items-center text-xs">
+												<span className="text-white/70">
+													{t(`bonusesCard.features.${feature}`, {
+														defaultValue: feature,
+													})}
+												</span>
+												<Badge tone="profit">+{b.quantity}</Badge>
+											</div>
+										);
+									})}
+									{pendingBonuses?.map((b, idx) => {
+										const featureKey =
+											(b as unknown as Record<string, unknown>)
+												.featureName ??
+											(b as unknown as Record<string, unknown>)
+												.feature_name ??
+											(b as unknown as Record<string, unknown>).feature ??
+											"unknown";
+										const feature = String(featureKey);
+										return (
+											<div key={idx} className="flex justify-between items-center text-xs">
+												<span className="text-white/40">
+													{t(`bonusesCard.features.${feature}`, {
+														defaultValue: feature,
+													})}{" "}
+													({t("bonusesCard.pending", "pending")})
+												</span>
+												<Badge tone="amber">+{b.quantity}</Badge>
+											</div>
+										);
+									})}
+									</div>
+								) : null}
+							</div>
+						</Panel>
 
 						{/* Card 4: Referrals */}
-						<Card>
-							<CardHeader>
-								<CardTitle>{t("referralCard.title")}</CardTitle>
-								<CardDescription>
-									{t("referralCard.description")}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-4">
+						<Panel
+							title={
+								<span className="flex items-center gap-2">
+									<Gift className="w-4 h-4 text-violet-400" />
+									{t("referralCard.title", "Affiliate Program")}
+								</span>
+							}
+							subtitle={t(
+								"referralCard.description",
+								"Invite traders and earn commissions on subscription payments.",
+							)}
+							actions={
+								<Btn
+									variant="outline"
+									size="sm"
+									icon={<ExternalLink className="w-3.5 h-3.5" />}
+									onClick={() => navigate("/affiliate-dashboard")}
+								>
+									{t("referralCard.dashboardButton", "Affiliate Panel")}
+								</Btn>
+							}
+						>
+							<div className="space-y-4 pt-1">
 								<div>
-									<label className="text-sm font-medium">
-										{t("referralCard.codeLabel")}
+									<label className="text-xs font-mono text-white/60 uppercase tracking-wider">
+										{t("referralCard.codeLabel", "Your Referral Code")}
 									</label>
-									<div className="flex items-center space-x-2 mt-1">
-										<Input
-											readOnly
-											value={user?.referralCode || "..."}
-											className="font-mono"
-										/>
-										<Button
+									<div className="flex items-center gap-2 mt-1.5">
+										<div className="relative flex-1">
+											<Input
+												readOnly
+												value={user?.referralCode || "..."}
+												className="font-mono text-cyan bg-white/[0.03] border-white/10 text-xs h-9 tracking-wider"
+											/>
+										</div>
+										<Btn
 											variant="outline"
-											size="icon"
+											size="sm"
+											className="h-9 px-3 shrink-0"
+											icon={
+												copiedField === "code" ? (
+													<Check className="h-3.5 w-3.5 text-emerald-400" />
+												) : (
+													<Copy className="h-3.5 w-3.5" />
+												)
+											}
 											onClick={() =>
 												copyToClipboard(
 													user?.referralCode || "",
-													t("referralCard.codeLabel"),
+													"code",
 												)
 											}
 										>
-											<Copy className="h-4 w-4" />
-										</Button>
+											{copiedField === "code" ? "OK" : "Copy"}
+										</Btn>
 									</div>
 								</div>
+
 								<div>
-									<label className="text-sm font-medium">
-										{t("referralCard.linkLabel")}
+									<label className="text-xs font-mono text-white/60 uppercase tracking-wider">
+										{t("referralCard.linkLabel", "Your Referral Link")}
 									</label>
-									<div className="flex items-center space-x-2 mt-1">
-										<Input
-											readOnly
-											value={referralLink}
-											className="font-mono"
-										/>
-										<Button
+									<div className="flex items-center gap-2 mt-1.5">
+										<div className="relative flex-1">
+											<Input
+												readOnly
+												value={referralLink}
+												className="font-mono text-white/80 bg-white/[0.03] border-white/10 text-xs h-9"
+											/>
+										</div>
+										<Btn
 											variant="outline"
-											size="icon"
-											onClick={() =>
-												copyToClipboard(
-													referralLink,
-													t("referralCard.linkLabel"),
+											size="sm"
+											className="h-9 px-3 shrink-0"
+											icon={
+												copiedField === "link" ? (
+													<Check className="h-3.5 w-3.5 text-emerald-400" />
+												) : (
+													<Copy className="h-3.5 w-3.5" />
 												)
 											}
+											onClick={() => copyToClipboard(referralLink, "link")}
 										>
-											<Copy className="h-4 w-4" />
-										</Button>
+											{copiedField === "link" ? "OK" : "Copy"}
+										</Btn>
 									</div>
 								</div>
-								<div className="pt-2">
-									<Button
-										className="w-full font-medium"
+
+								<div className="pt-1">
+									<Btn
+										variant="subtle"
+										size="md"
+										className="w-full"
+										icon={<Gift className="w-4 h-4" />}
 										onClick={() => navigate("/affiliate-dashboard")}
 									>
-										{t("referralCard.dashboardButton")}
-									</Button>
+										{t("referralCard.dashboardButton", "Open Affiliate Dashboard")}
+									</Btn>
 								</div>
-							</CardContent>
-						</Card>
+							</div>
+						</Panel>
 
-						{/* Card: Genetics Laboratory */}
-						<Card className="hover:shadow-lg transition-shadow">
-							<CardHeader>
-								<CardTitle className="flex items-center">
-									<Dna className="mr-2 text-green-500" />{" "}
-									{t("geneticsLabCard.title")}
-								</CardTitle>
-								<CardDescription>
-									{t("geneticsLabCard.description")}
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-3">
-								<div className="flex items-center justify-between">
-									<span className="text-sm text-muted-foreground">
-										{t("geneticsLabCard.genesDiscovered")}
-									</span>
-									<span className="text-2xl font-bold text-green-500">
-										{genesData?.total || 0}
-									</span>
-								</div>
-								<div className="flex justify-around pt-2">
-									<div className="text-center">
-										<Badge
-											variant="outline"
-											className="bg-yellow-500/10 text-yellow-500 border-yellow-500/30"
-										>
-											{geneStats?.rarityBreakdown?.LEGENDARY || 0}
-										</Badge>
-										<div className="text-xs text-muted-foreground mt-1">
-											{t("geneticsLabCard.legend")}
-										</div>
-									</div>
-									<div className="text-center">
-										<Badge
-											variant="outline"
-											className="bg-purple-500/10 text-purple-500 border-purple-500/30"
-										>
-											{geneStats?.rarityBreakdown?.EPIC || 0}
-										</Badge>
-										<div className="text-xs text-muted-foreground mt-1">
-											{t("geneticsLabCard.epic")}
-										</div>
-									</div>
-									<div className="text-center">
-										<Badge
-											variant="outline"
-											className="bg-blue-500/10 text-blue-500 border-blue-500/30"
-										>
-											{geneStats?.rarityBreakdown?.RARE || 0}
-										</Badge>
-										<div className="text-xs text-muted-foreground mt-1">
-											{t("geneticsLabCard.rare")}
-										</div>
-									</div>
-									<div className="text-center">
-										<Badge
-											variant="outline"
-											className="bg-gray-500/10 text-gray-500 border-gray-500/30"
-										>
-											{geneStats?.rarityBreakdown?.COMMON || 0}
-										</Badge>
-										<div className="text-xs text-muted-foreground mt-1">
-											{t("geneticsLabCard.common")}
-										</div>
-									</div>
-								</div>
-								<Button
+						{/* Card 5: Genetics Lab */}
+						<Panel
+							title={
+								<span className="flex items-center gap-2">
+									<Dna className="w-4 h-4 text-emerald-400" />
+									{t("geneticsLabCard.title", "Genetics Laboratory")}
+								</span>
+							}
+							subtitle={t("geneticsLabCard.description", "Discovered strategy genes and DNA collection.")}
+							actions={
+								<Btn
 									variant="outline"
-									className="w-full mt-2"
-									onClick={() => (window.location.href = "/lab")}
+									size="sm"
+									icon={<ExternalLink className="w-3.5 h-3.5" />}
+									onClick={() => navigate("/lab")}
 								>
-									{t("geneticsLabCard.viewCollectionButton")}
-								</Button>
-							</CardContent>
-						</Card>
+									{t("geneticsLabCard.viewCollectionButton", "View Lab")}
+								</Btn>
+							}
+						>
+							<div className="space-y-4 pt-1">
+								<div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5">
+									<div>
+										<div className="text-[11px] uppercase tracking-wider text-white/40 font-mono">
+											{t("geneticsLabCard.genesDiscovered", "Total Discovered")}
+										</div>
+										<div className="text-3xl font-bold font-mono tracking-tight text-emerald-400 mt-0.5">
+											{genesData?.total || 0}
+										</div>
+									</div>
+									<Badge tone="profit" dot>
+										LAB ACTIVE
+									</Badge>
+								</div>
 
-						{/* Danger Zone Card */}
-						<Card className="border-destructive">
-							<CardHeader>
-								<CardTitle className="flex items-center text-destructive">
-									<AlertTriangle className="mr-2" /> {t("dangerZone.title")}
-								</CardTitle>
-								<CardDescription>{t("dangerZone.description")}</CardDescription>
-							</CardHeader>
-							<CardContent>
-								<div>
-									<p className="font-semibold">
-										{t("dangerZone.deleteAccount.title")}
+								<div className="grid grid-cols-4 gap-2 pt-1">
+									<div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-2.5 text-center">
+										<div className="font-mono text-lg font-bold text-amber-400">
+											{geneStats?.rarityBreakdown?.LEGENDARY || 0}
+										</div>
+										<div className="text-[10px] uppercase font-mono tracking-wider text-amber-400/70 mt-0.5">
+											{t("geneticsLabCard.legend", "Legendary")}
+										</div>
+									</div>
+									<div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-2.5 text-center">
+										<div className="font-mono text-lg font-bold text-violet-400">
+											{geneStats?.rarityBreakdown?.EPIC || 0}
+										</div>
+										<div className="text-[10px] uppercase font-mono tracking-wider text-violet-400/70 mt-0.5">
+											{t("geneticsLabCard.epic", "Epic")}
+										</div>
+									</div>
+									<div className="rounded-xl border border-cyan/20 bg-cyan/[0.04] p-2.5 text-center">
+										<div className="font-mono text-lg font-bold text-cyan">
+											{geneStats?.rarityBreakdown?.RARE || 0}
+										</div>
+										<div className="text-[10px] uppercase font-mono tracking-wider text-cyan/70 mt-0.5">
+											{t("geneticsLabCard.rare", "Rare")}
+										</div>
+									</div>
+									<div className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5 text-center">
+										<div className="font-mono text-lg font-bold text-white/70">
+											{geneStats?.rarityBreakdown?.COMMON || 0}
+										</div>
+										<div className="text-[10px] uppercase font-mono tracking-wider text-white/40 mt-0.5">
+											{t("geneticsLabCard.common", "Common")}
+										</div>
+									</div>
+								</div>
+
+								<div className="pt-1">
+									<Btn
+										variant="outline"
+										size="md"
+										className="w-full"
+										icon={<Dna className="w-4 h-4 text-emerald-400" />}
+										onClick={() => navigate("/lab")}
+									>
+										{t("geneticsLabCard.viewCollectionButton", "Explore Strategy DNA")}
+									</Btn>
+								</div>
+							</div>
+						</Panel>
+
+						{/* Card 6: Danger Zone */}
+						<Panel
+							className="border-rose-500/25 bg-rose-500/[0.02] hover:border-rose-500/40"
+							title={
+								<span className="flex items-center gap-2 text-rose-400">
+									<AlertTriangle className="w-4 h-4" />
+									{t("dangerZone.title", "Danger Zone")}
+								</span>
+							}
+							subtitle={t(
+								"dangerZone.description",
+								"Irreversible account deletion and data wipe.",
+							)}
+						>
+							<div className="space-y-4 pt-1">
+								<div className="p-3.5 rounded-xl border border-rose-500/20 bg-rose-500/[0.04]">
+									<p className="text-xs font-semibold text-rose-300">
+										{t("dangerZone.deleteAccount.title", "Delete Account")}
 									</p>
-									<p className="text-sm text-muted-foreground">
-										{t("dangerZone.deleteAccount.description")}
+									<p className="text-xs text-rose-400/70 mt-1 leading-relaxed">
+										{t(
+											"dangerZone.deleteAccount.description",
+											"Permanently erase your account, trading configurations, api keys, and historical records.",
+										)}
 									</p>
 								</div>
-								<div className="flex justify-end mt-10">
-									<Button
-										variant="destructive"
+
+								<div className="flex justify-end pt-1">
+									<Btn
+										variant="danger"
+										size="md"
+										icon={<AlertTriangle className="w-4 h-4" />}
 										onClick={() => setShowDeleteConfirm(true)}
 										disabled={isDeleting}
 									>
-										{t("dangerZone.deleteAccount.button")}
-									</Button>
+										{t("dangerZone.deleteAccount.button", "Delete My Account")}
+									</Btn>
 								</div>
-							</CardContent>
-						</Card>
+							</div>
+						</Panel>
 					</div>
-				</TabsContent>
-				<TabsContent value="security">
-					<div className="mt-4">
+				)}
+
+				{/* TAB 2: Security & 2FA */}
+				{activeTab === "security" && (
+					<div className="animate-fade-up">
 						<SecuritySettings />
 					</div>
-				</TabsContent>
-				<TabsContent value="achievements">
-					<Achievements />
-				</TabsContent>
-				</Tabs>
-			</div>
+				)}
 
-			<Footer className="mt-8 flex-shrink-0" />
+				{/* TAB 3: Achievements */}
+				{activeTab === "achievements" && (
+					<div className="animate-fade-up">
+						<Achievements />
+					</div>
+				)}
+			</div>
 
 			{/* Modal windows */}
 			<ConfirmationModal
 				open={showResetConfirm}
 				onOpenChange={setShowResetConfirm}
-				title={t("paperAccountCard.confirmReset.title")}
-				description={t("paperAccountCard.confirmReset.description")}
+				title={t("paperAccountCard.confirmReset.title", "Reset Paper Account?")}
+				description={t(
+					"paperAccountCard.confirmReset.description",
+					"This will reset your paper account balance to default and clear simulated trades.",
+				)}
 				onConfirm={handleResetConfirm}
 				loading={isReseting}
 			/>
+
 			<PricingModal
 				isOpen={isPricingModalOpen}
 				onClose={() => setIsPricingModalOpen(false)}
 				currentPlan={accountStatus?.planName || "free"}
 			/>
+
 			<ConfirmationModal
 				open={showDeleteConfirm}
 				onOpenChange={setShowDeleteConfirm}
-				title={t("dangerZone.deleteAccount.confirm.title")}
-				description={t("dangerZone.deleteAccount.confirm.description")}
+				title={t("dangerZone.deleteAccount.confirm.title", "Are you absolutely sure?")}
+				description={t(
+					"dangerZone.deleteAccount.confirm.description",
+					"This action cannot be undone. Your account and all data will be permanently deleted.",
+				)}
 				onConfirm={handleDeleteConfirm}
 				loading={isDeleting}
 			/>
-		</div>
+		</PageLayout>
 	);
 };
 

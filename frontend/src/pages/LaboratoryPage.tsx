@@ -24,7 +24,8 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Segmented } from "@/components/ui/quant-ui";
 import { useGeneStats, useMyGenes } from "@/lib/api";
 import type { Gene, RarityTier } from "@/types/api";
 
@@ -55,6 +56,7 @@ const LaboratoryPage: React.FC = () => {
 	const { data: stats, isLoading: statsLoading } = useGeneStats();
 
 	// Filters and search
+	const [activeTab, setActiveTab] = useState<"library" | "breeding">("library");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [rarityFilter, setRarityFilter] = useState<RarityTier | "ALL">("ALL");
 	const [sortBy, setSortBy] = useState<"rarity" | "recent" | "name">("recent");
@@ -107,37 +109,46 @@ const LaboratoryPage: React.FC = () => {
 
 	return (
 		<PageLayout title={t("title")} icon={Dna} description={t("description")}>
-			<Tabs defaultValue="library" className="space-y-6">
-				<TabsList className="grid w-full grid-cols-3">
-					<TabsTrigger value="library" className="flex items-center gap-2">
-						<Dna className="w-4 h-4" />
-						{t("gene_library_tab")}
-					</TabsTrigger>
-					<TabsTrigger value="breeding" className="flex items-center gap-2">
-						<Shuffle className="w-4 h-4" />
-						{t("breeding_lab_tab")}
-					</TabsTrigger>
-				</TabsList>
+			<Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "library" | "breeding")} className="space-y-6">
+				<div className="flex items-center overflow-x-auto pb-1 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					<Segmented<"library" | "breeding">
+						size="md"
+						value={activeTab}
+						onChange={(val) => setActiveTab(val)}
+						options={[
+							{
+								value: "library",
+								label: t("gene_library_tab"),
+								icon: <Dna className="w-4 h-4" />,
+							},
+							{
+								value: "breeding",
+								label: t("breeding_lab_tab"),
+								icon: <Shuffle className="w-4 h-4" />,
+							},
+						]}
+					/>
+				</div>
 
 				{/* Gene Library Tab */}
-				<TabsContent value="library" className="space-y-6">
+				<TabsContent value="library" className="space-y-6 mt-0">
 					{/* Stats Overview */}
-					<div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-						<Card>
-							<CardHeader className="pb-2">
-								<CardTitle className="text-sm font-medium text-muted-foreground">
+					<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
+						<Card className="col-span-2 sm:col-span-1">
+							<CardHeader className="pb-2 p-4 sm:p-6">
+								<CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
 									{t("genes_discovered_stat")}
 								</CardTitle>
 							</CardHeader>
-							<CardContent>
+							<CardContent className="p-4 sm:p-6 pt-0">
 								{statsLoading ? (
 									<Skeleton className="h-8 w-20" />
 								) : (
-									<div className="text-3xl font-bold text-green-500">
+									<div className="text-2xl sm:text-3xl font-bold text-green-500">
 										{stats?.totalGenesDiscovered || 0}
 									</div>
 								)}
-								<p className="text-xs text-muted-foreground mt-1">
+								<p className="text-[11px] sm:text-xs text-muted-foreground mt-1">
 									{t("of_stat")} {stats?.totalGenesInSystem || 0}{" "}
 									{t("total_stat")}
 								</p>
@@ -146,17 +157,17 @@ const LaboratoryPage: React.FC = () => {
 
 						{["LEGENDARY", "EPIC", "RARE", "COMMON"].map((tier) => (
 							<Card key={tier}>
-								<CardHeader className="pb-2">
-									<CardTitle className="text-sm font-medium text-muted-foreground">
+								<CardHeader className="pb-2 p-4 sm:p-6">
+									<CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
 										{t(`${tier.toLowerCase()}_rarity`)}
 									</CardTitle>
 								</CardHeader>
-								<CardContent>
+								<CardContent className="p-4 sm:p-6 pt-0">
 									{statsLoading ? (
 										<Skeleton className="h-8 w-12" />
 									) : (
 										<div
-											className={`text-3xl font-bold ${
+											className={`text-2xl sm:text-3xl font-bold ${
 												tier === "LEGENDARY"
 													? "text-yellow-500"
 													: tier === "EPIC"
@@ -178,8 +189,8 @@ const LaboratoryPage: React.FC = () => {
 
 					{/* Filters and Search */}
 					<Card>
-						<CardHeader>
-							<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+						<CardHeader className="p-4 sm:p-6">
+							<div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 sm:gap-4">
 								<div className="flex-1">
 									<div className="relative">
 										<Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -191,14 +202,14 @@ const LaboratoryPage: React.FC = () => {
 										/>
 									</div>
 								</div>
-								<div className="flex gap-2">
+								<div className="grid grid-cols-2 sm:flex gap-2">
 									<Select
 										value={rarityFilter}
 										onValueChange={(v) =>
 											setRarityFilter(v as RarityTier | "ALL")
 										}
 									>
-										<SelectTrigger className="w-[140px]">
+										<SelectTrigger className="w-full sm:w-[140px]">
 											<Filter className="w-4 h-4 mr-2" />
 											<SelectValue />
 										</SelectTrigger>
@@ -222,7 +233,7 @@ const LaboratoryPage: React.FC = () => {
 											setSortBy(v as "rarity" | "recent" | "name")
 										}
 									>
-										<SelectTrigger className="w-[140px]">
+										<SelectTrigger className="w-full sm:w-[140px]">
 											<SelectValue />
 										</SelectTrigger>
 										<SelectContent>

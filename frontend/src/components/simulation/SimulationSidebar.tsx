@@ -17,7 +17,6 @@ import { useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -113,16 +112,16 @@ export const SimulationSidebar: React.FC<SimulationSidebarProps> = ({
 	};
 
 	return (
-		<Card className="h-full flex flex-col">
-			<CardHeader className="pb-4 border-b">
-				<CardTitle className="flex items-center gap-2 text-lg">
-					<Settings className="w-5 h-5 text-primary" />
+		<div className="h-full flex flex-col rounded-2xl border border-white/10 glass shadow-xl overflow-hidden">
+			<div className="p-4 border-b border-white/5">
+				<h2 className="flex items-center gap-2 text-base font-bold text-white tracking-tight">
+					<Settings className="w-4 h-4 text-cyan" />
 					{t("simulationConfig", "Simulation Config")}
-				</CardTitle>
-			</CardHeader>
+				</h2>
+			</div>
 
 			<ScrollArea className="flex-1">
-				<CardContent className="space-y-6 p-4">
+				<div className="space-y-6 p-4">
 					{/* Strategy Upload */}
 					<section>
 						<Label className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider mb-3">
@@ -340,15 +339,14 @@ export const SimulationSidebar: React.FC<SimulationSidebarProps> = ({
 							</div>
 						</div>
 					</section>
-				</CardContent>
+				</div>
 			</ScrollArea>
 
 			{/* Run Buttons */}
-			<div className="p-4 border-t space-y-2">
+			<div className="p-4 border-t border-white/5 space-y-2.5">
 				<Button
-					className="w-full"
+					className="w-full h-11 font-semibold bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_20px_-5px_rgba(0,212,255,0.7)] hover:shadow-[0_0_25px_-3px_rgba(0,212,255,0.9)] hover:brightness-110 rounded-xl transition-all"
 					size="lg"
-					variant="default"
 					onClick={handleRun}
 					disabled={isLoading || !strategyJson || selectedAssets.length === 0}
 				>
@@ -368,17 +366,17 @@ export const SimulationSidebar: React.FC<SimulationSidebarProps> = ({
 				{/* Show only after inspector completion */}
 				{inspectorResult && inspectorResult.assets.length > 0 && (
 					<Button
-						className="w-full"
+						className="w-full h-10 border border-white/10 bg-white/[0.04] text-white hover:bg-white/10 hover:border-white/20 rounded-xl transition-all text-xs font-semibold"
 						size="lg"
 						variant="outline"
 						onClick={onRunSimulation}
 						disabled={isLoading}
 					>
-						<BarChart3 className="w-4 h-4 mr-2" />
+						<BarChart3 className="w-4 h-4 mr-2 text-cyan" />
 						{t("runSingleDepositSim", "SINGLE DEPOSIT TRADING SIMULATOR")}
 					</Button>
 				)}
 			</div>
-		</Card>
+		</div>
 	);
 };

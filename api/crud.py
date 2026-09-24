@@ -2363,11 +2363,10 @@ async def _evaluate_saved_report(db: AsyncSession, db_report) -> None:
             db_report.is_mining_eligible = True
             db_report.estimated_rebate_usdt = _estimate_rebate(probe, cfg)
 
-        # Weex/Bybit/OKX are verifiable on the hub -> let the verifier confirm.
+        # Weex/Bybit/OKX/Bitget are verifiable on the hub -> let the verifier confirm.
         exch = (db_report.exchange_id or "").lower()
-        db_report.verification_status = (
-            "PENDING" if exch in ("weex", "bybit", "okx") else "SKIPPED"
-        )
+        is_verifiable = any(ex in exch for ex in ("weex", "bybit", "okx", "bitget"))
+        db_report.verification_status = "PENDING" if is_verifiable else "SKIPPED"
         await db.commit()
     except Exception as e:
         logger.error(

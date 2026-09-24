@@ -1415,13 +1415,18 @@ class TelegramNotifier:
 
         @self.bot.message_handler(commands=["start"])
         async def handle_start(message):
+            # NOTE: self.bot defaults to parse_mode="MarkdownV2", and telebot
+            # falls back to that default whenever per-message parse_mode is
+            # None. Service replies below are plain text, so we pass
+            # parse_mode="" explicitly (falsy -> omitted from API params).
             # Command format: /start <token>
-            parts = message.text.split()
+            parts = (message.text or "").split()
             if len(parts) < 2:
                 # Regular start without token - just welcome
                 await self.bot.reply_to(
                     message,
                     "👋 Hello! Use the 'Connect Telegram' button in DepthSight settings for automatic linking.",
+                    parse_mode="",
                 )
                 return
 
@@ -1434,12 +1439,13 @@ class TelegramNotifier:
                     await self.bot.reply_to(
                         message,
                         "❌ The link has expired or is invalid. Please get a new link in the settings.",
+                        parse_mode="",
                     )
                     return
 
                 user_id = int(user_id_bytes)
                 chat_id = str(message.chat.id)
-                username = message.from_user.username
+                username = getattr(message.from_user, "username", None)
 
                 # Update DB
                 db_gen = get_db_gen()
@@ -1449,12 +1455,17 @@ class TelegramNotifier:
                     )
                     await db.commit()
 
+                # Delete the one-time token BEFORE replying, so a reply
+                # failure cannot leave a stale token behind (binding is
+                # already committed at this point).
+                await redis_client.delete(redis_key)
+
                 # Success
                 await self.bot.reply_to(
                     message,
-                    "✅ *Done!* DepthSight notifications have been successfully connected to this chat.",
+                    "✅ Done! DepthSight notifications have been successfully connected to this chat.",
+                    parse_mode="",
                 )
-                await redis_client.delete(redis_key)
 
                 logger.info(
                     f"Telegram bound successfully for user {user_id} to chat {chat_id}"
@@ -1462,10 +1473,16 @@ class TelegramNotifier:
 
             except Exception as e:
                 logger.error(f"Error in Telegram binding handler: {e}", exc_info=True)
-                await self.bot.reply_to(
-                    message,
-                    "⚠️ An error occurred during binding. Please try again later.",
-                )
+                try:
+                    await self.bot.reply_to(
+                        message,
+                        "⚠️ An error occurred during binding. Please try again later.",
+                        parse_mode="",
+                    )
+                except Exception as reply_err:
+                    logger.error(
+                        f"Failed to send Telegram binding error reply: {reply_err}"
+                    )
 
     async def start_polling(self):
         """Starts the bot's infinity polling as a background task."""

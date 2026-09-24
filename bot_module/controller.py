@@ -296,6 +296,10 @@ class LivePosition(BasePosition):
     entry_commission: float = 0.0  # Total entry commission (including DCA entries)
     sl_placement_initiated: bool = False
     sl_replacement_in_progress: bool = False  # Prevents concurrent SL replacements
+    # Consecutive reconciles where a known SL order was not found on exchange.
+    # Bitget plan orders propagate with delay, so the phantom verdict needs
+    # more than one miss there (other exchanges keep immediate behavior).
+    sl_phantom_misses: int = 0
     is_sl_algo_order: bool = False  # True if SL is placed via Algo Order API
     ptp_placement_initiated_flags: Dict[int, bool] = field(default_factory=dict)
     exit_orders_scheduled_by_process_signal: bool = False
@@ -556,9 +560,12 @@ class TradingController:
             logger.info(
                 "TradingController initialized Redis client for state publishing."
             )
+            # Monotonic sequence for WS push snapshots (reconcile/stale-drop on frontend).
+            self._state_seq = 0
         except Exception as e:
             logger.error(f"Failed to initialize Redis client in TradingController: {e}")
             self.redis_client = None
+            self._state_seq = 0
 
         self._running = False
         self._main_task: Optional[asyncio.Task] = None
@@ -1055,6 +1062,7 @@ class TradingController:
             *self.market_executors.values(),
         ]
         started_executor_ids = set()
+        started_stream_keys = set()
         for stream_executor in executors_for_stream:
             if stream_executor is None:
                 continue
@@ -1062,7 +1070,41 @@ class TradingController:
             if executor_identity in started_executor_ids:
                 continue
             started_executor_ids.add(executor_identity)
+
+            # Prevent duplicate private WS streams on single-session exchanges (e.g., bitget, weex)
+            exchange_name = str(
+                getattr(stream_executor, "exchange_id", "") or ""
+            ).lower()
+            clean_exchange_id = (
+                exchange_name.replace("_testnet", "")
+                .replace("_spot", "")
+                .replace("_linear", "")
+            )
+            api_key = getattr(stream_executor, "api_key", None)
+            stream_key = (clean_exchange_id, api_key)
+            if (
+                clean_exchange_id in {"bitget", "weex"}
+                and api_key
+                and stream_key in started_stream_keys
+            ):
+                logger.info(
+                    f"Skipping secondary UserData stream for {clean_exchange_id} (API key already has active private WS stream)"
+                )
+                continue
+            if api_key:
+                started_stream_keys.add(stream_key)
+
             if hasattr(stream_executor, "start_user_data_stream"):
+                if clean_exchange_id in {"bitget", "weex"}:
+                    # Identify the owner of every private WS stream so a
+                    # future "Account logoff" kick can be attributed to the
+                    # exact key/user (never logs the secret itself).
+                    logger.info(
+                        f"Starting UserData stream for {clean_exchange_id} "
+                        f"key '{getattr(self, 'api_key_name', '?')}' "
+                        f"user_id={getattr(self, 'user_id', '?')} "
+                        f"market={getattr(stream_executor, 'market_type', '?')}."
+                    )
                 await stream_executor.start_user_data_stream(self._handle_order_update)
 
         self._redis_listener_task = self.loop.create_task(
@@ -1492,25 +1534,10 @@ class TradingController:
                             )
                             # await self.executor.close_all_user_positions(user_id=user_id)
 
-                        elif command_type == "TEST_NOTIFICATION":
-                            user_id = payload.get("user_id")
-                            chat_id = payload.get("chat_id")
-                            if str(user_id) != str(self.user_id):
-                                continue
-                            logger.info(
-                                f"Handling TEST_NOTIFICATION for user_id: {user_id}, chat_id: {chat_id}"
-                            )
-                            if self.telegram_notifier:
-                                self.loop.create_task(
-                                    self.telegram_notifier.send_test_message(
-                                        chat_id=chat_id
-                                    ),
-                                    name=f"TestNotify_{user_id}",
-                                )
-                            else:
-                                logger.warning(
-                                    "TelegramNotifier not available for TEST_NOTIFICATION."
-                                )
+                        # NOTE: TEST_NOTIFICATION is handled centrally by the bot
+                        # runner command listener (shard 0), so it works even
+                        # without an active controller and is never duplicated
+                        # across multiple controllers of the same user.
 
                         # Instant configuration reload
                         elif command_type == "RELOAD_CONFIG":
@@ -2009,6 +2036,12 @@ class TradingController:
         # After adding a strategy, the list of tracked symbols needs to be updated
         await self._update_monitored_symbols()
         await self._save_runtime_state()
+        # Burst publish so dashboards ("all accounts" included) show the new
+        # strategy immediately instead of waiting for the periodic snapshot.
+        self.loop.create_task(
+            self._publish_state_to_redis(),
+            name=f"PublishState_StartStrategy_{config_id[:8]}",
+        )
 
         # If RiskManager trading is currently disabled (e.g. deposit occurred after key creation),
         # automatically refresh balance and re-evaluate limits upon starting a strategy.
@@ -2398,6 +2431,11 @@ class TradingController:
         # After deletion, we need to re-check if we still need data for this symbol
         await self._check_and_update_symbols()
         await self._save_runtime_state()
+        # Burst publish so dashboards drop the stopped strategy immediately.
+        self.loop.create_task(
+            self._publish_state_to_redis(),
+            name=f"PublishState_StopStrategy_{config_id[:8]}",
+        )
 
     async def _check_scale_in_conditions(
         self, position: LivePosition, pair_info: Dict[str, Any]
@@ -3316,6 +3354,78 @@ class TradingController:
 
         return adopted_pos
 
+    async def _handle_api_key_auth_event(self, event: str, exchange_id: str):
+        """Reacts to one-shot auth-breaker events from the executor.
+
+        'invalid'  -> the key is expired/revoked or the account is restricted:
+                      notify the owner once + persist status='invalid'.
+        'recovered' -> the key works again: log + flip status back to 'valid'.
+        """
+        key_label = getattr(self, "api_key_name", "?") or "?"
+        if event == "invalid":
+            err = (
+                f"API key '{key_label}' ({exchange_id}) looks invalid/expired "
+                f"or the account is restricted. Trading with this key is "
+                f"unreliable until the key is reissued."
+            )
+            logger.critical(f"[ApiKeyHealth] {err}")
+            if self.telegram_notifier:
+                self.loop.create_task(
+                    self.telegram_notifier.bot_error(
+                        error_description=f"🔑 <b>API key problem ({key_label})</b>\n{err}",
+                        module_function="_reconcile_positions_with_exchange",
+                        action_taken="Private WS and position polling suspended for this key "
+                        "(auto re-probe every 10 min). Reissue the key if needed.",
+                        chat_id=self.user_telegram_chat_id,
+                        api_key_name=self.api_key_name,
+                    ),
+                    name="Notify_ApiKeyInvalid",
+                )
+            if self.api_key_id is not None:
+                try:
+                    async for db_session in self.get_db_session():
+                        try:
+                            await crud.update_api_key_status(
+                                db_session,
+                                key_id=self.api_key_id,
+                                user_id=self.user_id,
+                                status="invalid",
+                                status_message="Auto-detected: key invalid/expired or account restricted.",
+                            )
+                            await db_session.commit()
+                        except Exception as e_commit:
+                            logger.error(
+                                f"[ApiKeyHealth] Could not persist key status: {e_commit}"
+                            )
+                except Exception as e_db:
+                    logger.error(
+                        f"[ApiKeyHealth] DB session error for key status: {e_db}"
+                    )
+        elif event == "recovered":
+            logger.info(
+                f"[ApiKeyHealth] API key '{key_label}' ({exchange_id}) works again."
+            )
+            if self.api_key_id is not None:
+                try:
+                    async for db_session in self.get_db_session():
+                        try:
+                            await crud.update_api_key_status(
+                                db_session,
+                                key_id=self.api_key_id,
+                                user_id=self.user_id,
+                                status="valid",
+                                status_message=None,
+                            )
+                            await db_session.commit()
+                        except Exception as e_commit:
+                            logger.error(
+                                f"[ApiKeyHealth] Could not persist key status: {e_commit}"
+                            )
+                except Exception as e_db:
+                    logger.error(
+                        f"[ApiKeyHealth] DB session error for key status: {e_db}"
+                    )
+
     async def _reconcile_positions_with_exchange(self):
         """
         Synchronizes the internal state of positions with the actual state on the exchange.
@@ -3334,9 +3444,33 @@ class TradingController:
             getattr(executor, "market_type", None)
         )
 
+        # One-shot API-key health events from the executor's auth breaker
+        # (tripped after repeated fatal auth failures, recovered on success).
         try:
-            # 1. Getting real positions from the exchange (NO LOCK)
+            pop_auth = getattr(executor, "pop_auth_event", None)
+            auth_event = pop_auth() if callable(pop_auth) else None
+        except Exception:
+            auth_event = None
+        if auth_event in ("invalid", "recovered"):
+            self.loop.create_task(
+                self._handle_api_key_auth_event(
+                    auth_event, str(getattr(executor, "exchange_id", "?"))
+                ),
+                name=f"ApiKeyHealth_{auth_event}",
+            )
+
+        try:
+            # 1. Getting real positions from the exchange (NO LOCK).
+            # None means the request itself failed (auth/network) — "unknown",
+            # NOT "no positions". Finalizing internal positions on unknown
+            # state would phantom-close live trades, so skip this round.
             exchange_positions_raw = await executor.get_open_positions()
+            if exchange_positions_raw is None:
+                logger.warning(
+                    f"{log_prefix} Could not fetch positions from exchange. "
+                    f"Skipping reconciliation round (nothing will be closed)."
+                )
+                return
             exchange_positions_map = {
                 str(p["symbol"]).upper(): p
                 for p in exchange_positions_raw
@@ -3390,6 +3524,8 @@ class TradingController:
             for symbol, pos_to_fin in positions_to_finalize:
                 try:
                     approx_exit_price = pos_to_fin.entry_price or 0.0
+                    close_reason = "CLOSED_ON_EXCHANGE"
+                    price_source = "ticker_fallback"
                     if executor and hasattr(executor, "get_ticker_price"):
                         try:
                             price_info = await executor.get_ticker_price(symbol)
@@ -3397,15 +3533,167 @@ class TradingController:
                                 approx_exit_price = float(price_info["price"])
                         except Exception:
                             pass
+                    # REST fallback: the private WS may have missed the SL/TP
+                    # fill (e.g. Bitget plan orders). Two sources, cheapest first:
+                    # (1) latest fills matching our exit order IDs;
+                    # (2) direct state of our SL/TP orders via fetch_order.
+                    if executor is not None and hasattr(executor, "get_my_trades"):
+                        try:
+                            recent_trades = (
+                                await executor.get_my_trades(symbol, limit=5) or []
+                            )
+                            logger.info(
+                                f"{log_prefix} Close fallback: fetched "
+                                f"{len(recent_trades)} recent fills for {symbol}."
+                            )
+                            expected_close_side = (
+                                "SELL"
+                                if pos_to_fin.direction == SignalDirection.LONG
+                                else "BUY"
+                            )
+                            for trade in sorted(
+                                recent_trades,
+                                key=lambda t: t.get("timestamp") or 0,
+                                reverse=True,
+                            ):
+                                try:
+                                    t_price = float(trade.get("price") or 0)
+                                    t_amount = float(trade.get("amount") or 0)
+                                except (TypeError, ValueError):
+                                    continue
+                                if t_price <= 0 or t_amount <= 0:
+                                    continue
+                                if (
+                                    str(trade.get("side") or "").upper()
+                                    != expected_close_side
+                                ):
+                                    continue
+                                t_ts = trade.get("timestamp") or 0
+                                if (
+                                    pos_to_fin.entry_time
+                                    and t_ts
+                                    and (t_ts / 1000) < (pos_to_fin.entry_time - 1)
+                                ):
+                                    continue
+                                approx_exit_price = t_price
+                                price_source = "exchange_trade"
+                                t_order = str(trade.get("order") or "")
+                                if (
+                                    t_order
+                                    and pos_to_fin.current_sl_order_id is not None
+                                    and t_order == str(pos_to_fin.current_sl_order_id)
+                                ):
+                                    close_reason = (
+                                        "STOP_LOSS_BE"
+                                        if getattr(pos_to_fin, "is_stop_at_be", False)
+                                        else "STOP_LOSS"
+                                    )
+                                else:
+                                    for _tp_idx, _ptp in enumerate(
+                                        getattr(pos_to_fin, "partial_tp_orders", [])
+                                        or []
+                                    ):
+                                        if (
+                                            _ptp.order_id is not None
+                                            and t_order
+                                            and t_order == str(_ptp.order_id)
+                                        ):
+                                            close_reason = (
+                                                f"ALL_TP_CLOSED_BY_TP_{_tp_idx + 1}"
+                                            )
+                                            break
+                                logger.info(
+                                    f"{log_prefix} Close fallback matched exchange fill for {symbol}: "
+                                    f"price={t_price}, reason={close_reason} "
+                                    f"(trade order={t_order or 'n/a'})."
+                                )
+                                break
+                            else:
+                                logger.info(
+                                    f"{log_prefix} Close fallback: no fill matched "
+                                    f"our exit orders for {symbol}."
+                                )
+                        except Exception as e_trades:
+                            logger.warning(
+                                f"{log_prefix} Close-fallback trade lookup for {symbol} failed: {e_trades}"
+                            )
+                    # Source (2): query our exit orders directly. A FILLED SL/TP
+                    # order tells the exact reason and average price even when
+                    # the fills endpoint is empty or misses the order link.
+                    if (
+                        price_source == "ticker_fallback"
+                        and executor is not None
+                        and hasattr(executor, "get_order_info")
+                    ):
+                        try:
+                            exit_orders_to_check = []
+                            if pos_to_fin.current_sl_order_id is not None:
+                                exit_orders_to_check.append(
+                                    (
+                                        "STOP_LOSS_BE"
+                                        if getattr(pos_to_fin, "is_stop_at_be", False)
+                                        else "STOP_LOSS",
+                                        pos_to_fin.current_sl_order_id,
+                                        pos_to_fin.current_sl_price or 0.0,
+                                    )
+                                )
+                            for _tp_idx, _ptp in enumerate(
+                                getattr(pos_to_fin, "partial_tp_orders", []) or []
+                            ):
+                                if _ptp.order_id is not None:
+                                    exit_orders_to_check.append(
+                                        (
+                                            f"ALL_TP_CLOSED_BY_TP_{_tp_idx + 1}",
+                                            _ptp.order_id,
+                                            _ptp.target_price or 0.0,
+                                        )
+                                    )
+                            for _reason, _oid, _ref_price in exit_orders_to_check:
+                                _oinfo = await executor.get_order_info(symbol, _oid)
+                                if not _oinfo or _oinfo.get("error"):
+                                    continue
+                                try:
+                                    _filled = float(_oinfo.get("executedQty") or 0)
+                                except (TypeError, ValueError):
+                                    _filled = 0.0
+                                if _oinfo.get("status") == "FILLED" or _filled > 0:
+                                    try:
+                                        _avg = float(
+                                            _oinfo.get("avgPrice")
+                                            or _oinfo.get("price")
+                                            or 0
+                                        )
+                                    except (TypeError, ValueError):
+                                        _avg = 0.0
+                                    approx_exit_price = _avg if _avg > 0 else _ref_price
+                                    close_reason = _reason
+                                    price_source = "exchange_order"
+                                    logger.info(
+                                        f"{log_prefix} Close fallback matched exit order "
+                                        f"{_oid} for {symbol}: price={approx_exit_price}, "
+                                        f"reason={close_reason}."
+                                    )
+                                    break
+                            else:
+                                logger.info(
+                                    f"{log_prefix} Close fallback: none of "
+                                    f"{len(exit_orders_to_check)} exit orders for "
+                                    f"{symbol} shows a fill. Keeping ticker price."
+                                )
+                        except Exception as e_orders:
+                            logger.warning(
+                                f"{log_prefix} Close-fallback order lookup for {symbol} failed: {e_orders}"
+                            )
                     await self._handle_final_exit(
                         symbol=symbol,
-                        reason="CLOSED_ON_EXCHANGE",
+                        reason=close_reason,
                         exit_price=approx_exit_price,
                         commission=0.0,
                         commission_asset="USDT",
                         order_id=None,
                         client_order_id=None,
                         market_type=reconcile_market_type,
+                        price_source=price_source,
                     )
                 except Exception as e_fin:
                     logger.error(
@@ -3457,11 +3745,92 @@ class TradingController:
                                 name=f"PlaceSL_Reconcile_{symbol}",
                             )
 
+                    # Detect scale-in / DCA averaging fill during reconciliation
+                    old_remaining_qty = internal_pos.remaining_quantity
+                    old_entry_price = internal_pos.entry_price
+                    new_remaining_qty = abs(exch_qty)
+
+                    scale_in_detected = (
+                        internal_pos.status == "OPEN"
+                        and old_remaining_qty > 0
+                        and new_remaining_qty > (old_remaining_qty + 1e-8)
+                    )
+
                     # Update quantity and price
-                    internal_pos.remaining_quantity = abs(exch_qty)
+                    internal_pos.remaining_quantity = new_remaining_qty
                     if internal_pos.initial_quantity < internal_pos.remaining_quantity:
                         internal_pos.initial_quantity = internal_pos.remaining_quantity
                     internal_pos.entry_price = exch_entry_price
+
+                    if scale_in_detected:
+                        added_qty = new_remaining_qty - old_remaining_qty
+                        est_fill_price = exch_entry_price
+                        if (
+                            added_qty > 0
+                            and old_remaining_qty > 0
+                            and old_entry_price > 0
+                        ):
+                            calc_price = (
+                                (new_remaining_qty * exch_entry_price)
+                                - (old_remaining_qty * old_entry_price)
+                            ) / added_qty
+                            if calc_price > 0:
+                                est_fill_price = calc_price
+
+                        logger.info(
+                            f"{log_prefix} Scale-in / DCA averaging detected during reconciliation for {symbol}. "
+                            f"Qty: {old_remaining_qty:.8f} -> {new_remaining_qty:.8f} (+{added_qty:.8f}), "
+                            f"Entry: {old_entry_price:.8f} -> {exch_entry_price:.8f}. "
+                            f"Scheduling TP update."
+                        )
+
+                        # Determine if averaging down or up
+                        if internal_pos.direction == SignalDirection.LONG:
+                            internal_pos._is_averaging_down = (
+                                exch_entry_price < old_entry_price
+                            )
+                        else:
+                            internal_pos._is_averaging_down = (
+                                exch_entry_price > old_entry_price
+                            )
+
+                        # Match and update DCA safety orders if present
+                        if getattr(internal_pos, "dca_orders", None):
+                            for dca_order in internal_pos.dca_orders:
+                                if dca_order.status != "FILLED":
+                                    order_target = getattr(
+                                        dca_order,
+                                        "target_price",
+                                        getattr(dca_order, "price", 0.0),
+                                    )
+                                    if (
+                                        abs(order_target - est_fill_price)
+                                        / max(order_target, 1.0)
+                                        < 0.02
+                                    ):
+                                        dca_order.status = "FILLED"
+                                        dca_order.fill_price = est_fill_price
+                                        break
+                        if internal_pos.dca_active_sos is not None:
+                            internal_pos.dca_active_sos += 1
+
+                        internal_pos.scale_in_triggered = None
+
+                        self._append_execution_event(
+                            internal_pos,
+                            event_type="ENTRY",
+                            execution_type="SCALE_IN_RECONCILE",
+                            price=est_fill_price,
+                            quantity=added_qty,
+                            client_order_id=None,
+                        )
+
+                        self.loop.create_task(
+                            self._update_tp_after_scale_in(
+                                symbol, market_type=reconcile_market_type
+                            ),
+                            name=f"UpdateTP_{symbol}_AfterReconcileScaleIn",
+                        )
 
                     if (
                         internal_pos.status == "OPEN"
@@ -3551,6 +3920,31 @@ class TradingController:
                                 and not cur_p.sl_replacement_in_progress
                             ):
                                 if cur_p.current_sl_order_id is not None:
+                                    is_delayed_plan_exchange = str(
+                                        getattr(executor, "exchange_id", "") or ""
+                                    ).lower() == "bitget" and bool(
+                                        getattr(
+                                            executor,
+                                            "supports_positions",
+                                            False,
+                                        )
+                                    )
+                                    if (
+                                        is_delayed_plan_exchange
+                                        and cur_p.sl_phantom_misses < 1
+                                    ):
+                                        # Bitget plan orders are not visible in
+                                        # open-plan queries immediately after
+                                        # placement. Wait for the next reconcile
+                                        # before declaring the SL phantom.
+                                        cur_p.sl_phantom_misses += 1
+                                        logger.info(
+                                            f"{log_prefix} Position {v_sym} SL {cur_p.current_sl_order_id} "
+                                            f"not found on exchange (miss #{cur_p.sl_phantom_misses}). "
+                                            f"Deferring phantom verdict to next reconcile."
+                                        )
+                                        continue
+                                    cur_p.sl_phantom_misses = 0
                                     logger.warning(
                                         f"{log_prefix} Position {v_sym} had current_sl_order_id={cur_p.current_sl_order_id} in memory, "
                                         f"but NO matching SL order exists on exchange! Clearing phantom SL ID."
@@ -3583,6 +3977,7 @@ class TradingController:
                                 and cur_p.current_sl_order_id is None
                             ):
                                 cur_p.current_sl_order_id = found_sl_id
+                                cur_p.sl_phantom_misses = 0
                                 if found_sl_cid:
                                     cur_p.current_sl_client_order_id = found_sl_cid
                                 logger.info(
@@ -3849,58 +4244,70 @@ class TradingController:
                         )
 
                 validated_positions = {}
-                # 2. Getting real positions from the exchange for verification
+                # 2. Getting real positions from the exchange for verification.
+                # None = request failed (auth/network): keep restored as-is,
+                # same as the network-error path below.
                 try:
                     live_executor = self.executors.get("live")
                     if live_executor:
                         exchange_positions = await live_executor.get_open_positions()
-                        exchange_symbols = {
-                            p["symbol"]
-                            for p in exchange_positions
-                            if float(p.get("positionAmt", 0)) != 0
-                        }
+                        if exchange_positions is None:
+                            logger.warning(
+                                f"{log_prefix} Could not verify positions with exchange. "
+                                f"Restoring all as-is."
+                            )
+                            validated_positions = restored_positions_objects
+                        else:
+                            exchange_symbols = {
+                                p["symbol"]
+                                for p in exchange_positions
+                                if float(p.get("positionAmt", 0)) != 0
+                            }
 
-                        for _position_key, pos in restored_positions_objects.items():
-                            symbol = getattr(pos, "symbol", None)
-                            if not symbol:
-                                try:
-                                    symbol = str(_position_key).split(":", 1)[-1]
-                                except Exception:
-                                    continue
-
-                            # Filter positions by api_key_id to prevent cross-account restoration
-                            if self.api_key_id is not None:
-                                pos_api_key_id = getattr(pos, "api_key_id", None)
-                                if is_from_legacy_key:
-                                    if pos_api_key_id is None or str(
-                                        pos_api_key_id
-                                    ) != str(self.api_key_id):
-                                        logger.info(
-                                            f"{log_prefix} Skipping position {symbol} from legacy key: "
-                                            f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
-                                        )
+                            for (
+                                _position_key,
+                                pos,
+                            ) in restored_positions_objects.items():
+                                symbol = getattr(pos, "symbol", None)
+                                if not symbol:
+                                    try:
+                                        symbol = str(_position_key).split(":", 1)[-1]
+                                    except Exception:
                                         continue
+
+                                # Filter positions by api_key_id to prevent cross-account restoration
+                                if self.api_key_id is not None:
+                                    pos_api_key_id = getattr(pos, "api_key_id", None)
+                                    if is_from_legacy_key:
+                                        if pos_api_key_id is None or str(
+                                            pos_api_key_id
+                                        ) != str(self.api_key_id):
+                                            logger.info(
+                                                f"{log_prefix} Skipping position {symbol} from legacy key: "
+                                                f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
+                                            )
+                                            continue
+                                    else:
+                                        if pos_api_key_id is not None and str(
+                                            pos_api_key_id
+                                        ) != str(self.api_key_id):
+                                            logger.warning(
+                                                f"{log_prefix} Skipping position {symbol}: "
+                                                f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
+                                            )
+                                            continue
+
+                                if symbol in exchange_symbols:
+                                    validated_positions[
+                                        self._position_key_for_position(pos)
+                                    ] = pos
+                                    logger.info(
+                                        f"{log_prefix} Position {symbol} verified on exchange. Restored."
+                                    )
                                 else:
-                                    if pos_api_key_id is not None and str(
-                                        pos_api_key_id
-                                    ) != str(self.api_key_id):
-                                        logger.warning(
-                                            f"{log_prefix} Skipping position {symbol}: "
-                                            f"pos api_key_id ({pos_api_key_id}) != controller ({self.api_key_id})"
-                                        )
-                                        continue
-
-                            if symbol in exchange_symbols:
-                                validated_positions[
-                                    self._position_key_for_position(pos)
-                                ] = pos
-                                logger.info(
-                                    f"{log_prefix} Position {symbol} verified on exchange. Restored."
-                                )
-                            else:
-                                logger.warning(
-                                    f"{log_prefix} Position {symbol} NOT found on exchange. Skipping restoration."
-                                )
+                                    logger.warning(
+                                        f"{log_prefix} Position {symbol} NOT found on exchange. Skipping restoration."
+                                    )
                     else:
                         # If no live executor, we can't verify, so we filter by api_key_id
                         for _position_key, pos in restored_positions_objects.items():
@@ -3984,6 +4391,13 @@ class TradingController:
         """
         if not self.redis_client:
             return
+
+        # Source of truth for the exchange this controller trades on.
+        # Falls back to ApiKey.exchange on the API layer (by api_key_id).
+        live_executor = (self.executors or {}).get("live")
+        controller_exchange = (
+            str(getattr(live_executor, "exchange_id", "") or "").lower() or None
+        )
 
         position_pnl_cache: Dict[str, float] = {}
         positions_to_publish = []
@@ -4090,6 +4504,7 @@ class TradingController:
                 "user_id": pos.user_id,
                 "mode": pos.mode,
                 "api_key_id": pos.api_key_id,  # Added api_key_id with fallback
+                "exchange": controller_exchange,
                 "market_type": self._market_type_for_position(pos),
                 "is_stop_at_be": getattr(pos, "is_stop_at_be", False),
                 "signal_details_json": pos.signal_details,  # Decision trace for foundation analytics
@@ -4102,6 +4517,7 @@ class TradingController:
                 "dca_orders": [dca.to_dict() for dca in pos.dca_orders]
                 if hasattr(pos, "dca_orders")
                 else [],
+                "config_id": pos.config_id,
             }
 
             positions_to_publish.append(pos_data)
@@ -4141,6 +4557,10 @@ class TradingController:
             instance_open_positions = 0
             source_config_id = self._source_config_id(config_dict)
             for pos in active_positions_copy:
+                # Count only truly open positions: CLOSING/zombie entries must
+                # not inflate the card counter (positions list filters them too).
+                if pos.status != "OPEN":
+                    continue
                 if pos.config_id and pos.config_id != source_config_id:
                     continue
                 if not self._instance_covers_symbol(config_dict, pos.symbol):
@@ -4180,6 +4600,7 @@ class TradingController:
                 "params": config_dict.get("config_data", {}).get("params", {}),
                 "user_id": config_dict.get("user_id"),
                 "api_key_id": strat_api_key_id,  # Added api_key_id with fallback
+                "exchange": config_dict.get("exchange") or controller_exchange,
                 "symbol_selection_mode": config_dict.get(
                     "symbol_selection_mode", "STATIC"
                 ),
@@ -4215,6 +4636,45 @@ class TradingController:
 
         # 4. Publishing to Redis
         try:
+            self._state_seq += 1
+            seq = self._state_seq
+            ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+            # Truncated push payload: core fields plus compact pending-order
+            # lists, heavy traces stay in state keys for REST/inspector.
+            # `partial_tp_orders`/`dca_orders` must be pushed: the live deal
+            # chart renders the limit rails (partial TP exits + scale-in/DCA
+            # limit entries) straight from this snapshot, and /positions is not
+            # re-fetched while the socket is up.
+            positions_push = []
+            for p in positions_to_publish:
+                positions_push.append(
+                    {
+                        "id": p.get("id"),
+                        "symbol": p.get("symbol"),
+                        "strategy": p.get("strategy"),
+                        "direction": p.get("direction"),
+                        "size": p.get("size"),
+                        "entry_price": p.get("entry_price"),
+                        "mark_price": p.get("mark_price"),
+                        "pnl": p.get("pnl"),
+                        "pnl_percent": p.get("pnl_percent"),
+                        "entry_time": p.get("entry_time"),
+                        "stop_loss": p.get("stop_loss"),
+                        "take_profit": p.get("take_profit"),
+                        "user_id": p.get("user_id"),
+                        "mode": p.get("mode"),
+                        "api_key_id": p.get("api_key_id"),
+                        "exchange": p.get("exchange"),
+                        "market_type": p.get("market_type"),
+                        "is_stop_at_be": p.get("is_stop_at_be"),
+                        "config_id": p.get("config_id"),
+                        "partial_tp_orders": p.get("partial_tp_orders") or [],
+                        "dca_orders": p.get("dca_orders") or [],
+                        "truncated": True,
+                    }
+                )
+
             async with self.redis_client.pipeline() as pipe:
                 # IMPORTANT: Using keys with user_id AND api_key_id for data isolation between controllers!
                 # This prevents data from one controller being overwritten by another (race condition).
@@ -4223,20 +4683,54 @@ class TradingController:
                 key_strat = f"{config.REDIS_STATE_KEY_STRATEGIES}:{self.user_id}:{self.api_key_id}"
                 key_port = f"{getattr(config, 'REDIS_STATE_KEY_PORTFOLIO', 'depthsight:state:portfolio')}:{self.user_id}:{self.api_key_id}"
 
-                pipe.set(key_pos, json.dumps(positions_to_publish))
-                pipe.set(key_strat, json.dumps(strategies_to_publish))
-                pipe.set(key_port, json.dumps(portfolio_status_data))
+                # Ephemeral keys (TTL): a dead controller's snapshot must expire
+                # instead of haunting multi-account ("all") aggregation forever.
+                # Interval (8s) refreshes them well before expiry.
+                state_ttl = int(getattr(config, "REDIS_STATE_TTL_SECONDS", 30))
+                pipe.set(key_pos, json.dumps(positions_to_publish), ex=state_ttl)
+                pipe.set(key_strat, json.dumps(strategies_to_publish), ex=state_ttl)
+                pipe.set(key_port, json.dumps(portfolio_status_data), ex=state_ttl)
 
-                # Notifications - using user-scoped channels for isolation
-                notification_payload = json.dumps({"user_id": self.user_id})
+                # Push snapshots with data (backward compatible: user_id still present,
+                # old frontends ignore extra fields and refetch via REST).
                 pipe.publish(
-                    f"depthsight:events:positions:{self.user_id}", notification_payload
+                    f"depthsight:events:positions:{self.user_id}",
+                    json.dumps(
+                        {
+                            "user_id": self.user_id,
+                            "api_key_id": self.api_key_id,
+                            "seq": seq,
+                            "ts_ms": ts_ms,
+                            "type": "snapshot",
+                            "data": positions_push,
+                        }
+                    ),
                 )
                 pipe.publish(
-                    f"depthsight:events:strategies:{self.user_id}", notification_payload
+                    f"depthsight:events:strategies:{self.user_id}",
+                    json.dumps(
+                        {
+                            "user_id": self.user_id,
+                            "api_key_id": self.api_key_id,
+                            "seq": seq,
+                            "ts_ms": ts_ms,
+                            "type": "snapshot",
+                            "data": strategies_to_publish,
+                        }
+                    ),
                 )
                 pipe.publish(
-                    f"depthsight:events:portfolio:{self.user_id}", notification_payload
+                    f"depthsight:events:portfolio:{self.user_id}",
+                    json.dumps(
+                        {
+                            "user_id": self.user_id,
+                            "api_key_id": self.api_key_id,
+                            "seq": seq,
+                            "ts_ms": ts_ms,
+                            "type": "snapshot",
+                            "data": portfolio_status_data,
+                        }
+                    ),
                 )
 
                 await pipe.execute()
@@ -4247,6 +4741,27 @@ class TradingController:
                 f"Failed to publish state to Redis for user {self.user_id}: {e}",
                 exc_info=True,
             )
+
+    async def _publish_trades_event(self, trade_summary: Optional[dict] = None):
+        """Lightweight invalidation event for trade history/equity (on close only)."""
+        if not self.redis_client:
+            return
+        try:
+            self._state_seq += 1
+            payload = {
+                "user_id": self.user_id,
+                "api_key_id": self.api_key_id,
+                "seq": self._state_seq,
+                "ts_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
+                "type": "trades_invalidated",
+            }
+            if trade_summary:
+                payload["trade"] = trade_summary
+            await self.redis_client.publish(
+                f"depthsight:events:trades:{self.user_id}", json.dumps(payload)
+            )
+        except Exception as e:
+            logger.warning(f"[PublishTrades] Failed for user {self.user_id}: {e}")
 
     async def reload_user_app_config(self):
         """
@@ -4460,7 +4975,9 @@ class TradingController:
         last_pending_entry_check_time = 0
 
         last_state_publish_time = 0
-        state_publish_interval = 2
+        # Rare authoritative snapshot: frontend gets live mark-prices directly
+        # from exchange WS and recomputes PnL locally, so 8s here is enough.
+        state_publish_interval = 8
 
         last_rm_save_time = 0
         rm_save_interval = 30
@@ -4974,16 +5491,20 @@ class TradingController:
                         )
                     else:
                         position_to_manage = LivePosition(**vars(position))
-                    if position.config_id:
-                        found_instance = await self._find_running_instance_by_symbol(
-                            position.symbol,
-                            source_config_id=position.config_id,
-                        )
-                        if found_instance:
-                            strategy_instance = found_instance[1]
-                            strategy_config_dict = found_instance[
-                                2
-                            ]  # NEW: extracting config_dict
+            # NOTE: the running-instance lookup below is intentionally OUTSIDE
+            # the symbol lock. It waits on the global instances_lock, and holding
+            # the symbol lock meanwhile stalls new signals for this symbol
+            # (measured lock_wait of seconds on every candle close).
+            if position_to_manage and position_to_manage.config_id:
+                found_instance = await self._find_running_instance_by_symbol(
+                    position_to_manage.symbol,
+                    source_config_id=position_to_manage.config_id,
+                )
+                if found_instance:
+                    strategy_instance = found_instance[1]
+                    strategy_config_dict = found_instance[
+                        2
+                    ]  # NEW: extracting config_dict
 
             # Log why strategy_instance might be None
             if position_to_manage and not strategy_instance:
@@ -5530,22 +6051,54 @@ class TradingController:
                     if ptp.order_id and ptp.status != "FILLED":
                         tp_order_ids.append((ptp.order_id, ptp.client_order_id))
 
+            executor = self._executor_for_market_type(
+                self._market_type_for_position(position), mode=position.mode
+            )
+
+            # Fallback: if no tracked TP orders in position object, check exchange for orphan/reduce-only TP orders
+            if not tp_order_ids and executor and hasattr(executor, "get_open_orders"):
+                try:
+                    open_orders = await executor.get_open_orders(symbol)
+                    if open_orders:
+                        opp_side = (
+                            "SELL"
+                            if position.direction == SignalDirection.LONG
+                            else "BUY"
+                        )
+                        for o in open_orders:
+                            o_side = (o.get("side") or "").upper()
+                            o_type = (o.get("type") or "").upper()
+                            o_cid = str(o.get("clientOrderId") or "")
+                            if o_side == opp_side and (
+                                "x-ptp-" in o_cid
+                                or o.get("reduceOnly")
+                                or o_type
+                                in ("LIMIT", "TAKE_PROFIT", "TAKE_PROFIT_MARKET")
+                            ):
+                                tp_order_ids.append((o.get("orderId"), o_cid or None))
+                except Exception as e_fetch_tp:
+                    logger.debug(
+                        f"{log_prefix} Fallback open orders fetch for TP cancel: {e_fetch_tp}"
+                    )
+
             if tp_order_ids:
                 logger.info(
                     f"{log_prefix} Cancelling {len(tp_order_ids)} existing TP orders before replacement."
-                )
-                executor = self._executor_for_market_type(
-                    self._market_type_for_position(position), mode=position.mode
                 )
                 if not executor:
                     logger.error(
                         f"{log_prefix} Executor for market '{self._market_type_for_position(position)}' not found. Cannot cancel TP orders."
                     )
-                    return
-                for oid, cid in tp_order_ids:
-                    await executor.cancel_order(
-                        symbol, orderId=oid, origClientOrderId=cid
-                    )
+                else:
+                    for oid, cid in tp_order_ids:
+                        try:
+                            await executor.cancel_order(
+                                symbol, orderId=oid, origClientOrderId=cid
+                            )
+                        except Exception as e_can:
+                            logger.warning(
+                                f"{log_prefix} Failed to cancel TP order oid={oid}, cid={cid}: {e_can}"
+                            )
 
             # Clear the order list and reset the static TP so that manage_position recalculates it from the new price
             # This should ALWAYS happen during averaging, even if no orders were found on the exchange.
@@ -7343,6 +7896,7 @@ class TradingController:
         """
         log_prefix = f"[ProcessSignal:{signal.strategy_name}:{signal.symbol}:{signal.direction.name}]"
         logger.info(f"{log_prefix} --- START PROCESSING SIGNAL ---")
+        t_proc_start = time.monotonic()
         logger.debug(f"{log_prefix} Received Signal Object: {signal}")
         logger.debug(f"{log_prefix} Received Pair Info: {pair_info}")
         initial_market_type = self._normalize_market_type(
@@ -7459,11 +8013,13 @@ class TradingController:
             logger.info(
                 f"{log_prefix} Passed initial checks (throttle, cooldown, existing position). Reserved slot."
             )
+            t_proc_checks = time.monotonic()
 
             # Now we use the symbol lock for the heavy lifting
             symbol_lock = self._get_lock_for_position(
                 signal.symbol, initial_market_type
             )
+            t_proc_lock_start = time.monotonic()
             async with symbol_lock:
                 # Re-verify the placeholder is still ours
                 pos_check = self._active_position_get(
@@ -7493,6 +8049,7 @@ class TradingController:
                     return
 
             # 2. CONFIGURATION SEARCH AND ML-FLAG CHECK
+            t_proc_lock_end = time.monotonic()
             running_instance_config = None
             instance_user_id = None
             instance_config_id = None
@@ -7619,6 +8176,7 @@ class TradingController:
             logger.info(
                 f"{log_prefix} Found parent config '{instance_config_id}'. User ID: {instance_user_id}, Use ML Confirmation: {use_ml_confirmation_flag}"
             )
+            t_proc_config = time.monotonic()
 
             # 3. ML SIGNAL CONFIRMATION (if enabled)
             ml_confirmed_this_signal_live = True
@@ -7844,11 +8402,21 @@ class TradingController:
 
             # 4. CHECK VIA RISK MANAGER
 
+            t_proc_ml = time.monotonic()
+            t_proc_minfo = time.monotonic()
             lot_params = await self._get_market_info(
                 signal.symbol, "lot_params", market_type=market_type
             )
             min_notional = await self._get_market_info(
                 signal.symbol, "min_notional", market_type=market_type
+            )
+            t_proc_assess = time.monotonic()
+            logger.info(
+                f"{log_prefix} Timing: pre_risk_checks={(t_proc_checks - t_proc_start) * 1000:.0f}ms "
+                f"lock_wait={(t_proc_lock_end - t_proc_lock_start) * 1000:.0f}ms "
+                f"config_search={(t_proc_config - t_proc_lock_end) * 1000:.0f}ms "
+                f"ml={(t_proc_ml - t_proc_config) * 1000:.0f}ms "
+                f"market_info={(t_proc_assess - t_proc_minfo) * 1000:.0f}ms."
             )
             logger.debug(
                 f"{log_prefix} LotParams: {lot_params}, MinNotional: {min_notional}"
@@ -7946,6 +8514,15 @@ class TradingController:
                     if getattr(executor, "supports_positions", False)
                     else []
                 )
+                if real_positions is None:
+                    # Fail-closed: without exchange data we cannot rule out an
+                    # existing position, so skip the entry instead of risking
+                    # a duplicate.
+                    logger.warning(
+                        f"{log_prefix} Could not check existing positions on exchange. "
+                        f"Skipping entry for safety."
+                    )
+                    return
                 # Search for a position by symbol where the size is not 0
                 existing_on_exchange = next(
                     (
@@ -8283,6 +8860,23 @@ class TradingController:
                 f"{log_prefix} Position record updated after order placement. Status: {position_status_init}. Original TP plan saved ({len(new_position.original_partial_targets_plan or [])} targets). For User ID: {new_position.user_id}, Config ID: {new_position.config_id}"
             )
 
+            # Short REST fallback for MARKET entries stuck in PENDING_ENTRY when
+            # the private WS is silent (e.g. Bitget). Self-cancels on the first
+            # check if WS already confirmed the fill — zero extra REST then.
+            if (
+                position_status_init == "PENDING_ENTRY"
+                and signal.mode == OrderMode.MARKET
+            ):
+                self.loop.create_task(
+                    self._confirm_market_entry_short_poll(
+                        symbol=signal.symbol,
+                        entry_order_id=entry_order_id_resp,
+                        entry_client_order_id=entry_client_order_id,
+                        market_type=market_type,
+                    ),
+                    name=f"ConfirmEntryPoll_{signal.symbol}",
+                )
+
             if new_position.user_id and new_position.status in [
                 "PENDING_ENTRY",
                 "OPEN",
@@ -8514,6 +9108,94 @@ class TradingController:
                 if processing_key in self._processing_signal_for_symbol:
                     self._processing_signal_for_symbol.remove(processing_key)
 
+    async def _confirm_market_entry_short_poll(
+        self,
+        symbol: str,
+        entry_order_id: Optional[Union[str, int]],
+        entry_client_order_id: Optional[str],
+        market_type: Optional[str] = None,
+        attempts: int = 3,
+        delay: float = 0.5,
+    ):
+        """Short REST fallback confirming a MARKET entry when WS is silent.
+
+        Fires only while the position is still PENDING_ENTRY and no WS fill was
+        processed. The first check is flag-only (zero REST): on healthy
+        exchanges the WS fill lands within milliseconds and this task exits
+        immediately. Only after `delay` without confirmation a single
+        `fetch_positions` is issued per attempt (max `attempts`).
+        """
+        log_prefix = f"[ConfirmEntry:{symbol}:{str(entry_client_order_id)[:8]}]"
+        for attempt in range(1, attempts + 1):
+            await asyncio.sleep(delay)
+            symbol_lock = self._get_lock_for_position(symbol, market_type)
+            async with symbol_lock:
+                pos = self._active_position_get(symbol, market_type)
+                if (
+                    not pos
+                    or pos.status != "PENDING_ENTRY"
+                    or getattr(pos, "entry_fill_processed", False)
+                    or (
+                        entry_order_id is not None
+                        and pos.entry_order_id is not None
+                        and str(pos.entry_order_id) != str(entry_order_id)
+                    )
+                ):
+                    logger.debug(
+                        f"{log_prefix} Entry already confirmed via WS (attempt {attempt}). Fallback not needed."
+                    )
+                    return
+                known_qty = pos.remaining_quantity or 0.0
+            try:
+                executor = await self._get_executor_for_symbol(
+                    symbol, market_type=market_type
+                )
+                if not executor:
+                    logger.debug(
+                        f"{log_prefix} No executor for short-poll (attempt {attempt})."
+                    )
+                    continue
+                exchange_positions = (await executor.get_open_positions()) or []
+                match = next(
+                    (
+                        p
+                        for p in exchange_positions
+                        if str(p.get("symbol", "")).upper() == symbol.upper()
+                        and float(p.get("positionAmt", 0)) != 0
+                    ),
+                    None,
+                )
+                if match:
+                    exch_qty = abs(float(match.get("positionAmt", 0)))
+                    exch_entry = float(match.get("entryPrice") or 0)
+                    logger.info(
+                        f"{log_prefix} WS silent but exchange reports active position "
+                        f"(qty={exch_qty}, entry={exch_entry}). Confirming via _handle_entry_fill."
+                    )
+                    await self._handle_entry_fill(
+                        symbol=symbol,
+                        order_id=entry_order_id,
+                        client_order_id=entry_client_order_id or "",
+                        avg_fill_price=exch_entry
+                        if exch_entry > 0
+                        else (pos.entry_price or 0.0),
+                        cumulative_filled_qty=exch_qty if exch_qty > 0 else known_qty,
+                        fills=[],
+                        is_final_fill_status=True,
+                        market_type=market_type,
+                    )
+                    return
+                logger.debug(
+                    f"{log_prefix} No position on exchange yet (attempt {attempt}/{attempts})."
+                )
+            except Exception as e_poll:
+                logger.debug(
+                    f"{log_prefix} Short-poll attempt {attempt} failed: {e_poll}"
+                )
+        logger.debug(
+            f"{log_prefix} Entry still unconfirmed after {attempts} polls. Leaving to reconcile."
+        )
+
     async def _handle_entry_fill(
         self,
         symbol: str,
@@ -8628,6 +9310,52 @@ class TradingController:
                 order_id=order_id,
                 client_order_id=client_order_id,
             )
+
+            # ENTRY SLIPPAGE GUARD (final fills only): if the fill landed too
+            # far from the signal price in a fast market, the signal-anchored
+            # TP is already dead (it would fill instantly for ~zero, followed
+            # by a bogus SL error). Close immediately instead of running a
+            # stillborn position. Here position.entry_price is still the
+            # signal-anchored intended price (overwritten below).
+            if is_final_fill_status:
+                try:
+                    _slip_frac = float(
+                        getattr(config, "ENTRY_MAX_SLIPPAGE_FRACTION_OF_TP", 0.5)
+                    )
+                except (TypeError, ValueError):
+                    _slip_frac = 0.5
+                _intended_entry = position.entry_price
+                _tp_ref = position.initial_take_profit
+                if (
+                    _slip_frac
+                    and _slip_frac > 0
+                    and _intended_entry
+                    and _intended_entry > 0
+                    and _tp_ref
+                    and _tp_ref > 0
+                    and avg_fill_price
+                    and avg_fill_price > 0
+                ):
+                    _tp_distance = abs(_tp_ref - _intended_entry)
+                    if position.direction == SignalDirection.LONG:
+                        _slipped = avg_fill_price - _intended_entry
+                    else:
+                        _slipped = _intended_entry - avg_fill_price
+                    if _tp_distance > 1e-12 and _slipped > _slip_frac * _tp_distance:
+                        logger.warning(
+                            f"{log_prefix} ENTRY SLIPPAGE GUARD: fill {avg_fill_price:.8f} deviated "
+                            f"{_slipped:.8f} from signal {_intended_entry:.8f} (> {_slip_frac * 100:.0f}% of TP "
+                            f"distance {_tp_distance:.8f}). Closing immediately instead of running a stillborn position."
+                        )
+                        self.loop.create_task(
+                            self.close_position(
+                                symbol,
+                                "ENTRY_SLIPPAGE_GUARD",
+                                market_type=market_type,
+                            ),
+                            name=f"CloseSlippageGuard_{symbol}",
+                        )
+                        return
 
             effective_entry_price_candidate = avg_fill_price
 
@@ -9333,6 +10061,7 @@ class TradingController:
         realized_pnl_from_exchange: float = 0.0,
         exchange_pnl_available: bool = False,
         market_type: Optional[str] = None,
+        price_source: Optional[str] = None,
     ):
         # order_id and client_order_id here are the IDs of the order that TRIGGERED the final exit
         log_prefix = f"[_HandleFinalExit:{symbol}:{reason}]"
@@ -9732,6 +10461,7 @@ class TradingController:
                     "commission": position_to_process_copy.total_commission,
                     "entry_client_order_id": position_to_process_copy.entry_client_order_id,
                     "initial_risk_usd_planned": position_to_process_copy.initial_risk_usd_planned,  # Log it
+                    "price_source": price_source or "ws_event",
                 },
             )
             logger.info(
@@ -9982,6 +10712,10 @@ class TradingController:
                 signal_details_for_db["execution_events"] = list(
                     position_to_process_copy.execution_events
                 )
+                # Origin of exit_price for analytics ("Анализ"): ws_event |
+                # exchange_trade | exchange_order | ticker_fallback.
+                # WS-driven closes pass None.
+                signal_details_for_db["price_source"] = price_source or "ws_event"
 
                 trade_data_for_db = {
                     "trade_uuid": position_to_process_copy.entry_client_order_id,  # Use Client Order ID as a unique trade ID
@@ -10426,10 +11160,23 @@ class TradingController:
                 f"{log_prefix} Position data was not available for post-lock processing for {symbol}."
             )
 
-        # Publish state immediately after final exit
+        # Publish state immediately after final exit + trades invalidation
+        # (history/equity charts update only on close, not on ticks).
         self.loop.create_task(
             self._publish_state_to_redis(),
             name=f"PublishState_FinalExit_{symbol}",
+        )
+        closed_pnl = None
+        try:
+            if position_to_process_copy is not None:
+                closed_pnl = getattr(position_to_process_copy, "pnl", None)
+        except Exception:
+            closed_pnl = None
+        self.loop.create_task(
+            self._publish_trades_event(
+                {"symbol": symbol, "reason": reason, "pnl": closed_pnl}
+            ),
+            name=f"PublishTrades_FinalExit_{symbol}",
         )
 
     async def _move_stop_loss_to_be(
@@ -11440,6 +12187,7 @@ class TradingController:
         )
 
         logger.info(f"{log_prefix} --- Attempting to place Stop-Loss ---")
+        t_sl_start = time.monotonic()
 
         # Step 1: State check and data collection under lock
         # This block must be as fast as possible to avoid blocking other operations.
@@ -11448,6 +12196,8 @@ class TradingController:
         remaining_qty_to_use: Optional[float] = None
         direction_to_use: Optional[SignalDirection] = None
         sl_price_to_use: Optional[float] = None
+        time_status_open_to_use: Optional[float] = None
+        has_dca_orders_to_use: bool = False
         can_place_sl = False
 
         symbol_lock = self._get_lock_for_position(symbol_to_use, position_market_type)
@@ -11503,6 +12253,10 @@ class TradingController:
             # Copy necessary data for use outside the lock
             remaining_qty_to_use = current_pos_in_db.remaining_quantity
             direction_to_use = current_pos_in_db.direction
+            time_status_open_to_use = current_pos_in_db.time_status_open
+            has_dca_orders_to_use = bool(
+                getattr(current_pos_in_db, "dca_order_ids", None)
+            )
             can_place_sl = True
 
         # If something went wrong during the check under lock
@@ -11513,62 +12267,90 @@ class TradingController:
         new_sl_client_id = f"x-sl-{uuid.uuid4().hex[:16]}"
         close_side = "SELL" if direction_to_use == SignalDirection.LONG else "BUY"
 
-        # CRITICAL IMPROVEMENT: Synchronization with the real position size on the exchange
-        # This prevents situations where the internal remaining_quantity is outdated or incorrect
+        # Qty synchronization with the real position size on the exchange.
+        # This prevents situations where the internal remaining_quantity is outdated or incorrect.
+        # For freshly opened positions (<5s, no DCA fills yet) the internal qty
+        # cannot have diverged, so the extra REST round trip is skipped.
+        # Otherwise the sync runs in parallel with the preflight ticker fetch.
         executor = await self._get_executor_for_symbol(
             symbol_to_use, market_type=position_market_type
         )
-        if executor:
+        preflight_ticker_info: Optional[Dict[str, Any]] = None
+        skip_qty_sync = (
+            time_status_open_to_use is not None
+            and (time.time() - time_status_open_to_use) < 5.0
+            and not has_dca_orders_to_use
+        )
+        if skip_qty_sync:
+            logger.debug(
+                f"{log_prefix} Skipping exchange qty sync for fresh position "
+                f"(opened {time.time() - (time_status_open_to_use or 0):.1f}s ago)."
+            )
+        if executor and not skip_qty_sync:
             try:
-                exchange_positions = await executor.get_open_positions()
-                exchange_pos_data = next(
-                    (
-                        p
-                        for p in exchange_positions
-                        if p["symbol"] == symbol_to_use
-                        and float(p.get("positionAmt", 0)) != 0
-                    ),
-                    None,
-                )
-                if exchange_pos_data:
-                    real_qty = abs(float(exchange_pos_data["positionAmt"]))
-                    if abs(remaining_qty_to_use - real_qty) > 1e-9:
-                        logger.warning(
-                            f"{log_prefix} SYNC: Internal qty {remaining_qty_to_use:.8f} differs from exchange qty {real_qty:.8f}. Using exchange value!"
-                        )
-                        remaining_qty_to_use = real_qty
-                        # Also updating the internal state
-                        symbol_lock_qty_sync = self._get_lock_for_position(
-                            symbol_to_use, position_market_type
-                        )
-                        async with symbol_lock_qty_sync:
-                            pos_for_qty_sync = self._active_position_get(
+                if not skip_preflight_check:
+                    exchange_positions, preflight_ticker_info = await asyncio.gather(
+                        executor.get_open_positions(),
+                        executor.get_ticker_price(symbol=symbol_to_use),
+                    )
+                else:
+                    exchange_positions = await executor.get_open_positions()
+                if exchange_positions is None:
+                    # Fail-closed: request failed, keep the internal qty.
+                    logger.warning(
+                        f"{log_prefix} Could not sync position qty with exchange. "
+                        f"Proceeding with internal qty {remaining_qty_to_use:.8f}"
+                    )
+                else:
+                    exchange_pos_data = next(
+                        (
+                            p
+                            for p in exchange_positions
+                            if p["symbol"] == symbol_to_use
+                            and float(p.get("positionAmt", 0)) != 0
+                        ),
+                        None,
+                    )
+                    if exchange_pos_data:
+                        real_qty = abs(float(exchange_pos_data["positionAmt"]))
+                        if abs(remaining_qty_to_use - real_qty) > 1e-9:
+                            logger.warning(
+                                f"{log_prefix} SYNC: Internal qty {remaining_qty_to_use:.8f} differs from exchange qty {real_qty:.8f}. Using exchange value!"
+                            )
+                            remaining_qty_to_use = real_qty
+                            # Also updating the internal state
+                            symbol_lock_qty_sync = self._get_lock_for_position(
                                 symbol_to_use, position_market_type
                             )
-                            if pos_for_qty_sync:
-                                pos_for_qty_sync.remaining_quantity = real_qty
-                else:
-                    logger.warning(
-                        f"{log_prefix} No position found on exchange for {symbol_to_use}. Proceeding with internal qty {remaining_qty_to_use:.8f}"
-                    )
+                            async with symbol_lock_qty_sync:
+                                pos_for_qty_sync = self._active_position_get(
+                                    symbol_to_use, position_market_type
+                                )
+                                if pos_for_qty_sync:
+                                    pos_for_qty_sync.remaining_quantity = real_qty
+                    else:
+                        logger.warning(
+                            f"{log_prefix} No position found on exchange for {symbol_to_use}. Proceeding with internal qty {remaining_qty_to_use:.8f}"
+                        )
             except Exception as sync_err:
                 logger.error(
                     f"{log_prefix} Failed to sync position qty with exchange: {sync_err}. Proceeding with internal qty {remaining_qty_to_use:.8f}"
                 )
 
         position_market_type = self._market_type_for_position(position_obj_ref)
-        lot_params = await self._get_market_info(
-            symbol_to_use, "lot_params", market_type=position_market_type
-        )
-        min_notional = await self._get_market_info(
-            symbol_to_use, "min_notional", market_type=position_market_type
-        )
-        tick_size = (
-            await self._get_market_info(
+        t_sl_sync = time.monotonic()
+        lot_params, min_notional, tick_size_raw = await asyncio.gather(
+            self._get_market_info(
+                symbol_to_use, "lot_params", market_type=position_market_type
+            ),
+            self._get_market_info(
+                symbol_to_use, "min_notional", market_type=position_market_type
+            ),
+            self._get_market_info(
                 symbol_to_use, "tick_size", market_type=position_market_type
-            )
-            or config.DEFAULT_TICK_SIZE
+            ),
         )
+        tick_size = tick_size_raw or config.DEFAULT_TICK_SIZE
 
         adj_qty = self.rm._adjust_and_round_quantity(
             remaining_qty_to_use,
@@ -11689,10 +12471,14 @@ class TradingController:
         # Skip this check when REPLACING a stop (BE/trailing) because:
         # 1. If the price has already moved past the new stop level, the stop will simply trigger — this is normal
         # 2. Emergency closure when replacing a stop breaks the BE/trailing logic
+        t_sl_preflight = time.monotonic()
         if not skip_preflight_check:
             try:
-                # Get the latest market price for verification
-                ticker_info = await executor.get_ticker_price(symbol=symbol_to_use)
+                # Reuse the ticker fetched in parallel with the qty sync when
+                # available; otherwise fetch it now.
+                ticker_info = preflight_ticker_info
+                if ticker_info is None:
+                    ticker_info = await executor.get_ticker_price(symbol=symbol_to_use)
                 if not ticker_info or "price" not in ticker_info:
                     raise ValueError(
                         "Could not fetch current price for pre-flight SL check."
@@ -11745,7 +12531,14 @@ class TradingController:
         logger.info(
             f"{log_prefix} Placing SL (API Type: {order_type_for_sl_api}). Parameters: {sl_params_for_executor}"
         )
+        t_sl_place = time.monotonic()
+        logger.info(
+            f"{log_prefix} Timing: lock_check={(t_sl_sync - t_sl_start) * 1000:.0f}ms "
+            f"qty_sync+infos={(t_sl_preflight - t_sl_sync) * 1000:.0f}ms "
+            f"preflight_ticker={(t_sl_place - t_sl_preflight) * 1000:.0f}ms."
+        )
         sl_resp: Optional[Dict[str, Any]] = None
+        t_sl_place_req = time.monotonic()
         try:
             sl_resp = await executor.place_order(
                 symbol=symbol_to_use,
@@ -11754,6 +12547,10 @@ class TradingController:
                 **sl_params_for_executor,
             )
             logger.info(f"{log_prefix} Exchange response for SL placement: {sl_resp}")
+            logger.info(
+                f"{log_prefix} Timing: place_order={(time.monotonic() - t_sl_place_req) * 1000:.0f}ms "
+                f"total={(time.monotonic() - t_sl_start) * 1000:.0f}ms."
+            )
         except Exception as e:
             logger.error(
                 f"{log_prefix} EXCEPTION during SL placement: {e}", exc_info=True
@@ -11848,6 +12645,7 @@ class TradingController:
                         # Save the flag that this is an Algo Order (for correct cancellation)
                         pos_after_place.is_sl_algo_order = is_algo_order
                         pos_after_place.sl_placement_initiated = False
+                        pos_after_place.sl_phantom_misses = 0
                         logger.info(
                             f"{log_prefix} SL order PLACED. ID={order_id_resp} (AlgoOrder={is_algo_order}, WS_EarlyMatch={is_same_order}). Position object updated."
                         )
@@ -13145,6 +13943,9 @@ class TradingController:
                 break
         if s.startswith("bb39c7c267cfbcde"):
             s = s[len("bb39c7c267cfbcde") :]
+        bitget_id = getattr(config, "BITGET_BROKER_ID", "").lower().strip()
+        if bitget_id and s.startswith(bitget_id):
+            s = s[len(bitget_id) :]
         return s.lstrip("-_")
 
     @staticmethod
@@ -14591,14 +15392,24 @@ class TradingController:
         if getattr(executor, "supports_positions", False):
             try:
                 exchange_positions = await executor.get_open_positions()
-                exchange_pos_data = next(
-                    (
-                        p
-                        for p in exchange_positions
-                        if p["symbol"] == symbol and float(p.get("positionAmt", 0)) != 0
-                    ),
-                    None,
-                )
+                exchange_pos_data = None
+                if exchange_positions is None:
+                    # Fail-closed: request failed, keep internal qty and
+                    # proceed to market close (do NOT finalize as closed).
+                    logger.warning(
+                        f"{log_prefix} Could not sync with exchange before close. "
+                        f"Proceeding with internal data."
+                    )
+                else:
+                    exchange_pos_data = next(
+                        (
+                            p
+                            for p in exchange_positions
+                            if p["symbol"] == symbol
+                            and float(p.get("positionAmt", 0)) != 0
+                        ),
+                        None,
+                    )
                 if exchange_pos_data:
                     real_qty = abs(float(exchange_pos_data["positionAmt"]))
                     symbol_lock_sync1 = self._get_lock_for_position(
@@ -14637,7 +15448,7 @@ class TradingController:
                                                 api_key_name=self.api_key_name,
                                             )
                                         )
-                else:
+                elif exchange_positions is not None:
                     logger.warning(
                         f"{log_prefix} No position found on exchange for {symbol}. Triggering final exit to sync with DB and clean up."
                     )
@@ -14689,33 +15500,41 @@ class TradingController:
             if getattr(executor, "supports_positions", False):
                 try:
                     exchange_positions = await executor.get_open_positions()
-                    exchange_pos_data = next(
-                        (
-                            p
-                            for p in exchange_positions
-                            if p["symbol"] == symbol
-                            and float(p.get("positionAmt", 0)) != 0
-                        ),
-                        None,
-                    )
-                    if not exchange_pos_data:
-                        logger.info(
-                            f"{log_prefix} Position {symbol} is missing on the exchange according to REST API data. Closing confirmed."
+                    if exchange_positions is None:
+                        # Fail-closed: request failed, do NOT treat the position
+                        # as closed. Fall through to the market-close attempt.
+                        logger.warning(
+                            f"{log_prefix} Could not verify position on exchange "
+                            f"(attempt {attempt + 1}). Not confirming close."
                         )
-                        # Cleanup and pop is deferred to _handle_final_exit
-                        is_confirmed_closed = True
-                        break
                     else:
-                        real_qty = abs(float(exchange_pos_data["positionAmt"]))
-                        symbol_lock_resync = self._get_lock_for_position(
-                            symbol, normalized_market_type
+                        exchange_pos_data = next(
+                            (
+                                p
+                                for p in exchange_positions
+                                if p["symbol"] == symbol
+                                and float(p.get("positionAmt", 0)) != 0
+                            ),
+                            None,
                         )
-                        async with symbol_lock_resync:
-                            position_for_sync = self._active_position_get(
+                        if not exchange_pos_data:
+                            logger.info(
+                                f"{log_prefix} Position {symbol} is missing on the exchange according to REST API data. Closing confirmed."
+                            )
+                            # Cleanup and pop is deferred to _handle_final_exit
+                            is_confirmed_closed = True
+                            break
+                        else:
+                            real_qty = abs(float(exchange_pos_data["positionAmt"]))
+                            symbol_lock_resync = self._get_lock_for_position(
                                 symbol, normalized_market_type
                             )
-                            if position_for_sync:
-                                position_for_sync.remaining_quantity = real_qty
+                            async with symbol_lock_resync:
+                                position_for_sync = self._active_position_get(
+                                    symbol, normalized_market_type
+                                )
+                                if position_for_sync:
+                                    position_for_sync.remaining_quantity = real_qty
                 except Exception as sync_err:
                     logger.error(
                         f"{log_prefix} Position synchronization error via REST API: {sync_err}"

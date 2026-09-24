@@ -12,6 +12,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 
+import importlib
 import json
 import os
 from datetime import datetime, timezone
@@ -40,6 +41,25 @@ REDIS_COMMAND_CHANNEL = getattr(
 HFT_CMD_CHANNEL = "hft:commands"
 
 logger = logging.getLogger(__name__)
+
+
+def _load_broker_xlsx_importer(module_name: str, friendly_name: str):
+    """Lazily loads a closed-source broker XLSX importer from hub_private.
+
+    hub_private is gitignored and may be absent in open-source builds. Raises
+    HTTP 501 (instead of crashing with ImportError -> 500) so the frontend
+    can degrade gracefully with a clear message.
+    """
+    try:
+        return importlib.import_module(module_name)
+    except ImportError as e:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                f"{friendly_name} XLSX import module is not included in this build."
+            ),
+        ) from e
+
 
 config_router = APIRouter(
     prefix="/api/v1",
@@ -164,10 +184,16 @@ async def auto_resolve_weex_uid(db: AsyncSession, user_id: int) -> Optional[str]
     import base64
     import json
 
+    from sqlalchemy import func
+
     # 1. Fetch user's Weex API keys
-    stmt = select(models.ApiKey).where(
-        models.ApiKey.user_id == user_id,
-        models.ApiKey.exchange.in_(["weex", "weex_futures", "weex_spot"]),
+    stmt = (
+        select(models.ApiKey)
+        .where(
+            models.ApiKey.user_id == user_id,
+            func.lower(models.ApiKey.exchange).like("%weex%"),
+        )
+        .order_by(models.ApiKey.is_active.desc(), models.ApiKey.id.desc())
     )
     res = await db.execute(stmt)
     api_keys = res.scalars().all()
@@ -379,12 +405,16 @@ async def auto_resolve_okx_uid(db: AsyncSession, user_id: int) -> Optional[str]:
     import base64
     import json
 
+    from sqlalchemy import func
+
     # 1. Fetch user's OKX API keys
-    stmt = select(models.ApiKey).where(
-        models.ApiKey.user_id == user_id,
-        models.ApiKey.exchange.in_(
-            ["okx", "okx_futures", "okx_spot", "okx_usdtm", "okx_linear"]
-        ),
+    stmt = (
+        select(models.ApiKey)
+        .where(
+            models.ApiKey.user_id == user_id,
+            func.lower(models.ApiKey.exchange).like("%okx%"),
+        )
+        .order_by(models.ApiKey.is_active.desc(), models.ApiKey.id.desc())
     )
     res = await db.execute(stmt)
     api_keys = res.scalars().all()
@@ -590,18 +620,15 @@ async def auto_resolve_bybit_uid(db: AsyncSession, user_id: int) -> Optional[str
     import time
     import json
 
-    stmt = select(models.ApiKey).where(
-        models.ApiKey.user_id == user_id,
-        models.ApiKey.exchange.in_(
-            [
-                "bybit",
-                "bybit_futures",
-                "bybit_spot",
-                "bybit_linear",
-                "bybit_usdtm",
-                "bybit_unified",
-            ]
-        ),
+    from sqlalchemy import func
+
+    stmt = (
+        select(models.ApiKey)
+        .where(
+            models.ApiKey.user_id == user_id,
+            func.lower(models.ApiKey.exchange).like("%bybit%"),
+        )
+        .order_by(models.ApiKey.is_active.desc(), models.ApiKey.id.desc())
     )
     res = await db.execute(stmt)
     api_keys = res.scalars().all()
@@ -678,6 +705,220 @@ async def auto_resolve_bybit_uid(db: AsyncSession, user_id: int) -> Optional[str
         except Exception as e:
             logger.error(
                 f"[AUTO_BYBIT_UID] Error resolving Bybit UID for user {user_id}: {e}",
+                exc_info=True,
+            )
+
+    return None
+
+
+async def sync_node_bitget_uid_to_hub(db: AsyncSession, user_id: int, bitget_uid: str):
+    """
+    Finds the active mining node for this user, and sends a registration request
+    to the Central Hub to update its bitget_uid. Only runs if mining is enabled and
+    we are not on the Central Hub itself.
+    """
+    import os
+    import aiohttp
+    from sqlalchemy import select
+    from .. import models, crud
+
+    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
+    if is_central:
+        return
+
+    config = await crud.get_config_model(db, user_id)
+    if not config or not config.is_mining_enabled:
+        return
+
+    user_stmt = select(models.User).where(models.User.id == user_id)
+    user_res = await db.execute(user_stmt)
+    user = user_res.scalars().first()
+    if not user:
+        return
+
+    settings = dict(config.exchange_settings or {})
+    bitget_settings = settings.get("bitget") or {}
+    mining_node_uuid = (
+        bitget_settings.get("mining_node_uuid")
+        or (settings.get("okx") or {}).get("mining_node_uuid")
+        or (settings.get("weex") or {}).get("mining_node_uuid")
+    )
+    mining_node_secret = security.decrypt_node_secret(
+        bitget_settings.get("mining_node_secret")
+        or (settings.get("okx") or {}).get("mining_node_secret")
+        or (settings.get("weex") or {}).get("mining_node_secret")
+    )
+
+    if not mining_node_uuid or not mining_node_secret:
+        from pathlib import Path
+        import json
+
+        identity_path = Path("/app/data/node_identity.json")
+        if not identity_path.parent.exists():
+            identity_path = Path("node_identity.json")
+        if identity_path.exists():
+            try:
+                with open(identity_path, "r") as f:
+                    data = json.load(f)
+                    mining_node_uuid = data.get("node_uuid")
+                    mining_node_secret = data.get("node_secret")
+            except Exception:
+                pass
+
+    if not mining_node_uuid or not mining_node_secret:
+        return
+
+    hub_url = get_federation_hub_url()
+    is_server_admin = user.role == "admin"
+    reg_payload = {
+        "node_uuid": mining_node_uuid,
+        "name": f"DepthSightNode-{mining_node_uuid[:8]}",
+        "node_secret": mining_node_secret,
+        "version": "1.0.0",
+        "referrer_code": None,
+        "bitget_uid": bitget_uid,
+        "is_mining_server": is_server_admin,
+    }
+
+    try:
+        from sqlalchemy import update
+
+        await db.execute(
+            update(models.HubNode)
+            .where(
+                (models.HubNode.node_referral_code == user.referral_code)
+                | (models.HubNode.node_uuid == mining_node_uuid)
+            )
+            .values(bitget_uid=bitget_uid)
+        )
+        await db.commit()
+    except Exception as dbe:
+        logger.debug(f"Direct HubNode bitget_uid update skipped: {dbe}")
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{hub_url}/nodes/register", json=reg_payload, timeout=5.0
+            ) as resp:
+                if resp.status in (200, 201):
+                    logger.info(
+                        f"Successfully synced resolved Bitget UID {bitget_uid} to Hub for node {mining_node_uuid}"
+                    )
+                else:
+                    err_txt = await resp.text()
+                    logger.warning(
+                        f"Failed to sync Bitget UID to Hub. Status: {resp.status}, Response: {err_txt}"
+                    )
+    except Exception as e:
+        logger.error(f"Error syncing Bitget UID to Hub: {e}")
+
+
+async def auto_resolve_bitget_uid(db: AsyncSession, user_id: int) -> Optional[str]:
+    """
+    Attempts to automatically fetch the Bitget UID using the user's saved Bitget API credentials,
+    and save it in exchange_settings.
+    """
+    from sqlalchemy import select, update
+    from .. import models, security
+    import httpx
+    import hmac
+    import hashlib
+    from datetime import datetime, timezone
+    import base64
+    import json
+
+    from sqlalchemy import func
+
+    stmt = (
+        select(models.ApiKey)
+        .where(
+            models.ApiKey.user_id == user_id,
+            func.lower(models.ApiKey.exchange).like("%bitget%"),
+        )
+        .order_by(models.ApiKey.is_active.desc(), models.ApiKey.id.desc())
+    )
+    res = await db.execute(stmt)
+    api_keys = res.scalars().all()
+
+    if not api_keys:
+        return None
+
+    for key_obj in api_keys:
+        try:
+            api_key = security.decrypt_data(key_obj.encrypted_api_key)
+            decrypted_secret = security.decrypt_data(key_obj.encrypted_api_secret)
+            api_secret = decrypted_secret
+            passphrase = ""
+            try:
+                parsed = json.loads(decrypted_secret)
+                if isinstance(parsed, dict) and "secret" in parsed:
+                    api_secret = parsed["secret"]
+                    passphrase = parsed.get("password", "")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            if not api_key or not api_secret:
+                continue
+
+            timestamp = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+            method = "GET"
+            path = "/api/v2/spot/account/info"
+            message = f"{timestamp}{method}{path}"
+
+            signature = hmac.new(
+                api_secret.encode("utf-8"),
+                message.encode("utf-8"),
+                hashlib.sha256,
+            ).digest()
+            sign = base64.b64encode(signature).decode("utf-8")
+
+            headers = {
+                "ACCESS-KEY": api_key,
+                "ACCESS-SIGN": sign,
+                "ACCESS-TIMESTAMP": timestamp,
+                "ACCESS-PASSPHRASE": passphrase,
+                "Content-Type": "application/json",
+            }
+
+            url = f"https://api.bitget.com{path}"
+
+            async with httpx.AsyncClient(timeout=10.0) as http_client:
+                resp = await http_client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    res_json = resp.json()
+                    code = str(res_json.get("code", ""))
+                    if code in ("00000", "0", "200"):
+                        res_data = res_json.get("data") or {}
+                        uid = res_data.get("userId") or res_data.get("uid")
+                        if uid is not None:
+                            uid_str = str(uid)
+                            cfg_stmt = select(models.AppConfig).where(
+                                models.AppConfig.user_id == user_id
+                            )
+                            cfg_res = await db.execute(cfg_stmt)
+                            cfg = cfg_res.scalars().first()
+                            if cfg:
+                                settings = dict(cfg.exchange_settings or {})
+                                bitget_settings = settings.get("bitget") or {}
+                                bitget_settings["bitget_uid"] = uid_str
+                                bitget_settings["uid"] = uid_str
+                                settings["bitget"] = bitget_settings
+
+                                await db.execute(
+                                    update(models.AppConfig)
+                                    .where(models.AppConfig.user_id == user_id)
+                                    .values(exchange_settings=settings)
+                                    .execution_options(synchronize_session=False)
+                                )
+                                await db.commit()
+                                logger.info(
+                                    f"[AUTO_BITGET_UID] Automatically resolved and saved Bitget UID {uid_str} for user ID {user_id}"
+                                )
+                            await sync_node_bitget_uid_to_hub(db, user_id, uid_str)
+                            return uid_str
+        except Exception as e:
+            logger.error(
+                f"[AUTO_BITGET_UID] Error resolving Bitget UID for user {user_id}: {e}",
                 exc_info=True,
             )
 
@@ -1943,6 +2184,11 @@ async def get_local_mining_status(
             if resolved_okx:
                 db_node.okx_uid = resolved_okx
 
+        if not db_node.bitget_uid:
+            resolved_bitget = await auto_resolve_bitget_uid(db, current_user.id)
+            if resolved_bitget:
+                db_node.bitget_uid = resolved_bitget
+
         await db.commit()
 
         from ..hub_router import (
@@ -1995,6 +2241,61 @@ async def get_local_mining_status(
         ledger_mined = float(res_total_mined.scalar() or 0.0)
         node_db_mined = float(db_node_obj.total_mined or 0.0) if db_node_obj else 0.0
 
+        # Aggregate across ALL nodes of this user (MetaMask wallet + referral),
+        # so quest rewards credited to another owned node stay visible
+        # after the user deploys their own server. NOTE: the affiliate
+        # User.payout_address is deliberately ignored — only the MetaMask-bound
+        # wallet (exchange_settings + HubNode) counts.
+        try:
+            from sqlalchemy import func as _safunc
+
+            aggregated_uuids = [node_uuid]
+            if current_user.referral_code:
+                ref_res = await db.execute(
+                    select(models.HubNode.node_uuid).where(
+                        models.HubNode.node_referral_code == current_user.referral_code
+                    )
+                )
+                for nu in ref_res.scalars().all():
+                    if nu and nu not in aggregated_uuids:
+                        aggregated_uuids.append(nu)
+            mm_wallets: list = []
+            for _section in (settings.get("weex") or {}, settings):
+                _w = (
+                    _section.get("wallet_address")
+                    if isinstance(_section, dict)
+                    else None
+                )
+                if _w and str(_w).strip().lower() not in [
+                    w.lower() for w in mm_wallets
+                ]:
+                    mm_wallets.append(str(_w).strip())
+            for _sw in mm_wallets:
+                wal_res = await db.execute(
+                    select(models.HubNode.node_uuid).where(
+                        _safunc.lower(models.HubNode.wallet_address)
+                        == _safunc.lower(_sw)
+                    )
+                )
+                for nu in wal_res.scalars().all():
+                    if nu and nu not in aggregated_uuids:
+                        aggregated_uuids.append(nu)
+            if len(aggregated_uuids) > 1:
+                agg_ledger_res = await db.execute(
+                    select(func.sum(models.MiningLedger.total_reward)).where(
+                        models.MiningLedger.node_uuid.in_(aggregated_uuids)
+                    )
+                )
+                ledger_mined = float(agg_ledger_res.scalar() or 0.0)
+                agg_node_res = await db.execute(
+                    select(func.sum(models.HubNode.total_mined)).where(
+                        models.HubNode.node_uuid.in_(aggregated_uuids)
+                    )
+                )
+                node_db_mined = float(agg_node_res.scalar() or 0.0)
+        except Exception as agg_err:
+            logger.debug(f"Mining status aggregation fallback: {agg_err}")
+
         your_total_mined = max(ledger_mined, node_db_mined)
 
         # 5. Live estimate of expected daily reward for today (matches the daily
@@ -2014,6 +2315,7 @@ async def get_local_mining_status(
             "isMiningEnabled": cfg.is_mining_enabled,
             "eligibleExchanges": cfg.eligible_exchanges,
             "rebateRates": cfg.rebate_rates or {},
+            "exchangeMultipliers": getattr(cfg, "exchange_multipliers", {}) or {},
             "currentEpochDate": today.isoformat(),
             "dailyEmission": daily_emission,
             "yourTotalMined": your_total_mined,
@@ -2943,9 +3245,10 @@ async def verify_evm_wallet_signature(
                 "wallet_address": clean_addr,
                 "owner_signature": owner_signature,
                 "owner_message": owner_message,
-                # Optional Bybit/OKX account binding used by the broker verifier
+                # Optional Bybit/OKX/Bitget account binding used by the broker verifier
                 "bybit_uid": ((settings.get("bybit") or {}).get("uid")) or None,
                 "okx_uid": ((settings.get("okx") or {}).get("uid")) or None,
+                "bitget_uid": ((settings.get("bitget") or {}).get("uid")) or None,
             }
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -3253,7 +3556,7 @@ async def activate_local_mining(
                         except Exception:
                             pass
 
-        # Auto-resolve and save Weex, OKX, and Bybit UIDs
+        # Auto-resolve and save Weex, OKX, Bybit, and Bitget UIDs
         resolved_uid = await auto_resolve_weex_uid(db, current_user.id)
         if resolved_uid:
             db_node.weex_uid = resolved_uid
@@ -3263,7 +3566,10 @@ async def activate_local_mining(
         resolved_bybit = await auto_resolve_bybit_uid(db, current_user.id)
         if resolved_bybit:
             db_node.bybit_uid = resolved_bybit
-        if resolved_uid or resolved_okx or resolved_bybit:
+        resolved_bitget = await auto_resolve_bitget_uid(db, current_user.id)
+        if resolved_bitget:
+            db_node.bitget_uid = resolved_bitget
+        if resolved_uid or resolved_okx or resolved_bybit or resolved_bitget:
             await db.commit()
 
         try:
@@ -3321,6 +3627,7 @@ async def activate_local_mining(
     local_weex_uid = await auto_resolve_weex_uid(db, current_user.id)
     local_okx_uid = await auto_resolve_okx_uid(db, current_user.id)
     local_bybit_uid = await auto_resolve_bybit_uid(db, current_user.id)
+    local_bitget_uid = await auto_resolve_bitget_uid(db, current_user.id)
 
     # Use the user's seed-derived mining_node_uuid & mining_node_secret for registration and attribution
     # A local-node admin activates mining for the whole server: their wallet node is the
@@ -3335,6 +3642,7 @@ async def activate_local_mining(
         "weex_uid": local_weex_uid,
         "okx_uid": local_okx_uid,
         "bybit_uid": local_bybit_uid,
+        "bitget_uid": local_bitget_uid,
         "is_mining_server": is_server_admin,
     }
 
@@ -3570,18 +3878,15 @@ async def import_bybit_xlsx_endpoint(
         )
     try:
         contents = await file.read()
-        from scripts.import_bybit_xlsx import (
-            parse_bybit_xlsx,
-            apply_bybit_records_session,
-        )
+        importer = _load_broker_xlsx_importer("hub_private.import_bybit_xlsx", "Bybit")
 
-        records = parse_bybit_xlsx(contents)
+        records = importer.parse_bybit_xlsx(contents)
         if not records:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No readable transaction records found in the uploaded file.",
             )
-        stats = await apply_bybit_records_session(db, records, dry_run=dry_run)
+        stats = await importer.apply_bybit_records_session(db, records, dry_run=dry_run)
         return {
             "data": {
                 "success": True,
@@ -3596,4 +3901,76 @@ async def import_bybit_xlsx_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process Bybit XLSX file: {str(e)}",
+        )
+
+
+@config_router.post(
+    "/mining/admin/import-weex-xlsx",
+    summary="Upload Weex broker cabinet order-history export and verify reports (Central Hub Admin only)",
+)
+async def import_weex_xlsx_endpoint(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(False),
+    market_type: str = Form("futures"),
+    tz_offset: float = Form(0.0),
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    import os
+
+    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
+    if not is_central:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This operation is only available on the Central Hub.",
+        )
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required.",
+        )
+    if not file.filename or not file.filename.endswith((".xlsx", ".csv")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file format. Please upload an .xlsx/.csv export from the Weex broker cabinet.",
+        )
+    market_type = (market_type or "futures").lower()
+    if market_type not in ("futures", "spot"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="market_type must be 'futures' or 'spot'.",
+        )
+    try:
+        contents = await file.read()
+        importer = _load_broker_xlsx_importer("hub_private.import_weex_xlsx", "Weex")
+
+        records = importer.parse_weex_xlsx(contents)
+        if not records:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No readable order records found in the uploaded file.",
+            )
+        groups, counters = importer.group_weex_rows(records, tz_offset_hours=tz_offset)
+        stats = await importer.apply_weex_groups_session(
+            db,
+            groups,
+            market_type=market_type,
+            dry_run=dry_run,
+            source_label=file.filename or "manual XLSX",
+        )
+        stats["parse_counters"] = counters
+        return {
+            "data": {
+                "success": True,
+                "stats": stats,
+                "message": f"Successfully processed {len(groups)} group(s) across dates: {', '.join(stats.get('dates_processed', []))}",
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[WEEX_XLSX_IMPORT] Error processing file: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process Weex export file: {str(e)}",
         )

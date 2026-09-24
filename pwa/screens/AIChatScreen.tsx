@@ -188,10 +188,12 @@ const AIChatScreen: React.FC<AIChatScreenProps> = ({ onStrategyGenerated }) => {
 		}
 	};
 
-	const handleGenerateClick = (strategyJson: any) => {
-		if (strategyJson) {
-			onStrategyGenerated(strategyJson.config_data || strategyJson);
-		}
+	const handleGenerateClick = (strategyJson: Message["strategy_json"]) => {
+		if (!strategyJson) return;
+		const maybeWrapped = strategyJson as unknown as Partial<StrategyConfig> & {
+			config_data?: Partial<StrategyConfig>;
+		};
+		onStrategyGenerated(maybeWrapped.config_data ?? maybeWrapped);
 	};
 
 	const handleGenerateStrategy = async () => {

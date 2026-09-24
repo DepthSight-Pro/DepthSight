@@ -1,6 +1,6 @@
 // src/components/strategies/LaunchStrategyModal.tsx
 
-import { Key, Loader2, Wallet } from "lucide-react";
+import { FlaskConical, Key, Loader2, Radio, Wallet } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo } from "react";
 import {
@@ -33,7 +33,12 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/context/AuthContext";
 import { useConfig, useMultiAccountBalances } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { CombinedStrategy } from "@/types/api";
+
+// Feature flags: keep code completely in place, set to false to re-enable
+const HIDE_DYNAMIC_SELECTION = true;
+const HIDE_ADVANCED_SETTINGS = true;
 
 interface LaunchStrategyModalProps {
 	isOpen: boolean;
@@ -124,7 +129,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 	} = useForm<LaunchFormData>({
 		defaultValues: {
 			mode: "paper",
-			symbolSelectionMode: currentMode,
+			symbolSelectionMode: HIDE_DYNAMIC_SELECTION ? "STATIC" : currentMode,
 			symbols: currentSymbols.join(", "),
 			dynamicMode: initialDynamicMode,
 			minNatr: initialMinNatr,
@@ -164,10 +169,6 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 				(strategy.config_data?.max_concurrent_symbols as number) || 5,
 			);
 			setValue(
-				"symbolSelectionMode",
-				strategy.symbol_selection_mode || currentMode,
-			);
-			setValue(
 				"useMlConfirmation",
 				strategy.config_data?.use_ml_confirmation ??
 					strategy.use_ml_confirmation ??
@@ -178,8 +179,19 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 				strategy.config_data?.breakeven_on_regime_change ?? false,
 			);
 
+			const effectiveMode = HIDE_DYNAMIC_SELECTION
+				? "STATIC"
+				: (strategy.symbol_selection_mode as "STATIC" | "DYNAMIC") ||
+					currentMode;
+			setValue("symbolSelectionMode", effectiveMode);
+
 			if (strategy.symbols && strategy.symbols.length > 0) {
 				setValue("symbols", strategy.symbols.join(", "));
+			} else if (
+				Array.isArray(strategy.config_data?.symbols) &&
+				strategy.config_data.symbols.length > 0
+			) {
+				setValue("symbols", strategy.config_data.symbols.join(", "));
 			}
 		}
 	}, [isOpen, strategy, setValue, currentMode, canUseOracle]);
@@ -205,12 +217,12 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onClose}>
-			<DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
-				<DialogHeader>
-					<DialogTitle>
+			<DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto bg-obsidian/95 border border-white/10 text-white shadow-2xl backdrop-blur-2xl rounded-2xl p-6">
+				<DialogHeader className="space-y-1">
+					<DialogTitle className="text-lg font-bold text-white tracking-wide">
 						{t("launchModal.title", { name: strategyName })}
 					</DialogTitle>
-					<DialogDescription>
+					<DialogDescription className="text-xs text-white/40">
 						{t(
 							"launchModal.description",
 							"Configure launch parameters for this strategy",
@@ -218,61 +230,94 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 					</DialogDescription>
 				</DialogHeader>
 
-				<form onSubmit={handleSubmit(onSubmit)} className="space-y-6 py-4">
+				<form onSubmit={handleSubmit(onSubmit)} className="space-y-5 py-3">
 					{/* Trading Mode */}
-					<div className="space-y-3">
-						<Label className="text-base font-semibold">
+					<div className="space-y-2.5">
+						<Label className="text-[11px] uppercase tracking-wider font-semibold text-white/60">
 							{t("launchModal.tradingModeLabel", "Trading Mode")}
 						</Label>
 						<Controller
 							name="mode"
 							control={control}
 							render={({ field }) => (
-								<RadioGroup
-									value={field.value}
-									onValueChange={field.onChange}
-									className="space-y-2"
-								>
-									<div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-										<RadioGroupItem value="paper" id="mode-paper" />
-										<Label
-											htmlFor="mode-paper"
-											className="flex-1 cursor-pointer"
+								<div className="grid grid-cols-2 gap-2.5">
+									<button
+										type="button"
+										onClick={() => field.onChange("paper")}
+										className={cn(
+											"group flex items-center space-x-2.5 p-3 border rounded-xl cursor-pointer transition-all text-left outline-none",
+											field.value === "paper"
+												? "border-cyan/50 bg-cyan/[0.08] shadow-[0_0_20px_-5px_rgba(0,212,255,0.4)]"
+												: "border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20",
+										)}
+									>
+										<div
+											className={cn(
+												"h-4 w-4 shrink-0 rounded-full border flex items-center justify-center transition-all",
+												field.value === "paper"
+													? "border-cyan bg-cyan/20"
+													: "border-white/30 bg-transparent group-hover:border-white/50",
+											)}
 										>
-											<div className="font-medium">
+											{field.value === "paper" && (
+												<div className="h-2 w-2 rounded-full bg-cyan shadow-[0_0_6px_rgba(0,212,255,0.9)]" />
+											)}
+										</div>
+										<div className="flex-1 min-w-0">
+											<div className="font-semibold text-xs text-white flex items-center gap-1.5">
+												<FlaskConical size={12} className="text-cyan" />
 												{t("launchModal.paperMode", "Paper Trading")}
 											</div>
-											<div className="text-xs text-muted-foreground">
+											<div className="text-[10px] text-white/40 mt-0.5 leading-tight">
 												{t(
 													"launchModal.paperModeDesc",
-													"Test with virtual funds",
+													"Virtual funds",
 												)}
 											</div>
-										</Label>
-									</div>
-									<div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-										<RadioGroupItem value="live" id="mode-live" />
-										<Label
-											htmlFor="mode-live"
-											className="flex-1 cursor-pointer"
+										</div>
+									</button>
+
+									<button
+										type="button"
+										onClick={() => field.onChange("live")}
+										className={cn(
+											"group flex items-center space-x-2.5 p-3 border rounded-xl cursor-pointer transition-all text-left outline-none",
+											field.value === "live"
+												? "border-rose-500/50 bg-rose-500/[0.08] shadow-[0_0_20px_-5px_rgba(244,63,94,0.4)]"
+												: "border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20",
+										)}
+									>
+										<div
+											className={cn(
+												"h-4 w-4 shrink-0 rounded-full border flex items-center justify-center transition-all",
+												field.value === "live"
+													? "border-rose-500 bg-rose-500/20"
+													: "border-white/30 bg-transparent group-hover:border-white/50",
+											)}
 										>
-											<div className="font-medium text-orange-600 dark:text-orange-400">
+											{field.value === "live" && (
+												<div className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.9)]" />
+											)}
+										</div>
+										<div className="flex-1 min-w-0">
+											<div className="font-semibold text-xs text-rose-400 flex items-center gap-1.5">
+												<Radio size={12} className="animate-pulse" />
 												{t("launchModal.liveMode", "Live Trading")}
 											</div>
-											<div className="text-xs text-muted-foreground">
-												{t("launchModal.liveModeDesc", "Trade with real funds")}
+											<div className="text-[10px] text-white/40 mt-0.5 leading-tight">
+												{t("launchModal.liveModeDesc", "Real funds")}
 											</div>
-										</Label>
-									</div>
-								</RadioGroup>
+										</div>
+									</button>
+								</div>
 							)}
 						/>
 					</div>
 
 					{/* API Key Selection for Live Mode - only show if multiple active keys */}
 					{tradingMode === "live" && activeApiKeys.length === 0 && (
-						<div className="p-3 border border-destructive/50 rounded-lg bg-destructive/10">
-							<p className="text-sm text-destructive">
+						<div className="p-3 border border-rose-500/30 rounded-xl bg-rose-500/10">
+							<p className="text-xs text-rose-400">
 								{t(
 									"launchModal.noActiveKeysWarning",
 									"No valid API keys available. Please add and verify an API key in Settings.",
@@ -282,9 +327,9 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 					)}
 
 					{tradingMode === "live" && activeApiKeys.length > 1 && (
-						<div className="space-y-3">
-							<Label className="text-base font-semibold flex items-center gap-2">
-								<Key className="h-4 w-4" />
+						<div className="space-y-2">
+							<Label className="text-[11px] uppercase tracking-wider font-semibold text-white/60 flex items-center gap-1.5">
+								<Key className="h-3.5 w-3.5 text-cyan" />
 								{t("launchModal.accountLabel", "Trading Account")}
 							</Label>
 							<Controller
@@ -304,7 +349,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 										onValueChange={(v) => field.onChange(parseInt(v, 10))}
 										value={field.value?.toString()}
 									>
-										<SelectTrigger>
+										<SelectTrigger className="h-9 rounded-xl border border-white/10 bg-white/[0.03] text-xs text-white focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30">
 											<SelectValue
 												placeholder={t(
 													"launchModal.selectAccountPlaceholder",
@@ -312,20 +357,24 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 												)}
 											/>
 										</SelectTrigger>
-										<SelectContent>
+										<SelectContent className="border border-white/10 bg-obsidian/95 text-white backdrop-blur-xl">
 											{activeApiKeys.map((key) => {
 												const keyBalance = balances?.accounts?.find(
 													(a) => a.apiKeyId === key.id,
 												);
 												return (
-													<SelectItem key={key.id} value={String(key.id)}>
+													<SelectItem
+														key={key.id}
+														value={String(key.id)}
+														className="text-xs hover:bg-white/5 focus:bg-white/10"
+													>
 														<div className="flex items-center justify-between w-full gap-4">
 															<div className="flex items-center gap-2">
-																<Wallet className="h-4 w-4 text-muted-foreground" />
+																<Wallet className="h-3.5 w-3.5 text-white/40" />
 																<span>{key.name}</span>
 															</div>
 															{keyBalance && (
-																<span className="text-xs text-muted-foreground">
+																<span className="text-[11px] font-mono text-white/40">
 																	$
 																	{keyBalance.balance.toLocaleString(
 																		undefined,
@@ -345,76 +394,78 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 								)}
 							/>
 							{errors.apiKeyId && (
-								<p className="text-sm text-destructive">
+								<p className="text-xs text-rose-400">
 									{errors.apiKeyId.message}
 								</p>
 							)}
 						</div>
 					)}
 
-					{/* Symbol Selection Mode */}
-					<div className="space-y-3">
-						<Label className="text-base font-semibold">
-							{t("launchModal.symbolModeLabel", "Symbol Selection")}
-						</Label>
-						<Controller
-							name="symbolSelectionMode"
-							control={control}
-							render={({ field }) => (
-								<RadioGroup
-									value={field.value}
-									onValueChange={field.onChange}
-									className="space-y-2"
-								>
-									<div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-										<RadioGroupItem value="DYNAMIC" id="symbol-dynamic" />
-										<Label
-											htmlFor="symbol-dynamic"
-											className="flex-1 cursor-pointer"
-										>
-											<div className="font-medium">
-												{t(
-													"launchModal.symbolModeDynamic",
-													"Dynamic (from Screener)",
-												)}
-											</div>
-											<div className="text-xs text-muted-foreground">
-												{t(
-													"launchModal.symbolModeDynamicDesc",
-													"Automatically select symbols based on market conditions",
-												)}
-											</div>
-										</Label>
-									</div>
-									<div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-accent cursor-pointer">
-										<RadioGroupItem value="STATIC" id="symbol-static" />
-										<Label
-											htmlFor="symbol-static"
-											className="flex-1 cursor-pointer"
-										>
-											<div className="font-medium">
-												{t(
-													"launchModal.symbolModeStatic",
-													"Static (Manual List)",
-												)}
-											</div>
-											<div className="text-xs text-muted-foreground">
-												{t(
-													"launchModal.symbolModeStaticDesc",
-													"Trade specific symbols only",
-												)}
-											</div>
-										</Label>
-									</div>
-								</RadioGroup>
-							)}
-						/>
-					</div>
+					{/* Symbol Selection Mode (TEMPORARILY HIDDEN via flag) */}
+					{!HIDE_DYNAMIC_SELECTION && (
+						<div className="space-y-3">
+							<Label className="text-[11px] uppercase tracking-wider font-semibold text-white/60">
+								{t("launchModal.symbolModeLabel", "Symbol Selection")}
+							</Label>
+							<Controller
+								name="symbolSelectionMode"
+								control={control}
+								render={({ field }) => (
+									<RadioGroup
+										value={field.value}
+										onValueChange={field.onChange}
+										className="space-y-2"
+									>
+										<div className="flex items-center space-x-2 p-3 border border-white/10 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] cursor-pointer">
+											<RadioGroupItem value="DYNAMIC" id="symbol-dynamic" />
+											<Label
+												htmlFor="symbol-dynamic"
+												className="flex-1 cursor-pointer"
+											>
+												<div className="font-medium text-xs text-white">
+													{t(
+														"launchModal.symbolModeDynamic",
+														"Dynamic (from Screener)",
+													)}
+												</div>
+												<div className="text-[11px] text-white/40">
+													{t(
+														"launchModal.symbolModeDynamicDesc",
+														"Automatically select symbols based on market conditions",
+													)}
+												</div>
+											</Label>
+										</div>
+										<div className="flex items-center space-x-2 p-3 border border-white/10 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] cursor-pointer">
+											<RadioGroupItem value="STATIC" id="symbol-static" />
+											<Label
+												htmlFor="symbol-static"
+												className="flex-1 cursor-pointer"
+											>
+												<div className="font-medium text-xs text-white">
+													{t(
+														"launchModal.symbolModeStatic",
+														"Static (Manual List)",
+													)}
+												</div>
+												<div className="text-[11px] text-white/40">
+													{t(
+														"launchModal.symbolModeStaticDesc",
+														"Trade specific symbols only",
+													)}
+												</div>
+											</Label>
+										</div>
+									</RadioGroup>
+								)}
+							/>
+						</div>
+					)}
 
-					{/* DYNAMIC MODE SETTINGS */}
-					{symbolSelectionMode === "DYNAMIC" && (
-						<div className="p-4 border rounded-lg space-y-4 bg-secondary/20">
-							<Label className="font-semibold text-sm">
+					{/* DYNAMIC MODE SETTINGS (TEMPORARILY HIDDEN via flag) */}
+					{!HIDE_DYNAMIC_SELECTION && symbolSelectionMode === "DYNAMIC" && (
+						<div className="p-4 border border-white/10 rounded-xl space-y-4 bg-white/[0.02]">
+							<Label className="font-semibold text-xs text-white">
 								Dynamic Selection Settings
 							</Label>
 
@@ -428,10 +479,10 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 										defaultValue={field.value}
 										value={field.value}
 									>
-										<SelectTrigger>
+										<SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-white">
 											<SelectValue placeholder="Select Logic" />
 										</SelectTrigger>
-										<SelectContent>
+										<SelectContent className="border border-white/10 bg-obsidian/95 text-white">
 											{canUseOracle && (
 												<SelectItem value="DYNAMIC_ORACLE">
 													Oracle Filter
@@ -449,7 +500,9 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 							{dynamicMode === "DYNAMIC_ORACLE" && canUseOracle && (
 								<>
 									<div className="space-y-2">
-										<Label className="text-xs">Required Regime</Label>
+										<Label className="text-xs text-white/70">
+											Required Regime
+										</Label>
 										<Controller
 											name="oracleRegime"
 											control={control}
@@ -459,10 +512,10 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 													defaultValue={field.value}
 													value={field.value}
 												>
-													<SelectTrigger>
+													<SelectTrigger className="h-9 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-white">
 														<SelectValue />
 													</SelectTrigger>
-													<SelectContent>
+													<SelectContent className="border border-white/10 bg-obsidian/95 text-white">
 														<SelectItem value="0">
 															{t("launchModal.oracleRegimeParanoiaFull")}
 														</SelectItem>
@@ -479,8 +532,10 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 									</div>
 									<div className="space-y-2">
 										<div className="flex justify-between">
-											<Label className="text-xs">Min Confidence (%)</Label>
-											<span className="text-xs text-muted-foreground">
+											<Label className="text-xs text-white/70">
+												Min Confidence (%)
+											</Label>
+											<span className="text-xs text-cyan font-mono">
 												{oracleConfidence}%
 											</span>
 										</div>
@@ -504,7 +559,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 							{/* NATR SPECIFIC */}
 							{dynamicMode === "DYNAMIC_NATR" && (
 								<div className="space-y-2">
-									<Label className="text-xs">Min NATR</Label>
+									<Label className="text-xs text-white/70">Min NATR</Label>
 									<Controller
 										name="minNatr"
 										control={control}
@@ -516,6 +571,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 												onChange={(e) =>
 													field.onChange(parseFloat(e.target.value))
 												}
+												className="h-9 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-white"
 											/>
 										)}
 									/>
@@ -523,8 +579,10 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 							)}
 
 							{/* Max Concurrent */}
-							<div className="space-y-2 border-t pt-2">
-								<Label className="text-xs">Max Concurrent Symbols</Label>
+							<div className="space-y-2 border-t border-white/10 pt-2">
+								<Label className="text-xs text-white/70">
+									Max Concurrent Symbols
+								</Label>
 								<Controller
 									name="maxConcurrentSymbols"
 									control={control}
@@ -535,6 +593,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 											onChange={(e) =>
 												field.onChange(parseInt(e.target.value, 10))
 											}
+											className="h-9 rounded-lg border border-white/10 bg-white/[0.03] text-xs text-white"
 										/>
 									)}
 								/>
@@ -542,23 +601,23 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 						</div>
 					)}
 
-					{/* Symbols Input (only for STATIC mode) */}
-					{symbolSelectionMode === "STATIC" && (
+					{/* Symbols Input (Always visible when dynamic is hidden, or in STATIC mode) */}
+					{(HIDE_DYNAMIC_SELECTION || symbolSelectionMode === "STATIC") && (
 						<div className="space-y-2">
-							<Label htmlFor="symbols">
+							<Label
+								htmlFor="symbols"
+								className="text-[11px] uppercase tracking-wider font-semibold text-white/60"
+							>
 								{t("launchModal.symbolsLabel", "Symbols List")}
 							</Label>
 							<Controller
 								name="symbols"
 								control={control}
 								rules={{
-									required:
-										symbolSelectionMode === "STATIC"
-											? t(
-													"launchModal.errors.symbolsRequired",
-													"Symbols are required for Static mode",
-												)
-											: false,
+									required: t(
+										"launchModal.errors.symbolsRequired",
+										"Symbols are required",
+									),
 								}}
 								render={({ field }) => (
 									<Input
@@ -567,16 +626,17 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 											"launchModal.symbolsPlaceholder",
 											"BTCUSDT, ETHUSDT, SOLUSDT...",
 										)}
+										className="h-9 rounded-xl border border-white/10 bg-white/[0.03] px-3 font-mono text-xs text-white placeholder-white/25 focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30 transition-colors"
 										{...field}
 									/>
 								)}
 							/>
 							{errors.symbols && (
-								<p className="text-sm text-destructive">
+								<p className="text-xs text-rose-400">
 									{errors.symbols.message}
 								</p>
 							)}
-							<p className="text-xs text-muted-foreground">
+							<p className="text-[11px] text-white/40">
 								{t(
 									"launchModal.symbolsHelp",
 									"Separate multiple symbols with commas",
@@ -585,74 +645,81 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 						</div>
 					)}
 
-					{/* Advanced Settings: ML & Regime */}
-					<div className="space-y-3 p-4 border rounded-lg bg-secondary/10">
-						<Label className="text-base font-semibold">
-							{t("launchModal.advancedSettingsLabel", "Advanced Settings")}
-						</Label>
-
-						{/* ML Confirmation */}
-						<div className="flex items-center space-x-2">
-							<Controller
-								name="useMlConfirmation"
-								control={control}
-								render={({ field }) => (
-									<Checkbox
-										id="use-ml-confirmation"
-										checked={field.value}
-										onCheckedChange={field.onChange}
-									/>
-								)}
-							/>
-							<Label
-								htmlFor="use-ml-confirmation"
-								className="text-sm cursor-pointer"
-							>
-								{t(
-									"launchModal.useMlConfirmationLabel",
-									"Enable ML Confirmation",
-								)}
+					{/* Advanced Settings: ML & Regime (TEMPORARILY HIDDEN via flag) */}
+					{!HIDE_ADVANCED_SETTINGS && (
+						<div className="space-y-3 p-4 border border-white/10 rounded-xl bg-white/[0.02]">
+							<Label className="text-xs font-semibold text-white uppercase tracking-wider">
+								{t("launchModal.advancedSettingsLabel", "Advanced Settings")}
 							</Label>
-						</div>
 
-						{/* Breakeven on Regime Change - Oracle users only */}
-						{canUseOracle && (
+							{/* ML Confirmation */}
 							<div className="flex items-center space-x-2">
 								<Controller
-									name="breakevenOnRegimeChange"
+									name="useMlConfirmation"
 									control={control}
 									render={({ field }) => (
 										<Checkbox
-											id="breakeven-on-regime-change"
+											id="use-ml-confirmation"
 											checked={field.value}
 											onCheckedChange={field.onChange}
 										/>
 									)}
 								/>
 								<Label
-									htmlFor="breakeven-on-regime-change"
-									className="text-sm cursor-pointer"
+									htmlFor="use-ml-confirmation"
+									className="text-xs text-white/80 cursor-pointer"
 								>
 									{t(
-										"launchModal.breakevenOnRegimeChangeLabel",
-										"Breakeven on Regime Change",
+										"launchModal.useMlConfirmationLabel",
+										"Enable ML Confirmation",
 									)}
 								</Label>
 							</div>
-						)}
-					</div>
 
-					<DialogFooter>
+							{/* Breakeven on Regime Change - Oracle users only */}
+							{canUseOracle && (
+								<div className="flex items-center space-x-2">
+									<Controller
+										name="breakevenOnRegimeChange"
+										control={control}
+										render={({ field }) => (
+											<Checkbox
+												id="breakeven-on-regime-change"
+												checked={field.value}
+												onCheckedChange={field.onChange}
+											/>
+										)}
+									/>
+									<Label
+										htmlFor="breakeven-on-regime-change"
+										className="text-xs text-white/80 cursor-pointer"
+									>
+										{t(
+											"launchModal.breakevenOnRegimeChangeLabel",
+											"Breakeven on Regime Change",
+										)}
+									</Label>
+								</div>
+							)}
+						</div>
+					)}
+
+					<DialogFooter className="gap-2 pt-3 sm:gap-2">
 						<Button
 							type="button"
-							variant="outline"
+							variant="ghost"
 							onClick={onClose}
 							disabled={isLoading}
+							className="rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] text-white/60 hover:text-white text-xs h-9 px-4"
 						>
 							{t("common:cancel")}
 						</Button>
-						<Button type="submit" disabled={isLoading}>
-							{isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+						<Button
+							type="submit"
+							disabled={isLoading}
+							className="rounded-xl bg-gradient-to-r from-azure to-cyan text-white font-semibold text-xs h-9 px-5 shadow-[0_0_20px_-4px_rgba(0,212,255,0.6)] hover:shadow-[0_0_25px_-2px_rgba(0,212,255,0.85)] hover:brightness-110 transition-all"
+						>
+							{isLoading && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
 							{t("launchModal.launchButton", "Launch Strategy")}
 						</Button>
 					</DialogFooter>

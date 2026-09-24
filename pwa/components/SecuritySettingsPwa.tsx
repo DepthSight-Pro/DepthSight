@@ -28,6 +28,23 @@ import {
 } from "./Card";
 import { Input } from "./ui/Input";
 
+type TotpSetupWithLegacy = TotpSetupResponse & {
+	data?: TotpSetupWithLegacy;
+	qr_code?: string;
+	manual_entry_key?: string;
+	otpauth_url?: string;
+};
+
+type TotpConfirmWithLegacy = {
+	backupCodes?: string[];
+	backup_codes?: string[];
+	data?: TotpConfirmWithLegacy;
+	[key: string]: unknown;
+};
+
+const getErrorMessage = (err: unknown, fallback: string): string =>
+	err instanceof Error && err.message ? err.message : fallback;
+
 export const SecuritySettingsPwa: React.FC = () => {
 	const { t } = useTranslation("pwa-common");
 
@@ -68,7 +85,8 @@ export const SecuritySettingsPwa: React.FC = () => {
 	};
 
 	useEffect(() => {
-		fetchStatus();
+		// eslint-disable-next-line react-hooks/set-state-in-effect
+		void fetchStatus();
 	}, []);
 
 	// 1. Start Setup
@@ -79,14 +97,14 @@ export const SecuritySettingsPwa: React.FC = () => {
 			setSetupData(null);
 			setActionLoading(true);
 			const data = await api.setupTotp();
-			const realData = (data as any)?.data || data;
+			const realData = (data as TotpSetupWithLegacy)?.data ?? (data as TotpSetupWithLegacy);
 			if (!realData || !realData.secret) {
 				throw new Error("Failed to generate 2FA secret from server");
 			}
 			setSetupData(realData);
-		} catch (err: any) {
+		} catch (err) {
 			setIsSetupOpen(false);
-			toast.error(err.message || t("twoFactor.setupError", "Failed to start 2FA setup"));
+			toast.error(getErrorMessage(err, t("twoFactor.setupError", "Failed to start 2FA setup")));
 		} finally {
 			setActionLoading(false);
 		}
@@ -104,22 +122,24 @@ export const SecuritySettingsPwa: React.FC = () => {
 				secret,
 				code: confirmCode,
 			});
-			const realRes = (res as any)?.data || res;
+			const realRes =
+				(res as unknown as TotpConfirmWithLegacy)?.data ??
+				(res as unknown as TotpConfirmWithLegacy);
 			setIsSetupOpen(false);
 			setSetupData(null);
 			setConfirmCode("");
 
 			const backupCodes =
-				realRes?.backupCodes || (realRes as any)?.backup_codes;
+				realRes?.backupCodes ?? realRes?.backup_codes;
 			if (backupCodes?.length) {
 				setNewBackupCodes(backupCodes);
 				setIsBackupCodesOpen(true);
 			}
 
 			toast.success(t("twoFactor.enabledSuccess", "2FA successfully enabled!"));
-			fetchStatus();
-		} catch (err: any) {
-			toast.error(err.message || t("twoFactor.invalidCode", "Invalid verification code"));
+			void fetchStatus();
+		} catch (err) {
+			toast.error(getErrorMessage(err, t("twoFactor.invalidCode", "Invalid verification code")));
 		} finally {
 			setActionLoading(false);
 		}
@@ -141,9 +161,9 @@ export const SecuritySettingsPwa: React.FC = () => {
 			setDisablePassword("");
 
 			toast.success(t("twoFactor.disabledSuccess", "2FA has been disabled"));
-			fetchStatus();
-		} catch (err: any) {
-			toast.error(err.message || t("twoFactor.disableError", "Failed to disable 2FA"));
+			void fetchStatus();
+		} catch (err) {
+			toast.error(getErrorMessage(err, t("twoFactor.disableError", "Failed to disable 2FA")));
 		} finally {
 			setActionLoading(false);
 		}
@@ -168,10 +188,10 @@ export const SecuritySettingsPwa: React.FC = () => {
 			toast.success(
 				t("twoFactor.regenSuccess", "New recovery codes generated successfully"),
 			);
-			fetchStatus();
-		} catch (err: any) {
+			void fetchStatus();
+		} catch (err) {
 			toast.error(
-				err.message || t("twoFactor.invalidCode", "Invalid verification code"),
+				getErrorMessage(err, t("twoFactor.invalidCode", "Invalid verification code")),
 			);
 		} finally {
 			setActionLoading(false);
@@ -210,7 +230,7 @@ export const SecuritySettingsPwa: React.FC = () => {
 	const copySecret = async () => {
 		const key =
 			setupData?.manualEntryKey ||
-			(setupData as any)?.manual_entry_key ||
+			(setupData as TotpSetupWithLegacy)?.manual_entry_key ||
 			setupData?.secret;
 		if (!key) return;
 		const ok = await copyTextToClipboard(key);
@@ -384,16 +404,16 @@ export const SecuritySettingsPwa: React.FC = () => {
 								{/* QR Code */}
 								<div className="bg-white p-3 rounded-2xl w-44 h-44 mx-auto flex items-center justify-center shadow-inner border">
 									<img
-										src={setupData.qrCode || (setupData as any).qr_code}
+										src={setupData.qrCode || (setupData as TotpSetupWithLegacy).qr_code}
 										alt="2FA QR Code"
 										className="w-full h-full object-contain"
 									/>
 								</div>
 
 								{/* Direct App Link (Google Authenticator / Aegis deep link) */}
-								{(setupData.otpauthUrl || (setupData as any).otpauth_url) && (
+								{(setupData.otpauthUrl || (setupData as TotpSetupWithLegacy).otpauth_url) && (
 									<a
-										href={setupData.otpauthUrl || (setupData as any).otpauth_url}
+										href={setupData.otpauthUrl || (setupData as TotpSetupWithLegacy).otpauth_url}
 										className="w-full py-2.5 px-3 rounded-xl bg-[hsl(var(--secondary))] hover:bg-[hsl(var(--muted))] text-xs font-semibold text-[hsl(var(--foreground))] border border-[hsl(var(--border))] flex items-center justify-center gap-2 transition"
 									>
 										<ExternalLink className="w-4 h-4 text-[hsl(var(--primary))]" />
@@ -417,7 +437,7 @@ export const SecuritySettingsPwa: React.FC = () => {
 									>
 										<code className="text-xs font-mono font-bold tracking-wider select-all break-all text-[hsl(var(--foreground))]">
 											{setupData.manualEntryKey ||
-												(setupData as any).manual_entry_key ||
+												(setupData as TotpSetupWithLegacy).manual_entry_key ||
 												setupData.secret}
 										</code>
 									</div>

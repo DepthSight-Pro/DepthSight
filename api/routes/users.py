@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, Response, status
@@ -11,9 +10,22 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..redis_client import get_redis_client
 
+try:
+    from bot_module import config as bot_config
+except ImportError:
+
+    class MockConfig:
+        REDIS_COMMAND_CHANNEL = "depthsight:commands"
+
+    bot_config = MockConfig()
+
 
 logger = logging.getLogger(__name__)
-REDIS_COMMAND_CHANNEL = os.getenv("REDIS_COMMAND_CHANNEL", "bot_commands")
+# NOTE: must match the channel the bot subscribes to
+# (bot_module.config.REDIS_COMMAND_CHANNEL, default "depthsight:commands").
+REDIS_COMMAND_CHANNEL = getattr(
+    bot_config, "REDIS_COMMAND_CHANNEL", "depthsight:commands"
+)
 
 users_extra_router = APIRouter(
     prefix="/api/v1/users", tags=["Users"], dependencies=[Depends(get_current_user)]

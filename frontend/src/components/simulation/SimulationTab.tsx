@@ -5,7 +5,7 @@ import { BarChart3, Grid, Scale, Search, Shield } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Segmented } from "@/components/ui/quant-ui";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { AssetDeepDiveView } from "./AssetDeepDiveView";
@@ -445,55 +445,49 @@ export const SimulationTab: React.FC = () => {
 			</div>
 
 			{/* Main Content */}
-			<div className="flex-1 min-w-0">
-				<Tabs
-					value={currentView}
-					onValueChange={(v) => setView(v as typeof currentView)}
-					className="h-full"
-				>
-					<TabsList className="mb-4">
-						<TabsTrigger value="matrix" className="flex items-center gap-2">
-							<Grid className="w-4 h-4" />
-							{t("inspectorMatrix", "Inspector Matrix")}
-						</TabsTrigger>
-						<TabsTrigger value="portfolio" className="flex items-center gap-2">
-							<BarChart3 className="w-4 h-4" />
-							{t("portfolio", "Portfolio")}
-						</TabsTrigger>
-						<TabsTrigger value="deepdive" className="flex items-center gap-2">
-							<Search className="w-4 h-4" />
-							{t("deepDive", "Deep Dive")}
-						</TabsTrigger>
-						<TabsTrigger value="compare" className="flex items-center gap-2">
-							<Scale className="w-4 h-4" />
-							{t("compare", "Compare")}
-						</TabsTrigger>
-						<TabsTrigger value="beanalysis" className="flex items-center gap-2">
-							<Shield className="w-4 h-4" />
-							{t("beAnalysis", "BE Analysis")}
-						</TabsTrigger>
-					</TabsList>
+			<div className="flex-1 min-w-0 flex flex-col">
+				<div className="mb-4 flex items-center overflow-x-auto pb-1 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					<Segmented<"matrix" | "portfolio" | "deepdive" | "compare" | "beanalysis">
+						size="md"
+						value={currentView}
+						onChange={(v) => setView(v)}
+						options={[
+							{
+								value: "matrix",
+								label: t("inspectorMatrix", "Inspector Matrix"),
+								icon: <Grid className="w-4 h-4" />,
+							},
+							{
+								value: "portfolio",
+								label: t("portfolio", "Portfolio"),
+								icon: <BarChart3 className="w-4 h-4" />,
+							},
+							{
+								value: "deepdive",
+								label: t("deepDive", "Deep Dive"),
+								icon: <Search className="w-4 h-4" />,
+							},
+							{
+								value: "compare",
+								label: t("compare", "Compare"),
+								icon: <Scale className="w-4 h-4" />,
+							},
+							{
+								value: "beanalysis",
+								label: t("beAnalysis", "BE Analysis"),
+								icon: <Shield className="w-4 h-4" />,
+							},
+						]}
+					/>
+				</div>
 
-					<TabsContent value="matrix" className="mt-0">
-						<InspectorMatrix />
-					</TabsContent>
-
-					<TabsContent value="portfolio" className="mt-0">
-						<SimulationDashboard />
-					</TabsContent>
-
-					<TabsContent value="deepdive" className="mt-0">
-						<AssetDeepDiveView />
-					</TabsContent>
-
-					<TabsContent value="compare" className="mt-0">
-						<CompareView />
-					</TabsContent>
-
-					<TabsContent value="beanalysis" className="mt-0">
-						<BEAnalysisView />
-					</TabsContent>
-				</Tabs>
+				<div className="flex-1 min-h-0">
+					{currentView === "matrix" && <InspectorMatrix />}
+					{currentView === "portfolio" && <SimulationDashboard />}
+					{currentView === "deepdive" && <AssetDeepDiveView />}
+					{currentView === "compare" && <CompareView />}
+					{currentView === "beanalysis" && <BEAnalysisView />}
+				</div>
 			</div>
 		</div>
 	);

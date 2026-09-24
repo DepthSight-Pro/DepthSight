@@ -1,7 +1,7 @@
 // src/pages/Analytics.tsx
 
 import { subDays } from "date-fns";
-import { BarChart, TrendingUp, WandSparkles } from "lucide-react";
+import { BarChart, Sparkles, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker"; // Added missing import
 import { useTranslation } from "react-i18next";
@@ -15,12 +15,9 @@ import { PhantomAnalysisTab } from "@/components/analytics/PhantomAnalysisTab";
 import { TradeAnalysisModal } from "@/components/analytics/TradeAnalysisModal";
 // --- UI Components ---
 import { PageLayout } from "@/components/layout/PageLayout";
-// --- Analytics Components ---
 import { EquityCurveChart } from "@/components/research/EquityCurveChart";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Panel, Segmented } from "@/components/ui/quant-ui";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePortfolioMode } from "@/context/PortfolioModeContext";
 // --- API & Types ---
 import {
@@ -158,6 +155,9 @@ export default function Analytics() {
 
 	const [selectedStrategy, setSelectedStrategy] = useState<string>("all");
 	const [selectedSymbol, setSelectedSymbol] = useState<string>("");
+	const [activeTab, setActiveTab] = useState<"overview" | "be_analysis">(
+		"overview",
+	);
 
 	// State for pagination
 	const [tablePage, setTablePage] = useState(1);
@@ -389,47 +389,65 @@ export default function Analytics() {
 	};
 
 	return (
-		<PageLayout title={t("pageTitle")} icon={BarChart}>
-			<Tabs defaultValue="overview" className="space-y-4">
-				<TabsList>
-					<TabsTrigger value="overview">Overview</TabsTrigger>
-					<TabsTrigger value="be_analysis">
-						{t("beAnalysis.title", "BE Analysis")}
-					</TabsTrigger>
-				</TabsList>
+		<PageLayout title={t("pageTitle", "Analytics")} hideHeader>
+			<div className="space-y-6">
+				{/* Top Controls Bar */}
+				<div className="flex items-center overflow-x-auto pb-1 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+					<Segmented<"overview" | "be_analysis">
+						size="md"
+						value={activeTab}
+						onChange={setActiveTab}
+						options={[
+							{
+								value: "overview",
+								label: t("tabs.overview", "Overview"),
+								icon: <BarChart className="w-4 h-4" />,
+							},
+							{
+								value: "be_analysis",
+								label: t("beAnalysis.title", "BE Analysis"),
+								icon: <TrendingUp className="w-4 h-4" />,
+							},
+						]}
+					/>
+				</div>
 
-				<TabsContent value="overview" className="space-y-4">
-					{/* Server-side filters */}
-					<div className="flex items-center justify-between gap-4 w-full">
-						<div className="flex-1">
-							<AnalyticsFilters
-								onApply={handleApplyFilters}
-								onClear={handleClearFilters}
-								strategies={configsList || []}
-								isInteractiveFiltered={isFiltered}
-								onResetInteractive={resetFilters}
-							/>
+				{activeTab === "overview" && (
+					<div className="space-y-6 animate-fade-up">
+						{/* Server-side filters */}
+						<div className="flex items-center justify-between gap-4 w-full flex-wrap">
+							<div className="flex-1 min-w-[300px]">
+								<AnalyticsFilters
+									onApply={handleApplyFilters}
+									onClear={handleClearFilters}
+									strategies={configsList || []}
+									isInteractiveFiltered={isFiltered}
+									onResetInteractive={resetFilters}
+								/>
+							</div>
+							<button
+								type="button"
+								onClick={handleAskAi}
+								className="group relative flex h-9 items-center gap-1.5 overflow-hidden rounded-lg px-3.5 text-[11.5px] font-semibold text-white transition-all bg-gradient-to-r from-azure to-cyan shadow-[0_0_20px_-5px_rgba(0,212,255,0.85)] hover:shadow-[0_0_28px_-3px_rgba(0,212,255,1)] hover:brightness-110 shrink-0 self-end mb-1"
+							>
+								<span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+								<Sparkles size={13} className="animate-pulse" />
+								<span>Ask AI Analyst</span>
+							</button>
 						</div>
-						<Button
-							onClick={handleAskAi}
-							className="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white border-0 shadow-md h-10 px-4 whitespace-nowrap"
-						>
-							<WandSparkles className="w-4 h-4 mr-2" />
-							Ask AI Analyst
-						</Button>
-					</div>
 
-					<div className="mb-6"></div>
-
-					{/* Stats Cards */}
-					{isLoading ? (
-						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
-							{Array.from({ length: 8 }).map((_, i) => (
-								<Skeleton key={i} className="h-[120px] rounded-2xl" />
-							))}
-						</div>
-					) : stats ? (
-						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 mb-6">
+						{/* Stats Cards */}
+						{isLoading ? (
+							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3.5 mb-6">
+								{Array.from({ length: 8 }).map((_, i) => (
+									<div
+										key={i}
+										className="h-[105px] rounded-2xl bg-white/5 border border-white/5 animate-pulse"
+									/>
+								))}
+							</div>
+						) : stats ? (
+							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3.5 mb-6">
 							<AdvancedStatCard
 								label={t("overview.netProfit", "Net PnL")}
 								value={`${stats.totalPnl >= 0 ? "+" : ""}$${stats.totalPnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
@@ -531,18 +549,19 @@ export default function Analytics() {
 						{/* Equity Curve & Asset Performance */}
 						<div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 							<div className="xl:col-span-2">
-								<Card>
-									<CardHeader>
-										<CardTitle className="flex items-center gap-2">
-											<TrendingUp className="text-primary" />
+								<Panel
+									title={
+										<span className="flex items-center gap-2">
+											<TrendingUp className="w-4 h-4 text-cyan" />
 											{t("tabs.cumulativePnl", "Equity Curve")}
-										</CardTitle>
-									</CardHeader>
-									<CardContent className="min-h-[350px]">
+										</span>
+									}
+								>
+									<div className="min-h-[350px] pt-1">
 										{isLoading ? (
-											<Skeleton className="w-full h-[350px]" />
+											<Skeleton className="w-full h-[350px] bg-white/5 rounded-xl" />
 										) : isError ? (
-											<div className="text-destructive text-center p-8">
+											<div className="text-rose-400 font-mono text-center p-8">
 												{error?.message || t("errorOccurred")}
 											</div>
 										) : (
@@ -559,8 +578,8 @@ export default function Analytics() {
 												}
 											/>
 										)}
-									</CardContent>
-								</Card>
+									</div>
+								</Panel>
 							</div>
 							<InteractiveAssetChart
 								trades={serverTrades}
@@ -611,12 +630,15 @@ export default function Analytics() {
 							onClose={() => setSelectedTrade(null)}
 						/>
 					)}
-				</TabsContent>
+				</div>
+			)}
 
-				<TabsContent value="be_analysis">
+			{activeTab === "be_analysis" && (
+				<div className="animate-fade-up">
 					<PhantomAnalysisTab />
-				</TabsContent>
-			</Tabs>
-		</PageLayout>
-	);
+				</div>
+			)}
+		</div>
+	</PageLayout>
+);
 }

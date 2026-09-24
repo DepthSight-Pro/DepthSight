@@ -15,9 +15,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useTranslation } from "react-i18next";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 interface UserProgressCardProps {
 	level: number;
@@ -124,56 +122,97 @@ export const UserProgressCard: React.FC<UserProgressCardProps> = ({
 	const rank = getRank(level, t);
 
 	return (
-		<Card className="border-2 bg-gradient-to-br from-background to-muted/20">
-			<CardHeader className="pb-3">
-				<CardTitle className="flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						{rank.icon}
-						<span className={rank.color}>{rank.name}</span>
+		<div className="glass relative overflow-hidden rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl">
+			{/* Ambient background glow matching rank color */}
+			<div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-cyan/10 blur-3xl" />
+			<div className="pointer-events-none absolute -left-12 -bottom-12 h-44 w-44 rounded-full bg-azure/10 blur-3xl" />
+
+			<div className="relative z-10 space-y-4">
+				{/* Top Row: Rank & Level */}
+				<div className="flex items-center justify-between">
+					<div className="flex items-center gap-3">
+						<div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/[0.04] shadow-inner">
+							<span className={rank.color}>{rank.icon}</span>
+						</div>
+						<div>
+							<div className="text-[10px] uppercase tracking-wider font-mono text-white/40">
+								{t("rankTitle", "Player Rank")}
+							</div>
+							<div className={cn("text-base font-bold tracking-tight", rank.color)}>
+								{rank.name}
+							</div>
+						</div>
 					</div>
-					<Badge variant="outline" className="text-lg font-bold">
-						{t("level")} {level}
-					</Badge>
-				</CardTitle>
-			</CardHeader>
-			<CardContent className="space-y-4">
+
+					<div className="flex items-center gap-2">
+						<div className="rounded-xl border border-cyan/40 bg-cyan/10 px-3.5 py-1 text-right shadow-[0_0_15px_-3px_rgba(0,212,255,0.4)]">
+							<div className="text-[9px] uppercase tracking-wider font-mono text-cyan/70">
+								{t("level", "Level")}
+							</div>
+							<div className="font-mono text-lg font-black text-cyan">
+								{level}
+							</div>
+						</div>
+					</div>
+				</div>
+
 				{/* XP Progress Bar */}
-				<div className="space-y-2">
-					<div className="flex justify-between text-sm">
-						<span className="text-muted-foreground">{t("experience")}</span>
-						<span className="font-mono font-medium">
-							{xpInCurrentLevel} / {xpNeededForNextLevel} {t("xp")}
+				<div className="space-y-1.5 pt-1">
+					<div className="flex justify-between items-baseline text-xs">
+						<span className="text-[11px] font-medium text-white/50">
+							{t("experience", "Experience")}
+						</span>
+						<span className="font-mono text-[11px] font-semibold text-white/90">
+							{xpInCurrentLevel.toLocaleString()} <span className="text-white/40">/</span> {xpNeededForNextLevel.toLocaleString()}{" "}
+							<span className="text-cyan font-bold">{t("xp", "XP")}</span>
 						</span>
 					</div>
-					<Progress value={progressPercent} className="h-3" />
-					<p className="text-xs text-muted-foreground text-right">
-						{Math.max(0, xpNeededForNextLevel - xpInCurrentLevel)}{" "}
-						{t("xpToLevel")} {level + 1}
-					</p>
+
+					{/* Custom glowing progress bar */}
+					<div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/[0.06] p-0.5">
+						<div
+							className="h-full rounded-full bg-gradient-to-r from-azure via-cyan to-emerald-400 shadow-[0_0_12px_rgba(0,212,255,0.7)] transition-all duration-500"
+							style={{ width: `${progressPercent}%` }}
+						/>
+					</div>
+
+					<div className="flex justify-between text-[10px] text-white/40 font-mono">
+						<span>{progressPercent.toFixed(1)}%</span>
+						<span>
+							{Math.max(0, xpNeededForNextLevel - xpInCurrentLevel).toLocaleString()}{" "}
+							{t("xpToLevel", "XP to Level")} {level + 1}
+						</span>
+					</div>
 				</div>
 
 				{/* Stats Grid */}
-				<div className="grid grid-cols-3 gap-4 pt-2 border-t">
-					<div className="text-center">
-						<div className="text-2xl font-bold text-primary">
+				<div className="grid grid-cols-3 gap-3 border-t border-white/5 pt-3.5">
+					<div className="rounded-xl border border-white/5 bg-white/[0.02] p-2.5 text-center">
+						<div className="font-mono text-lg font-bold text-white">
 							{xp.toLocaleString()}
 						</div>
-						<div className="text-xs text-muted-foreground">{t("totalXP")}</div>
+						<div className="text-[10.5px] uppercase tracking-wider text-white/40">
+							{t("totalXP", "Total XP")}
+						</div>
 					</div>
-					<div className="text-center">
-						<div className="text-2xl font-bold text-green-500">
+					<div className="rounded-xl border border-white/5 bg-white/[0.02] p-2.5 text-center">
+						<div className="font-mono text-lg font-bold text-emerald-400">
 							{totalGenes}
 						</div>
-						<div className="text-xs text-muted-foreground">
-							{t("genesFound")}
+						<div className="text-[10.5px] uppercase tracking-wider text-white/40">
+							{t("genesFound", "Genes Found")}
 						</div>
 					</div>
-					<div className="text-center">
-						<div className="text-2xl font-bold text-yellow-500">{level}</div>
-						<div className="text-xs text-muted-foreground">{t("level")}</div>
+					<div className="rounded-xl border border-white/5 bg-white/[0.02] p-2.5 text-center">
+						<div className="font-mono text-lg font-bold text-amber-400">
+							{level}
+						</div>
+						<div className="text-[10.5px] uppercase tracking-wider text-white/40">
+							{t("level", "Level")}
+						</div>
 					</div>
 				</div>
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 };

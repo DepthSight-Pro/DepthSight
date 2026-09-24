@@ -24,8 +24,8 @@ import { cn } from "@/lib/utils";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "4rem";
-const SIDEBAR_WIDTH_MOBILE = "4rem";
+const SIDEBAR_WIDTH = "15.5rem";
+const SIDEBAR_WIDTH_MOBILE = "15.5rem";
 const SIDEBAR_WIDTH_ICON = "4rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
@@ -184,7 +184,7 @@ const Sidebar = React.forwardRef<
 			return (
 				<div
 					className={cn(
-						"flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+						"flex h-full w-[--sidebar-width] flex-col bg-transparent text-sidebar-foreground",
 						className,
 					)}
 					ref={ref}
@@ -201,7 +201,7 @@ const Sidebar = React.forwardRef<
 					<SheetContent
 						data-sidebar="sidebar"
 						data-mobile="true"
-						className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+						className="w-[--sidebar-width] bg-obsidian/95 backdrop-blur-xl border-r border-white/10 p-0 text-sidebar-foreground [&>button]:hidden"
 						style={
 							{
 								"--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -231,12 +231,9 @@ const Sidebar = React.forwardRef<
 				{/* This is what handles the sidebar gap on desktop */}
 				<div
 					className={cn(
-						"relative w-[--sidebar-width] bg-transparent transition-[width] duration-200 ease-linear",
+						"relative bg-transparent transition-[width] duration-300 ease-[cubic-bezier(.22,1,.36,1)]",
 						"group-data-[collapsible=offcanvas]:w-0",
 						"group-data-[side=right]:rotate-180",
-						variant === "floating" || variant === "inset"
-							? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))]"
-							: "group-data-[collapsible=icon]:w-[--sidebar-width-icon]",
 					)}
 					style={
 						{
@@ -246,21 +243,27 @@ const Sidebar = React.forwardRef<
 				/>
 				<div
 					className={cn(
-						"fixed inset-y-0 z-[40] hidden h-svh w-[--sidebar-width] transition-[left,right,width] duration-200 ease-linear md:flex",
+						"fixed inset-y-0 z-[40] hidden h-svh transition-[left,right,width] duration-300 ease-[cubic-bezier(.22,1,.36,1)] md:flex",
 						side === "left"
 							? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
 							: "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
 						// Adjust the padding for floating and inset variants.
 						variant === "floating" || variant === "inset"
-							? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)]"
-							: "group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[side=left]:border-r group-data-[side=right]:border-l",
+							? "p-2"
+							: "group-data-[side=left]:border-r group-data-[side=right]:border-l",
 						className,
 					)}
+					style={
+						{
+							width: state === "expanded" ? SIDEBAR_WIDTH : SIDEBAR_WIDTH_ICON,
+							...props.style,
+						} as React.CSSProperties
+					}
 					{...props}
 				>
 					<div
 						data-sidebar="sidebar"
-						className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
+						className="flex h-full w-full flex-col bg-transparent group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
 					>
 						{children}
 					</div>
@@ -283,14 +286,17 @@ const SidebarTrigger = React.forwardRef<
 			data-sidebar="trigger"
 			variant="ghost"
 			size="icon"
-			className={cn("h-7 w-7", className)}
+			className={cn(
+				"h-8 w-8 text-white/70 hover:text-white border border-white/10 bg-white/5 hover:bg-white/10 rounded-lg transition-colors shrink-0",
+				className,
+			)}
 			onClick={(event) => {
 				onClick?.(event);
 				toggleSidebar();
 			}}
 			{...props}
 		>
-			<PanelLeft />
+			<PanelLeft className="w-4 h-4" />
 			<span className="sr-only">Toggle Sidebar</span>
 		</Button>
 	);

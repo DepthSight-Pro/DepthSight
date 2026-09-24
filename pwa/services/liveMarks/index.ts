@@ -1,0 +1,84 @@
+// pwa/services/liveMarks/index.ts
+// Groups open symbols by exchange, keeps max 1 socket per exchange.
+import { createBinanceAdapter } from "./binance";
+import { createBitgetAdapter } from "./bitget";
+import { createBybitAdapter } from "./bybit";
+import { createOkxAdapter } from "./okx";
+import { createWeexAdapter } from "./weex";
+import {
+	type CreateMarksAdapter,
+	type MarksCallback,
+	type MarksHandle,
+	cleanSymbol,
+} from "./types";
+
+const REGISTRY: Record<string, CreateMarksAdapter> = {
+	binance: createBinanceAdapter,
+	bybit: createBybitAdapter,
+	okx: createOkxAdapter,
+	bitget: createBitgetAdapter,
+	weex: createWeexAdapter,
+};
+
+export interface LiveSymbol {
+	symbol: string;
+	exchange?: string | null;
+}
+
+/** Normalize position/apiKey exchange names down to a supported source. */
+export const normalizeLiveExchange = (exchange?: string | null): string => {
+	const raw = (exchange || "binance").trim().toLowerCase();
+	const base = raw
+		.replace(/_testnet$/, "")
+		.replace(/_(futures|usdtm|usdm|linear|swap|spot)$/, "");
+	if (
+		base === "bybit" ||
+		base === "okx" ||
+		base === "bitget" ||
+		base === "weex"
+	) {
+		return base;
+	}
+	return "binance";
+};
+
+export const groupByExchange = (
+	items: LiveSymbol[],
+): Record<string, string[]> => {
+	const groups: Record<string, string[]> = {};
+	for (const it of items) {
+		const sym = cleanSymbol(it.symbol);
+		if (!sym) continue;
+		const ex = normalizeLiveExchange(it.exchange);
+		if (!groups[ex]) groups[ex] = [];
+		if (!groups[ex].includes(sym)) groups[ex].push(sym);
+	}
+	return groups;
+};
+
+export const createLiveMarksManager = (onTick: MarksCallback) => {
+	let handles: Record<string, MarksHandle> = {};
+
+	const setSymbols = (items: LiveSymbol[]) => {
+		const groups = groupByExchange(items);
+		// close stale exchanges
+		for (const ex of Object.keys(handles)) {
+			if (!groups[ex]) {
+				handles[ex].close();
+				delete handles[ex];
+			}
+		}
+		for (const [ex, syms] of Object.entries(groups)) {
+			const factory = REGISTRY[ex] ?? REGISTRY.binance;
+			if (!handles[ex]) handles[ex] = factory(onTick);
+			handles[ex].setSymbols(syms);
+		}
+	};
+
+	const close = () => {
+		for (const h of Object.values(handles)) h.close();
+		handles = {};
+	};
+
+	return { setSymbols, close };
+};

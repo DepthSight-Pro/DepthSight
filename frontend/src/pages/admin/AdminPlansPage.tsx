@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
 	Layers,
 	Plus,
@@ -80,11 +80,16 @@ export const AdminPlansPage: React.FC = () => {
 	const [newProBlockText, setNewProBlockText] = useState("");
 	const [newKlineBlockText, setNewKlineBlockText] = useState("");
 
-	useEffect(() => {
-		if (remoteConfig) {
-			setConfig(JSON.parse(JSON.stringify(remoteConfig)));
-		}
-	}, [remoteConfig]);
+	// Sync the editable draft when the plans config is fetched / refetched.
+	// React's documented "adjust state when props change" pattern — guarded
+	// setState during render — replaces the former sync effect that tripped
+	// `react-hooks/set-state-in-effect` (cascading renders). The triggers and
+	// the resulting state are the same as before.
+	const [lastSyncedConfig, setLastSyncedConfig] = useState<AdminPlansConfig | null>(null);
+	if (remoteConfig && remoteConfig !== lastSyncedConfig) {
+		setLastSyncedConfig(remoteConfig);
+		setConfig(JSON.parse(JSON.stringify(remoteConfig)));
+	}
 
 	if (isLoading || !config) {
 		return (
@@ -140,6 +145,8 @@ export const AdminPlansPage: React.FC = () => {
 				max_free_weex_live_strategies: 5,
 				allow_free_okx_trading: false,
 				max_free_okx_live_strategies: 5,
+				allow_free_bitget_trading: false,
+				max_free_bitget_live_strategies: 5,
 			},
 			billing: {
 				monthly: { price_usd: 50, period_days: 30 },
@@ -1233,6 +1240,39 @@ export const AdminPlansPage: React.FC = () => {
 														limits: {
 															...editingPlanData.limits,
 															max_free_okx_live_strategies: parseInt(e.target.value) || 0,
+														},
+													})
+												}
+											/>
+										</div>
+
+										<div className="flex items-center justify-between p-3 border rounded-lg">
+											<div>
+												<Label className="font-semibold block">Free Bitget Trading</Label>
+												<span className="text-xs text-muted-foreground">Allow live trading on Bitget without paid subscription</span>
+											</div>
+											<Switch
+												checked={Boolean(editingPlanData.limits?.allow_free_bitget_trading)}
+												onCheckedChange={(val) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: { ...editingPlanData.limits, allow_free_bitget_trading: val },
+													})
+												}
+											/>
+										</div>
+
+										<div className="space-y-1.5 p-3 border rounded-lg">
+											<Label className="text-xs font-semibold block">Max Free Bitget Strategies</Label>
+											<Input
+												type="number"
+												value={editingPlanData.limits?.max_free_bitget_live_strategies ?? 5}
+												onChange={(e) =>
+													setEditingPlanData({
+														...editingPlanData,
+														limits: {
+															...editingPlanData.limits,
+															max_free_bitget_live_strategies: parseInt(e.target.value) || 0,
 														},
 													})
 												}

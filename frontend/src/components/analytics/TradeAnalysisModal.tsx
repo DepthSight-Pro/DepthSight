@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import type {
@@ -74,6 +75,32 @@ interface NormalizedExecution {
 	price: number;
 	type: "ENTRY" | "EXIT";
 	sideIndex: number;
+}
+
+interface BinanceSymbolFilter {
+	filterType: string;
+	tickSize?: string | number;
+}
+
+interface BinanceSymbolInfo {
+	symbol: string;
+	filters?: BinanceSymbolFilter[];
+}
+
+interface BinanceExchangeInfo {
+	symbols?: BinanceSymbolInfo[];
+}
+
+interface BybitSymbolInfo {
+	priceFilter?: {
+		tickSize?: string | number;
+	};
+}
+
+interface BybitInstrumentsInfo {
+	result?: {
+		list?: BybitSymbolInfo[];
+	};
 }
 
 const toTimestampSeconds = (
@@ -501,6 +528,20 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		useState<FoundationChartProps | null>(null);
 	const [foundationLoading, setFoundationLoading] = useState(false);
 	const [tickSize, setTickSize] = useState<number | undefined>(trade.tick_size);
+
+	// Render via portal into <body> so ancestor transforms (e.g. page-level
+	// fade-up animations) can't break `position: fixed`, and lock background
+	// scroll while the modal is open (no jumps on phones).
+	useEffect(() => {
+		const prevOverflow = document.body.style.overflow;
+		const prevOverscroll = document.body.style.overscrollBehavior;
+		document.body.style.overflow = "hidden";
+		document.body.style.overscrollBehavior = "none";
+		return () => {
+			document.body.style.overflow = prevOverflow;
+			document.body.style.overscrollBehavior = prevOverscroll;
+		};
+	}, []);
 
 	// Ruler state
 	const [isRulerActive, setIsRulerActive] = useState(false);
@@ -2786,6 +2827,77 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		}
 	};
 
+	// Fetch tick size separately so kline loading does not depend on it.
+	// Runs in a `.then()` callback (not synchronously), so no cascading renders.
+	useEffect(() => {
+		if (tickSize || !trade.symbol) return;
+		let cancelled = false;
+		const cleanSymbol = trade.symbol.toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
+		const isBybit = String(trade.exchange || "").toLowerCase().includes("bybit");
+		const applyTickSize = (value: string | number | undefined) => {
+			if (cancelled || value === undefined) return;
+			const parsed = typeof value === "number" ? value : parseFloat(value);
+			if (Number.isFinite(parsed) && parsed > 0) {
+				setTickSize(parsed);
+			}
+		};
+		const applyBinanceInfo = (binanceInfo: BinanceExchangeInfo | null) => {
+			const symbolInfo = binanceInfo?.symbols?.find(
+				(s: BinanceSymbolInfo) => s.symbol.toUpperCase() === cleanSymbol,
+			);
+			const priceFilter = symbolInfo?.filters?.find(
+				(f: BinanceSymbolFilter) => f.filterType === "PRICE_FILTER",
+			);
+			applyTickSize(priceFilter?.tickSize);
+			return Boolean(priceFilter?.tickSize);
+		};
+		const applyBybitInfo = (bybitInfo: BybitInstrumentsInfo | null) => {
+			const symbolInfo = bybitInfo?.result?.list?.[0];
+			applyTickSize(symbolInfo?.priceFilter?.tickSize);
+			return Boolean(symbolInfo?.priceFilter?.tickSize);
+		};
+
+		if (isBybit) {
+			fetchBybitSymbolInfo(trade.symbol)
+				.then((info) => {
+					if (!applyBybitInfo(info as BybitInstrumentsInfo | null)) {
+						return fetchSymbolInfo(trade.symbol).then((binanceInfo) =>
+							applyBinanceInfo(binanceInfo as BinanceExchangeInfo | null),
+						);
+					}
+				})
+				.catch((err) => {
+					console.warn("Failed to fetch Bybit symbol info, falling back to Binance", err);
+					fetchSymbolInfo(trade.symbol)
+						.then((binanceInfo) =>
+							applyBinanceInfo(binanceInfo as BinanceExchangeInfo | null),
+						)
+						.catch(() => undefined);
+				});
+		} else {
+			fetchSymbolInfo(trade.symbol)
+				.then((info) => {
+					if (!applyBinanceInfo(info as BinanceExchangeInfo | null)) {
+						return fetchBybitSymbolInfo(trade.symbol).then((bybitInfo) =>
+							applyBybitInfo(bybitInfo as BybitInstrumentsInfo | null),
+						);
+					}
+				})
+				.catch((err) => {
+					console.warn("Failed to fetch Binance symbol info, falling back to Bybit", err);
+					fetchBybitSymbolInfo(trade.symbol)
+						.then((bybitInfo) =>
+							applyBybitInfo(bybitInfo as BybitInstrumentsInfo | null),
+						)
+						.catch(() => undefined);
+				});
+		}
+
+		return () => {
+			cancelled = true;
+		};
+	}, [tickSize, trade.symbol, trade.exchange]);
+
 	// Load klines data
 	const loadPriceAction = useCallback(async () => {
 		if (!trade.symbol || !entryTime || !exitTime) {
@@ -2798,65 +2910,6 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		setError(null);
 
 		try {
-			// Fetch tick size if not provided
-			if (!tickSize) {
-				const cleanSymbol = trade.symbol.toUpperCase().replace(/[^a-zA-Z0-9]/g, "");
-				const isBybit = String(trade.exchange || "").toLowerCase().includes("bybit");
-				if (isBybit) {
-					fetchBybitSymbolInfo(trade.symbol).then((info) => {
-						if (info && info.result && info.result.list && info.result.list[0]) {
-							const symbolInfo = info.result.list[0];
-							if (symbolInfo.priceFilter && symbolInfo.priceFilter.tickSize) {
-								setTickSize(parseFloat(symbolInfo.priceFilter.tickSize));
-							}
-						}
-					}).catch((err) => {
-						console.warn("Failed to fetch Bybit symbol info, falling back to Binance", err);
-						fetchSymbolInfo(trade.symbol).then((binanceInfo) => {
-							if (binanceInfo && binanceInfo.symbols) {
-								const symbolInfo = binanceInfo.symbols.find(
-									(s: any) => s.symbol.toUpperCase() === cleanSymbol,
-								);
-								if (symbolInfo) {
-									const priceFilter = symbolInfo.filters.find(
-										(f: any) => f.filterType === "PRICE_FILTER",
-									);
-									if (priceFilter && priceFilter.tickSize) {
-										setTickSize(parseFloat(priceFilter.tickSize));
-									}
-								}
-							}
-						});
-					});
-				} else {
-					fetchSymbolInfo(trade.symbol).then((info) => {
-						if (info && info.symbols) {
-							const symbolInfo = info.symbols.find(
-								(s: any) => s.symbol.toUpperCase() === cleanSymbol,
-							);
-							if (symbolInfo) {
-								const priceFilter = symbolInfo.filters.find(
-									(f: any) => f.filterType === "PRICE_FILTER",
-								);
-								if (priceFilter && priceFilter.tickSize) {
-									setTickSize(parseFloat(priceFilter.tickSize));
-								}
-							}
-						}
-					}).catch((err) => {
-						console.warn("Failed to fetch Binance symbol info, falling back to Bybit", err);
-						fetchBybitSymbolInfo(trade.symbol).then((bybitInfo) => {
-							if (bybitInfo && bybitInfo.result && bybitInfo.result.list && bybitInfo.result.list[0]) {
-								const symbolInfo = bybitInfo.result.list[0];
-								if (symbolInfo.priceFilter && symbolInfo.priceFilter.tickSize) {
-									setTickSize(parseFloat(symbolInfo.priceFilter.tickSize));
-								}
-							}
-						});
-					});
-				}
-			}
-
 			let data: Kline[];
 
 			const intervalToUse = interval || effectiveInterval;
@@ -2964,22 +3017,24 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			width: initialWidth,
 			height: initialHeight,
 			layout: {
-				textColor: "#9ca3af",
-				background: { type: ColorType.Solid, color: "#0a0a0a" },
+				textColor: "rgba(255, 255, 255, 0.45)",
+				background: { type: ColorType.Solid, color: "#07080b" },
 			},
 			grid: {
-				vertLines: { color: "#27272a" },
-				horzLines: { color: "#27272a" },
+				vertLines: { color: "rgba(255, 255, 255, 0.03)" },
+				horzLines: { color: "rgba(255, 255, 255, 0.03)" },
 			},
 			crosshair: { mode: CrosshairMode.Normal },
 			timeScale: {
-				borderColor: "#27272a",
+				borderColor: "rgba(255, 255, 255, 0.08)",
 				timeVisible: true,
 				secondsVisible: false,
+				rightOffset: 12,
+				shiftVisibleRangeOnNewBar: true,
 			},
 			rightPriceScale: {
-				borderColor: "#27272a",
-				minimumWidth: 60, // Ensure alignment with bottom chart if present
+				borderColor: "rgba(255, 255, 255, 0.08)",
+				minimumWidth: 65, // Ensure alignment with bottom chart if present
 			},
 		});
 
@@ -3233,20 +3288,22 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					width: initialIndWidth,
 					height: initialIndHeight,
 					layout: {
-						textColor: "#9ca3af",
-						background: { type: ColorType.Solid, color: "#0a0a0a" },
+						textColor: "rgba(255, 255, 255, 0.45)",
+						background: { type: ColorType.Solid, color: "#07080b" },
 					},
 					grid: {
-						vertLines: { color: "#27272a" },
-						horzLines: { color: "#27272a" },
+						vertLines: { color: "rgba(255, 255, 255, 0.03)" },
+						horzLines: { color: "rgba(255, 255, 255, 0.03)" },
 					},
 					timeScale: {
 						visible: true,
 						timeVisible: true,
 						secondsVisible: false,
-						borderColor: "#27272a",
+						borderColor: "rgba(255, 255, 255, 0.08)",
+						rightOffset: 12,
+						shiftVisibleRangeOnNewBar: true,
 					},
-					rightPriceScale: { borderColor: "#27272a", minimumWidth: 60 },
+					rightPriceScale: { borderColor: "rgba(255, 255, 255, 0.08)", minimumWidth: 65 },
 				});
 
 				// Resize Observer for Indicator Chart
@@ -3426,6 +3483,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		foundationData,
 		getIndicatorColor,
 		extractedIndicators,
+		tickSize,
 	]);
 
 	// Mouse handlers for ruler
@@ -3512,59 +3570,66 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		return () => window.removeEventListener("keydown", handleEsc);
 	}, [onClose]);
 
-	return (
+	return createPortal(
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+			className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md"
 			onClick={onClose}
 		>
 			<div
 				ref={modalContentRef}
-				className="bg-card border border-border w-full max-w-[1920px] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]"
+				className="glass-strong relative border-0 sm:border border-white/10 w-full max-w-[1920px] rounded-none sm:rounded-3xl shadow-[0_0_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[100dvh] max-h-none sm:h-auto sm:max-h-[95vh] animate-fade-up"
 				onClick={(e) => e.stopPropagation()}
 			>
+				{/* Top ambient glow */}
+				<div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-36 bg-cyan/10 blur-3xl rounded-full" />
+
 				{/* Header */}
-				<div className="p-6 border-b border-border bg-muted/50 flex justify-between items-center">
-					<div className="flex items-center gap-4">
+				<div className="relative p-3 sm:p-5 border-b border-white/[0.08] bg-white/[0.02] flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
+					<div className="flex items-center gap-3 sm:gap-4 min-w-0">
 						<div
-							className={`p-3 rounded-xl ${realizedPnl >= 0 ? "bg-profit/10" : "bg-loss/10"}`}
+							className={cn(
+								"p-2 sm:p-2.5 rounded-xl border flex items-center justify-center shadow-sm shrink-0",
+								realizedPnl >= 0
+									? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400 shadow-[0_0_15px_-3px_rgba(16,224,160,0.3)]"
+									: "bg-rose-500/10 border-rose-500/25 text-rose-400 shadow-[0_0_15px_-3px_rgba(244,63,94,0.3)]",
+							)}
 						>
 							{isLong ? (
-								<TrendingUp
-									className={realizedPnl >= 0 ? "text-profit" : "text-loss"}
-								/>
+								<TrendingUp className="w-5 h-5" />
 							) : (
-								<TrendingDown
-									className={realizedPnl >= 0 ? "text-profit" : "text-loss"}
-								/>
+								<TrendingDown className="w-5 h-5" />
 							)}
 						</div>
-						<div>
-							<h2 className="text-xl font-bold text-foreground flex items-center gap-2">
+						<div className="min-w-0">
+							<h2 className="text-base sm:text-xl font-bold font-mono tracking-tight text-white flex flex-wrap items-center gap-2">
 								{trade.symbol}
-								<span className="text-muted-foreground text-sm font-normal">
+								<span className="text-white/40 text-xs sm:text-sm font-sans font-normal">
 									{t("executionAnalysis", "Execution Analysis")}
 								</span>
 							</h2>
-							<p className="text-xs text-muted-foreground">
+							<p className="text-[11px] text-white/40 font-mono truncate">
 								{t("tradeId", "Trade ID")}:{" "}
-								{trade.trade_uuid?.substring(0, 8) || trade.id}
-								<span className="ml-4 opacity-60">
+								<span className="text-white/60">{trade.trade_uuid?.substring(0, 8) || trade.id}</span>
+								<span className="ml-3 text-white/30 hidden sm:inline">
 									📏 Shift+Click for ruler
 								</span>
 							</p>
 						</div>
 					</div>
-					<div className="flex items-center gap-2">
-						<div className="mr-4 hidden lg:flex items-center bg-background/50 border border-border rounded-lg p-0.5">
+					<div className="flex flex-wrap items-center justify-end gap-2">
+						{/* Timeframe strip: own scrollable row on phones, inline from lg up */}
+						<div className="mr-2 order-last w-full lg:order-none lg:w-auto inline-flex items-center rounded-lg bg-white/[0.04] border border-white/10 p-0.5 gap-0.5 overflow-x-auto no-scrollbar max-w-full">
 							{KLINE_INTERVALS.map((tf) => (
 								<button
 									key={tf.value}
+									type="button"
 									onClick={() => setInterval(tf.value)}
-									className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+									className={cn(
+										"shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-all",
 										effectiveInterval === tf.value
-											? "bg-primary text-primary-foreground shadow-sm"
-											: "text-muted-foreground hover:text-foreground hover:bg-muted"
-									}`}
+											? "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] border border-white/15"
+											: "text-white/50 hover:text-white/80 hover:bg-white/[0.03]",
+									)}
 								>
 									{tf.label}
 								</button>
@@ -3572,84 +3637,97 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 						</div>
 
 						<button
+							type="button"
 							onClick={() => setShowIndicators(!showIndicators)}
 							disabled={foundationLoading}
 							className={cn(
-								"p-2 rounded-full transition-colors",
+								"inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-all",
 								showIndicators
-									? "bg-primary text-primary-foreground"
-									: "hover:bg-muted text-muted-foreground",
+									? "bg-cyan/15 text-cyan border-cyan/40 shadow-[0_0_14px_rgba(0,212,255,0.35)]"
+									: "border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07]",
 								foundationLoading && "opacity-80 cursor-wait",
 							)}
 							title={`${t("showIndicators", "Show Indicators")} (${usedFoundations.length})`}
 						>
 							{foundationLoading ? (
-								<Loader2 className="w-5 h-5 animate-spin" />
+								<Loader2 className="w-4 h-4 animate-spin text-cyan" />
 							) : (
-								<BarChart3 className="w-5 h-5" />
+								<BarChart3 className="w-4 h-4" />
 							)}
 						</button>
 
-						<div className="mr-4 hidden md:block">
-							<Logo className="h-10 w-auto" />
+						<div className="mx-2 hidden md:block opacity-80">
+							<Logo className="h-7 w-auto" />
 						</div>
 						<button
+							type="button"
 							onClick={handleScreenshot}
 							disabled={isCapturing}
-							className={`p-2 rounded-full hover:bg-muted transition-colors ${isCapturing ? "opacity-50 cursor-not-allowed" : ""}`}
+							className={cn(
+								"inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07] transition-all",
+								isCapturing && "opacity-50 cursor-not-allowed",
+							)}
 							title={t("shareScreenshot", "Share Screenshot")}
 						>
-							<Camera className="w-6 h-6 text-muted-foreground" />
+							<Camera className="w-4 h-4" />
 						</button>
 						<button
+							type="button"
 							onClick={onClose}
-							className="p-2 rounded-full hover:bg-muted transition-colors"
+							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-transparent hover:border-white/10 text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
 						>
-							<X className="w-6 h-6 text-muted-foreground" />
+							<X className="w-4 h-4" />
 						</button>
 					</div>
 				</div>
 
 				{/* Content */}
-				<div className="flex-1 flex flex-col overflow-hidden p-6 gap-6">
+				<div className="flex-1 min-h-0 flex flex-col overflow-hidden p-3 sm:p-6 gap-3 sm:gap-6">
 					{/* Quick Stats Grid */}
-					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+					<div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
 						{[
 							{
 								label: t("result", "Result"),
 								value: realizedPnl != null && Number.isFinite(realizedPnl)
 									? `${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)}`
 									: "N/A",
-								color: realizedPnl >= 0 ? "text-profit" : "text-loss",
+								color: realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400",
+								glow: realizedPnl >= 0 ? "shadow-[0_0_15px_-3px_rgba(16,224,160,0.2)]" : "shadow-[0_0_15px_-3px_rgba(244,63,94,0.2)]",
 							},
 							{
 								label: t("entry", "Entry"),
 								value: entryPrice != null && Number.isFinite(entryPrice)
 									? `$${entryPrice.toFixed(4)}`
 									: "N/A",
-								color: "text-primary",
+								color: "text-white/90",
+								glow: "",
 							},
 							{
 								label: t("exit", "Exit"),
 								value: exitPrice != null && Number.isFinite(exitPrice)
 									? `$${exitPrice.toFixed(4)}`
 									: "N/A",
-								color: "text-amber-500",
+								color: "text-amber-400",
+								glow: "",
 							},
 							{
 								label: t("side", "Side"),
 								value: trade.direction,
-								color: isLong ? "text-profit" : "text-loss",
+								color: isLong ? "text-emerald-400" : "text-rose-400",
+								glow: "",
 							},
 						].map((stat, i) => (
 							<div
 								key={i}
-								className="bg-muted/50 border border-border p-4 rounded-2xl"
+								className={cn(
+									"glass rounded-xl p-3 border border-white/5 flex flex-col justify-between",
+									stat.glow,
+								)}
 							>
-								<span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground block mb-1">
+								<span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-white/40 block mb-1">
 									{stat.label}
 								</span>
-								<span className={`text-lg font-bold ${stat.color}`}>
+								<span className={`text-base font-bold font-mono tabular ${stat.color}`}>
 									{stat.value}
 								</span>
 							</div>
@@ -3669,18 +3747,20 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 						if (isValidTrace) {
 							return (
-								<div className="flex-1 flex flex-col xl:flex-row gap-6 min-h-[600px] overflow-hidden relative">
+								<div className="flex-1 flex flex-col xl:flex-row gap-3 sm:gap-6 min-h-0 sm:min-h-[600px] overflow-hidden relative">
 									{/* Left Column: Decision Tree */}
 									<div
 										className={cn(
-											"flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden z-20",
+											// Overlay panel on phones/tablets (chart keeps its size),
+											// static column from lg up.
+											"flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:z-30 max-lg:bg-void lg:static lg:z-20",
 											showTree
-												? "xl:w-[550px] opacity-100"
-												: "xl:w-0 opacity-0 pointer-events-none",
+												? "w-full opacity-100 xl:w-[550px]"
+												: "w-0 opacity-0 pointer-events-none",
 										)}
 									>
-										<div className="flex items-center justify-between mb-4 px-1">
-											<h3 className="text-lg font-semibold flex items-center gap-2 truncate whitespace-nowrap">
+										<div className="flex items-center justify-between mb-2 sm:mb-4 px-1">
+											<h3 className="text-base sm:text-lg font-semibold flex items-center gap-2 truncate whitespace-nowrap">
 												<span className="w-1.5 h-6 bg-primary rounded-full" />
 												{t("decisionTree.title")}
 											</h3>
@@ -3694,7 +3774,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 											</Button>
 										</div>
 
-										<div className="bg-muted/30 border border-border rounded-2xl overflow-hidden flex-1 flex flex-col min-w-0">
+										<div className="glass border border-white/10 rounded-2xl overflow-hidden flex-1 flex flex-col min-w-0">
 											<ScrollArea className="flex-1 w-full bg-black/20">
 												<div className="p-3 space-y-3 w-full overflow-hidden">
 													{/* Filters Section */}
@@ -3725,7 +3805,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 													{/* Entry Conditions Section */}
 													<div>
 														<div className="flex items-center gap-2 mb-2">
-															<span className="text-xs font-semibold uppercase tracking-wider text-primary">
+															<span className="text-xs font-semibold uppercase tracking-wider text-cyan">
 																{t(
 																	"decisionTree.entryConditions",
 																	"Entry Conditions",
@@ -3746,20 +3826,20 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 											<Button
 												variant="secondary"
 												size="icon"
-												className="h-10 w-10 rounded-full shadow-lg border border-border bg-card/80 backdrop-blur-sm hover:bg-muted transition-all"
+												className="h-9 w-9 rounded-xl shadow-lg border border-white/10 glass-strong text-white/70 hover:text-white transition-all flex items-center justify-center"
 												onClick={() => setShowTree(true)}
 												title={t("decisionTree.title")}
 											>
-												<ChevronRight className="h-6 w-6" />
+												<ChevronRight className="h-5 w-5" />
 											</Button>
 										</div>
 									)}
 
 									{/* Right Column: Charts */}
-									<div className="flex-1 flex flex-col min-w-0">
+									<div className="flex-1 flex flex-col min-w-0 min-h-0">
 										<div
 											className={cn(
-												"bg-background border border-border rounded-2xl overflow-hidden relative flex-1 flex flex-col",
+												"bg-[#07080b] border border-white/10 rounded-2xl overflow-hidden relative flex-1 flex flex-col min-h-[240px]",
 												isRulerActive ? "cursor-crosshair" : "",
 											)}
 											onMouseDown={handleMouseDown}
@@ -3769,18 +3849,18 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 										>
 											{loading ? (
 												<div className="h-full flex items-center justify-center flex-col gap-3">
-													<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-													<span className="text-muted-foreground animate-pulse">
+													<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan"></div>
+													<span className="text-white/50 text-xs font-mono animate-pulse">
 														{t("fetchingData", "Fetching market data...")}
 													</span>
 												</div>
 											) : error || klines.length === 0 ? (
-												<div className="h-full flex items-center justify-center flex-col gap-2 text-muted-foreground">
-													<AlertCircle className="w-10 h-10 mb-2" />
-													<span className="font-bold text-foreground">
+												<div className="h-full flex items-center justify-center flex-col gap-2 text-white/50">
+													<AlertCircle className="w-10 h-10 mb-2 text-amber-400" />
+													<span className="font-bold text-white">
 														{error || t("dataUnavailable", "Data Unavailable")}
 													</span>
-													<span className="text-xs">
+													<span className="text-xs font-mono text-white/40">
 														Symbol: {trade.symbol}, Period:{" "}
 														{new Date(entryTime * 1000).toLocaleString()} -{" "}
 														{new Date(exitTime * 1000).toLocaleString()}
@@ -3809,8 +3889,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 															foundationData.visualizations.subcharts || {},
 														).length > 0 && (
 															<div
-																className="w-full border-t border-border bg-black/20"
-																style={{ height: "180px", flexShrink: 0 }}
+																className="w-full border-t border-white/10 bg-black/40 h-[140px] sm:h-[180px] shrink-0"
 																ref={indicatorContainerRef}
 															/>
 														)}
@@ -3825,7 +3904,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 						// Normal layout if no trace available (Fallback)
 						return (
 							<div
-								className={`bg-background border border-border rounded-2xl p-0 overflow-hidden relative flex-1 min-h-[600px] ${isRulerActive ? "cursor-crosshair" : ""}`}
+								className={`bg-[#07080b] border border-white/10 rounded-2xl p-0 overflow-hidden relative flex-1 min-h-[240px] sm:min-h-[600px] ${isRulerActive ? "cursor-crosshair" : ""}`}
 								onMouseDown={handleMouseDown}
 								onMouseMove={handleMouseMove}
 								onMouseUp={handleMouseUp}
@@ -3834,18 +3913,18 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								{/* Reuse same logic for simplicity if needed, but keeping original fallback for now */}
 								{loading ? (
 									<div className="h-full flex items-center justify-center flex-col gap-3">
-										<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-										<span className="text-muted-foreground animate-pulse">
+										<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan"></div>
+										<span className="text-white/50 text-xs font-mono animate-pulse">
 											{t("fetchingData", "Fetching market data...")}
 										</span>
 									</div>
 								) : error || klines.length === 0 ? (
-									<div className="h-full flex items-center justify-center flex-col gap-2 text-muted-foreground">
-										<AlertCircle className="w-10 h-10 mb-2" />
-										<span className="font-bold text-foreground">
+									<div className="h-full flex items-center justify-center flex-col gap-2 text-white/50">
+										<AlertCircle className="w-10 h-10 mb-2 text-amber-400" />
+										<span className="font-bold text-white">
 											{error || t("dataUnavailable", "Data Unavailable")}
 										</span>
-										<span className="text-xs text-muted-foreground">
+										<span className="text-xs font-mono text-white/40">
 											Symbol: {trade.symbol}, Period:{" "}
 											{new Date(entryTime * 1000).toLocaleString()} -{" "}
 											{new Date(exitTime * 1000).toLocaleString()}
@@ -3856,9 +3935,10 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								)}
 							</div>
 						);
-					})()}
-				</div>
+				})()}
 			</div>
 		</div>
+		</div>,
+		document.body,
 	);
 };

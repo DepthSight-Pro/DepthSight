@@ -1216,9 +1216,7 @@ async def tool_run_backtest(
     try:
         from bot_module.strategy_healer import heal_strategy_config
 
-        strategy_config = heal_strategy_config(
-            strategy_config, symbol=clean_symbol
-        )
+        strategy_config = heal_strategy_config(strategy_config, symbol=clean_symbol)
     except Exception as heal_err:
         logger.warning(
             f"Error applying strategy_healer in tool_run_backtest: {heal_err}"
@@ -1598,7 +1596,9 @@ async def tool_run_backtest(
                     f"{trig_desc}0 trades were opened due to signal rejections."
                 )
                 if telemetry_data.get("primary_bottleneck"):
-                    zero_diag.append(f"Primary blocker: {telemetry_data['primary_bottleneck']}")
+                    zero_diag.append(
+                        f"Primary blocker: {telemetry_data['primary_bottleneck']}"
+                    )
             if not zero_diag:
                 zero_diag.append(
                     "No entry signals were generated during the simulation period."
@@ -1851,9 +1851,7 @@ async def tool_save_strategy(
         try:
             from bot_module.strategy_healer import heal_strategy_config
 
-            clean_config = heal_strategy_config(
-                clean_config, symbol=detected_symbol
-            )
+            clean_config = heal_strategy_config(clean_config, symbol=detected_symbol)
         except Exception as heal_err:
             logger.warning(
                 f"Error applying strategy_healer in tool_save_strategy: {heal_err}"

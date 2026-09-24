@@ -14,8 +14,6 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Table,
 	TableBody,
@@ -24,7 +22,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { formatCryptoPrice } from "@/lib/formatters";
+import { exchangeLabels, normalizeExchangeKey } from "@/lib/exchanges";
 import type { TradeData } from "@/types/api";
 
 interface LiveTradeHistoryTableProps {
@@ -67,93 +67,95 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 
 	if (!trades || trades.length === 0) {
 		return (
-			<Card className="mt-6">
-				<CardHeader>
-					<CardTitle>{t("tradeHistory.title")}</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<div className="text-center text-muted-foreground p-8">
-						{t("tradeHistory.noTradesFound")}
-					</div>
-				</CardContent>
-			</Card>
+			<div className="glass mt-6 rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
+				<div className="text-[13px] font-semibold text-white/90">
+					{t("tradeHistory.title", "Trade History")}
+				</div>
+				<div className="text-center text-white/40 font-mono text-xs p-8">
+					{t("tradeHistory.noTradesFound", "No trades found.")}
+				</div>
+			</div>
 		);
 	}
 
 	return (
-		<Card className="mt-6 overflow-hidden">
-			<CardHeader className="border-b border-border flex flex-row justify-between items-center">
-				<div className="flex items-center gap-4">
-					<CardTitle>{t("tradeHistory.title")}</CardTitle>
+		<div className="glass mt-6 rounded-2xl border border-white/10 overflow-hidden shadow-2xl backdrop-blur-xl animate-fade-up">
+			<div className="border-b border-white/5 p-4 flex flex-row justify-between items-center flex-wrap gap-3">
+				<div className="flex items-center gap-3">
+					<span className="text-[13px] font-semibold text-white/90">
+						{t("tradeHistory.title", "Trade History")}
+					</span>
 					{totalTrades !== undefined && (
 						<span
-							className={`text-[11px] px-2 py-0.5 rounded font-bold ${isFiltered || searchSymbol ? "bg-amber-500/10 text-amber-500" : "bg-primary/10 text-primary"}`}
+							className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold uppercase tracking-wider ${isFiltered || searchSymbol ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-cyan/10 text-cyan border border-cyan/20"}`}
 						>
-							{filteredTrades.length} of {totalTrades} trades shown
+							{filteredTrades.length} / {totalTrades} trades
 						</span>
 					)}
 				</div>
-				<div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-muted/50 border-border">
-					<Search className="w-4 h-4 text-muted-foreground" />
+				<div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white/[0.03] border-white/10 text-white">
+					<Search className="w-3.5 h-3.5 text-white/40" />
 					<input
 						type="text"
-						placeholder={t("tradeHistory.searchPlaceholder")}
-						className="bg-transparent border-none text-xs focus:ring-0 w-32 outline-none"
+						placeholder={t("tradeHistory.searchPlaceholder", "Search symbol...")}
+						className="bg-transparent border-none text-xs font-mono text-white focus:ring-0 w-32 outline-none placeholder:text-white/30"
 						value={searchSymbol}
 						onChange={(e) => setSearchSymbol(e.target.value)}
 					/>
 					{searchSymbol && (
 						<button
 							onClick={() => setSearchSymbol("")}
-							className="hover:bg-muted rounded p-0.5 transition-colors"
+							className="hover:bg-white/10 rounded p-0.5 transition-colors"
 						>
-							<X className="w-3.5 h-3.5 text-muted-foreground" />
+							<X className="w-3.5 h-3.5 text-white/40" />
 						</button>
 					)}
 				</div>
-			</CardHeader>
-			<CardContent className="p-0">
-				<ScrollArea className="h-[500px]">
-					<Table>
+			</div>
+			<div className="w-full overflow-auto max-h-[500px]">
+					<Table className="w-full min-w-[1050px]">
 						<TableHeader>
-							<TableRow className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground bg-muted/50 border-b border-border">
-								<TableHead className="px-6 py-4">
+							<TableRow className="text-[10.5px] uppercase tracking-wider font-mono font-semibold text-white/50 bg-white/[0.02] border-b border-white/5 hover:bg-transparent">
+								<TableHead className="px-6 py-3.5 whitespace-nowrap">
 									{t("tradeHistory.headers.closeTime")}
 								</TableHead>
-								<TableHead className="px-6 py-4">
+								<TableHead className="px-6 py-4 whitespace-nowrap">
 									{t("tradeHistory.headers.symbol")}
 								</TableHead>
-								<TableHead className="px-6 py-4 text-center">
+								<TableHead className="px-6 py-4 whitespace-nowrap">
+									{t("tradeHistory.headers.exchange", "Exchange")}
+								</TableHead>
+								<TableHead className="px-6 py-4 text-center whitespace-nowrap">
 									{t("tradeHistory.headers.direction")}
 								</TableHead>
-								<TableHead className="px-6 py-4 text-right">
+								<TableHead className="px-6 py-4 text-right whitespace-nowrap">
 									{t("tradeHistory.headers.quantity")}
 								</TableHead>
-								<TableHead className="px-6 py-4 text-right">
+								<TableHead className="px-6 py-4 text-right whitespace-nowrap">
 									{t("tradeHistory.headers.entryPrice")}
 								</TableHead>
-								<TableHead className="px-6 py-4 text-right">
+								<TableHead className="px-6 py-4 text-right whitespace-nowrap">
 									{t("tradeHistory.headers.exitPrice")}
 								</TableHead>
-								<TableHead className="px-6 py-4 text-right">
+								<TableHead className="px-6 py-4 text-right whitespace-nowrap">
 									{t("tradeHistory.headers.netPnl")}
 								</TableHead>
 								<TableHead
-									className="px-4 py-4 text-right"
+									className="px-4 py-4 text-right whitespace-nowrap"
 									title="Max Floating Profit"
 								>
 									{t("tradeHistory.headers.mfp", "MFP")}
 								</TableHead>
 								<TableHead
-									className="px-4 py-4 text-right"
+									className="px-4 py-4 text-right whitespace-nowrap"
 									title="Max Floating Loss"
 								>
 									{t("tradeHistory.headers.mfl", "MFL")}
 								</TableHead>
-								<TableHead className="px-6 py-4">
+								<TableHead className="px-6 py-4 whitespace-nowrap">
 									{t("tradeHistory.headers.exitReason")}
 								</TableHead>
-								<TableHead className="px-6 py-4 text-right">
+								<TableHead className="px-6 py-4 text-right whitespace-nowrap">
 									{t("tradeHistory.action")}
 								</TableHead>
 							</TableRow>
@@ -167,7 +169,7 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 											key={trade.id}
 											className="hover:bg-muted/30 transition-colors group"
 										>
-											<TableCell className="px-6 py-4">
+											<TableCell className="px-6 py-4 whitespace-nowrap">
 												<span className="text-sm font-semibold text-foreground">
 													{format(
 														new Date(trade.timestamp_close),
@@ -178,10 +180,29 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 													{format(new Date(trade.timestamp_close), "HH:mm:ss")}
 												</span>
 											</TableCell>
-											<TableCell className="px-6 py-4 font-bold text-foreground">
+											<TableCell className="px-6 py-4 font-bold text-foreground whitespace-nowrap">
 												{trade.symbol}
 											</TableCell>
-											<TableCell className="px-6 py-4 text-center">
+											<TableCell className="px-6 py-4 whitespace-nowrap">
+												<div className="flex items-center gap-2.5">
+													<ExchangeBadge
+														exchange={trade.exchange}
+														size="sm"
+														className="shadow-sm border-white/10"
+													/>
+													<span className="text-xs uppercase font-semibold text-white/90 leading-tight">
+														{(() => {
+															const ex = normalizeExchangeKey(trade.exchange);
+															return (
+																(ex ? exchangeLabels[ex] : null) ||
+																trade.exchange ||
+																"—"
+															);
+														})()}
+													</span>
+												</div>
+											</TableCell>
+											<TableCell className="px-6 py-4 text-center whitespace-nowrap">
 												<span
 													className={`inline-block px-2.5 py-1 rounded-lg text-[9px] font-black tracking-widest ${
 														["LONG", "BUY"].includes(trade.direction as string)
@@ -192,35 +213,35 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 													{trade.direction}
 												</span>
 											</TableCell>
-											<TableCell className="px-6 py-4 text-right font-mono text-sm text-foreground">
+											<TableCell className="px-6 py-4 text-right font-mono text-sm text-foreground whitespace-nowrap">
 												{trade.quantity}
 											</TableCell>
-											<TableCell className="px-6 py-4 text-right font-mono text-sm text-foreground">
+											<TableCell className="px-6 py-4 text-right font-mono text-sm text-foreground whitespace-nowrap">
 												${formatCryptoPrice(trade.entry_price)}
 											</TableCell>
-											<TableCell className="px-6 py-4 text-right font-mono text-sm text-foreground">
+											<TableCell className="px-6 py-4 text-right font-mono text-sm text-foreground whitespace-nowrap">
 												${formatCryptoPrice(trade.exit_price)}
 											</TableCell>
 											<TableCell
-												className={`px-6 py-4 text-right font-mono font-bold text-base ${realizedPnl >= 0 ? "text-profit" : "text-loss"}`}
+												className={`px-6 py-4 text-right font-mono font-bold text-base whitespace-nowrap ${realizedPnl >= 0 ? "text-profit" : "text-loss"}`}
 											>
 												{realizedPnl >= 0 ? "+" : ""}
 												{realizedPnl.toFixed(2)}
 											</TableCell>
-											<TableCell className="px-4 py-4 text-right font-mono text-sm text-profit">
+											<TableCell className="px-4 py-4 text-right font-mono text-sm text-profit whitespace-nowrap">
 												{trade.max_floating_profit != null
 													? `+${trade.max_floating_profit.toFixed(2)}`
 													: "-"}
 											</TableCell>
-											<TableCell className="px-4 py-4 text-right font-mono text-sm text-loss">
+											<TableCell className="px-4 py-4 text-right font-mono text-sm text-loss whitespace-nowrap">
 												{trade.max_floating_loss != null
 													? `-${trade.max_floating_loss.toFixed(2)}`
 													: "-"}
 											</TableCell>
-											<TableCell className="px-6 py-4 text-muted-foreground">
+											<TableCell className="px-6 py-4 text-muted-foreground whitespace-nowrap">
 												{trade.exit_reason}
 											</TableCell>
-											<TableCell className="px-6 py-4 text-right">
+											<TableCell className="px-6 py-4 text-right whitespace-nowrap">
 												<Button
 													variant="outline"
 													size="sm"
@@ -246,11 +267,11 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 							)}
 						</TableBody>
 					</Table>
-				</ScrollArea>
+			</div>
 
 				{/* Pagination */}
 				{onPageChange && totalPages > 1 && (
-					<div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/30">
+					<div className="flex flex-wrap items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-t border-border bg-muted/30 gap-2">
 						<div className="text-sm text-muted-foreground">
 							{t("pagination.page", "Page")} {currentPage}{" "}
 							{t("pagination.of", "of")} {totalPages}
@@ -300,7 +321,6 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 						</div>
 					</div>
 				)}
-			</CardContent>
-		</Card>
+		</div>
 	);
 };

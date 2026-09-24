@@ -13,7 +13,9 @@ import {
 import { useWebSocketStatus } from "@/context/WebSocketProvider";
 import { cn } from "@/lib/utils";
 
-export const ConnectionStatusIndicator: React.FC = () => {
+export const ConnectionStatusIndicator: React.FC<{ iconOnly?: boolean }> = ({
+	iconOnly = false,
+}) => {
 	const { readyState, reconnect } = useWebSocketStatus();
 	const { t } = useTranslation(["index", "common"]); // Load 'index' and 'common' namespaces
 	const [isReconnecting, setIsReconnecting] = React.useState(false);
@@ -80,20 +82,34 @@ export const ConnectionStatusIndicator: React.FC = () => {
 	const currentStatus =
 		statusConfig[readyState] || statusConfig[ReadyState.UNINSTANTIATED]; // Fallback
 
+	const iconTone =
+		readyState === ReadyState.OPEN
+			? "text-profit"
+			: readyState === ReadyState.CLOSED
+				? "text-loss"
+				: readyState === ReadyState.UNINSTANTIATED
+					? "text-white/30"
+					: "text-warning";
+
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
 				<Badge
 					variant="outline"
 					onClick={handleManualReconnect}
-					className={cn(
-						"transition-all duration-300 select-none",
-						currentStatus.color,
-						isDisconnected && "cursor-pointer hover:opacity-85 active:scale-95",
-					)}
+				className={cn(
+					"transition-all duration-300 select-none",
+					iconOnly
+						? cn("border-transparent bg-transparent px-1", iconTone)
+						: currentStatus.color,
+					!iconOnly &&
+						isDisconnected &&
+						"cursor-pointer hover:opacity-85 active:scale-95",
+					iconOnly && isDisconnected && "cursor-pointer",
+				)}
 				>
-					{currentStatus.icon}
-					<span className="ml-1.5">{currentStatus.text}</span>
+				{currentStatus.icon}
+				{!iconOnly && <span className="ml-1.5">{currentStatus.text}</span>}
 				</Badge>
 			</TooltipTrigger>
 			<TooltipContent>

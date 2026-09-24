@@ -29,8 +29,13 @@
 		"running": "Running",
 		"stopped": "Stopped",
 		"paper": "Paper",
-		"live": "Live"
+		"live": "Live",
+		"favorites": "Favorites"
 	},
+	"addToFavorites": "Add to favorites",
+	"removeFromFavorites": "Remove from favorites",
+	"noFavoritesTitle": "No favorite strategies yet",
+	"noFavoritesDesc": "Click the star icon in the upper right corner of any strategy card to add it to your favorites.",
 
 	"emptyState": {
 		"title": "No Strategies Yet",

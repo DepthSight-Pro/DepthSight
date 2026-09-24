@@ -5,7 +5,9 @@ import {
 	ArrowLeft,
 	Rocket,
 	Share2,
+	Sparkles,
 	Target,
+	TrendingUp,
 	WandSparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -25,14 +27,7 @@ import { TaskSummaryCard } from "@/components/research/TaskSummaryCard";
 import { AppLoader } from "@/components/shared/AppLoader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Segmented } from "@/components/ui/quant-ui";
 import {
 	Tooltip,
 	TooltipContent,
@@ -42,6 +37,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { useWebSocket } from "@/context/WebSocketProvider";
 import { useBacktestRun, useRunOptimization } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { useAiCopilotStore } from "@/stores/aiCopilotStore";
 import { useStrategyEditorStore } from "@/stores/strategyEditorStore";
 import type {
@@ -63,22 +59,23 @@ interface LiveProgressData {
 }
 
 interface BacktestUpdatePayload {
-	kpis?: ProgressKpiData;
+	run_id: string;
+	status?: BacktestRunDetailsData["status"];
 	equity_point?: [string, number];
-	events?: ProgressEventData[];
+	kpis?: ProgressKpiData;
+	event?: ProgressEventData;
 }
 
 const getBacktestDisplayName = (
-	run: BacktestRunDetailsData | null | undefined,
+	run: BacktestRunDetailsData | null,
 	fallback: string,
 ): string => {
-	const params = run?.parameters_json as Record<string, unknown> | undefined;
-	const config = params?.config as Record<string, unknown> | undefined;
+	if (!run) return fallback;
 	return (
-		(params?.name as string | undefined) ||
-		(params?.strategy_display_name as string | undefined) ||
-		(config?.name as string) ||
-		run?.strategy_name ||
+		((run.parameters_json?.config as unknown as Record<string, unknown>)
+			?.name as string) ||
+		run.name ||
+		run.task_id ||
 		fallback
 	);
 };
@@ -94,9 +91,15 @@ const BacktestViewerPage = () => {
 	const { loadStrategy } = useStrategyEditorStore();
 	const { isPending: isOptimizing } = useRunOptimization();
 	const [isShareDialogOpen, setShareDialogOpen] = useState(false);
-	const { setWidgetState } = useAiCopilotStore();
+	const { widgetState, setWidgetState } = useAiCopilotStore();
 	const [tradeForVisualization, setTradeForVisualization] =
 		useState<BacktestTrade | null>(null);
+	const [bottomTab, setBottomTab] = useState<
+		"trades" | "summary" | "analytics" | "structured-analytics"
+	>("trades");
+	const [subTab, setSubTab] = useState<"combinations" | "foundations">(
+		"combinations",
+	);
 
 	const [prevRunId, setPrevRunId] = useState<string | null>(null);
 	const [liveProgress, setLiveProgress] = useState<LiveProgressData | null>(
@@ -133,15 +136,11 @@ const BacktestViewerPage = () => {
 					: prev.equity_curve_json,
 				progress_info: {
 					kpis: update.kpis || prev.progress_info.kpis,
-					events: update.events
-						? [...prev.progress_info.events, ...update.events]
+					events: update.event
+						? [...prev.progress_info.events, update.event]
 						: prev.progress_info.events,
 				},
-				status: update.kpis
-					? update.kpis.progress === 100
-						? "COMPLETED"
-						: "RUNNING"
-					: prev.status,
+				status: update.status || prev.status,
 			};
 		});
 	}, []);
@@ -171,6 +170,44 @@ const BacktestViewerPage = () => {
 		}
 		return run;
 	}, [run, liveProgress]);
+
+	const mainTabOptions = useMemo(
+		() => [
+			{
+				value: "trades" as const,
+				label: t("backtestViewer.tabTradesAndCombinations"),
+			},
+			{
+				value: "summary" as const,
+				label: t("backtestViewer.tabSummary"),
+			},
+			{
+				value: "analytics" as const,
+				label: t("backtestViewer.tabTradeAnalytics", "Trade Analytics"),
+				disabled: displayRun?.status !== "COMPLETED",
+			},
+			{
+				value: "structured-analytics" as const,
+				label: t("backtestViewer.tabEventLog", "Event Log"),
+				disabled: displayRun?.status !== "COMPLETED",
+			},
+		],
+		[t, displayRun?.status],
+	);
+
+	const subTabOptions = useMemo(
+		() => [
+			{
+				value: "combinations" as const,
+				label: t("backtestViewer.tabCombinations"),
+			},
+			{
+				value: "foundations" as const,
+				label: t("backtestViewer.tabFoundations"),
+			},
+		],
+		[t],
+	);
 
 	const handleDeployStrategy = () => {
 		const strategyConfig = displayRun?.parameters_json?.config;
@@ -237,7 +274,7 @@ const BacktestViewerPage = () => {
 	if (isLoading) {
 		return (
 			<PageLayout title={pageTitle} headerActions={headerActions}>
-				<div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] h-full w-full">
+				<div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-220px)] h-full w-full">
 					<AppLoader size="xl" fullLogo text={t("backtestViewer.loading")} />
 				</div>
 			</PageLayout>
@@ -271,8 +308,23 @@ const BacktestViewerPage = () => {
 			icon={WandSparkles}
 			headerActions={headerActions}
 		>
-			<div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-				<div className="lg:col-span-3">
+			<div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
+				<div className="lg:col-span-3 rounded-2xl border border-white/10 glass shadow-xl p-4 sm:p-6">
+					<div className="flex items-center justify-between pb-4 mb-4 border-b border-white/5">
+						<div className="flex items-center gap-2.5">
+							<div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan/10 border border-cyan/25 text-cyan">
+								<TrendingUp size={15} />
+							</div>
+							<div>
+								<h3 className="text-sm font-semibold text-white tracking-wide">
+									{t("research:backtestViewer.equityCurveTitle", "Equity Curve")}
+								</h3>
+								<p className="text-[11px] text-white/40 font-mono">
+									{displayRun.symbol} • {displayRun.timeframe}
+								</p>
+							</div>
+						</div>
+					</div>
 					<EquityCurveChart run={displayRun} />
 				</div>
 				<div className="lg:col-span-2">
@@ -284,30 +336,44 @@ const BacktestViewerPage = () => {
 			</div>
 
 			{displayRun.status === "COMPLETED" && (
-				<Card className="mt-6">
-					<CardHeader>
-						<CardTitle>{t("backtestViewer.nextSteps")}</CardTitle>
-						<CardDescription>
+				<div className="mt-6 rounded-2xl border border-white/10 glass shadow-xl p-4 sm:p-6">
+					<div className="mb-4">
+						<h3 className="text-sm font-semibold text-white tracking-wide">
+							{t("backtestViewer.nextSteps")}
+						</h3>
+						<p className="text-xs text-white/45 mt-0.5">
 							{t("backtestViewer.nextStepsDesc")}
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="flex flex-col sm:flex-row gap-4">
+						</p>
+					</div>
+					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
 						<TooltipProvider>
 							<Tooltip>
 								<TooltipTrigger asChild>
-									{/* --- The button now controls the global store --- */}
-									<Button
-										onClick={() => setWidgetState("open")}
-										className="w-full relative overflow-hidden bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg hover:shadow-xl transition-shadow duration-300 ease-in-out before:content-[''] before:absolute before:top-0 before:-left-full before:w-full before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/30 before:to-transparent before:animate-[shimmer_2s_infinite]"
-									>
-										<WandSparkles className="w-4 h-4 mr-2" />
-										{t(
-											"backtestViewer.analyzeWithAI",
-											"Analyze and improve with AI",
+									<button
+										type="button"
+										onClick={() =>
+											setWidgetState(
+												widgetState === "open" ? "minimized" : "open",
+											)
+										}
+										className={cn(
+											"group relative flex h-10 w-full items-center justify-center gap-2 overflow-hidden rounded-xl px-4 text-xs font-semibold text-white transition-all cursor-pointer",
+											widgetState === "open"
+												? "bg-white/10 border border-cyan/40 text-cyan shadow-[0_0_15px_-3px_rgba(0,212,255,0.5)]"
+												: "bg-gradient-to-r from-azure to-cyan shadow-[0_0_20px_-5px_rgba(0,212,255,0.85)] hover:shadow-[0_0_28px_-3px_rgba(0,212,255,1)] hover:brightness-110",
 										)}
-									</Button>
+									>
+										<span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+										<Sparkles size={14} className="animate-pulse" />
+										<span>
+											{t(
+												"backtestViewer.analyzeWithAI",
+												"Analyze and improve with AI",
+											)}
+										</span>
+									</button>
 								</TooltipTrigger>
-								<TooltipContent>
+								<TooltipContent className="bg-[#0b0f17] border-white/10 text-white/80 text-xs">
 									<p>
 										{t(
 											"backtestViewer.analyzeWithAITooltip",
@@ -317,56 +383,49 @@ const BacktestViewerPage = () => {
 								</TooltipContent>
 							</Tooltip>
 						</TooltipProvider>
-						<Button
-							className="w-full"
+
+						<button
+							type="button"
 							onClick={handleLaunchOptimization}
 							disabled={isOptimizing}
+							className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-white/80 transition-all hover:bg-white/[0.08] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
 						>
-							<Target className="w-4 h-4 mr-2" />
-							{t("backtestViewer.optimizeButton")}
-						</Button>
-						<Button
-							className="w-full bg-green-600 hover:bg-green-700"
+							<Target size={14} className="text-cyan" />
+							<span>{t("backtestViewer.optimizeButton")}</span>
+						</button>
+
+						<button
+							type="button"
 							onClick={handleDeployStrategy}
+							className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 text-xs font-semibold text-emerald-400 shadow-[0_0_15px_-4px_rgba(16,224,160,0.25)] transition-all hover:bg-emerald-500/20 hover:brightness-110 cursor-pointer"
 						>
-							<Rocket className="w-4 h-4 mr-2" />
-							{t("backtestViewer.deployButton")}
-						</Button>
-						<Button
-							variant="outline"
-							className="w-full"
+							<Rocket size={14} />
+							<span>{t("backtestViewer.deployButton")}</span>
+						</button>
+
+						<button
+							type="button"
 							onClick={() => setShareDialogOpen(true)}
+							className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 text-xs font-semibold text-white/80 transition-all hover:bg-white/[0.08] hover:text-white cursor-pointer"
 						>
-							<Share2 className="w-4 h-4 mr-2" />
-							{t("backtestViewer.shareButton")}
-						</Button>
-					</CardContent>
-				</Card>
+							<Share2 size={14} />
+							<span>{t("backtestViewer.shareButton")}</span>
+						</button>
+					</div>
+				</div>
 			)}
 
-			<Tabs defaultValue="trades" className="w-full mt-6">
-				<TabsList className="grid w-full grid-cols-4">
-					<TabsTrigger value="trades">
-						{t("backtestViewer.tabTradesAndCombinations")}
-					</TabsTrigger>
-					<TabsTrigger value="summary">
-						{t("backtestViewer.tabSummary")}
-					</TabsTrigger>
-					<TabsTrigger
-						value="analytics"
-						disabled={displayRun.status !== "COMPLETED"}
-					>
-						{t("backtestViewer.tabTradeAnalytics", "Trade Analytics")}
-					</TabsTrigger>
-					<TabsTrigger
-						value="structured-analytics"
-						disabled={displayRun.status !== "COMPLETED"}
-					>
-						{t("backtestViewer.tabEventLog", "Event Log")}
-					</TabsTrigger>
-				</TabsList>
+			<div className="w-full mt-6 space-y-4">
+				<div className="overflow-x-auto pb-1 max-w-full">
+					<Segmented<"trades" | "summary" | "analytics" | "structured-analytics">
+						value={bottomTab}
+						onChange={setBottomTab}
+						size="md"
+						options={mainTabOptions}
+					/>
+				</div>
 
-				<TabsContent value="trades" className="mt-4">
+				{bottomTab === "trades" && (
 					<div className="grid grid-cols-1 xl:grid-cols-3 gap-6 h-full">
 						<div className="h-full xl:col-span-2">
 							<BacktestTradeHistoryTable
@@ -378,60 +437,61 @@ const BacktestViewerPage = () => {
 										| "completed"
 										| "failed"
 								}
-								onViewTradeOnChart={(trade) => setTradeForVisualization(trade)}
+								onViewTradeOnChart={(trade) =>
+									setTradeForVisualization(trade)
+								}
 							/>
 						</div>
 						<div className="h-full xl:col-span-1">
-							<Card className="h-full flex flex-col">
-								<CardHeader>
-									<Tabs defaultValue="combinations" className="w-full">
-										<TabsList className="grid w-full grid-cols-2">
-											<TabsTrigger value="combinations">
-												{t("backtestViewer.tabCombinations")}
-											</TabsTrigger>
-											<TabsTrigger value="foundations">
-												{t("backtestViewer.tabFoundations")}
-											</TabsTrigger>
-										</TabsList>
-										<TabsContent value="combinations" className="mt-4">
-											<CombinationsPerformanceTable
-												trades={displayRun.trades || []}
-											/>
-										</TabsContent>
-										<TabsContent value="foundations" className="mt-4">
-											<FoundationEffectivenessTable
-												trades={displayRun.trades || []}
-											/>
-										</TabsContent>
-									</Tabs>
-								</CardHeader>
-							</Card>
+							<div className="rounded-2xl border border-white/10 glass shadow-xl p-4 sm:p-5 h-full flex flex-col">
+								<div className="pb-3 mb-3 border-b border-white/5">
+									<Segmented<"combinations" | "foundations">
+										value={subTab}
+										onChange={setSubTab}
+										size="sm"
+										options={subTabOptions}
+										className="w-full justify-center"
+									/>
+								</div>
+								<div className="flex-1 overflow-x-auto">
+									{subTab === "combinations" && (
+										<CombinationsPerformanceTable
+											trades={displayRun.trades || []}
+										/>
+									)}
+									{subTab === "foundations" && (
+										<FoundationEffectivenessTable
+											trades={displayRun.trades || []}
+										/>
+									)}
+								</div>
+							</div>
 						</div>
 					</div>
-				</TabsContent>
-				<TabsContent value="summary" className="mt-4">
+				)}
+
+				{bottomTab === "summary" && (
 					<TaskSummaryCard run={displayRun} />
-				</TabsContent>
-				<TabsContent value="analytics" className="mt-4">
-					{displayRun.status === "COMPLETED" ? (
+				)}
+
+				{bottomTab === "analytics" &&
+					(displayRun.status === "COMPLETED" ? (
 						<BacktestAnalyticsTab run={displayRun} />
 					) : (
-						<div className="text-center text-muted-foreground p-8">
+						<div className="rounded-2xl border border-white/10 glass p-12 text-center text-white/40 font-mono text-xs">
 							{t("analytics.analyticsNotAvailable")}
 						</div>
-					)}
-				</TabsContent>
+					))}
 
-				<TabsContent value="structured-analytics" className="mt-4">
-					{displayRun.status === "COMPLETED" ? (
+				{bottomTab === "structured-analytics" &&
+					(displayRun.status === "COMPLETED" ? (
 						<BacktestStructuredAnalyticsTab run={displayRun} />
 					) : (
-						<div className="text-center text-muted-foreground p-8">
+						<div className="rounded-2xl border border-white/10 glass p-12 text-center text-white/40 font-mono text-xs">
 							{t("analytics.analyticsNotAvailable")}
 						</div>
-					)}
-				</TabsContent>
-			</Tabs>
+					))}
+			</div>
 			<ShareBacktestDialog
 				open={isShareDialogOpen}
 				onOpenChange={setShareDialogOpen}

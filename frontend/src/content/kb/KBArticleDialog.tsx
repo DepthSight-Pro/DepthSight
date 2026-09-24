@@ -54,8 +54,8 @@ export const KBArticleDialog: React.FC<KBArticleDialogProps> = ({
 
 	return (
 		<Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 overflow-hidden bg-card/95 backdrop-blur-xl border-primary/10">
-				<DialogHeader className="p-8 border-b border-border/40 shrink-0">
+			<DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0 overflow-hidden glass border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl text-white">
+				<DialogHeader className="p-8 border-b border-white/10 shrink-0">
 					<div className="flex items-center gap-2 mb-2">
 						{article?.tags.map((tag) => (
 							<span

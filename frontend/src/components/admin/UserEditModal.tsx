@@ -97,8 +97,22 @@ export const UserEditModal: React.FC<UserEditModalProps> = ({
 				{ userId: user.id, payload },
 				{
 					onSuccess: () => {
-						onClose();
-					},
+						toast({
+							title: "User Updated",
+							description: `${user.username}'s settings have been saved.`,
+						});
+					onClose();
+				},
+				onError: (error) => {
+					toast({
+						variant: "destructive",
+						title: "Update Failed",
+						description:
+							error instanceof Error
+							? error.message
+							: "Could not update user. Please try again.",
+					});
+				},
 				},
 			);
 		} else {

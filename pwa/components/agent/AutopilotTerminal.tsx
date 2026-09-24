@@ -80,7 +80,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		try {
 			const saved = localStorage.getItem("autopilot_logs");
 			return saved ? JSON.parse(saved) : [];
-		} catch (e) {
+		} catch {
 			return [];
 		}
 	});
@@ -88,25 +88,31 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		try {
 			const saved = localStorage.getItem("autopilot_results");
 			return saved ? JSON.parse(saved) : [];
-		} catch (e) {
+		} catch {
 			return [];
 		}
 	});
 	const [currentStatus, setCurrentStatus] = useState<string>("idle");
-	const [, setCurrentIteration] = useState(0);
+	const [currentIteration, setCurrentIteration] = useState(0);
 	const [finalStrategy, setFinalStrategy] = useState<Partial<StrategyConfig> | null>(() => {
 		try {
 			const saved = localStorage.getItem("autopilot_final_strategy");
 			return saved ? JSON.parse(saved) : null;
-		} catch (e) {
+		} catch {
 			return null;
 		}
 	});
-	const [finalKpis, setFinalKpis] = useState<any | null>(() => {
+	interface AutopilotFinalKpis {
+		pnl?: number;
+		win_rate?: number;
+		max_dd?: number;
+		[key: string]: unknown;
+	}
+	const [finalKpis, setFinalKpis] = useState<AutopilotFinalKpis | null>(() => {
 		try {
 			const saved = localStorage.getItem("autopilot_final_kpis");
 			return saved ? JSON.parse(saved) : null;
-		} catch (e) {
+		} catch {
 			return null;
 		}
 	});
@@ -196,7 +202,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		}
 	}, [logs]);
 
-	const addLog = (message: string, type: LogEntry["type"] = "info") => {
+	const addLog = useCallback((message: string, type: LogEntry["type"] = "info") => {
 		const newLog: LogEntry = {
 			id: `${Date.now()}-${Math.random()}`,
 			timestamp: new Date().toLocaleTimeString(),
@@ -204,7 +210,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 			message,
 		};
 		setLogs((prev) => [...prev, newLog]);
-	};
+	}, []);
 
 	const startAutopilot = () => {
 		if (!prompt || isRunning) return;
@@ -219,7 +225,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 		setActiveIteration(0);
 		addLog("Initializing Autopilot Agent...", "info");
 
-		let WS_URL = "";
+		let WS_URL: string;
 		if (import.meta.env.DEV) {
 			const wsDev = import.meta.env.VITE_WS_URL;
 			const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -237,7 +243,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 			if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
 				try {
 					accessToken = JSON.parse(trimmed).access_token || trimmed;
-				} catch (e) {
+				} catch {
 					accessToken = trimmed;
 				}
 			} else {
@@ -251,7 +257,7 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 
 		ws.onopen = () => {
 			addLog("Link established. Triggering agent loop...", "success");
-			const payload: Record<string, any> = {
+			const payload: Record<string, unknown> = {
 				action: "autopilot_run",
 				prompt: prompt,
 				max_iterations: maxIterations,
@@ -483,18 +489,45 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 										log.type === "error" ? "text-rose-500" :
 										"text-foreground/80"
 									}`}>
-										<ReactMarkdown
-											components={{
-												p: ({ node, ...props }) => <span className="block mb-1 last:mb-0 whitespace-pre-wrap" {...props} />,
-												ul: ({ node, ...props }) => <ul className="list-disc pl-4 space-y-0.5" {...props} />,
-												ol: ({ node, ...props }) => <ol className="list-decimal pl-4 space-y-0.5" {...props} />,
-												li: ({ node, ...props }) => <li className="mb-0.5 whitespace-pre-wrap" {...props} />,
-												h1: ({ node, ...props }) => <h1 className="block text-xs font-bold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
-												h2: ({ node, ...props }) => <h2 className="block text-xs font-bold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
-												h3: ({ node, ...props }) => <h3 className="block text-[11px] font-semibold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />,
-												strong: ({ node, ...props }) => <strong className="font-bold text-white" {...props} />,
-												a: ({ node, ...props }) => <a className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
-											}}
+									<ReactMarkdown
+										components={{
+											p: ({ node, ...props }) => {
+												void node;
+												return <span className="block mb-1 last:mb-0 whitespace-pre-wrap" {...props} />;
+											},
+											ul: ({ node, ...props }) => {
+												void node;
+												return <ul className="list-disc pl-4 space-y-0.5" {...props} />;
+											},
+											ol: ({ node, ...props }) => {
+												void node;
+												return <ol className="list-decimal pl-4 space-y-0.5" {...props} />;
+											},
+											li: ({ node, ...props }) => {
+												void node;
+												return <li className="mb-0.5 whitespace-pre-wrap" {...props} />;
+											},
+											h1: ({ node, ...props }) => {
+												void node;
+												return <h1 className="block text-xs font-bold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />;
+											},
+											h2: ({ node, ...props }) => {
+												void node;
+												return <h2 className="block text-xs font-bold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />;
+											},
+											h3: ({ node, ...props }) => {
+												void node;
+												return <h3 className="block text-[11px] font-semibold text-white mt-1 mb-0.5 whitespace-pre-wrap" {...props} />;
+											},
+											strong: ({ node, ...props }) => {
+												void node;
+												return <strong className="font-bold text-white" {...props} />;
+											},
+											a: ({ node, ...props }) => {
+												void node;
+												return <a className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props} />;
+											},
+										}}
 										>
 											{log.message}
 										</ReactMarkdown>
@@ -546,9 +579,9 @@ export const AutopilotTerminal: React.FC<AutopilotTerminalProps> = ({
 										<h3 className="font-semibold text-foreground text-xs sm:text-sm truncate">
 											{t("editor.bestStrategyConfigured", "Best Strategy Configured")}
 										</h3>
-										<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-											{(finalStrategy as any).strategy_name || "VisualBuilderStrategy"} • Standard Engine
-										</p>
+									<p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+										{(finalStrategy as { strategy_name?: string }).strategy_name || "VisualBuilderStrategy"} • Standard Engine
+									</p>
 									</div>
 								</div>
 

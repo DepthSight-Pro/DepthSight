@@ -12,5 +12,6 @@
 	"levelSuccess": "Success",
 	"levelInfo": "Info",
 	"levelDebug": "Debug",
-	"noLogs": "No logs to display."
+	"noLogs": "No logs to display.",
+	"loadingHistory": "Loading log history..."
 }

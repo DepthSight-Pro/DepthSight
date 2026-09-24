@@ -883,7 +883,9 @@ async def run_strategy_advisor_agent(
         telemetry_md = format_event_log_markdown(
             current_telemetry, language="en", compact=True
         )
-        telemetry_block = f"\nLatest Variant Event Telemetry & Rejections:\n{telemetry_md}\n"
+        telemetry_block = (
+            f"\nLatest Variant Event Telemetry & Rejections:\n{telemetry_md}\n"
+        )
 
     # Turn 0: Ask Advisor what tags it wants to query
     range_header = (
@@ -1748,7 +1750,9 @@ async def run_autopilot_loop(
             if total_pnl <= 0.0:
                 reason = "negative return"
             elif trades_count < 20:
-                bottleneck_reason = telemetry.get("primary_bottleneck") or "too few trades (< 20)"
+                bottleneck_reason = (
+                    telemetry.get("primary_bottleneck") or "too few trades (< 20)"
+                )
                 reason = f"low trade count ({trades_count} trades). {bottleneck_reason}"
             else:
                 reason = "high drawdown or sub-target performance"

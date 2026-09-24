@@ -7,7 +7,6 @@ import { AnalyticsFilters } from "@/components/analytics/AnalyticsFilters";
 import { CumulativePnlChart } from "@/components/analytics/CumulativePnlChart";
 import { PnlDistributionChart } from "@/components/analytics/PnlDistributionChart";
 import { TradeChart } from "@/components/analytics/TradeChart";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type {
 	BacktestRunDetailsData,
@@ -62,20 +61,16 @@ const StatCard = ({
 	prefix?: string;
 	suffix?: string;
 }) => (
-	<Card>
-		<CardHeader className="pb-2">
-			<CardTitle className="text-sm font-normal text-muted-foreground">
-				{label}
-			</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<div className="text-2xl font-bold mono">
-				{prefix}
-				{value}
-				{suffix}
-			</div>
-		</CardContent>
-	</Card>
+	<div className="glass rounded-2xl border border-white/10 p-4 shadow-lg flex flex-col justify-between">
+		<div className="text-xs font-medium text-white/50 mb-1">
+			{label}
+		</div>
+		<div className="text-2xl font-bold font-mono text-white/90">
+			{prefix}
+			{value}
+			{suffix}
+		</div>
+	</div>
 );
 
 interface BacktestAnalyticsTabProps {
@@ -204,7 +199,7 @@ export const BacktestAnalyticsTab: React.FC<BacktestAnalyticsTabProps> = ({
 			/>
 			<AnalyticsOverview />
 			<Tabs defaultValue="cumulative" className="mt-6">
-				<TabsList className="bg-card mb-4">
+				<TabsList className="bg-white/[0.04] border border-white/5 mb-4 p-1 rounded-xl">
 					<TabsTrigger value="cumulative">
 						{t("analytics.tabCumulativePnl")}
 					</TabsTrigger>
@@ -212,16 +207,14 @@ export const BacktestAnalyticsTab: React.FC<BacktestAnalyticsTabProps> = ({
 						{t("analytics.tabDistribution")}
 					</TabsTrigger>
 				</TabsList>
-				<Card>
-					<CardContent className="pt-6 min-h-[450px]">
-						<TabsContent value="cumulative">
-							<CumulativePnlChart tradeData={convertedTradesForCharts} />
-						</TabsContent>
-						<TabsContent value="distribution">
-							<PnlDistributionChart tradeData={convertedTradesForCharts} />
-						</TabsContent>
-					</CardContent>
-				</Card>
+				<div className="glass rounded-2xl border border-white/10 p-6 shadow-xl min-h-[450px]">
+					<TabsContent value="cumulative" className="m-0">
+						<CumulativePnlChart tradeData={convertedTradesForCharts} />
+					</TabsContent>
+					<TabsContent value="distribution" className="m-0">
+						<PnlDistributionChart tradeData={convertedTradesForCharts} />
+					</TabsContent>
+				</div>
 			</Tabs>
 
 			<TradeChart

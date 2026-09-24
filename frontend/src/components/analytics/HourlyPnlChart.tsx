@@ -14,7 +14,6 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TradeData } from "@/types/api";
 
 interface HourlyPnlChartProps {
@@ -45,23 +44,21 @@ export const HourlyPnlChart: React.FC<HourlyPnlChartProps> = ({
 	}, [trades]);
 
 	return (
-		<Card>
-			<CardHeader className="pb-2">
-				<div className="flex items-center justify-between">
-					<CardTitle className="flex items-center gap-2 text-base">
-						<Clock className="w-5 h-5 text-primary" />
-						{t("hourlyPnl", "PnL by hour")}
-					</CardTitle>
-					<div className="flex items-center gap-1.5 text-[10px] text-primary font-bold uppercase tracking-wider bg-primary/10 px-2 py-1 rounded-lg">
-						<MousePointerClick className="w-3.5 h-3.5" />
-						<span>{t("clickToToggle", "Click to Toggle")}</span>
-					</div>
+		<div className="glass relative rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
+			<div className="flex items-center justify-between pb-3 mb-2 border-b border-white/5">
+				<div className="flex items-center gap-2 text-[13px] font-semibold text-white/90">
+					<Clock className="w-4 h-4 text-cyan" />
+					{t("hourlyPnl", "PnL by hour")}
 				</div>
-			</CardHeader>
-			<CardContent>
+				<div className="flex items-center gap-1.5 text-[9px] text-cyan/80 font-mono font-bold uppercase tracking-wider bg-cyan/10 px-2 py-0.5 rounded-md border border-cyan/20">
+					<MousePointerClick className="w-3 h-3" />
+					<span>{t("clickToToggle", "Click to Toggle")}</span>
+				</div>
+			</div>
+			<div>
 				<div className="h-[250px]">
 					{!trades || trades.length === 0 ? (
-						<div className="h-full flex items-center justify-center text-muted-foreground">
+						<div className="h-full flex items-center justify-center text-white/40 font-mono text-xs">
 							{t("noData", "No Data")}
 						</div>
 					) : (
@@ -69,29 +66,34 @@ export const HourlyPnlChart: React.FC<HourlyPnlChartProps> = ({
 							<BarChart data={chartData}>
 								<CartesianGrid
 									strokeDasharray="3 3"
-									stroke="hsl(var(--border))"
+									stroke="rgba(255, 255, 255, 0.05)"
 									vertical={false}
 								/>
 								<XAxis
 									dataKey="name"
-									stroke="hsl(var(--muted-foreground))"
+									stroke="rgba(255, 255, 255, 0.4)"
 									fontSize={9}
+									fontFamily="monospace"
 									tickLine={false}
 									axisLine={false}
 								/>
 								<YAxis
-									stroke="hsl(var(--muted-foreground))"
+									stroke="rgba(255, 255, 255, 0.4)"
 									fontSize={9}
+									fontFamily="monospace"
 									tickLine={false}
 									axisLine={false}
 									tickFormatter={(val) => `$${val}`}
 								/>
 								<Tooltip
-									cursor={{ fill: "transparent" }}
+									cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
 									contentStyle={{
-										backgroundColor: "hsl(var(--card))",
-										border: "1px solid hsl(var(--border))",
+										backgroundColor: "rgba(7, 8, 11, 0.95)",
+										border: "1px solid rgba(255, 255, 255, 0.15)",
 										borderRadius: "12px",
+										color: "#fff",
+										fontFamily: "monospace",
+										boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
 									}}
 									formatter={(value: unknown) => [
 										`$${(Number(value) || 0).toFixed(2)}`,
@@ -110,15 +112,13 @@ export const HourlyPnlChart: React.FC<HourlyPnlChartProps> = ({
 									{chartData.map((entry, index) => {
 										const isActive = activeHours.includes(entry.hourIndex);
 										const color =
-											entry.pnl >= 0
-												? "hsl(var(--profit))"
-												: "hsl(var(--loss))";
+											entry.pnl >= 0 ? "#10e0a0" : "#ff3b5c";
 										return (
 											<Cell
 												key={`hour-${index}`}
-												fill={isActive ? color : "hsl(var(--muted))"}
-												fillOpacity={isActive ? 0.8 : 0.2}
-												stroke={isActive ? color : "hsl(var(--border))"}
+												fill={isActive ? color : "rgba(255, 255, 255, 0.1)"}
+												fillOpacity={isActive ? 0.85 : 0.2}
+												stroke={isActive ? color : "rgba(255, 255, 255, 0.15)"}
 												strokeWidth={isActive ? 0 : 1}
 												strokeDasharray={isActive ? "0" : "4 2"}
 											/>
@@ -129,7 +129,7 @@ export const HourlyPnlChart: React.FC<HourlyPnlChartProps> = ({
 						</ResponsiveContainer>
 					)}
 				</div>
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 };

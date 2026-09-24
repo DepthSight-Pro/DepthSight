@@ -105,15 +105,25 @@ export const EvolutionTree: React.FC = () => {
 	const { data: lineageData, isLoading: lineageLoading } =
 		useStrategyLineage(selectedLineage);
 
-	// Convert backend data to react-flow format
-	const { nodes, edges } = useMemo(() => {
-		if (!lineageData) return { nodes: [], edges: [] };
+	// Convert backend data to react-flow format.
+	// NOTE: the backend may return a truthy but malformed payload when it is
+	// degraded (e.g. `{}` or missing arrays), so validate the arrays explicitly —
+	// otherwise `.forEach` on `undefined` crashes the whole app (white screen).
+	const { nodes, edges, nodeCount, maxGeneration } = useMemo(() => {
+		const rawNodes = Array.isArray(lineageData?.nodes)
+			? lineageData.nodes
+			: [];
+		const rawEdges = Array.isArray(lineageData?.edges)
+			? lineageData.edges
+			: [];
+		if (rawNodes.length === 0)
+			return { nodes: [], edges: [], nodeCount: 0, maxGeneration: 0 };
 
 		// Calculate layout using Dagre-like algorithm (simplified)
-		const nodesByGeneration = new Map<number, typeof lineageData.nodes>();
+		const nodesByGeneration = new Map<number, typeof rawNodes>();
 
 		// Group nodes by generation
-		lineageData.nodes.forEach((node) => {
+		rawNodes.forEach((node) => {
 			if (!nodesByGeneration.has(node.generation)) {
 				nodesByGeneration.set(node.generation, []);
 			}
@@ -124,7 +134,7 @@ export const EvolutionTree: React.FC = () => {
 		const horizontalSpacing = 280;
 		const verticalSpacing = 120;
 
-		const reactFlowNodes: Node[] = lineageData.nodes.map((node) => {
+		const reactFlowNodes: Node[] = rawNodes.map((node) => {
 			const generationNodes = nodesByGeneration.get(node.generation) || [];
 			const indexInGeneration = generationNodes.findIndex(
 				(n) => n.id === node.id,
@@ -153,7 +163,7 @@ export const EvolutionTree: React.FC = () => {
 			};
 		});
 
-		const reactFlowEdges: Edge[] = lineageData.edges.map((edge, edgeIndex) => ({
+		const reactFlowEdges: Edge[] = rawEdges.map((edge, edgeIndex) => ({
 			id: `edge-${edgeIndex}`,
 			source: edge.from,
 			target: edge.to,
@@ -166,7 +176,12 @@ export const EvolutionTree: React.FC = () => {
 			},
 		}));
 
-		return { nodes: reactFlowNodes, edges: reactFlowEdges };
+		return {
+			nodes: reactFlowNodes,
+			edges: reactFlowEdges,
+			nodeCount: rawNodes.length,
+			maxGeneration: Math.max(...rawNodes.map((n) => n.generation || 0)),
+		};
 	}, [lineageData]);
 
 	const [reactFlowNodes, setNodes, onNodesChange] = useNodesState(nodes);
@@ -219,15 +234,13 @@ export const EvolutionTree: React.FC = () => {
 							</Select>
 						</div>
 
-						{selectedLineage && lineageData && (
+						{selectedLineage && lineageData && nodeCount > 0 && (
 							<Alert>
 								<Sparkles className="h-4 w-4" />
 								<AlertDescription>
 									{t("evolutionTree.showing_stats", {
-										count: lineageData.nodes.length,
-										generations: Math.max(
-											...lineageData.nodes.map((n) => n.generation),
-										),
+										count: nodeCount,
+										generations: maxGeneration,
 									})}
 								</AlertDescription>
 							</Alert>

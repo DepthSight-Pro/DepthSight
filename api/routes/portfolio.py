@@ -539,6 +539,7 @@ async def run_portfolio_backtest_endpoint(
 async def list_positions(
     redis_client: redis.Redis = Depends(get_redis_client),
     current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     mode: str = Query("live", enum=["live", "paper"]),
     api_key_id: Optional[int] = Query(
         None, description="Filter by specific API key (subaccount)"
@@ -616,6 +617,34 @@ async def list_positions(
                 )
                 == normalized_market_type
             ]
+
+        # Fallback: fill missing exchange from ApiKey (controller is
+        # primary source, DB is secondary).
+        try:
+            key_rows = (
+                await db.execute(
+                    select(models.ApiKey.id, models.ApiKey.exchange).where(
+                        models.ApiKey.user_id == current_user.id
+                    )
+                )
+            ).all()
+            exchange_by_key = {
+                int(k_id): str(k_ex or "").lower()
+                for k_id, k_ex in key_rows
+                if k_id is not None
+            }
+            for p in user_mode_positions:
+                if not p.get("exchange") and p.get("api_key_id") is not None:
+                    try:
+                        fallback_ex = exchange_by_key.get(int(p.get("api_key_id")))
+                    except (TypeError, ValueError):
+                        fallback_ex = None
+                    if fallback_ex:
+                        p["exchange"] = fallback_ex
+        except Exception as ex_err:
+            logger.warning(
+                f"Failed to backfill position exchange from ApiKeys: {ex_err}"
+            )
 
         validated_positions = [
             schemas.PositionResponseItem(**p) for p in user_mode_positions

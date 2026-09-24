@@ -7,12 +7,20 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
-export const estimateTickSize = (klines: any[]): number => {
+export type KlineLike =
+	| { close?: string | number }
+	| readonly (string | number)[];
+
+export const estimateTickSize = (
+	klines: readonly KlineLike[] | null | undefined,
+): number => {
 	if (!klines || klines.length === 0) return 0.0001;
 	let maxDecimals = 2;
 	for (let i = 0; i < Math.min(klines.length, 10); i++) {
 		const kline = klines[i];
-		const closePrice = Array.isArray(kline) ? Number(kline[4]) : Number(kline.close);
+		const closePrice = Array.isArray(kline)
+			? Number((kline as readonly (string | number)[])[4])
+			: Number((kline as { close?: string | number }).close);
 		if (!isNaN(closePrice) && closePrice > 0) {
 			const priceStr = closePrice.toString();
 			if (priceStr.includes("e")) {

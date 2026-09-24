@@ -213,15 +213,15 @@ export function FoundationVisualizerPage() {
 
 	return (
 		<PageLayout title={t("pageTitle")} icon={TestTube2}>
-			<div className="flex h-full gap-4 overflow-hidden">
+			<div className="flex flex-col lg:flex-row h-full gap-4 sm:gap-6 min-h-0">
 				{/* Left panel - parameters */}
-				<div className="w-full max-w-xs flex-shrink-0 overflow-hidden">
-					<Card className="h-full flex flex-col max-h-[calc(100vh-120px)]">
-						<CardHeader className="flex-shrink-0">
+				<div className="w-full lg:w-80 lg:max-w-xs flex-shrink-0">
+					<Card className="flex flex-col lg:max-h-[calc(100vh-120px)] shadow-xl">
+						<CardHeader className="flex-shrink-0 p-4 sm:p-6 pb-2 sm:pb-4">
 							<CardTitle>{t("parametersCard.title")}</CardTitle>
 						</CardHeader>
-						<CardContent className="flex-grow min-h-0 overflow-hidden">
-							<ScrollArea className="h-full pr-4">
+						<CardContent className="flex-grow min-h-0 p-4 sm:p-6 pt-0">
+							<ScrollArea className="h-full pr-2 sm:pr-4 max-h-[400px] lg:max-h-none">
 								<div className="space-y-4">
 									<div>
 										<Label htmlFor="symbol">{t("form.symbol")}</Label>
@@ -303,7 +303,7 @@ export function FoundationVisualizerPage() {
 								</div>
 							</ScrollArea>
 						</CardContent>
-						<div className="p-6 pt-0 flex-shrink-0">
+						<div className="p-4 sm:p-6 pt-0 flex-shrink-0">
 							<Button
 								onClick={handleVisualize}
 								disabled={isLoading || !symbol || !endDate}
@@ -317,26 +317,26 @@ export function FoundationVisualizerPage() {
 					</Card>
 				</div>
 
-				{/* Right panel with chart - fixed height */}
-				<div className="flex-grow min-w-0 overflow-hidden">
-					<Card className="h-full flex flex-col max-h-[calc(100vh-120px)]">
-						<CardHeader className="flex-shrink-0">
+				{/* Right panel with chart */}
+				<div className="flex-grow min-w-0 w-full min-h-[480px] lg:min-h-0">
+					<Card className="h-full flex flex-col min-h-[480px] lg:max-h-[calc(100vh-120px)] shadow-xl">
+						<CardHeader className="flex-shrink-0 p-4 sm:p-6 pb-2 sm:pb-4">
 							<CardTitle>{t("chartCard.title")}</CardTitle>
 						</CardHeader>
-						<CardContent className="flex-grow min-h-0 overflow-hidden">
+						<CardContent className="flex-grow min-h-[400px] lg:min-h-0 p-2 sm:p-6 pt-0">
 							{isLoading ? (
-								<div className="h-full flex items-center justify-center text-muted-foreground">
+								<div className="h-full min-h-[400px] flex items-center justify-center text-muted-foreground">
 									<p>{t("chartCard.loading")}</p>
 								</div>
 							) : data ? (
-								<div className="h-full w-full">
+								<div className="h-full w-full min-h-[400px]">
 									<FoundationChart
 										klines={data.klines}
 										visualizations={data.visualizations}
 									/>
 								</div>
 							) : (
-								<div className="h-full flex items-center justify-center text-muted-foreground">
+								<div className="h-full min-h-[400px] flex items-center justify-center text-muted-foreground">
 									<p>{t("chartCard.noData")}</p>
 								</div>
 							)}

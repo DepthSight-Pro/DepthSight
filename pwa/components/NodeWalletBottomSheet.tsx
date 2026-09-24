@@ -19,6 +19,37 @@ interface NodeWalletBottomSheetProps {
   onWalletActivated: () => void;
 }
 
+type WalletStatusWithLegacy = {
+  walletAddress?: string;
+  wallet_address?: string;
+  nodeUuid?: string;
+  node_uuid?: string;
+  walletConfigured?: boolean;
+  wallet_configured?: boolean;
+};
+
+interface EthereumProvider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
+type WindowWithEthereum = Window & {
+  ethereum?: EthereumProvider;
+};
+
+type WalletActionError = {
+  code?: number | string;
+  message?: string;
+  detail?: string;
+};
+
+const getWalletErrorMessage = (err: unknown, fallback: string): string => {
+  if (typeof err === "object" && err !== null) {
+    const maybe = err as WalletActionError;
+    return maybe.message || maybe.detail || fallback;
+  }
+  return fallback;
+};
+
 export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
   isOpen,
   onClose,
@@ -40,7 +71,7 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
     setIsLoadingStatus(true);
     api
       .getWalletStatus()
-      .then((res: any) => {
+      .then((res: WalletStatusWithLegacy) => {
         setWalletStatus({
           walletAddress: res?.wallet_address ?? res?.walletAddress,
           nodeUuid: res?.node_uuid ?? res?.nodeUuid,
@@ -56,16 +87,24 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+    let active = true;
+    const load = async () => {
+      await Promise.resolve();
+      if (!active) return;
       setErrorMsg("");
       fetchStatus();
-    }
+    };
+    void load();
+    return () => {
+      active = false;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleConnectWallet = async () => {
-    if (typeof window === "undefined" || !(window as any).ethereum) {
+    if (typeof window === "undefined" || !(window as WindowWithEthereum).ethereum) {
       setErrorMsg(
         t(
           "mining.metaMaskNotFound",
@@ -78,12 +117,21 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
     setIsConnecting(true);
     setErrorMsg("");
     try {
-      const ethereum = (window as any).ethereum;
+      const ethereum = (window as WindowWithEthereum).ethereum;
+      if (!ethereum) {
+        setErrorMsg(
+          t(
+            "mining.metaMaskNotFound",
+            "Web3 Wallet (MetaMask) not detected. Please install MetaMask browser extension or use Web3 browser."
+          )
+        );
+        return;
+      }
 
       // 1. Request accounts
-      const accounts = await ethereum.request({
+      const accounts = (await ethereum.request({
         method: "eth_requestAccounts",
-      });
+      })) as string[] | null;
 
       if (!accounts || accounts.length === 0) {
         setErrorMsg(t("mining.noAccountSelected", "No EVM account selected."));
@@ -98,10 +146,10 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
       const { nonce, message } = nonceRes;
 
       // 3. Request signature from wallet
-      const signature = await ethereum.request({
+      const signature = (await ethereum.request({
         method: "personal_sign",
         params: [message, address],
-      });
+      })) as string;
 
       // 4. Verify signature & bind node
       await api.verifyWalletSignature(address, signature, nonce, message);
@@ -109,9 +157,10 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
       onWalletActivated();
       fetchStatus();
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       console.error("PWA Wallet connection error:", err);
-      if (err?.code === 4001) {
+      const walletErr = err as WalletActionError;
+      if (walletErr?.code === 4001) {
         setErrorMsg(
           t(
             "mining.userRejectedSignature",
@@ -119,7 +168,7 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
           )
         );
       } else {
-        setErrorMsg(err?.message || err?.detail || "Failed to connect wallet");
+        setErrorMsg(getWalletErrorMessage(err, "Failed to connect wallet"));
       }
     } finally {
       setIsConnecting(false);
@@ -131,8 +180,8 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
     try {
       await api.disconnectWallet();
       fetchStatus();
-    } catch (err: any) {
-      setErrorMsg(err?.message || "Failed to disconnect wallet");
+    } catch (err) {
+      setErrorMsg(getWalletErrorMessage(err, "Failed to disconnect wallet"));
     } finally {
       setIsDisconnecting(false);
     }

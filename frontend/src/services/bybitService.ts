@@ -3,6 +3,26 @@
 import { apiClient } from "@/lib/apiClient";
 import type { Kline, KlineInterval } from "./binanceService";
 
+export interface BybitPriceFilter {
+	tickSize?: string;
+	[key: string]: unknown;
+}
+
+export interface BybitInstrumentInfo {
+	symbol?: string;
+	priceFilter?: BybitPriceFilter;
+	[key: string]: unknown;
+}
+
+export interface BybitInstrumentsInfoResponse {
+	retCode?: number;
+	result?: {
+		list?: BybitInstrumentInfo[];
+		[key: string]: unknown;
+	};
+	[key: string]: unknown;
+}
+
 export async function fetchBybitKlines(
 	symbol: string,
 	startTime: number,
@@ -80,10 +100,12 @@ export async function fetchBybitKlines(
 	return [];
 }
 
-export async function fetchBybitSymbolInfo(symbol: string): Promise<any> {
+export async function fetchBybitSymbolInfo(
+	symbol: string,
+): Promise<BybitInstrumentsInfoResponse | null> {
 	try {
 		const cleanSymbol = symbol.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-		const response = await apiClient<any>(
+		const response = await apiClient<BybitInstrumentsInfoResponse>(
 			`/proxy/bybit/exchange-info?symbol=${cleanSymbol}`,
 		);
 		return response;

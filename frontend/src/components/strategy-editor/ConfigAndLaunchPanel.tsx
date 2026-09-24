@@ -84,6 +84,14 @@ interface ConfigAndLaunchPanelProps {
 	isSaving: boolean;
 }
 
+// TODO(TEMP): Temporary feature flags to hide ML confirmation, dynamic
+// symbol selection and breakeven-on-regime-change from the editor UI.
+// Set them back to `true` to restore the hidden features without reverting
+// any code.
+const SHOW_ML_CONFIRMATION = false;
+const SHOW_DYNAMIC_SYMBOL_SELECTION = false;
+const SHOW_BREAKEVEN_ON_REGIME_CHANGE = false;
+
 export const ConfigAndLaunchPanel = memo(
 	({ isSaving }: ConfigAndLaunchPanelProps) => {
 		const { t } = useTranslation(["strategy-editor", "common"]);
@@ -213,10 +221,13 @@ export const ConfigAndLaunchPanel = memo(
 		const { mutate: sendTradingViewTestSignal } =
 			useSendTradingViewTestSignal();
 
-		// Force STATIC mode for non-pro users
+		// Force STATIC mode for non-pro users (or while dynamic selection is hidden)
 		useEffect(() => {
 			if (isAuthLoading) return;
-			if (!canUseOracle && symbol_selection_mode !== "STATIC") {
+			if (
+				(!SHOW_DYNAMIC_SYMBOL_SELECTION || !canUseOracle) &&
+				symbol_selection_mode !== "STATIC"
+			) {
 				setStrategyField("symbol_selection_mode", "STATIC");
 			}
 		}, [canUseOracle, symbol_selection_mode, setStrategyField, isAuthLoading]);
@@ -380,7 +391,9 @@ export const ConfigAndLaunchPanel = memo(
 				configData.max_concurrent_symbols = max_concurrent_symbols;
 
 			const getPaymode = (): "STATIC" | "DYNAMIC" =>
-				isTradingViewWebhookMode || symbol_selection_mode === "STATIC"
+				isTradingViewWebhookMode ||
+				!SHOW_DYNAMIC_SYMBOL_SELECTION ||
+				symbol_selection_mode === "STATIC"
 					? "STATIC"
 					: "DYNAMIC";
 
@@ -463,17 +476,16 @@ export const ConfigAndLaunchPanel = memo(
 
 		return (
 			<TooltipProvider>
-				<div className="h-full overflow-y-auto p-4 flex flex-col justify-between">
+				<div className="h-full overflow-y-auto p-4 space-y-4 bg-transparent border-l border-white/10">
 					<FoundationWeightsModal
 						isOpen={isWeightsModalOpen}
 						onClose={() => setIsWeightsModalOpen(false)}
 					/>
-					<div className="space-y-4">
-						<Card>
-							<CardHeader>
-								<CardTitle>{t("configPanel.paramsTitle")}</CardTitle>
+					<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+							<CardHeader className="p-4 pb-2">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">{t("configPanel.paramsTitle")}</CardTitle>
 							</CardHeader>
-							<CardContent className="space-y-4">
+							<CardContent className="space-y-4 p-4 pt-2">
 								<div>
 									<Label>{t("configPanel.nameLabel")}</Label>
 									<Input
@@ -495,7 +507,20 @@ export const ConfigAndLaunchPanel = memo(
 									/>
 								</div>
 								<div>
-									<Label>{t("configPanel.symbolLabel")}</Label>
+									<div className="flex items-center justify-between">
+										<Label>{t("configPanel.symbolLabel")}</Label>
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+											</TooltipTrigger>
+											<TooltipContent
+												side="left"
+												className="max-w-[300px] text-xs leading-relaxed"
+											>
+												{t("configPanel.symbolHistoryTooltip")}
+											</TooltipContent>
+										</Tooltip>
+									</div>
 									<SymbolCombobox
 										value={symbol}
 										onChange={(v) =>
@@ -591,9 +616,9 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card>
-							<CardHeader className="flex flex-row items-center justify-between space-y-0">
-								<CardTitle>
+						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+							<CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">
 									{t("configPanel.symbolSelectionModeTitle")}
 								</CardTitle>
 								<Tooltip>
@@ -639,7 +664,7 @@ export const ConfigAndLaunchPanel = memo(
 													<SelectItem value={"STATIC" as string}>
 														{t("configPanel.symbolSelectionModeStatic")}
 													</SelectItem>
-													{canUseOracle && (
+													{SHOW_DYNAMIC_SYMBOL_SELECTION && canUseOracle && (
 														<>
 															<SelectItem value={"DYNAMIC_NATR" as string}>
 																{t(
@@ -667,7 +692,8 @@ export const ConfigAndLaunchPanel = memo(
 									)}
 								</Tooltip>
 
-								{symbol_selection_mode === "DYNAMIC_NATR" && (
+								{SHOW_DYNAMIC_SYMBOL_SELECTION &&
+								symbol_selection_mode === "DYNAMIC_NATR" && (
 									<div className="space-y-2">
 										<div className="flex justify-between text-xs">
 											<Label>Min NATR</Label>
@@ -683,7 +709,8 @@ export const ConfigAndLaunchPanel = memo(
 									</div>
 								)}
 
-								{symbol_selection_mode === "DYNAMIC_ORACLE" && (
+								{SHOW_DYNAMIC_SYMBOL_SELECTION &&
+								symbol_selection_mode === "DYNAMIC_ORACLE" && (
 									<div className="space-y-3">
 										<Label>
 											{t(
@@ -723,6 +750,7 @@ export const ConfigAndLaunchPanel = memo(
 									</div>
 								)}
 
+								{SHOW_DYNAMIC_SYMBOL_SELECTION && (
 								<div>
 									<Label>
 										{t(
@@ -741,9 +769,10 @@ export const ConfigAndLaunchPanel = memo(
 										}
 									/>
 								</div>
+								)}
 
 								<div className="pt-2 border-t space-y-3">
-									{isAdmin && (
+									{SHOW_ML_CONFIRMATION && isAdmin && (
 										<div className="flex items-center space-x-2">
 											<Checkbox
 												id="use-ml"
@@ -767,25 +796,25 @@ export const ConfigAndLaunchPanel = memo(
 										</div>
 									)}
 
-									{canUseOracle && (
-										<div className="flex items-center space-x-2">
-											<Checkbox
-												id="be-regime"
-												checked={breakeven_on_regime_change}
-												onCheckedChange={(c) => setBreakevenOnRegimeChange(!!c)}
-											/>
-											<Label htmlFor="be-regime">
-												{t("configPanel.breakevenOnRegimeChangeLabel")}
-											</Label>
-										</div>
-									)}
+								{SHOW_BREAKEVEN_ON_REGIME_CHANGE && canUseOracle && (
+									<div className="flex items-center space-x-2">
+										<Checkbox
+											id="be-regime"
+											checked={breakeven_on_regime_change}
+											onCheckedChange={(c) => setBreakevenOnRegimeChange(!!c)}
+										/>
+										<Label htmlFor="be-regime">
+											{t("configPanel.breakevenOnRegimeChangeLabel")}
+										</Label>
+									</div>
+								)}
 								</div>
 							</CardContent>
 						</Card>
 
-						<Card>
-							<CardHeader className="flex flex-row items-center justify-between space-y-0">
-								<CardTitle>
+						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+							<CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">
 									{t("configPanel.foundationWeightsSectionTitle")}
 								</CardTitle>
 								<Tooltip>
@@ -843,11 +872,11 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card>
-							<CardHeader>
-								<CardTitle>{t("configPanel.backtestTitle")}</CardTitle>
+						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+							<CardHeader className="p-4 pb-2">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">{t("configPanel.backtestTitle")}</CardTitle>
 							</CardHeader>
-							<CardContent className="space-y-4">
+							<CardContent className="space-y-4 p-4 pt-2">
 								<BacktestDatePresets
 									symbol={symbol}
 									dateRange={dateRange}
@@ -1014,14 +1043,14 @@ export const ConfigAndLaunchPanel = memo(
 								</div>
 
 								<Button
-									className="w-full"
+									className="w-full bg-cyan hover:bg-cyan/90 text-black font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-cyan/20"
 									onClick={handleRunBacktest}
 									disabled={isAnythingLoading}
 								>
 									{isBacktesting ? (
-										<Loader2 className="animate-spin mr-2" />
+										<Loader2 className="animate-spin mr-2 w-4 h-4" />
 									) : (
-										<Play className="mr-2" />
+										<Play className="mr-2 w-4 h-4 fill-current" />
 									)}
 									{t("configPanel.runBacktestButton", "Run Backtest")}
 								</Button>
@@ -1075,13 +1104,13 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card>
-							<CardHeader>
-								<CardTitle>
+						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+							<CardHeader className="p-4 pb-2">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">
 									{t("configPanel.deployTitle", "Deployment")}
 								</CardTitle>
 							</CardHeader>
-							<CardContent className="space-y-4">
+							<CardContent className="space-y-4 p-4 pt-2">
 								{activeApiKeys.length > 0 && (
 									<Select
 										value={
@@ -1089,7 +1118,7 @@ export const ConfigAndLaunchPanel = memo(
 										}
 										onValueChange={(v) => setSelectedApiKeyId(Number(v))}
 									>
-										<SelectTrigger>
+										<SelectTrigger className="bg-white/[0.03] border-white/10 text-xs">
 											<SelectValue
 												placeholder={t(
 													"configPanel.selectAccountPlaceholder",
@@ -1097,7 +1126,7 @@ export const ConfigAndLaunchPanel = memo(
 												)}
 											/>
 										</SelectTrigger>
-										<SelectContent>
+										<SelectContent className="bg-[#0c0d12] border-white/10 text-white">
 											{activeApiKeys.map((k) => (
 												<SelectItem key={k.id} value={String(k.id) as string}>
 													{k.name}
@@ -1107,21 +1136,20 @@ export const ConfigAndLaunchPanel = memo(
 									</Select>
 								)}
 								<Button
-									className="w-full"
+									className="w-full bg-rose-500 hover:bg-rose-600 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/20"
 									variant="destructive"
 									onClick={handleDeploy}
 									disabled={isAnythingLoading || activeApiKeys.length === 0}
 								>
 									{isStarting ? (
-										<Loader2 className="animate-spin mr-2" />
+										<Loader2 className="animate-spin mr-2 w-4 h-4" />
 									) : (
-										<Rocket className="mr-2" />
+										<Rocket className="mr-2 w-4 h-4" />
 									)}
 									{t("configPanel.deployButton", "Deploy Strategy")}
 								</Button>
 							</CardContent>
 						</Card>
-					</div>
 				</div>
 			</TooltipProvider>
 		);

@@ -196,6 +196,9 @@ async def test_assess_signal_trading_disabled(
     mock_executor.get_account_balance.return_value = {
         "USDT": {"free": str(low_balance), "locked": "0.00"}
     }
+    # Age the balance cache so assess_signal refetches instead of reusing the
+    # fixture's initialized balance.
+    risk_manager.stats.current_balance_ts = 0.0
     expected_base_risk_usd = low_balance * risk_manager.risk_per_trade
     approved, quantity, initial_risk_planned, _ = await risk_manager.assess_signal(
         sample_signal_long, {}, None
@@ -221,6 +224,9 @@ async def test_assess_signal_low_balance(
     mock_executor.get_account_balance.return_value = {
         "USDT": {"free": str(low_balance_for_test), "locked": "0.00"}
     }
+    # Age the balance cache so assess_signal refetches instead of reusing the
+    # fixture's initialized balance.
+    risk_manager.stats.current_balance_ts = 0.0
     expected_base_risk_usd = low_balance_for_test * risk_manager.risk_per_trade
     approved, quantity, initial_risk_planned, _ = await risk_manager.assess_signal(
         sample_signal_long, {}, None

@@ -67,6 +67,7 @@ export const ICONS = {
 	Dollar: DollarSign,
 	Percent: Percent,
 	TrendingDown: TrendingDown,
+	TrendingUp: TrendingUp,
 	Star: Star,
 	Menu: Menu,
 	Back: ArrowLeft,

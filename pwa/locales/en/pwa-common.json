@@ -1,1393 +1,1456 @@
 {
-	"common": {
-		"error": "Error: {{message}}",
-		"dark": "dark",
-		"light": "light",
-		"russian": "Russian",
-		"english": "English"
-	},
-	"loadingScreen": "Loading...",
-	"logo": {
-		"depth": "Depth",
-		"sight": "Sight"
-	},
-	"header": {
-		"depthsightAI": "DepthSight AI",
-		"dashboard": "Dashboard",
-		"strategies": "Strategies",
-		"research": "Research",
-		"analytics": "Analytics",
-		"notifications": "Notifications",
-		"aiChat": "AI Assistant",
-		"editor": "Strategy Editor",
-		"backtestResult": "Backtest Results",
-		"profile": "Profile",
-		"settings": "Settings",
-		"notificationsEnabledTitle": "Disable push notifications",
-		"notificationsDisabledTitle": "Enable push notifications"
-	},
-	"nav": {
-		"dashboard": "Home",
-		"strategies": "Strategies",
-		"research": "Research",
-		"notifications": "Alerts"
-	},
-	"buttons": {
-		"save": "Save",
-		"saving": "Saving...",
-		"cancel": "Cancel",
-		"add": "Add",
-		"adding": "Adding...",
-		"close": "Close",
-		"delete": "Delete"
-	},
-	"auth": {
-		"loginToAccount": "Login to your account",
-		"createAccount": "Create an account",
-		"email": "Email",
-		"username": "Username",
-		"password": "Password",
-		"confirmPassword": "Confirm Password",
-		"login": "Login",
-		"register": "Register",
-		"noAccount": "Don't have an account?",
-		"alreadyHaveAccount": "Already have an account?",
-		"create": "Create",
-		"invalidCredentials": "Invalid credentials.",
-		"registrationError": "Registration error.",
-		"passwordsDoNotMatch": "Passwords do not match.",
-		"usernameTaken": "This username is already taken.",
-		"emailTaken": "This email is already registered.",
-		"registrationSuccessTitle": "Registration Successful",
-		"confirmEmailPrompt": "One last step...",
-		"confirmEmailInstructions": "We have sent a confirmation link to your email address. Please click the link to activate your account.",
-		"backToLogin": "Back to Login",
-		"resendEmail": "Resend Email",
-		"resendingEmail": "Sending...",
-		"resendEmailTimer": "Resend in {{seconds}}s",
-		"resendFailedDescription": "Failed to send email. Please try again later.",
-		"emailConfirmation": "Email Confirmation",
-		"tokenNotFound": "Confirmation token not found.",
-		"successMessageDefault": "Your email has been confirmed successfully!",
-		"errorMessageDefault": "The confirmation link is invalid or has expired.",
-		"connectionError": "Connection error. Please try again.",
-		"errorTitle": "Confirmation Failed",
-		"loadingText": "Confirming your email...",
-		"redirecting": "Redirecting to dashboard...",
-		"referralCode": "Referral Code (Optional)",
-		"referralCodePlaceholder": "Enter referral code",
-		"forgotPassword": "Forgot password?",
-		"forgotPasswordTitle": "Reset Password",
-		"forgotPasswordDescription": "Enter your email address and we'll send you a reset link.",
-		"sendResetLink": "Send Reset Link",
-		"resetLinkSent": "If this email is registered, you will receive a password reset link.",
-		"resetPasswordTitle": "Set New Password",
-		"resetPasswordDescription": "Enter your new password below.",
-		"newPassword": "New Password",
-		"confirmResetPassword": "Confirm Password",
-		"resetPassword": "Reset Password",
-		"passwordResetSuccess": "Your password has been reset. You can now log in.",
-		"passwordMismatch": "Passwords do not match",
-		"invalidResetLink": "This reset link is invalid or has expired."
-	},
-	"twoFactor": {
-		"title": "Two-Factor Authentication",
-		"cardTitle": "Two-Factor Authentication (2FA)",
-		"pwaCardSub": "Account protection with Google Authenticator OTP",
-		"cardDescription": "Protect your exchange keys and trading bots with an extra verification code when logging in.",
-		"badgeEnabled": "Active",
-		"badgeDisabled": "Not Enabled",
-		"recoveryCodesCountLabel": "Available Backup Codes:",
-		"remaining": "remaining",
-		"lowCodesWarning": "Low backup codes remaining. Please regenerate.",
-		"btnRegenerateCodes": "Regenerate Codes",
-		"btnDisable": "Disable 2FA",
-		"btnEnable": "Enable 2FA Authentication",
-		"enterBackupCode": "Enter one of your 8-character single-use recovery codes",
-		"enterAuthenticatorCode": "Enter the 6-digit verification code from your authenticator app",
-		"backupCode": "Backup Code",
-		"backupCodeLabel": "Backup Recovery Code",
-		"code": "Authenticator Code",
-		"enterCodeLabel": "Enter 6-digit code",
-		"verifyAndLogin": "Verify & Log In",
-		"useAuthenticatorCode": "Use authenticator app code instead",
-		"useBackupCode": "Lost device? Use recovery backup code",
-		"modalSetupTitle": "Set Up 2FA",
-		"modalSetupDesc": "Scan QR code in Google Authenticator or Aegis, then enter the 6-digit code.",
-		"manualKeyLabel": "Can't scan? Enter key manually:",
-		"btnConfirmAndEnable": "Confirm & Enable",
-		"modalBackupCodesTitle": "Save Your Recovery Codes",
-		"modalBackupCodesDesc": "If you lose your device, these one-time codes are the ONLY way to recover your account.",
-		"backupWarningText": "These codes are shown only ONCE. Store them in a secure password manager.",
-		"btnCopyCodes": "Copy All Codes",
-		"btnSavedDone": "I've Saved Them",
-		"modalDisableTitle": "Disable 2FA",
-		"modalDisableDesc": "Enter your current 6-digit authenticator code (or account password) to disable 2FA.",
-		"codeOrBackupLabel": "Authenticator or Backup Code",
-		"accountPasswordLabel": "Account Password",
-		"btnConfirmDisable": "Confirm Disable",
-		"modalRegenTitle": "Regenerate Backup Codes",
-		"modalRegenDesc": "This will invalidate old recovery codes. Enter your current 6-digit TOTP code to confirm.",
-		"btnRegenConfirm": "Generate Codes",
-		"setupError": "Failed to start 2FA setup",
-		"enabledSuccess": "2FA successfully enabled!",
-		"disabledSuccess": "2FA has been disabled",
-		"regenSuccess": "New recovery codes generated successfully",
-		"invalidCode": "Invalid verification code",
-		"disableError": "Failed to disable 2FA",
-		"keyCopied": "Secret key copied",
-		"codesCopied": "All backup codes copied!",
-		"copied": "Copied!",
-		"copyFailed": "Failed to copy key",
-		"btnOpenInApp": "Open in Authenticator app",
-		"btnCopyKeyFull": "Copy Secret Key",
-		"btnCopyKey": "Copy",
-		"clickToCopy": "Click to copy",
-		"manualKeyHelp": "Enter this key into Google Authenticator or Aegis if you cannot scan the QR code."
-	},
-	"dashboard": {
-		"live": "Live",
-		"paper": "Paper",
-		"totalBalance": "Total Balance",
-		"dailyPnl": "Daily PnL",
-		"unrealizedPnl": "Unrealized PnL",
-		"pnlChart": "PnL Chart",
-		"1d": "1D",
-		"7d": "7D",
-		"mtd": "MTD",
-		"loadingChart": "Loading chart...",
-		"pnl": "PnL",
-		"noDataToDisplay": "No data to display.",
-		"activePositions": "Active Positions",
-		"size": "Size",
-		"noActivePositions": "No active positions.",
-		"closePosition": "Close position for {{symbol}}",
-		"confirmClosePosition": "Are you sure you want to close the position for {{symbol}}?",
-		"closePositionCommandSent": "Close position command sent for {{symbol}}.",
-		"errorClosingPosition": "Error closing position for {{symbol}}.",
-		"failedToLoadData": "Failed to load data.",
-		"maxDrawdown": "Max Drawdown",
-		"sharpeRatio": "Sharpe Ratio",
-		"connectApiKeysMessage": "Connect API keys in the desktop version of the application"
-	},
-	"analytics": {
-		"pageTitle": "Analytics",
-		"overview": {
-			"netProfit": "Net PnL",
-			"winRate": "Win Rate",
-			"profitFactor": "Profit Factor",
-			"expectancy": "Expectancy",
-			"sharpeRatio": "Sharpe Ratio",
-			"totalCommission": "Commission",
-			"avgWinLossRatio": "W/L Ratio",
-			"volume": "Volume",
-			"perTrade": "Per trade average",
-			"annualized": "Annualized",
-			"needsMoreDays": "Needs 2+ days",
-			"totalFees": "Total fees paid",
-			"avgWinVsLoss": "Avg W vs L",
-			"tradedVolume": "Total traded"
-		},
-		"tabs": {
-			"cumulativePnl": "Equity Curve",
-			"hourlyPerformance": "Hourly",
-			"dailyPerformance": "Daily"
-		}
-	},
-	"strategies": {
-		"status": {
-			"running": "Active",
-			"stopped": "Saved"
-		},
-		"run": "Run",
-		"backtest": "Backtest",
-		"edit": "Edit",
-		"delete": "Delete",
-		"stop": "Stop",
-		"stopCommandSent": "Strategy stop command sent.",
-		"errorStopping": "Error stopping strategy.",
-		"deleteSuccess": "Strategy deleted successfully.",
-		"deleteError": "Error deleting strategy."
-	},
-	"research": {
-		"netPnl": "Net PnL",
-		"winRate": "Win Rate",
-		"inProgress": "In Progress...",
-		"failedToLoad": "Failed to load backtests.",
-		"noBacktests": "You haven't run any backtests yet.",
-		"status": {
-			"completed": "Completed",
-			"running": "Running",
-			"pending": "Pending",
-			"failed": "Failed"
-		}
-	},
-	"backtestResultScreen": {
-		"resultsNotFound": "Backtest results not found.",
-		"equityChart": "Equity Chart",
-		"noData": "No data to display chart.",
-		"runLive": "Run Live",
-		"analyzeWithAI": "Analyze with AI",
-		"openInEditor": "Open in Editor",
-		"share": "Share",
-		"trades": "Trades",
-		"buy": "Buy",
-		"sell": "Sell",
-		"exit": "Exit",
-		"tradesNotFound": "No trades found.",
-		"page": "Page",
-		"back": "Back",
-		"forward": "Forward",
-		"toast": {
-			"failedToLoadDetails": "Failed to load backtest details.",
-			"backtestStarted": "Backtest started. Results will appear in Research.",
-			"errorStartingBacktest": "Error starting backtest.",
-			"strategySavedAndLaunched": "Strategy '{{strategyName}}' saved and launched.",
-			"errorLaunchingStrategy": "Error launching strategy."
-		}
-	},
-	"editor": {
-		"aiAssistantGreeting": "Hi! I'm your AI assistant. How can I help with this strategy?",
-		"errorLoadingStrategy": "Error loading strategy.",
-		"strategyGenerated": "Strategy generated and loaded into the constructor.",
-		"bestStrategyConfigured": "Best Strategy Configured",
-		"backtestStarted": "Backtest started.",
-		"strategySaved": "Strategy '{{strategyName}}' saved successfully.",
-		"errorSavingStrategy": "Error saving strategy.",
-		"defaultStrategyName": "New Strategy",
-		"constructor": "Constructor",
-		"aiAssistant": "AI Assistant",
-		"strategyInfo": "Strategy Information",
-		"strategyName": "Strategy Name",
-		"namePlaceholder": "e.g., EMA 50 Crossover",
-		"description": "Description",
-		"descriptionPlaceholder": "A brief description of the strategy logic...",
-		"filtersSectionTitle": "Filters",
-		"entryConditionsSectionTitle": "Entry Conditions",
-		"positionManagementSectionTitle": "Position Management",
-		"foundationsAndWeights": "Foundations & Weights",
-		"useWeights": "Use Weights",
-		"minWeightThreshold": "Min. Weight Threshold:",
-		"foundationsWeightsButton": "Configure Foundation Weights",
-		"runBacktest": "Run Backtest",
-		"add": "Add",
-		"addConditionTo": "Add condition to",
-		"showAllBlocks": "Show All Blocks",
-		"initialization": "Trade Initialization",
-		"direction": "Direction",
-		"positionSize": "Position Size",
-		"percentBalance": "% of Balance",
-		"fixedUsd": "Fixed USD",
-		"orderType": "Order Type",
-		"market": "Market",
-		"limitRetest": "Limit Retest",
-		"entryPrice": "Entry Price",
-		"stopLoss": "Stop Loss",
-		"atrMultiplier": "ATR Multiplier",
-		"percentFromPrice": "% from Price",
-		"takeProfit": "Take Profit",
-		"rrMultiplier": "R:R Multiplier",
-		"partialExits": "Partial Exits",
-		"atTP": "At TP:",
-		"addPartialExit": "Add Partial Exit",
-		"configPanel": {
-			"paramsTitle": "Parameters"
-		}
-	},
-	"profile": {
-		"profileTitle": "Profile",
-		"accountTab": "Account",
-		"securityTab": "Security",
-		"achievementsTab": "Achievements",
-		"error": "Error: ",
-		"failedToLoadProfileData": "Failed to load profile data.",
-		"myPlan": "My Plan",
-		"planActiveUntil": "Plan active until {{date}}",
-		"noActivePlan": "You have no active plan.",
-		"changePlan": "Change Plan",
-		"paperAccount": "Paper Account",
-		"resetting": "Resetting...",
-		"reset": "Reset",
-		"quotas": "Quotas",
-		"unlimited": "∞",
-		"referrals": "Referrals",
-		"referralCode": "Your referral code",
-		"copy": "Copy",
-		"copied": "Copied!",
-		"codeCopied": "Code copied.",
-		"referralLink": "Your referral link",
-		"linkCopied": "Link copied.",
-		"geneticsLaboratory": "Genetics Laboratory",
-		"genesDiscovered": "Genes Discovered",
-		"dangerZone": "Danger Zone",
-		"deleteAccountTitle": "Delete Account",
-		"deleteAccountDescription": "This action is irreversible. All your data will be deleted.",
-		"deleteAccount": "Delete Account",
-		"deleting": "Deleting...",
-		"paperAccountResetSuccess": "Paper account reset successfully.",
-		"failedToResetPaperAccount": "Failed to reset paper account.",
-		"accountDeleted": "Account deleted successfully.",
-		"failedToDeleteAccount": "Failed to delete account.",
-		"copiedToClipboard": "Copied to clipboard.",
-		"failedToCopyValue": "Failed to copy value.",
-		"pleaseWait": "Please wait...",
-		"choosePlan": "Choose Your Plan",
-		"upgradePlanDescription": "Upgrade to unlock more features.",
-		"failedToLoadPlans": "Failed to load pricing plans.",
-		"failedToOpenPaymentPage": "Failed to open payment page.",
-		"failedToInitiatePayment": "Failed to initiate payment.",
-		"perMonth": "/ mo",
-		"currentPlanLabel": "Current Plan",
-		"transitioning": "Redirecting...",
-		"select": "Select",
-		"continueAgreeing": "By continuing, you agree to our",
-		"termsAndConditions": "Terms of Service",
-		"and": "and",
-		"privacyPolicy": "Privacy Policy",
-		"confirmResetTitle": "Confirm Reset",
-		"confirmResetMessage": "Are you sure you want to reset your paper account? Your balance will be set to the default value.",
-		"resetAccount": "Reset Account",
-		"confirmDeleteTitle": "Confirm Deletion",
-		"confirmDeleteMessage": "Are you sure you want to delete your account? This action cannot be undone.",
-		"deleteMyAccount": "Delete My Account",
-		"noActivePositions": "No active positions",
-		"noAchievements": "You have no achievements yet."
-	},
-	"achievements": {
-		"grandmaster": "Grandmaster",
-		"legend": "Legend",
-		"master": "Master",
-		"analyst": "Analyst",
-		"apprentice": "Apprentice",
-		"novice": "Novice",
-		"level": "Level {{level}}",
-		"experience": "Experience",
-		"xpToNextLevel": "{{xpToNext}} XP to Level {{level}}",
-		"totalXp": "Total XP",
-		"genesFound": "Genes Found",
-		"currentLevel": "Current Level",
-		"achievementsUnlocked": "Unlocked",
-		"totalAvailable": "Total",
-		"collectionProgress": "Progress",
-		"xpReward": "+{{xp}} XP",
-		"rarityDisplay": "Rarity: {{rarity}}",
-		"noAchievements": "You have no unlocked achievements yet.",
-		"list": {
-			"first_backtest": {
-				"name": "Pioneer",
-				"description": "Run your first backtest"
-			},
-			"first_save": {
-				"name": "First Blueprint",
-				"description": "Save your first strategy configuration"
-			},
-			"used_ai_assistant": {
-				"name": "Dialogue with the Machine",
-				"description": "Use the AI assistant to create or analyze a strategy"
-			},
-			"first_optimization": {
-				"name": "In Search of the Ideal",
-				"description": "Run your first parameter optimization"
-			},
-			"first_api_key": {
-				"name": "Keymaster",
-				"description": "Add your first API key for trading"
-			},
-			"two_factor_enabled": {
-				"name": "Security Champion",
-				"description": "Enable Two-Factor Authentication (2FA)"
-			},
-			"first_paper_trade": {
-				"name": "Paper Tiger",
-				"description": "Run your first strategy in Paper Trading mode"
-			},
-			"reset_paper": {
-				"name": "Clean Slate",
-				"description": "Reset your Paper Trading account balance"
-			},
-			"10_backtests": {
-				"name": "Junior Researcher",
-				"description": "Conduct 10 backtests"
-			},
-			"100_backtests": {
-				"name": "Senior Researcher",
-				"description": "Conduct 100 backtests"
-			},
-			"500_backtests": {
-				"name": "Head of the Lab",
-				"description": "Conduct 500 backtests"
-			},
-			"1000_trades_backtests": {
-				"name": "Market Veteran",
-				"description": "Simulate 1,000 trades in backtests"
-			},
-			"10000_trades_backtests": {
-				"name": "Wall Street Legend",
-				"description": "Simulate 10,000 trades in backtests"
-			},
-			"50_optimizations": {
-				"name": "Mad Scientist",
-				"description": "Conduct 50 optimizations"
-			},
-			"save_10_strategies": {
-				"name": "Strategist",
-				"description": "Save 10 different strategy configurations"
-			},
-			"sniper": {
-				"name": "Sniper",
-				"description": "Complete a backtest (min. 20 trades) with a Win Rate > 80%"
-			},
-			"marathon_runner": {
-				"name": "Marathon Runner",
-				"description": "Conduct a successful backtest over a period of more than 1 year"
-			},
-			"hard_nut": {
-				"name": "Hard Nut",
-				"description": "Complete a backtest (min. 50 trades) with a max drawdown < 5%"
-			},
-			"alpha_hunter": {
-				"name": "Alpha Hunter",
-				"description": "Complete a backtest with a Sharpe Ratio > 2.0"
-			},
-			"money_printer": {
-				"name": "Money Printer",
-				"description": "Complete a backtest with a Profit Factor > 3.0"
-			},
-			"winning_streak": {
-				"name": "On a Roll",
-				"description": "Get 10 profitable trades in a row in a single backtest"
-			},
-			"phoenix": {
-				"name": "Phoenix",
-				"description": "A strategy recovered from a drawdown >10% and reached a new equity high"
-			},
-			"flawless_victory": {
-				"name": "Flawless Victory",
-				"description": "Complete a backtest (min. 10 trades) with a 100% Win Rate"
-			},
-			"clairvoyant": {
-				"name": "Clairvoyant",
-				"description": "Use the Foundation Visualizer"
-			},
-			"diversifier": {
-				"name": "Diversifier",
-				"description": "Run your first portfolio backtest"
-			},
-			"show_off": {
-				"name": "Show Off",
-				"description": "Share your backtest result"
-			},
-			"contender": {
-				"name": "Contender",
-				"description": "Publish your result to the Leaderboard"
-			},
-			"the_intervention": {
-				"name": "The Intervention",
-				"description": "Manually close a position through the interface"
-			},
-			"pulling_the_plug": {
-				"name": "Pulling the Plug",
-				"description": "Use the Emergency Stop function"
-			},
-			"the_professor": {
-				"name": "The Professor",
-				"description": "Train your first model in the Model Lab"
-			},
-			"strategy_5_blocks": {
-				"name": "Constructor",
-				"description": "Create a strategy using 5+ blocks"
-			},
-			"the_architect": {
-				"name": "The Architect",
-				"description": "Create a strategy using 15+ blocks"
-			},
-			"logician": {
-				"name": "Logician",
-				"description": "Use both AND and OR logic in entry conditions simultaneously"
-			},
-			"inventor": {
-				"name": "Inventor",
-				"description": "Create a strategy using 5+ different types of 'foundations'"
-			},
-			"order_flow_purist": {
-				"name": "Order Flow Purist",
-				"description": "Create a strategy where entry foundations consist only of tape and order book analysis"
-			},
-			"prudent_manager": {
-				"name": "Prudent Manager",
-				"description": "Use the Partial Exits block"
-			},
-			"10_strategies_discovery": {
-				"name": "Gold Digger",
-				"description": "Find 10 unique strategies in the Discovery Lab"
-			},
-			"the_spark": {
-				"name": "The Spark",
-				"description": "Unlock your first strategy gene"
-			},
-			"gem_hunter": {
-				"name": "Gem Hunter",
-				"description": "Unlock a RARE quality gene"
-			},
-			"treasure_hunter": {
-				"name": "Treasure Hunter",
-				"description": "Unlock an EPIC quality gene"
-			},
-			"myth_buster": {
-				"name": "Myth Buster",
-				"description": "Unlock a LEGENDARY quality gene"
-			},
-			"gene_collector": {
-				"name": "Gene Collector",
-				"description": "Collect 20 unique genes in your library"
-			},
-			"geneticist": {
-				"name": "Geneticist",
-				"description": "Crossbreed two strategies in the Breeding Lab"
-			},
-			"natural_selection": {
-				"name": "Natural Selection",
-				"description": "Create a 5th generation strategy in the Evolution Tree"
-			},
-			"recruiter": {
-				"name": "Recruiter",
-				"description": "Invite the first user via your referral link"
-			},
-			"first_commission": {
-				"name": "First Commission",
-				"description": "Receive your first reward from the affiliate program"
-			},
-			"partner": {
-				"name": "Partner",
-				"description": "Earn $100 in the affiliate program"
-			},
-			"underminer": {
-				"name": "Underminer",
-				"description": "Create a backtest with a Sharpe Ratio < -2.0"
-			},
-			"the_pacifist": {
-				"name": "The Pacifist",
-				"description": "Run a backtest that made no trades"
-			},
-			"perfectly_balanced": {
-				"name": "Perfectly Balanced",
-				"description": "Complete a backtest (min. 50 trades) with a Win Rate of exactly 50% (+/- 1%)"
-			},
-			"diamond_hands": {
-				"name": "Diamond Hands",
-				"description": "Name a strategy 'HODL' and run a backtest with it"
-			},
-			"mining_activated": {
-				"name": "Genesis",
-				"description": "Activate Trade Mining and accept telemetry sharing"
-			},
-			"mining_wallet_linked": {
-				"name": "Web3 Citizen",
-				"description": "Link and verify an EVM wallet for mining"
-			},
-			"mining_first_trade": {
-				"name": "First Spark",
-				"description": "Execute first trade successfully verified in the mining pool"
-			},
-			"welcome_bonus_claimed": {
-				"name": "Golden Ticket",
-				"description": "Generate $1.0 rebate and claim Welcome Bonus (1,000 $DEPTH)"
-			},
-			"mining_volume_1k": {
-				"name": "Tunnel Miner",
-				"description": "Reach $1,000 in cumulative trading volume"
-			},
-			"mining_volume_10k": {
-				"name": "Mining Foreman",
-				"description": "Reach $10,000 in cumulative trading volume"
-			},
-			"mining_volume_100k": {
-				"name": "Quarry Titan",
-				"description": "Reach $100,000 in cumulative trading volume"
-			},
-			"mining_volume_1m": {
-				"name": "Crypto Whale",
-				"description": "Reach $1,000,000 in cumulative trading volume"
-			},
-			"mining_volume_10m": {
-				"name": "Market Maker",
-				"description": "Reach $10,000,000 in cumulative trading volume"
-			},
-			"mining_daily_volume_10k": {
-				"name": "Stakhanovite",
-				"description": "Generate $10,000 volume in a single 24-hour epoch"
-			},
-			"mining_daily_volume_100k": {
-				"name": "Market Tempest",
-				"description": "Generate $100,000 volume in a single 24-hour epoch"
-			},
-			"mining_daily_top_miner": {
-				"name": "King of the Hill",
-				"description": "Rank #1 in volume across all nodes in a daily epoch"
-			},
-			"mining_daily_top5_miner": {
-				"name": "Major League",
-				"description": "Finish in the top 5 daily volume miners"
-			},
-			"mining_first_referral": {
-				"name": "Network Partner",
-				"description": "Invite your first user who activates mining"
-			},
-			"mining_5_referrals": {
-				"name": "Squad Leader",
-				"description": "Invite 5 active miners"
-			},
-			"mining_10_referrals": {
-				"name": "Mining Brigade",
-				"description": "Invite 10 active miners"
-			},
-			"mining_50_referrals": {
-				"name": "Mining Syndicate",
-				"description": "Build a network of 50 active nodes"
-			},
-			"mining_active_squad": {
-				"name": "All Hands On Deck",
-				"description": "Have 5+ referrals mining simultaneously on the same day"
-			},
-			"mining_mentor_bonus": {
-				"name": "Mentor",
-				"description": "Your referral claimed their Welcome Bonus"
-			},
-			"mining_ref_volume_100k": {
-				"name": "Network Megaphone",
-				"description": "Referral network combined volume exceeded $100,000"
-			},
-			"mining_ref_earnings_100k": {
-				"name": "Passive Income",
-				"description": "Earn 100,000 $DEPTH purely from 10% referral bonuses"
-			},
-			"mining_streak_7d": {
-				"name": "Weekly Marathon",
-				"description": "Participate in mining emission for 7 consecutive epochs"
-			},
-			"mining_streak_30d": {
-				"name": "Iron Discipline",
-				"description": "Unbroken mining streak for 30 consecutive epochs"
-			},
-			"mining_epochs_100": {
-				"name": "Network Veteran",
-				"description": "Participate in 100 daily epochs in total"
-			},
-			"mining_halving_survivor": {
-				"name": "Halving Survivor",
-				"description": "Be an active miner during an emission halving event"
-			},
-			"mining_depth_1k": {
-				"name": "First Thousand",
-				"description": "Mine a cumulative total of 1,000 $DEPTH"
-			},
-			"mining_depth_10k": {
-				"name": "Gold Reserve",
-				"description": "Mine a cumulative total of 10,000 $DEPTH"
-			},
-			"mining_depth_100k": {
-				"name": "Crypto Tycoon",
-				"description": "Mine a cumulative total of 100,000 $DEPTH"
-			},
-			"mining_jackpot_epoch": {
-				"name": "Hit the Jackpot",
-				"description": "Receive over 5,000 $DEPTH in a single daily epoch"
-			},
-			"mining_flawless_telemetry": {
-				"name": "Flawless Stream",
-				"description": "50 consecutive trades without a single verification rejection"
-			},
-			"mining_high_speed_turnover": {
-				"name": "High Frequency",
-				"description": "Execute 50+ verified trades in a single trading day"
-			},
-			"mining_profitable": {
-				"name": "In the Green",
-				"description": "10 consecutive closed mining trades with positive PnL"
-			},
-			"mining_multi_exchange": {
-				"name": "Arbitrageur",
-				"description": "Mine trades on 2+ different exchanges within one week"
-			},
-			"mining_all_exchanges": {
-				"name": "Omnipresent",
-				"description": "Link UIDs and mine trades on all supported exchanges"
-			},
-			"mining_node_operator": {
-				"name": "Private Datacenter",
-				"description": "Operate a mining server node hosting other miners"
-			},
-			"mining_boost_active": {
-				"name": "Afterburner",
-				"description": "Activate any mining boost multiplier"
-			},
-			"mining_diamond_staker": {
-				"name": "Diamond Staker",
-				"description": "Lock $DEPTH for 360 days to unlock the maximum 2.0x multiplier"
-			}
-		}
-	},
-	"settings": {
-		"riskManagement": "Risk Management",
-		"liveTrading": "Live Trading",
-		"backtesting": "Backtesting",
-		"liveTradingRiskManagement": "Risk Management (Live)",
-		"riskManagementDescription": "Configure risk management parameters for live trading.",
-		"backtestingRiskManagement": "Risk Management (Backtest)",
-		"backtestingRiskManagementDescription": "Configure risk management parameters for backtesting.",
-		"maxDrawdown": "Max Drawdown (%)",
-		"dailyMaxLossPercent": "Daily Max Loss (%)",
-		"maxConsecutiveLosses": "Max Consecutive Losses",
-		"maxConcurrentTrades": "Max Concurrent Trades",
-		"enableStopLoss": "Enable Default Stop Loss",
-		"defaultStopLossPercent": "Default Stop Loss (%)",
-		"maxStopDistancePercent": "Max Stop Distance (%)",
-		"adaptiveRiskManagement": "Adaptive Risk Management",
-		"enableAdaptiveRM": "Enable Adaptive Management",
-		"windowSize": "Window Size (trades)",
-		"minTrades": "Min Trades for Assessment",
-		"pnlThreshold": "PnL Threshold (%)",
-		"winRateThreshold": "Win Rate Threshold (%)",
-		"recoveryWins": "Wins for Recovery",
-		"recoveryPnl": "PnL for Recovery (%)",
-		"cooldownSeconds": "Cooldown Time (sec)"
-	},
-	"aiChat": {
-		"initialGreeting": "Hello! I'm your AI assistant. Describe the strategy you want to create, or select a backtest to analyze.",
-		"errorMessage": "An error occurred. Please try again.",
-		"loadToEditor": "Approve & Load to Editor",
-		"askPlaceholder": "Ask me anything...",
-		"generateStrategy": "Yes, generate this strategy",
-		"strategyGenerated": "Strategy configuration generated successfully!",
-		"analyzeBacktestPrompt": "Please analyze this backtest: {{strategyName}}"
-	},
-	"shareDialog": {
-		"title": "Share Backtest",
-		"description": "Generate a public link to share your backtest results.",
-		"successMessage": "Your public link has been generated.",
-		"showStrategyName": "Show strategy name",
-		"showParameters": "Show parameters",
-		"publishToLeaderboard": "Publish to leaderboard",
-		"generateLinkButton": "Generate Link",
-		"toast": {
-			"successTitle": "Link Generated",
-			"successDescription": "You can now share your backtest results.",
-			"copied": "Link copied to clipboard."
-		}
-	},
-	"notifications": {
-		"pushNotSupported": "Push notifications are not supported in this browser.",
-		"notificationsDisabled": "Notifications disabled.",
-		"unsubscribeFailedLocal": "Failed to unsubscribe. Notifications disabled locally.",
-		"notificationsEnabled": "Notifications enabled.",
-		"subscribeFailed": "Failed to subscribe to notifications.",
-		"permissionBlocked": "Notification permission is blocked. Please change your browser settings.",
-		"achievementUnlocked": "Achievement Unlocked!",
-		"backtestCompleted": "Backtest Completed",
-		"markAllAsRead": "Mark all as read",
-		"clearAll": "Clear All",
-		"empty": {
-			"title": "No Notifications",
-			"description": "Notifications about backtests, positions, and achievements will be displayed here."
-		},
-		"time": {
-			"justNow": "Just now",
-			"minutesAgo_one": "{{count}} min ago",
-			"minutesAgo_other": "{{count}} mins ago",
-			"hoursAgo_one": "{{count}} hour ago",
-			"hoursAgo_other": "{{count}} hours ago",
-			"daysAgo_one": "{{count}} day ago",
-			"daysAgo_other": "{{count}} days ago"
-		}
-	},
-	"sideMenu": {
-		"account": "Account",
-		"allAccounts": "All Accounts",
-		"unknown": "Unknown",
-		"profile": "Profile",
-		"settings": "Settings",
-		"mining": "Trade Mining",
-		"theme": "Theme",
-		"toggleThemeLabel": "Switch to {{theme}} theme",
-		"language": "Language",
-		"toggleLanguageLabel": "Switch to {{language}}",
-		"english": "EN",
-		"russian": "RU",
-		"fullWebsiteVersion": "Full Website Version",
-		"termsOfService": "Terms of Service",
-		"privacyPolicy": "Privacy Policy",
-		"logout": "Logout"
-	},
-	"modal": {
-		"addBlock": "Add Block",
-		"configureFoundationWeights": "Configure Foundation Weights",
-		"noFoundationsForWeights": "There are no 'Foundation' blocks in the entry conditions to configure weights for."
-	},
-	"addApiKeyModal": {
-		"title": "Add API Key",
-		"apiKeyLabel": "API Key",
-		"apiKeyPlaceholder": "Enter your API key",
-		"apiSecretLabel": "API Secret",
-		"apiSecretPlaceholder": "Enter your API secret"
-	},
-	"backtestModal": {
-		"fillAllFields": "Please fill in all fields.",
-		"strategyBacktest": "Strategy Backtest",
-		"symbol": "Symbol",
-		"startDate": "Start Date",
-		"endDate": "End Date",
-		"runBacktest": "Run Backtest",
-		"quickPresets": "Quick Period",
-		"availableHistory": "Available in History",
-		"noHistory": "No history loaded",
-		"presets": {
-			"all": "All Available",
-			"lastYear": "Last Year",
-			"thisYear": "This Year",
-			"sixMonths": "6 Months",
-			"threeMonths": "3 Months",
-			"oneMonth": "1 Month",
-			"lastMonth": "Last Month"
-		}
-	},
-	"launchStrategyModal": {
-		"fillSymbolsForStatic": "Please specify symbols for static mode.",
-		"launchStrategy": "Launch Strategy",
-		"tradingMode": "Trading Mode",
-		"paperTrading": "Paper Trading",
-		"paperTradingDescription": "Simulated trading with no real risk.",
-		"liveTrading": "Live Trading",
-		"liveTradingDescription": "Trading with real funds. Use with caution.",
-		"symbolSelection": "Symbol Selection",
-		"dynamicFromScreener": "Dynamic (from screener)",
-		"dynamicFromScreenerDescription": "Automatically select symbols based on filters.",
-		"staticManualList": "Static (manual list)",
-		"staticManualListDescription": "Trade only the specified symbols.",
-		"symbolList": "Symbol List",
-		"symbolPlaceholder": "BTCUSDT, ETHUSDT, ...",
-		"separateByCommas": "Separate symbols with a comma.",
-		"dynamicSettings": "Dynamic Selection Settings",
-		"oracleFilter": "Oracle Filter",
-		"lowVolatilityNatr": "Low Volatility (NATR)",
-		"requiredRegime": "Required Regime",
-		"minConfidence": "Min Confidence (%)",
-		"minNatr": "Min NATR",
-		"maxConcurrentSymbols": "Max Concurrent Symbols",
-		"advancedSettings": "Advanced Settings",
-		"enableMlConfirmation": "Enable ML Confirmation",
-		"breakevenOnRegimeChange": "Breakeven on Regime Change",
-		"oracleRegimeParanoiaFull": "0: Paranoia (Trend-following/Sideways)",
-		"oracleRegimeAmnesiaFull": "1: Amnesia (News/Trend)",
-		"oracleRegimeSchizophreniaFull": "2: Schizophrenia (Volatile)"
-	},
-	"bottomSheet": {
-		"editBlock": "Editing: {{blockName}}"
-	},
-	"errors": {
-		"popoverTrigger": "PopoverTrigger must be used within a Popover.",
-		"popoverContent": "PopoverContent must be used within a Popover."
-	},
-	"palette": {
-		"groups": {
-			"filters": "Filters",
-			"foundations": "Foundations",
-			"indicators": "Indicators",
-			"logic": "Logic",
-			"management": "Position Management"
-		}
-	},
-	"blocks": {
-		"standardParams": "Standard Parameters",
-		"dynamicParam": "[dyn.]",
-		"AND": {
-			"title": "'AND' Group"
-		},
-		"OR": {
-			"title": "'OR' Group"
-		},
-		"trading_session": {
-			"title": "Trading Session",
-			"desc": "Filter by trading session time (London, New York, etc.).",
-			"text": "Trade during",
-			"modes": {
-				"session": "By Session",
-				"hours": "By Hours"
-			},
-			"sessions": {
-				"london": "London",
-				"new_york": "New York",
-				"asia": "Asia",
-				"sydney": "Sydney"
-			},
-			"include": "Include",
-			"exclude": "Exclude"
-		},
-		"volatility_filter": {
-			"title": "Volatility Filter",
-			"desc": "Allows trading only at a certain level of volatility (ATR, BBW).",
-			"text": "When"
-		},
-		"trend_filter": {
-			"title": "Trend Filter",
-			"desc": "Identifies the presence of a trend using indicators like ADX.",
-			"text": "Trend by"
-		},
-		"senior_tf_confluence": {
-			"title": "Higher TF",
-			"desc": "Checks for nested conditions on a higher timeframe.",
-			"text": "On timeframe"
-		},
-		"btc_state_filter": {
-			"title": "BTC State",
-			"desc": "Filter by the current state of the BTC market (trend, flat).",
-			"required_state": "Required BTC state",
-			"states": {
-				"consolidation": "Consolidation",
-				"trending_up": "Trending Up",
-				"trending_down": "Trending Down",
-				"any": "Any"
-			}
-		},
-		"correlation": {
-			"title": "Correlation",
-			"desc": "Checks the correlation of the instrument with BTC or another asset.",
-			"correlation_with": "Correlation with",
-			"for": "for the last",
-			"bars": "bars"
-		},
-		"natr_filter": {
-			"title": "NATR Filter",
-			"desc": "Filters trades based on the normalized ATR.",
-			"text": "NATR (14) must be >"
-		},
-		"rel_vol_filter": {
-			"title": "Relative Volume",
-			"desc": "Filters trades based on relative volume.",
-			"text": "Relative Volume >"
-		},
-		"tape_analysis": {
-			"title": "Tape Analysis",
-			"desc": "Detects acceleration in the trade tape (by volume or count). Provides data for comparison.",
-			"text": "Tape analysis for",
-			"provides_data": "provides data"
-		},
-		"tape_condition": {
-			"title": "Tape Condition",
-			"desc": "Analyzes real-time trade tape activity.",
-			"for": "Time Window",
-			"check": "Metric to Check",
-			"absolute_value": "Absolute Value",
-			"multiplier_value": "Multiplier of Average",
-			"of_average": "of average",
-			"metrics": {
-				"delta_volume_usd": "Delta Volume ($)",
-				"buy_volume_usd": "Buy Volume ($)",
-				"sell_volume_usd": "Sell Volume ($)",
-				"total_volume_usd": "Total Volume ($)",
-				"buy_sell_ratio_volume": "Buy/Sell Ratio",
-				"acceleration_multiplier_volume": "Volume Acceleration"
-			}
-		},
-		"order_book_zone_condition": {
-			"title": "Order Book Zone Condition",
-			"desc": "Analyzes order density in a specified order book zone.",
-			"metric": "Metric to Check",
-			"in": "in",
-			"in_range": "in range of",
-			"metrics": {
-				"total_volume_usd": "Total Volume ($)",
-				"largest_level_usd": "Largest Level ($)",
-				"level_count": "Level Count"
-			},
-			"sides": {
-				"bids": "bids",
-				"asks": "asks"
-			},
-			"range_types": {
-				"atr_multiplier": "x ATR",
-				"ticks": "ticks"
-			}
-		},
-		"level_proximity_condition": {
-			"title": "Level Proximity",
-			"desc": "Checks if the price is close to a local level.",
-			"price": "Price Source",
-			"near_level_on": "Level Timeframe",
-			"tf_for": "Lookback Period",
-			"bars_within": "bars",
-			"within_proximity": "Within proximity of",
-			"price_sources": {
-				"close": "Close",
-				"high": "High",
-				"low": "Low"
-			}
-		},
-		"order_book_zone": {
-			"title": "Order Book Zone",
-			"desc": "Analyzes order density in a specified order book zone. Provides data for comparison.",
-			"text_1": "Analyze",
-			"text_2": "zone within",
-			"options": {
-				"bids": "bids",
-				"asks": "asks"
-			},
-			"range_type_percentage": "% of price",
-			"range_type_atr": "x ATR",
-			"range_type_ticks": "ticks",
-			"provides_data": "provides data"
-		},
-		"l2_microstructure_check": {
-			"title": "L2 Microstructure",
-			"desc": "Analyzes events in the order book, such as large orders or spoofing.",
-			"text_1": "Check for",
-			"options": {
-				"large_order": "a large order"
-			}
-		},
-		"local_level": {
-			"title": "Local Level",
-			"desc": "Identifies local highs/lows on a given timeframe.",
-			"text_1": "Price near local level on",
-			"text_2": "for the last",
-			"text_3": "bars, within",
-			"is_data_provider_label": "Use as data provider (disable proximity check)"
-		},
-		"significant_level": {
-			"title": "Significant Level",
-			"desc": "Identifies daily/weekly highs/lows.",
-			"text": "Price near level",
-			"levels": {
-				"daily_high": "Daily High",
-				"daily_low": "Daily Low",
-				"weekly_high": "Weekly High",
-				"weekly_low": "Weekly Low"
-			}
-		},
-		"round_level": {
-			"title": "Round Level",
-			"desc": "Checks the proximity of the price to a round price level.",
-			"text": "Price near round level within",
-			"pips": "pips"
-		},
-		"trend_direction": {
-			"title": "Trend Direction",
-			"desc": "Determines the trend by a combination of SMA and RSI.",
-			"text_on_tf": "Trend on",
-			"is": "is",
-			"trends": {
-				"long": "Long",
-				"short": "Short",
-				"any_trend": "Any Trend",
-				"flat": "Flat"
-			}
-		},
-		"classic_pattern": {
-			"title": "Classic Pattern",
-			"desc": "Recognizes candlestick patterns like engulfing, pin bar, etc.",
-			"text": "Pattern detected",
-			"bullish_engulfing": "Bullish Engulfing",
-			"bearish_engulfing": "Bearish Engulfing",
-			"pin_bar": "Pin Bar",
-			"doji": "Doji",
-			"inside_bar": "Inside Bar",
-			"sides": {
-				"any": "Any",
-				"bullish": "Bullish",
-				"bearish": "Bearish"
-			}
-		},
-		"volume_confirmation": {
-			"title": "Volume Confirmation",
-			"desc": "Checks if the candle volume exceeds the average value.",
-			"text": "Candle volume exceeds average by",
-			"x_average": "times"
-		},
-		"price_consolidation": {
-			"title": "Consolidation",
-			"desc": "Determines if the price is in a narrow range (flat).",
-			"text1": "Price is consolidating for the last",
-			"text2": "bars in a range <",
-			"text3": "x ATR"
-		},
-		"open_interest": {
-			"title": "Open Interest",
-			"desc": "Analyzes the change or absolute value of open interest.",
-			"analyze": "Analyze",
-			"for": "for the last",
-			"bars": "bars",
-			"analysis_types": {
-				"change_pct": "% Change",
-				"absolute_value": "Absolute Value"
-			}
-		},
-		"ma_cross_condition": {
-			"title": "MA Cross",
-			"desc": "Condition for the crossing of two moving averages.",
-			"ma": "MA(",
-			"crosses": ") crosses",
-			"shift": "(shift",
-			"brackets": ")"
-		},
-		"rsi_condition": {
-			"title": "RSI Condition",
-			"desc": "Checks the RSI value (above/below a certain level).",
-			"text": "RSI(",
-			"shift": "(shift",
-			"brackets": ")"
-		},
-		"value_comparison": {
-			"title": "Value Comparison",
-			"desc": "Compares two dynamic values (indicators, prices, block results)."
-		},
-		"macd_condition": {
-			"title": "MACD Condition",
-			"desc": "Checks for MACD line crosses or histogram value.",
-			"macd": "MACD(",
-			"shift": "(shift",
-			"brackets": ")"
-		},
-		"bollinger_bands_condition": {
-			"title": "Bollinger Bands",
-			"desc": "Checks the price position relative to Bollinger Bands.",
-			"price": "Price",
-			"shift": "(shift",
-			"brackets": ")"
-		},
-		"stochastic_condition": {
-			"title": "Stochastic",
-			"desc": "Checks for stochastic line crosses or their position.",
-			"stochastic": "Stochastic(",
-			"shift": "(shift",
-			"brackets": ")"
-		},
-		"price_vs_level": {
-			"title": "Price vs. Level",
-			"desc": "Compares the price with a dynamic level from another block."
-		},
-		"and": {
-			"title": "AND",
-			"desc": "Groups conditions. ALL nested conditions must be met."
-		},
-		"or": {
-			"title": "OR",
-			"desc": "Groups conditions. AT LEAST ONE nested condition must be met."
-		},
-		"trailing_stop": {
-			"title": "Trailing Stop",
-			"desc": "Moves the stop-loss to follow the price and protect profit.",
-			"text_1": "Activate when price reaches",
-			"text_2": "and trail with an offset of"
-		},
-		"move_to_breakeven": {
-			"title": "Move to Breakeven",
-			"desc": "Moves the stop-loss to breakeven when a target is reached.",
-			"text_1": "Move to breakeven when price reaches"
-		},
-		"conditional_exit": {
-			"title": "Conditional Exit",
-			"desc": "Closes the position when specific conditions are met."
-		},
-		"scale_in": {
-			"title": "Scale In",
-			"desc": "Adds to an open position when conditions are met.",
-			"text_1": "Add",
-			"text_2": "% of risk, max",
-			"text_3": "entries"
-		},
-		"conditional_management": {
-			"title": "Conditional Mngmt",
-			"desc": "Applies actions (trailing stop, BE) if conditions are met."
-		},
-		"modify_stop_loss": {
-			"title": "Modify Stop Loss",
-			"desc": "Modifies the stop-loss to a new dynamic value.",
-			"text_1": "Move stop-loss to"
-		},
-		"return_to_level": {
-			"title": "Return to Level",
-			"desc": "Waits for the price to return to a previously identified level.",
-			"text1": "Price returns to level from",
-			"within": "within",
-			"seconds": "sec",
-			"types": {
-				"touch": "Touch",
-				"breakout_retest": "Breakout & Retest"
-			},
-			"directions": {
-				"any": "Any direction",
-				"from_above": "From above",
-				"from_below": "From below"
-			}
-		},
-		"volatility_squeeze": {
-			"title": "Volatility Squeeze",
-			"desc": "Detects narrowing trading ranges."
-		},
-		"market_activity": {
-			"title": "Market Activity",
-			"desc": "Check NATR / Relative Volume."
-		},
-		"dca_management": {
-			"title": "DCA Management",
-			"desc": "Automatic position averaging via martingale or custom conditions."
-		},
-		"grid_management": {
-			"title": "GRID Management",
-			"desc": "Place a grid of limit orders within a specified range."
-		},
-		"tradingview_signal": {
-			"title": "TradingView Signal",
-			"desc": "Awaits a TradingView webhook with a specific ID."
-		},
-		"price_action_analyzer": {
-			"title": "Price Action Analyzer",
-			"desc": "Recognizes structural patterns (HH/HL, LH/LL)."
-		},
-		"level_touch_analyzer": {
-			"title": "Level Touch Analyzer",
-			"desc": "Precise touch, breakout, or retest of a level."
-		},
-		"modify_take_profit": {
-			"title": "Modify Take Profit",
-			"desc": "Move TP to a new price."
-		},
-		"close_position": {
-			"title": "Close Position",
-			"desc": "Close the position at market."
-		},
-		"unknown_block": "Unknown Block",
-		"confirm_delete_block": "Are you sure you want to delete this block?",
-		"select_block_to_configure": "Select a block to configure.",
-		"delete": "Delete"
-	},
-	"dynamicInput": {
-		"linked": "🔗 Linked",
-		"block": "Block",
-		"candle": "Candle",
-		"market": "Market",
-		"staticValue": "Static value..."
-	},
-	"dynamicPicker": {
-		"categories": {
-			"position": "Position",
-			"candle": "Candle",
-			"blocks": "Blocks",
-			"market": "Market"
-		},
-		"noBlocks": "No blocks with available results."
-	},
-	"dynamic_sources": {
-		"position_state": {
-			"entry_price": "Entry Price",
-			"current_size_qty": "Current Size",
-			"unrealized_pnl_pct": "Unrealized PnL (%)",
-			"time_in_trade_sec": "Time in Trade (sec)",
-			"number_of_entries": "Number of Entries"
-		},
-		"candle": {
-			"open": "Open Price",
-			"high": "High Price",
-			"low": "Low Price",
-			"close": "Close Price",
-			"volume": "Volume"
-		},
-		"market": {
-			"btc_dominance": "BTC Dominance",
-			"funding_rate": "Funding Rate"
-		},
-		"block_results": {
-			"title": "Block Results"
-		}
-	},
-	"quotas": {
-		"run_vector_backtest_per_day": "Vector backtests per day",
-		"run_kline_backtest_per_day": "Kline backtests per day",
-		"run_backtest_per_day": "Backtests per day",
-		"use_ai_assistant_per_day": "AI requests per day",
-		"run_portfolio_backtest_per_day": "Portfolio backtests per day",
-		"run_optimization_per_month": "Optimizations per month",
-		"run_genetic_search_per_month": "Genetic searches per month",
-		"generate_dataset_per_month": "Dataset generations per month",
-		"train_model_per_month": "Model trainings per month"
-	},
-	"mining": {
-		"nodeSharingPolicy": "Node Sharing Policy",
-		"nodeSharePercentage": "Node Share Percentage",
-		"yourVolumeShare": "Your Volume Share (Today)",
-		"yourTotalVolume": "Your Total Volume",
-		"subtitle": "Share your trade telemetry and earn $DEPTH tokens on every trade.",
-		"privacyTitle": "What data is shared",
-		"privacyDesc": "Required while Trade Mining is active: your closed trades (symbol, entry/exit prices, volume, PnL, duration, order IDs) and strategy parameters are shared with the Central Hub, linked to your node's wallet address and exchange UID. Your exchange API keys, passwords and asset balances are never transmitted. Disable by deactivating Trade Mining.",
-		"enterReferrerCode": "Referrer Code (Optional)",
-		"activating": "Activating...",
-		"activateButton": "Activate & Start Mining",
-		"totalMined": "Total Mined",
-		"todayEstReward": "Est. Daily Reward",
-		"todayRebates": "Today's Rebates",
-		"dailyEmission": "Daily Emission",
-		"totalDistributed": "Total Distributed",
-		"totalDistributedSubtitle": "Distributed across all epochs",
-		"welcomeBonus": "Welcome Bonus",
-		"welcomeBonusClaimedBadge": "Claimed",
-		"welcomeBonusDesc": "Generate at least $1.0 of cumulative rebate to claim your 1000 $DEPTH welcome bonus.",
-		"welcomeBonusClaimed": "Welcome Bonus Claimed!",
-		"welcomeBonusClaimedDesc": "1000 $DEPTH credited to balance.",
-		"welcomeBonusProgress": "Rebate: ${{current}} / ${{target}}",
-		"referralLinkCardTitle": "Referral Link",
-		"referralProgramDesc": "Invite friends to run nodes and earn a +10% daily boost plus matching welcome rewards!",
-		"yourReferralCode": "Your Referral Code",
-		"referralLink": "Referral Link",
-		"stakingBoost": "Staking Boost",
-		"comingSoon": "Coming Soon",
-		"stakingBoostDetail": "Lock $DEPTH for 30, 90 or 360 days to unlock up to 2.0x multiplier on all daily trade mining emission rewards.",
-		"disabledTitle": "Mining Disabled",
-		"disabledDesc": "Mining features are temporarily disabled by the administrator.",
-		"uidLinkedNotice": "Your exchange UID will be resolved and linked automatically using your active API keys when you start mining.",
-		"miningActivated": "Trade mining successfully activated! Your exchange UID has been resolved and linked automatically.",
-		"nodeWallet": "EVM Wallet",
-		"walletTitle": "Node Web3 Identity (EVM Wallet)",
-		"walletSubtitle": "Connect your EVM wallet (MetaMask / Web3) to secure your mining rewards and node identity.",
-		"walletNoticeEVM": "Your private key never leaves your wallet. Server verifies ownership via cryptographically signed message. Rewards and node migration remain 100% under your control.",
-		"connectedWallet": "Connected Web3 Wallet",
-		"switchWallet": "Switch Wallet",
-		"disconnect": "Disconnect",
-		"signingMessage": "Signing Message...",
-		"connectMetaMask": "Connect EVM Wallet (MetaMask)",
-		"connectEVMWallet": "Connect Web3 EVM Wallet (MetaMask)",
-		"metaMaskNotFound": "Web3 Wallet (MetaMask) not detected. Please install MetaMask browser extension or use Web3 browser.",
-		"noAccountSelected": "No EVM account selected.",
-		"walletConnectedSuccess": "Wallet verified & connected successfully!",
-		"userRejectedSignature": "Signature request was rejected in wallet.",
-		"walletDisconnected": "Wallet disconnected successfully.",
-		"addressCopied": "Wallet address copied!",
-		"nodeDeployCommand": "Node One-Line Deploy Command",
-		"commandCopied": "Deploy command copied to clipboard!",
-		"supportedExchanges": "Supported Exchanges & Rebates",
-		"supportedExchangesDesc": "Trade mining rewards are calculated for live trades executed on the following exchanges:",
-		"supportedExchangesRebateNote": "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.",
-		"okxRebateTip": "Base rate (30%), under 3rd-party referral only 7.5%. Stacks under our link (+7.5%) for 5x token yield.",
-		"bybitRebateTip": "Base rate (50%), under 3rd-party referral only 10%. Stacks under our link (+10%) for maximum yield."
-	},
-	"communityMemory": {
-		"title": "Agent Memory Bank",
-		"communityPool": "Community Pool",
-		"optInTooltip": "About Community Memory",
-		"all": "All",
-		"myMemories": "My Memories",
-		"community": "Community",
-		"confirmedCount": "Confirmed: {{count}}x",
-		"cannotDeleteCommunity": "Community memories are preserved in the shared pool.",
-		"modalTitle": "DepthSight Community Memory Pool",
-		"modalSubtitle": "Decentralized Swarm Intelligence for Trading Agents",
-		"modalDesc": "Participate in the shared trading intelligence pool by barter. When you run profitable backtests (≥30 trades, ≥28 days), generalized market insights are anonymously shared with the network. In return, your agent taps into verified setups and universal rules discovered by traders worldwide.",
-		"modalPrivacy": "Privacy Guarantee: Strategy parameters, confidential configurations, and API keys are strictly removed. Only high-level market lessons and performance statistics are contributed.",
-		"modalQuality": "Quality Gate: Only verified profitable strategies with ≥30 trades and ≥28 days backtest duration enter the network pool.",
-		"modalTransfer": "Cross-Asset Transfer: Learn from BTC, ETH, and altcoin patterns even on assets you haven't traded yet.",
-		"modalLater": "Keep Private Only",
-		"modalJoin": "Join Community Pool",
-		"shareWithCommunity": "Share with Community (requires ≥ 30 trades)",
-		"shareSuccess": "Memory successfully shared to Community pool!",
-		"shareError": "Could not share memory with community",
-		"retroactiveSuccess": "Community pool enabled! {{count}} verified strategies shared."
-	}
+  "common": {
+    "error": "Error: {{message}}",
+    "dark": "dark",
+    "light": "light",
+    "russian": "Russian",
+    "english": "English"
+  },
+  "loadingScreen": "Loading...",
+  "logo": {
+    "depth": "Depth",
+    "sight": "Sight"
+  },
+  "header": {
+    "depthsightAI": "DepthSight AI",
+    "dashboard": "Dashboard",
+    "strategies": "Strategies",
+    "research": "Research",
+    "analytics": "Analytics",
+    "notifications": "Notifications",
+    "aiChat": "AI Assistant",
+    "editor": "Strategy Editor",
+    "backtestResult": "Backtest Results",
+    "profile": "Profile",
+    "settings": "Settings",
+    "notificationsEnabledTitle": "Disable push notifications",
+    "notificationsDisabledTitle": "Enable push notifications"
+  },
+  "nav": {
+    "dashboard": "Home",
+    "strategies": "Strategies",
+    "research": "Research",
+    "notifications": "Alerts"
+  },
+  "buttons": {
+    "save": "Save",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "add": "Add",
+    "adding": "Adding...",
+    "close": "Close",
+    "delete": "Delete"
+  },
+  "auth": {
+    "loginToAccount": "Login to your account",
+    "createAccount": "Create an account",
+    "email": "Email",
+    "username": "Username",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "login": "Login",
+    "register": "Register",
+    "noAccount": "Don't have an account?",
+    "alreadyHaveAccount": "Already have an account?",
+    "create": "Create",
+    "invalidCredentials": "Invalid credentials.",
+    "registrationError": "Registration error.",
+    "passwordsDoNotMatch": "Passwords do not match.",
+    "usernameTaken": "This username is already taken.",
+    "emailTaken": "This email is already registered.",
+    "registrationSuccessTitle": "Registration Successful",
+    "confirmEmailPrompt": "One last step...",
+    "confirmEmailInstructions": "We have sent a confirmation link to your email address. Please click the link to activate your account.",
+    "backToLogin": "Back to Login",
+    "resendEmail": "Resend Email",
+    "resendingEmail": "Sending...",
+    "resendEmailTimer": "Resend in {{seconds}}s",
+    "resendFailedDescription": "Failed to send email. Please try again later.",
+    "emailConfirmation": "Email Confirmation",
+    "tokenNotFound": "Confirmation token not found.",
+    "successMessageDefault": "Your email has been confirmed successfully!",
+    "errorMessageDefault": "The confirmation link is invalid or has expired.",
+    "connectionError": "Connection error. Please try again.",
+    "errorTitle": "Confirmation Failed",
+    "loadingText": "Confirming your email...",
+    "redirecting": "Redirecting to dashboard...",
+    "referralCode": "Referral Code (Optional)",
+    "referralCodePlaceholder": "Enter referral code",
+    "forgotPassword": "Forgot password?",
+    "forgotPasswordTitle": "Reset Password",
+    "forgotPasswordDescription": "Enter your email address and we'll send you a reset link.",
+    "sendResetLink": "Send Reset Link",
+    "resetLinkSent": "If this email is registered, you will receive a password reset link.",
+    "resetPasswordTitle": "Set New Password",
+    "resetPasswordDescription": "Enter your new password below.",
+    "newPassword": "New Password",
+    "confirmResetPassword": "Confirm Password",
+    "resetPassword": "Reset Password",
+    "passwordResetSuccess": "Your password has been reset. You can now log in.",
+    "passwordMismatch": "Passwords do not match",
+    "invalidResetLink": "This reset link is invalid or has expired."
+  },
+  "twoFactor": {
+    "title": "Two-Factor Authentication",
+    "cardTitle": "Two-Factor Authentication (2FA)",
+    "pwaCardSub": "Account protection with Google Authenticator OTP",
+    "cardDescription": "Protect your exchange keys and trading bots with an extra verification code when logging in.",
+    "badgeEnabled": "Active",
+    "badgeDisabled": "Not Enabled",
+    "recoveryCodesCountLabel": "Available Backup Codes:",
+    "remaining": "remaining",
+    "lowCodesWarning": "Low backup codes remaining. Please regenerate.",
+    "btnRegenerateCodes": "Regenerate Codes",
+    "btnDisable": "Disable 2FA",
+    "btnEnable": "Enable 2FA Authentication",
+    "enterBackupCode": "Enter one of your 8-character single-use recovery codes",
+    "enterAuthenticatorCode": "Enter the 6-digit verification code from your authenticator app",
+    "backupCode": "Backup Code",
+    "backupCodeLabel": "Backup Recovery Code",
+    "code": "Authenticator Code",
+    "enterCodeLabel": "Enter 6-digit code",
+    "verifyAndLogin": "Verify & Log In",
+    "useAuthenticatorCode": "Use authenticator app code instead",
+    "useBackupCode": "Lost device? Use recovery backup code",
+    "modalSetupTitle": "Set Up 2FA",
+    "modalSetupDesc": "Scan QR code in Google Authenticator or Aegis, then enter the 6-digit code.",
+    "manualKeyLabel": "Can't scan? Enter key manually:",
+    "btnConfirmAndEnable": "Confirm & Enable",
+    "modalBackupCodesTitle": "Save Your Recovery Codes",
+    "modalBackupCodesDesc": "If you lose your device, these one-time codes are the ONLY way to recover your account.",
+    "backupWarningText": "These codes are shown only ONCE. Store them in a secure password manager.",
+    "btnCopyCodes": "Copy All Codes",
+    "btnSavedDone": "I've Saved Them",
+    "modalDisableTitle": "Disable 2FA",
+    "modalDisableDesc": "Enter your current 6-digit authenticator code (or account password) to disable 2FA.",
+    "codeOrBackupLabel": "Authenticator or Backup Code",
+    "accountPasswordLabel": "Account Password",
+    "btnConfirmDisable": "Confirm Disable",
+    "modalRegenTitle": "Regenerate Backup Codes",
+    "modalRegenDesc": "This will invalidate old recovery codes. Enter your current 6-digit TOTP code to confirm.",
+    "btnRegenConfirm": "Generate Codes",
+    "setupError": "Failed to start 2FA setup",
+    "enabledSuccess": "2FA successfully enabled!",
+    "disabledSuccess": "2FA has been disabled",
+    "regenSuccess": "New recovery codes generated successfully",
+    "invalidCode": "Invalid verification code",
+    "disableError": "Failed to disable 2FA",
+    "keyCopied": "Secret key copied",
+    "codesCopied": "All backup codes copied!",
+    "copied": "Copied!",
+    "copyFailed": "Failed to copy key",
+    "btnOpenInApp": "Open in Authenticator app",
+    "btnCopyKeyFull": "Copy Secret Key",
+    "btnCopyKey": "Copy",
+    "clickToCopy": "Click to copy",
+    "manualKeyHelp": "Enter this key into Google Authenticator or Aegis if you cannot scan the QR code."
+  },
+    "dashboard": {
+    "live": "Live",
+    "paper": "Paper",
+    "realtimeLive": "live",
+    "realtimePolling": "polling",
+    "totalBalance": "Total Balance",
+    "dailyPnl": "Daily PnL",
+    "unrealizedPnl": "Unrealized PnL",
+    "pnlChart": "PnL Chart",
+    "1d": "1D",
+    "7d": "7D",
+    "mtd": "MTD",
+    "loadingChart": "Loading chart...",
+    "pnl": "PnL",
+    "noDataToDisplay": "No data to display.",
+    "activePositions": "Active Positions",
+    "size": "Size",
+    "noActivePositions": "No active positions.",
+    "closePosition": "Close position for {{symbol}}",
+    "confirmClosePosition": "Are you sure you want to close the position for {{symbol}}?",
+    "closePositionCommandSent": "Close position command sent for {{symbol}}.",
+    "errorClosingPosition": "Error closing position for {{symbol}}.",
+    "failedToLoadData": "Failed to load data.",
+    "maxDrawdown": "Max Drawdown",
+    "sharpeRatio": "Sharpe Ratio",
+    "connectApiKeysMessage": "Connect API keys in the desktop version of the application"
+  },
+  "analytics": {
+    "pageTitle": "Analytics",
+    "overview": {
+      "netProfit": "Net PnL",
+      "winRate": "Win Rate",
+      "profitFactor": "Profit Factor",
+      "expectancy": "Expectancy",
+      "sharpeRatio": "Sharpe Ratio",
+      "totalCommission": "Commission",
+      "avgWinLossRatio": "W/L Ratio",
+      "volume": "Volume",
+      "perTrade": "Per trade average",
+      "annualized": "Annualized",
+      "needsMoreDays": "Needs 2+ days",
+      "totalFees": "Total fees paid",
+      "avgWinVsLoss": "Avg W vs L",
+      "tradedVolume": "Total traded"
+    },
+    "tabs": {
+      "cumulativePnl": "Equity Curve",
+      "hourlyPerformance": "Hourly",
+      "dailyPerformance": "Daily"
+    }
+  },
+  "strategies": {
+    "realtimeLive": "live",
+    "realtimePolling": "polling",
+    "status": {
+      "running": "Active",
+      "stopped": "Saved"
+    },
+    "run": "Run",
+    "backtest": "Backtest",
+    "edit": "Edit",
+    "delete": "Delete",
+    "stop": "Stop",
+    "stopCommandSent": "Strategy stop command sent.",
+    "errorStopping": "Error stopping strategy.",
+    "deleteSuccess": "Strategy deleted successfully.",
+    "deleteError": "Error deleting strategy."
+  },
+  "research": {
+    "netPnl": "Net PnL",
+    "winRate": "Win Rate",
+    "inProgress": "In Progress...",
+    "failedToLoad": "Failed to load backtests.",
+    "noBacktests": "You haven't run any backtests yet.",
+    "status": {
+      "completed": "Completed",
+      "running": "Running",
+      "pending": "Pending",
+      "failed": "Failed"
+    }
+  },
+  "backtestResultScreen": {
+    "resultsNotFound": "Backtest results not found.",
+    "equityChart": "Equity Chart",
+    "noData": "No data to display chart.",
+    "runLive": "Run Live",
+    "analyzeWithAI": "Analyze with AI",
+    "openInEditor": "Open in Editor",
+    "share": "Share",
+    "trades": "Trades",
+    "buy": "Buy",
+    "sell": "Sell",
+    "exit": "Exit",
+    "tradesNotFound": "No trades found.",
+    "page": "Page",
+    "back": "Back",
+    "forward": "Forward",
+    "toast": {
+      "failedToLoadDetails": "Failed to load backtest details.",
+      "backtestStarted": "Backtest started. Results will appear in Research.",
+      "errorStartingBacktest": "Error starting backtest.",
+      "strategySavedAndLaunched": "Strategy '{{strategyName}}' saved and launched.",
+      "errorLaunchingStrategy": "Error launching strategy."
+    }
+  },
+  "editor": {
+    "aiAssistantGreeting": "Hi! I'm your AI assistant. How can I help with this strategy?",
+    "errorLoadingStrategy": "Error loading strategy.",
+    "strategyGenerated": "Strategy generated and loaded into the constructor.",
+    "bestStrategyConfigured": "Best Strategy Configured",
+    "backtestStarted": "Backtest started.",
+    "strategySaved": "Strategy '{{strategyName}}' saved successfully.",
+    "errorSavingStrategy": "Error saving strategy.",
+    "defaultStrategyName": "New Strategy",
+    "constructor": "Constructor",
+    "aiAssistant": "AI Assistant",
+    "strategyInfo": "Strategy Information",
+    "strategyName": "Strategy Name",
+    "namePlaceholder": "e.g., EMA 50 Crossover",
+    "description": "Description",
+    "descriptionPlaceholder": "A brief description of the strategy logic...",
+    "filtersSectionTitle": "Filters",
+    "entryConditionsSectionTitle": "Entry Conditions",
+    "positionManagementSectionTitle": "Position Management",
+    "foundationsAndWeights": "Foundations & Weights",
+    "useWeights": "Use Weights",
+    "minWeightThreshold": "Min. Weight Threshold:",
+    "foundationsWeightsButton": "Configure Foundation Weights",
+    "runBacktest": "Run Backtest",
+    "add": "Add",
+    "addConditionTo": "Add condition to",
+    "showAllBlocks": "Show All Blocks",
+    "initialization": "Trade Initialization",
+    "direction": "Direction",
+    "positionSize": "Position Size",
+    "percentBalance": "% of Balance",
+    "fixedUsd": "Fixed USD",
+    "orderType": "Order Type",
+    "market": "Market",
+    "limitRetest": "Limit Retest",
+    "entryPrice": "Entry Price",
+    "stopLoss": "Stop Loss",
+    "atrMultiplier": "ATR Multiplier",
+    "percentFromPrice": "% from Price",
+    "takeProfit": "Take Profit",
+    "rrMultiplier": "R:R Multiplier",
+    "partialExits": "Partial Exits",
+    "atTP": "At TP:",
+    "addPartialExit": "Add Partial Exit",
+    "configPanel": {
+      "paramsTitle": "Parameters"
+    }
+  },
+  "profile": {
+    "profileTitle": "Profile",
+    "accountTab": "Account",
+    "securityTab": "Security",
+    "achievementsTab": "Achievements",
+    "error": "Error: ",
+    "failedToLoadProfileData": "Failed to load profile data.",
+    "myPlan": "My Plan",
+    "planActiveUntil": "Plan active until {{date}}",
+    "noActivePlan": "You have no active plan.",
+    "changePlan": "Change Plan",
+    "paperAccount": "Paper Account",
+    "resetting": "Resetting...",
+    "reset": "Reset",
+    "quotas": "Quotas",
+    "unlimited": "∞",
+    "referrals": "Referrals",
+    "referralCode": "Your referral code",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "codeCopied": "Code copied.",
+    "referralLink": "Your referral link",
+    "linkCopied": "Link copied.",
+    "geneticsLaboratory": "Genetics Laboratory",
+    "genesDiscovered": "Genes Discovered",
+    "dangerZone": "Danger Zone",
+    "deleteAccountTitle": "Delete Account",
+    "deleteAccountDescription": "This action is irreversible. All your data will be deleted.",
+    "deleteAccount": "Delete Account",
+    "deleting": "Deleting...",
+    "paperAccountResetSuccess": "Paper account reset successfully.",
+    "failedToResetPaperAccount": "Failed to reset paper account.",
+    "accountDeleted": "Account deleted successfully.",
+    "failedToDeleteAccount": "Failed to delete account.",
+    "copiedToClipboard": "Copied to clipboard.",
+    "failedToCopyValue": "Failed to copy value.",
+    "pleaseWait": "Please wait...",
+    "choosePlan": "Choose Your Plan",
+    "upgradePlanDescription": "Upgrade to unlock more features.",
+    "failedToLoadPlans": "Failed to load pricing plans.",
+    "failedToOpenPaymentPage": "Failed to open payment page.",
+    "failedToInitiatePayment": "Failed to initiate payment.",
+    "perMonth": "/ mo",
+    "currentPlanLabel": "Current Plan",
+    "transitioning": "Redirecting...",
+    "select": "Select",
+    "continueAgreeing": "By continuing, you agree to our",
+    "termsAndConditions": "Terms of Service",
+    "and": "and",
+    "privacyPolicy": "Privacy Policy",
+    "confirmResetTitle": "Confirm Reset",
+    "confirmResetMessage": "Are you sure you want to reset your paper account? Your balance will be set to the default value.",
+    "resetAccount": "Reset Account",
+    "confirmDeleteTitle": "Confirm Deletion",
+    "confirmDeleteMessage": "Are you sure you want to delete your account? This action cannot be undone.",
+    "deleteMyAccount": "Delete My Account",
+    "noActivePositions": "No active positions",
+    "noAchievements": "You have no achievements yet."
+  },
+  "achievements": {
+    "grandmaster": "Grandmaster",
+    "legend": "Legend",
+    "master": "Master",
+    "analyst": "Analyst",
+    "apprentice": "Apprentice",
+    "novice": "Novice",
+    "level": "Level {{level}}",
+    "experience": "Experience",
+    "xpToNextLevel": "{{xpToNext}} XP to Level {{level}}",
+    "totalXp": "Total XP",
+    "genesFound": "Genes Found",
+    "currentLevel": "Current Level",
+    "achievementsUnlocked": "Unlocked",
+    "totalAvailable": "Total",
+    "collectionProgress": "Progress",
+    "xpReward": "+{{xp}} XP",
+    "rarityDisplay": "Rarity: {{rarity}}",
+    "noAchievements": "You have no unlocked achievements yet.",
+    "list": {
+      "first_backtest": {
+        "name": "Pioneer",
+        "description": "Run your first backtest"
+      },
+      "first_save": {
+        "name": "First Blueprint",
+        "description": "Save your first strategy configuration"
+      },
+      "used_ai_assistant": {
+        "name": "Dialogue with the Machine",
+        "description": "Use the AI assistant to create or analyze a strategy"
+      },
+      "first_optimization": {
+        "name": "In Search of the Ideal",
+        "description": "Run your first parameter optimization"
+      },
+      "first_api_key": {
+        "name": "Keymaster",
+        "description": "Add your first API key for trading"
+      },
+      "two_factor_enabled": {
+        "name": "Security Champion",
+        "description": "Enable Two-Factor Authentication (2FA)"
+      },
+      "first_paper_trade": {
+        "name": "Paper Tiger",
+        "description": "Run your first strategy in Paper Trading mode"
+      },
+      "reset_paper": {
+        "name": "Clean Slate",
+        "description": "Reset your Paper Trading account balance"
+      },
+      "10_backtests": {
+        "name": "Junior Researcher",
+        "description": "Conduct 10 backtests"
+      },
+      "100_backtests": {
+        "name": "Senior Researcher",
+        "description": "Conduct 100 backtests"
+      },
+      "500_backtests": {
+        "name": "Head of the Lab",
+        "description": "Conduct 500 backtests"
+      },
+      "1000_trades_backtests": {
+        "name": "Market Veteran",
+        "description": "Simulate 1,000 trades in backtests"
+      },
+      "10000_trades_backtests": {
+        "name": "Wall Street Legend",
+        "description": "Simulate 10,000 trades in backtests"
+      },
+      "50_optimizations": {
+        "name": "Mad Scientist",
+        "description": "Conduct 50 optimizations"
+      },
+      "save_10_strategies": {
+        "name": "Strategist",
+        "description": "Save 10 different strategy configurations"
+      },
+      "sniper": {
+        "name": "Sniper",
+        "description": "Complete a backtest (min. 20 trades) with a Win Rate > 80%"
+      },
+      "marathon_runner": {
+        "name": "Marathon Runner",
+        "description": "Conduct a successful backtest over a period of more than 1 year"
+      },
+      "hard_nut": {
+        "name": "Hard Nut",
+        "description": "Complete a backtest (min. 50 trades) with a max drawdown < 5%"
+      },
+      "alpha_hunter": {
+        "name": "Alpha Hunter",
+        "description": "Complete a backtest with a Sharpe Ratio > 2.0"
+      },
+      "money_printer": {
+        "name": "Money Printer",
+        "description": "Complete a backtest with a Profit Factor > 3.0"
+      },
+      "winning_streak": {
+        "name": "On a Roll",
+        "description": "Get 10 profitable trades in a row in a single backtest"
+      },
+      "phoenix": {
+        "name": "Phoenix",
+        "description": "A strategy recovered from a drawdown >10% and reached a new equity high"
+      },
+      "flawless_victory": {
+        "name": "Flawless Victory",
+        "description": "Complete a backtest (min. 10 trades) with a 100% Win Rate"
+      },
+      "clairvoyant": {
+        "name": "Clairvoyant",
+        "description": "Use the Foundation Visualizer"
+      },
+      "diversifier": {
+        "name": "Diversifier",
+        "description": "Run your first portfolio backtest"
+      },
+      "show_off": {
+        "name": "Show Off",
+        "description": "Share your backtest result"
+      },
+      "contender": {
+        "name": "Contender",
+        "description": "Publish your result to the Leaderboard"
+      },
+      "the_intervention": {
+        "name": "The Intervention",
+        "description": "Manually close a position through the interface"
+      },
+      "pulling_the_plug": {
+        "name": "Pulling the Plug",
+        "description": "Use the Emergency Stop function"
+      },
+      "the_professor": {
+        "name": "The Professor",
+        "description": "Train your first model in the Model Lab"
+      },
+      "strategy_5_blocks": {
+        "name": "Constructor",
+        "description": "Create a strategy using 5+ blocks"
+      },
+      "the_architect": {
+        "name": "The Architect",
+        "description": "Create a strategy using 15+ blocks"
+      },
+      "logician": {
+        "name": "Logician",
+        "description": "Use both AND and OR logic in entry conditions simultaneously"
+      },
+      "inventor": {
+        "name": "Inventor",
+        "description": "Create a strategy using 5+ different types of 'foundations'"
+      },
+      "order_flow_purist": {
+        "name": "Order Flow Purist",
+        "description": "Create a strategy where entry foundations consist only of tape and order book analysis"
+      },
+      "prudent_manager": {
+        "name": "Prudent Manager",
+        "description": "Use the Partial Exits block"
+      },
+      "10_strategies_discovery": {
+        "name": "Gold Digger",
+        "description": "Find 10 unique strategies in the Discovery Lab"
+      },
+      "the_spark": {
+        "name": "The Spark",
+        "description": "Unlock your first strategy gene"
+      },
+      "gem_hunter": {
+        "name": "Gem Hunter",
+        "description": "Unlock a RARE quality gene"
+      },
+      "treasure_hunter": {
+        "name": "Treasure Hunter",
+        "description": "Unlock an EPIC quality gene"
+      },
+      "myth_buster": {
+        "name": "Myth Buster",
+        "description": "Unlock a LEGENDARY quality gene"
+      },
+      "gene_collector": {
+        "name": "Gene Collector",
+        "description": "Collect 20 unique genes in your library"
+      },
+      "geneticist": {
+        "name": "Geneticist",
+        "description": "Crossbreed two strategies in the Breeding Lab"
+      },
+      "natural_selection": {
+        "name": "Natural Selection",
+        "description": "Create a 5th generation strategy in the Evolution Tree"
+      },
+      "recruiter": {
+        "name": "Recruiter",
+        "description": "Invite the first user via your referral link"
+      },
+      "first_commission": {
+        "name": "First Commission",
+        "description": "Receive your first reward from the affiliate program"
+      },
+      "partner": {
+        "name": "Partner",
+        "description": "Earn $100 in the affiliate program"
+      },
+      "underminer": {
+        "name": "Underminer",
+        "description": "Create a backtest with a Sharpe Ratio < -2.0"
+      },
+      "the_pacifist": {
+        "name": "The Pacifist",
+        "description": "Run a backtest that made no trades"
+      },
+      "perfectly_balanced": {
+        "name": "Perfectly Balanced",
+        "description": "Complete a backtest (min. 50 trades) with a Win Rate of exactly 50% (+/- 1%)"
+      },
+      "diamond_hands": {
+        "name": "Diamond Hands",
+        "description": "Name a strategy 'HODL' and run a backtest with it"
+      },
+      "mining_activated": {
+        "name": "Genesis",
+        "description": "Activate Trade Mining and accept telemetry sharing"
+      },
+      "mining_wallet_linked": {
+        "name": "Web3 Citizen",
+        "description": "Link and verify an EVM wallet for mining"
+      },
+      "mining_first_trade": {
+        "name": "First Spark",
+        "description": "Execute first trade successfully verified in the mining pool"
+      },
+      "welcome_bonus_claimed": {
+        "name": "Golden Ticket",
+        "description": "Generate $1.0 rebate and claim Welcome Bonus (1,000 $DEPTH)"
+      },
+      "mining_volume_1k": {
+        "name": "Tunnel Miner",
+        "description": "Reach $1,000 in cumulative trading volume"
+      },
+      "mining_volume_10k": {
+        "name": "Mining Foreman",
+        "description": "Reach $10,000 in cumulative trading volume"
+      },
+      "mining_volume_100k": {
+        "name": "Quarry Titan",
+        "description": "Reach $100,000 in cumulative trading volume"
+      },
+      "mining_volume_1m": {
+        "name": "Crypto Whale",
+        "description": "Reach $1,000,000 in cumulative trading volume"
+      },
+      "mining_volume_10m": {
+        "name": "Market Maker",
+        "description": "Reach $10,000,000 in cumulative trading volume"
+      },
+      "mining_daily_volume_10k": {
+        "name": "Stakhanovite",
+        "description": "Generate $10,000 volume in a single 24-hour epoch"
+      },
+      "mining_daily_volume_100k": {
+        "name": "Market Tempest",
+        "description": "Generate $100,000 volume in a single 24-hour epoch"
+      },
+      "mining_daily_top_miner": {
+        "name": "King of the Hill",
+        "description": "Rank #1 in volume across all nodes in a daily epoch"
+      },
+      "mining_daily_top5_miner": {
+        "name": "Major League",
+        "description": "Finish in the top 5 daily volume miners"
+      },
+      "mining_first_referral": {
+        "name": "Network Partner",
+        "description": "Invite your first user who activates mining"
+      },
+      "mining_5_referrals": {
+        "name": "Squad Leader",
+        "description": "Invite 5 active miners"
+      },
+      "mining_10_referrals": {
+        "name": "Mining Brigade",
+        "description": "Invite 10 active miners"
+      },
+      "mining_50_referrals": {
+        "name": "Mining Syndicate",
+        "description": "Build a network of 50 active nodes"
+      },
+      "mining_active_squad": {
+        "name": "All Hands On Deck",
+        "description": "Have 5+ referrals mining simultaneously on the same day"
+      },
+      "mining_mentor_bonus": {
+        "name": "Mentor",
+        "description": "Your referral claimed their Welcome Bonus"
+      },
+      "mining_ref_volume_100k": {
+        "name": "Network Megaphone",
+        "description": "Referral network combined volume exceeded $100,000"
+      },
+      "mining_ref_earnings_100k": {
+        "name": "Passive Income",
+        "description": "Earn 100,000 $DEPTH purely from 10% referral bonuses"
+      },
+      "mining_streak_7d": {
+        "name": "Weekly Marathon",
+        "description": "Participate in mining emission for 7 consecutive epochs"
+      },
+      "mining_streak_30d": {
+        "name": "Iron Discipline",
+        "description": "Unbroken mining streak for 30 consecutive epochs"
+      },
+      "mining_epochs_100": {
+        "name": "Network Veteran",
+        "description": "Participate in 100 daily epochs in total"
+      },
+      "mining_halving_survivor": {
+        "name": "Halving Survivor",
+        "description": "Be an active miner during an emission halving event"
+      },
+      "mining_depth_1k": {
+        "name": "First Thousand",
+        "description": "Mine a cumulative total of 1,000 $DEPTH"
+      },
+      "mining_depth_10k": {
+        "name": "Gold Reserve",
+        "description": "Mine a cumulative total of 10,000 $DEPTH"
+      },
+      "mining_depth_100k": {
+        "name": "Crypto Tycoon",
+        "description": "Mine a cumulative total of 100,000 $DEPTH"
+      },
+      "mining_jackpot_epoch": {
+        "name": "Hit the Jackpot",
+        "description": "Receive over 5,000 $DEPTH in a single daily epoch"
+      },
+      "mining_flawless_telemetry": {
+        "name": "Flawless Stream",
+        "description": "50 consecutive trades without a single verification rejection"
+      },
+      "mining_high_speed_turnover": {
+        "name": "High Frequency",
+        "description": "Execute 50+ verified trades in a single trading day"
+      },
+      "mining_profitable": {
+        "name": "In the Green",
+        "description": "10 consecutive closed mining trades with positive PnL"
+      },
+      "mining_multi_exchange": {
+        "name": "Arbitrageur",
+        "description": "Mine trades on 2+ different exchanges within one week"
+      },
+      "mining_all_exchanges": {
+        "name": "Omnipresent",
+        "description": "Link UIDs and mine trades on all supported exchanges"
+      },
+      "mining_node_operator": {
+        "name": "Private Datacenter",
+        "description": "Operate a mining server node hosting other miners"
+      },
+      "mining_boost_active": {
+        "name": "Afterburner",
+        "description": "Activate any mining boost multiplier"
+      },
+      "mining_diamond_staker": {
+        "name": "Diamond Staker",
+        "description": "Lock $DEPTH for 360 days to unlock the maximum 2.0x multiplier"
+      }
+    }
+  },
+  "settings": {
+    "riskManagement": "Risk Management",
+    "liveTrading": "Live Trading",
+    "backtesting": "Backtesting",
+    "liveTradingRiskManagement": "Risk Management (Live)",
+    "riskManagementDescription": "Configure risk management parameters for live trading.",
+    "backtestingRiskManagement": "Risk Management (Backtest)",
+    "backtestingRiskManagementDescription": "Configure risk management parameters for backtesting.",
+    "maxDrawdown": "Max Drawdown (%)",
+    "dailyMaxLossPercent": "Daily Max Loss (%)",
+    "maxConsecutiveLosses": "Max Consecutive Losses",
+    "maxConcurrentTrades": "Max Concurrent Trades",
+    "enableStopLoss": "Enable Default Stop Loss",
+    "defaultStopLossPercent": "Default Stop Loss (%)",
+    "maxStopDistancePercent": "Max Stop Distance (%)",
+    "adaptiveRiskManagement": "Adaptive Risk Management",
+    "enableAdaptiveRM": "Enable Adaptive Management",
+    "windowSize": "Window Size (trades)",
+    "minTrades": "Min Trades for Assessment",
+    "pnlThreshold": "PnL Threshold (%)",
+    "winRateThreshold": "Win Rate Threshold (%)",
+    "recoveryWins": "Wins for Recovery",
+    "recoveryPnl": "PnL for Recovery (%)",
+    "cooldownSeconds": "Cooldown Time (sec)"
+  },
+  "aiChat": {
+    "initialGreeting": "Hello! I'm your AI assistant. Describe the strategy you want to create, or select a backtest to analyze.",
+    "errorMessage": "An error occurred. Please try again.",
+    "loadToEditor": "Approve & Load to Editor",
+    "askPlaceholder": "Ask me anything...",
+    "generateStrategy": "Yes, generate this strategy",
+    "strategyGenerated": "Strategy configuration generated successfully!",
+    "analyzeBacktestPrompt": "Please analyze this backtest: {{strategyName}}"
+  },
+  "shareDialog": {
+    "title": "Share Backtest",
+    "description": "Generate a public link to share your backtest results.",
+    "successMessage": "Your public link has been generated.",
+    "showStrategyName": "Show strategy name",
+    "showParameters": "Show parameters",
+    "publishToLeaderboard": "Publish to leaderboard",
+    "generateLinkButton": "Generate Link",
+    "toast": {
+      "successTitle": "Link Generated",
+      "successDescription": "You can now share your backtest results.",
+      "copied": "Link copied to clipboard."
+    }
+  },
+  "notifications": {
+    "pushNotSupported": "Push notifications are not supported in this browser.",
+    "notificationsDisabled": "Notifications disabled.",
+    "unsubscribeFailedLocal": "Failed to unsubscribe. Notifications disabled locally.",
+    "notificationsEnabled": "Notifications enabled.",
+    "subscribeFailed": "Failed to subscribe to notifications.",
+    "permissionBlocked": "Notification permission is blocked. Please change your browser settings.",
+    "achievementUnlocked": "Achievement Unlocked!",
+    "backtestCompleted": "Backtest Completed",
+    "markAllAsRead": "Mark all as read",
+    "clearAll": "Clear All",
+    "empty": {
+      "title": "No Notifications",
+      "description": "Notifications about backtests, positions, and achievements will be displayed here."
+    },
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo_one": "{{count}} min ago",
+      "minutesAgo_other": "{{count}} mins ago",
+      "hoursAgo_one": "{{count}} hour ago",
+      "hoursAgo_other": "{{count}} hours ago",
+      "daysAgo_one": "{{count}} day ago",
+      "daysAgo_other": "{{count}} days ago"
+    }
+  },
+  "sideMenu": {
+    "account": "Account",
+    "allAccounts": "All Accounts",
+    "unknown": "Unknown",
+    "profile": "Profile",
+    "settings": "Settings",
+    "mining": "Trade Mining",
+    "theme": "Theme",
+    "toggleThemeLabel": "Switch to {{theme}} theme",
+    "language": "Language",
+    "toggleLanguageLabel": "Switch to {{language}}",
+    "english": "EN",
+    "russian": "RU",
+    "fullWebsiteVersion": "Full Website Version",
+    "termsOfService": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "logout": "Logout"
+  },
+  "modal": {
+    "addBlock": "Add Block",
+    "configureFoundationWeights": "Configure Foundation Weights",
+    "noFoundationsForWeights": "There are no 'Foundation' blocks in the entry conditions to configure weights for."
+  },
+  "addApiKeyModal": {
+    "title": "Add API Key",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "Enter your API key",
+    "apiSecretLabel": "API Secret",
+    "apiSecretPlaceholder": "Enter your API secret"
+  },
+  "backtestModal": {
+    "fillAllFields": "Please fill in all fields.",
+    "strategyBacktest": "Strategy Backtest",
+    "symbol": "Symbol",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "runBacktest": "Run Backtest",
+    "quickPresets": "Quick Period",
+    "availableHistory": "Available in History",
+    "noHistory": "No history loaded",
+    "presets": {
+      "all": "All Available",
+      "lastYear": "Last Year",
+      "thisYear": "This Year",
+      "sixMonths": "6 Months",
+      "threeMonths": "3 Months",
+      "oneMonth": "1 Month",
+      "lastMonth": "Last Month"
+    }
+  },
+  "launchStrategyModal": {
+    "fillSymbolsForStatic": "Please specify symbols for static mode.",
+    "launchStrategy": "Launch Strategy",
+    "tradingMode": "Trading Mode",
+    "paperTrading": "Paper Trading",
+    "paperTradingDescription": "Simulated trading with no real risk.",
+    "liveTrading": "Live Trading",
+    "liveTradingDescription": "Trading with real funds. Use with caution.",
+    "symbolSelection": "Symbol Selection",
+    "dynamicFromScreener": "Dynamic (from screener)",
+    "dynamicFromScreenerDescription": "Automatically select symbols based on filters.",
+    "staticManualList": "Static (manual list)",
+    "staticManualListDescription": "Trade only the specified symbols.",
+    "symbolList": "Symbol List",
+    "symbolPlaceholder": "BTCUSDT, ETHUSDT, ...",
+    "separateByCommas": "Separate symbols with a comma.",
+    "dynamicSettings": "Dynamic Selection Settings",
+    "oracleFilter": "Oracle Filter",
+    "lowVolatilityNatr": "Low Volatility (NATR)",
+    "requiredRegime": "Required Regime",
+    "minConfidence": "Min Confidence (%)",
+    "minNatr": "Min NATR",
+    "maxConcurrentSymbols": "Max Concurrent Symbols",
+    "advancedSettings": "Advanced Settings",
+    "enableMlConfirmation": "Enable ML Confirmation",
+    "breakevenOnRegimeChange": "Breakeven on Regime Change",
+    "oracleRegimeParanoiaFull": "0: Paranoia (Trend-following/Sideways)",
+    "oracleRegimeAmnesiaFull": "1: Amnesia (News/Trend)",
+    "oracleRegimeSchizophreniaFull": "2: Schizophrenia (Volatile)"
+  },
+  "bottomSheet": {
+    "editBlock": "Editing: {{blockName}}"
+  },
+  "errors": {
+    "popoverTrigger": "PopoverTrigger must be used within a Popover.",
+    "popoverContent": "PopoverContent must be used within a Popover."
+  },
+  "palette": {
+    "groups": {
+      "filters": "Filters",
+      "foundations": "Foundations",
+      "indicators": "Indicators",
+      "logic": "Logic",
+      "management": "Position Management"
+    }
+  },
+  "blocks": {
+    "standardParams": "Standard Parameters",
+    "dynamicParam": "[dyn.]",
+    "AND": {
+      "title": "'AND' Group"
+    },
+    "OR": {
+      "title": "'OR' Group"
+    },
+    "trading_session": {
+      "title": "Trading Session",
+      "desc": "Filter by trading session time (London, New York, etc.).",
+      "text": "Trade during",
+      "modes": {
+        "session": "By Session",
+        "hours": "By Hours"
+      },
+      "sessions": {
+        "london": "London",
+        "new_york": "New York",
+        "asia": "Asia",
+        "sydney": "Sydney"
+      },
+      "include": "Include",
+      "exclude": "Exclude"
+    },
+    "volatility_filter": {
+      "title": "Volatility Filter",
+      "desc": "Allows trading only at a certain level of volatility (ATR, BBW).",
+      "text": "When"
+    },
+    "trend_filter": {
+      "title": "Trend Filter",
+      "desc": "Identifies the presence of a trend using indicators like ADX.",
+      "text": "Trend by"
+    },
+    "senior_tf_confluence": {
+      "title": "Higher TF",
+      "desc": "Checks for nested conditions on a higher timeframe.",
+      "text": "On timeframe"
+    },
+    "btc_state_filter": {
+      "title": "BTC State",
+      "desc": "Filter by the current state of the BTC market (trend, flat).",
+      "required_state": "Required BTC state",
+      "states": {
+        "consolidation": "Consolidation",
+        "trending_up": "Trending Up",
+        "trending_down": "Trending Down",
+        "any": "Any"
+      }
+    },
+    "correlation": {
+      "title": "Correlation",
+      "desc": "Checks the correlation of the instrument with BTC or another asset.",
+      "correlation_with": "Correlation with",
+      "for": "for the last",
+      "bars": "bars"
+    },
+    "natr_filter": {
+      "title": "NATR Filter",
+      "desc": "Filters trades based on the normalized ATR.",
+      "text": "NATR (14) must be >"
+    },
+    "rel_vol_filter": {
+      "title": "Relative Volume",
+      "desc": "Filters trades based on relative volume.",
+      "text": "Relative Volume >"
+    },
+    "tape_analysis": {
+      "title": "Tape Analysis",
+      "desc": "Detects acceleration in the trade tape (by volume or count). Provides data for comparison.",
+      "text": "Tape analysis for",
+      "provides_data": "provides data"
+    },
+    "tape_condition": {
+      "title": "Tape Condition",
+      "desc": "Analyzes real-time trade tape activity.",
+      "for": "Time Window",
+      "check": "Metric to Check",
+      "absolute_value": "Absolute Value",
+      "multiplier_value": "Multiplier of Average",
+      "of_average": "of average",
+      "metrics": {
+        "delta_volume_usd": "Delta Volume ($)",
+        "buy_volume_usd": "Buy Volume ($)",
+        "sell_volume_usd": "Sell Volume ($)",
+        "total_volume_usd": "Total Volume ($)",
+        "buy_sell_ratio_volume": "Buy/Sell Ratio",
+        "acceleration_multiplier_volume": "Volume Acceleration"
+      }
+    },
+    "order_book_zone_condition": {
+      "title": "Order Book Zone Condition",
+      "desc": "Analyzes order density in a specified order book zone.",
+      "metric": "Metric to Check",
+      "in": "in",
+      "in_range": "in range of",
+      "metrics": {
+        "total_volume_usd": "Total Volume ($)",
+        "largest_level_usd": "Largest Level ($)",
+        "level_count": "Level Count"
+      },
+      "sides": {
+        "bids": "bids",
+        "asks": "asks"
+      },
+      "range_types": {
+        "atr_multiplier": "x ATR",
+        "ticks": "ticks"
+      }
+    },
+    "level_proximity_condition": {
+      "title": "Level Proximity",
+      "desc": "Checks if the price is close to a local level.",
+      "price": "Price Source",
+      "near_level_on": "Level Timeframe",
+      "tf_for": "Lookback Period",
+      "bars_within": "bars",
+      "within_proximity": "Within proximity of",
+      "price_sources": {
+        "close": "Close",
+        "high": "High",
+        "low": "Low"
+      }
+    },
+    "order_book_zone": {
+      "title": "Order Book Zone",
+      "desc": "Analyzes order density in a specified order book zone. Provides data for comparison.",
+      "text_1": "Analyze",
+      "text_2": "zone within",
+      "options": {
+        "bids": "bids",
+        "asks": "asks"
+      },
+      "range_type_percentage": "% of price",
+      "range_type_atr": "x ATR",
+      "range_type_ticks": "ticks",
+      "provides_data": "provides data"
+    },
+    "l2_microstructure_check": {
+      "title": "L2 Microstructure",
+      "desc": "Analyzes events in the order book, such as large orders or spoofing.",
+      "text_1": "Check for",
+      "options": {
+        "large_order": "a large order"
+      }
+    },
+    "local_level": {
+      "title": "Local Level",
+      "desc": "Identifies local highs/lows on a given timeframe.",
+      "text_1": "Price near local level on",
+      "text_2": "for the last",
+      "text_3": "bars, within",
+      "is_data_provider_label": "Use as data provider (disable proximity check)"
+    },
+    "significant_level": {
+      "title": "Significant Level",
+      "desc": "Identifies daily/weekly highs/lows.",
+      "text": "Price near level",
+      "levels": {
+        "daily_high": "Daily High",
+        "daily_low": "Daily Low",
+        "weekly_high": "Weekly High",
+        "weekly_low": "Weekly Low"
+      }
+    },
+    "round_level": {
+      "title": "Round Level",
+      "desc": "Checks the proximity of the price to a round price level.",
+      "text": "Price near round level within",
+      "pips": "pips"
+    },
+    "trend_direction": {
+      "title": "Trend Direction",
+      "desc": "Determines the trend by a combination of SMA and RSI.",
+      "text_on_tf": "Trend on",
+      "is": "is",
+      "trends": {
+        "long": "Long",
+        "short": "Short",
+        "any_trend": "Any Trend",
+        "flat": "Flat"
+      }
+    },
+    "classic_pattern": {
+      "title": "Classic Pattern",
+      "desc": "Recognizes candlestick patterns like engulfing, pin bar, etc.",
+      "text": "Pattern detected",
+      "bullish_engulfing": "Bullish Engulfing",
+      "bearish_engulfing": "Bearish Engulfing",
+      "pin_bar": "Pin Bar",
+      "doji": "Doji",
+      "inside_bar": "Inside Bar",
+      "sides": {
+        "any": "Any",
+        "bullish": "Bullish",
+        "bearish": "Bearish"
+      }
+    },
+    "volume_confirmation": {
+      "title": "Volume Confirmation",
+      "desc": "Checks if the candle volume exceeds the average value.",
+      "text": "Candle volume exceeds average by",
+      "x_average": "times"
+    },
+    "price_consolidation": {
+      "title": "Consolidation",
+      "desc": "Determines if the price is in a narrow range (flat).",
+      "text1": "Price is consolidating for the last",
+      "text2": "bars in a range <",
+      "text3": "x ATR"
+    },
+    "open_interest": {
+      "title": "Open Interest",
+      "desc": "Analyzes the change or absolute value of open interest.",
+      "analyze": "Analyze",
+      "for": "for the last",
+      "bars": "bars",
+      "analysis_types": {
+        "change_pct": "% Change",
+        "absolute_value": "Absolute Value"
+      }
+    },
+    "ma_cross_condition": {
+      "title": "MA Cross",
+      "desc": "Condition for the crossing of two moving averages.",
+      "ma": "MA(",
+      "crosses": ") crosses",
+      "shift": "(shift",
+      "brackets": ")"
+    },
+    "rsi_condition": {
+      "title": "RSI Condition",
+      "desc": "Checks the RSI value (above/below a certain level).",
+      "text": "RSI(",
+      "shift": "(shift",
+      "brackets": ")"
+    },
+    "value_comparison": {
+      "title": "Value Comparison",
+      "desc": "Compares two dynamic values (indicators, prices, block results)."
+    },
+    "macd_condition": {
+      "title": "MACD Condition",
+      "desc": "Checks for MACD line crosses or histogram value.",
+      "macd": "MACD(",
+      "shift": "(shift",
+      "brackets": ")"
+    },
+    "bollinger_bands_condition": {
+      "title": "Bollinger Bands",
+      "desc": "Checks the price position relative to Bollinger Bands.",
+      "price": "Price",
+      "shift": "(shift",
+      "brackets": ")"
+    },
+    "stochastic_condition": {
+      "title": "Stochastic",
+      "desc": "Checks for stochastic line crosses or their position.",
+      "stochastic": "Stochastic(",
+      "shift": "(shift",
+      "brackets": ")"
+    },
+    "price_vs_level": {
+      "title": "Price vs. Level",
+      "desc": "Compares the price with a dynamic level from another block."
+    },
+    "and": {
+      "title": "AND",
+      "desc": "Groups conditions. ALL nested conditions must be met."
+    },
+    "or": {
+      "title": "OR",
+      "desc": "Groups conditions. AT LEAST ONE nested condition must be met."
+    },
+    "trailing_stop": {
+      "title": "Trailing Stop",
+      "desc": "Moves the stop-loss to follow the price and protect profit.",
+      "text_1": "Activate when price reaches",
+      "text_2": "and trail with an offset of"
+    },
+    "move_to_breakeven": {
+      "title": "Move to Breakeven",
+      "desc": "Moves the stop-loss to breakeven when a target is reached.",
+      "text_1": "Move to breakeven when price reaches"
+    },
+    "conditional_exit": {
+      "title": "Conditional Exit",
+      "desc": "Closes the position when specific conditions are met."
+    },
+    "scale_in": {
+      "title": "Scale In",
+      "desc": "Adds to an open position when conditions are met.",
+      "text_1": "Add",
+      "text_2": "% of risk, max",
+      "text_3": "entries"
+    },
+    "conditional_management": {
+      "title": "Conditional Mngmt",
+      "desc": "Applies actions (trailing stop, BE) if conditions are met."
+    },
+    "modify_stop_loss": {
+      "title": "Modify Stop Loss",
+      "desc": "Modifies the stop-loss to a new dynamic value.",
+      "text_1": "Move stop-loss to"
+    },
+    "return_to_level": {
+      "title": "Return to Level",
+      "desc": "Waits for the price to return to a previously identified level.",
+      "text1": "Price returns to level from",
+      "within": "within",
+      "seconds": "sec",
+      "types": {
+        "touch": "Touch",
+        "breakout_retest": "Breakout & Retest"
+      },
+      "directions": {
+        "any": "Any direction",
+        "from_above": "From above",
+        "from_below": "From below"
+      }
+    },
+    "volatility_squeeze": {
+      "title": "Volatility Squeeze",
+      "desc": "Detects narrowing trading ranges."
+    },
+    "market_activity": {
+      "title": "Market Activity",
+      "desc": "Check NATR / Relative Volume."
+    },
+    "dca_management": {
+      "title": "DCA Management",
+      "desc": "Automatic position averaging via martingale or custom conditions."
+    },
+    "grid_management": {
+      "title": "GRID Management",
+      "desc": "Place a grid of limit orders within a specified range."
+    },
+    "tradingview_signal": {
+      "title": "TradingView Signal",
+      "desc": "Awaits a TradingView webhook with a specific ID."
+    },
+    "price_action_analyzer": {
+      "title": "Price Action Analyzer",
+      "desc": "Recognizes structural patterns (HH/HL, LH/LL)."
+    },
+    "level_touch_analyzer": {
+      "title": "Level Touch Analyzer",
+      "desc": "Precise touch, breakout, or retest of a level."
+    },
+    "modify_take_profit": {
+      "title": "Modify Take Profit",
+      "desc": "Move TP to a new price."
+    },
+    "close_position": {
+      "title": "Close Position",
+      "desc": "Close the position at market."
+    },
+    "unknown_block": "Unknown Block",
+    "confirm_delete_block": "Are you sure you want to delete this block?",
+    "select_block_to_configure": "Select a block to configure.",
+    "delete": "Delete"
+  },
+  "dynamicInput": {
+    "linked": "🔗 Linked",
+    "block": "Block",
+    "candle": "Candle",
+    "market": "Market",
+    "staticValue": "Static value..."
+  },
+  "dynamicPicker": {
+    "categories": {
+      "position": "Position",
+      "candle": "Candle",
+      "blocks": "Blocks",
+      "market": "Market"
+    },
+    "noBlocks": "No blocks with available results."
+  },
+  "dynamic_sources": {
+    "position_state": {
+      "entry_price": "Entry Price",
+      "current_size_qty": "Current Size",
+      "unrealized_pnl_pct": "Unrealized PnL (%)",
+      "time_in_trade_sec": "Time in Trade (sec)",
+      "number_of_entries": "Number of Entries"
+    },
+    "candle": {
+      "open": "Open Price",
+      "high": "High Price",
+      "low": "Low Price",
+      "close": "Close Price",
+      "volume": "Volume"
+    },
+    "market": {
+      "btc_dominance": "BTC Dominance",
+      "funding_rate": "Funding Rate"
+    },
+    "block_results": {
+      "title": "Block Results"
+    }
+  },
+  "quotas": {
+    "run_vector_backtest_per_day": "Vector backtests per day",
+    "run_kline_backtest_per_day": "Kline backtests per day",
+    "run_backtest_per_day": "Backtests per day",
+    "use_ai_assistant_per_day": "AI requests per day",
+    "run_portfolio_backtest_per_day": "Portfolio backtests per day",
+    "run_optimization_per_month": "Optimizations per month",
+    "run_genetic_search_per_month": "Genetic searches per month",
+    "generate_dataset_per_month": "Dataset generations per month",
+    "train_model_per_month": "Model trainings per month"
+  },
+  "mining": {
+    "nodeSharingPolicy": "Node Sharing Policy",
+    "nodeSharingPolicyDesc": "Rewards are distributed in real-time according to verified trade volume share and active node policy.",
+    "nodeSharePercentage": "Node Share Percentage",
+    "yourVolumeShare": "Your Volume Share (Today)",
+    "yourTotalVolume": "Your Total Volume",
+    "subtitle": "Share your trade telemetry and earn $DEPTH tokens on every trade.",
+    "privacyTitle": "What data is shared",
+    "privacyDesc": "Required while Trade Mining is active: your closed trades (symbol, entry/exit prices, volume, PnL, duration, order IDs) and strategy parameters are shared with the Central Hub, linked to your node's wallet address and exchange UID. Your exchange API keys, passwords and asset balances are never transmitted. Disable by deactivating Trade Mining.",
+    "enterReferrerCode": "Referrer Code (Optional)",
+    "activating": "Activating...",
+    "activateButton": "Activate & Start Mining",
+    "totalMined": "Total Mined",
+    "todayEstReward": "Est. Daily Reward",
+    "todayRebates": "Today's Rebates",
+    "dailyEmission": "Daily Emission",
+    "totalDistributed": "Total Distributed",
+    "totalDistributedSubtitle": "Distributed across all epochs",
+    "welcomeBonus": "Welcome Bonus",
+    "welcomeBonusClaimedBadge": "Claimed",
+    "welcomeBonusDesc": "Generate at least $1.0 of cumulative rebate to claim your 1000 $DEPTH welcome bonus.",
+    "welcomeBonusClaimed": "Welcome Bonus Claimed!",
+    "welcomeBonusClaimedDesc": "1000 $DEPTH credited to balance.",
+    "welcomeBonusProgress": "Rebate: ${{current}} / ${{target}}",
+    "referralLinkCardTitle": "Referral Link",
+    "referralProgramDesc": "Invite friends to run nodes and earn a +10% daily boost plus matching welcome rewards!",
+    "yourReferralCode": "Your Referral Code",
+    "referralLink": "Referral Link",
+    "stakingBoost": "Staking Boost",
+    "comingSoon": "Coming Soon",
+    "stakingBoostDetail": "Lock $DEPTH for 30, 90 or 360 days to unlock up to 2.0x multiplier on all daily trade mining emission rewards.",
+    "disabledTitle": "Mining Disabled",
+    "disabledDesc": "Mining features are temporarily disabled by the administrator.",
+    "uidLinkedNotice": "Your exchange UID will be resolved and linked automatically using your active API keys when you start mining.",
+    "miningActivated": "Trade mining successfully activated! Your exchange UID has been resolved and linked automatically.",
+    "nodeWallet": "EVM Wallet",
+    "walletTitle": "Node Web3 Identity (EVM Wallet)",
+    "walletSubtitle": "Connect your EVM wallet (MetaMask / Web3) to secure your mining rewards and node identity.",
+    "walletNoticeEVM": "Your private key never leaves your wallet. Server verifies ownership via cryptographically signed message. Rewards and node migration remain 100% under your control.",
+    "connectedWallet": "Connected Web3 Wallet",
+    "switchWallet": "Switch Wallet",
+    "disconnect": "Disconnect",
+    "signingMessage": "Signing Message...",
+    "connectMetaMask": "Connect EVM Wallet (MetaMask)",
+    "connectEVMWallet": "Connect Web3 EVM Wallet (MetaMask)",
+    "metaMaskNotFound": "Web3 Wallet (MetaMask) not detected. Please install MetaMask browser extension or use Web3 browser.",
+    "noAccountSelected": "No EVM account selected.",
+    "walletConnectedSuccess": "Wallet verified & connected successfully!",
+    "userRejectedSignature": "Signature request was rejected in wallet.",
+    "walletDisconnected": "Wallet disconnected successfully.",
+    "addressCopied": "Wallet address copied!",
+    "nodeDeployCommand": "Node One-Line Deploy Command",
+    "commandCopied": "Deploy command copied to clipboard!",
+    "supportedExchanges": "Supported Exchanges & Rebates",
+    "supportedExchangesDesc": "Trade mining rewards are calculated for live trades executed on the following exchanges:",
+    "supportedExchangesRebateNote": "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.",
+    "futuresRebate": "Futures Rebate",
+    "spotRebate": "Spot Rebate",
+    "okxRebateTip": "Base rate (30%), under 3rd-party referral only 7.5%. Stacks under our link (+7.5%) for 5x token yield.",
+    "bybitRebateTip": "Base rate (50%), under 3rd-party referral only 10%. Stacks under our link (+10%) for maximum yield.",
+    "bitgetRebateTip": "Base rate (35%) + 2.0x Mining Multiplier! Stacks under our affiliate link for 2x $DEPTH token yield.",
+    "partnerBoostTitle": "Bitget Mining Boost",
+    "partnerBoostDesc": "Earn 2x $DEPTH per USDT rebate when trading on Bitget!",
+    "promoBannerTitle": "Bitget Launch Airdrop — 10,000,000 $DEPTH",
+    "promoBannerSubtitle": "Connect Bitget API keys & trade to earn up to 25,000 $DEPTH per quest.",
+    "promoSlotsLeft": "Slots left",
+    "promoClaimed": "$DEPTH claimed",
+    "promoQuestsTitle": "Bitget Launch Quests",
+    "promoQuestsDescription": "Complete quests to earn $DEPTH tokens from the 10M promotional airdrop pool. Each quest is granted once per unique Bitget master account UID.",
+    "promoPoolRemaining": "Airdrop Pool Remaining",
+    "promoRewardClaimed": "Reward Claimed",
+    "promoClaimSuccess": "Reward claimed successfully to your node balance!",
+    "promoCompleteReqs": "Complete all requirements to claim",
+    "promoSecurityUid": "One claim per unique master account UID",
+    "promoSecuritySlots": "Campaign runs until all slots are claimed",
+    "promoSecurityVolume": "Only broker-verified trading volume counts",
+    "backToMining": "Back to Mining",
+    "subtabQuests": "Quests",
+    "adminPreviewBadge": "ADMIN PREVIEW",
+    "liveBadge": "LIVE",
+    "promoOfTotalPool": "of {{total}} $DEPTH",
+    "questSlotsClaimed": "Slots Claimed",
+    "questClaimedBadge": "✓ Claimed",
+    "questReadyToClaim": "Ready to Claim!",
+    "questSlotsRemaining": "{{remaining}} left",
+    "questRewardLabel": "reward",
+    "questClaimedLabel": "claimed",
+    "questApiPioneerTitle": "Bitget API Pioneer",
+    "questNodeRunnerTitle": "Node Runner Veteran",
+    "questReqApiKey": "{{exchange}} API Key connected (Master UID)",
+    "questStatusConnected": "Connected",
+    "questStatusNotConnected": "Not connected",
+    "questReqWallet": "Wallet linked & verified",
+    "questStatusLinked": "Linked",
+    "questStatusMissing": "Missing",
+    "questReqPhysicalNode": "Server online now, node registered ≥ {{days}} days ago",
+    "questNodeAgeDays": "{{days}} days",
+    "questStatusNotRunning": "Not running",
+    "questReqActiveMining": "Active mining (trade in last 7 days)",
+    "questStatusActive": "Active",
+    "questStatusNoTrades": "No recent trades",
+    "questReqVolume": "Reach ${{threshold}} verified volume",
+    "questReqVolumePhysical": "Reach ${{threshold}} verified volume on your server",
+    "questRewardClaimedBtn": "Reward Claimed — {{amount}} $DEPTH Added",
+    "questClaimBtn": "🎉 Claim {{amount}} $DEPTH",
+    "questClaiming": "Processing...",
+    "questCompleteRequirements": "Complete all requirements to claim",
+    "questFootnoteUid": "One claim per unique Bitget master UID",
+    "questFootnoteDuration": "Campaign runs until all slots are claimed",
+    "questFootnoteVerification": "Only broker-verified trading volume counts",
+    "questClaimSuccessDesc": "🎉 Successfully claimed {{amount}} $DEPTH to your node balance!",
+    "questClaimFailedDesc": "Failed to claim reward. Please check all requirements.",
+    "questVolumeVerifyingBtn": "Verifying Trading Volume...",
+    "questVolumePendingVerification": "Volume reached • Awaiting broker verification",
+    "questVerifiedSuffix": "verified",
+    "questVolumeVerifyingBadge": "Verifying..."
+  },
+  "communityMemory": {
+    "title": "Agent Memory Bank",
+    "communityPool": "Community Pool",
+    "optInTooltip": "About Community Memory",
+    "all": "All",
+    "myMemories": "My Memories",
+    "community": "Community",
+    "confirmedCount": "Confirmed: {{count}}x",
+    "cannotDeleteCommunity": "Community memories are preserved in the shared pool.",
+    "modalTitle": "DepthSight Community Memory Pool",
+    "modalSubtitle": "Decentralized Swarm Intelligence for Trading Agents",
+    "modalDesc": "Participate in the shared trading intelligence pool by barter. When you run profitable backtests (≥30 trades, ≥28 days), generalized market insights are anonymously shared with the network. In return, your agent taps into verified setups and universal rules discovered by traders worldwide.",
+    "modalPrivacy": "Privacy Guarantee: Strategy parameters, confidential configurations, and API keys are strictly removed. Only high-level market lessons and performance statistics are contributed.",
+    "modalQuality": "Quality Gate: Only verified profitable strategies with ≥30 trades and ≥28 days backtest duration enter the network pool.",
+    "modalTransfer": "Cross-Asset Transfer: Learn from BTC, ETH, and altcoin patterns even on assets you haven't traded yet.",
+    "modalLater": "Keep Private Only",
+    "modalJoin": "Join Community Pool",
+    "shareWithCommunity": "Share with Community (requires ≥ 30 trades)",
+    "shareSuccess": "Memory successfully shared to Community pool!",
+    "shareError": "Could not share memory with community",
+    "retroactiveSuccess": "Community pool enabled! {{count}} verified strategies shared."
+  }
 }

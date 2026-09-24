@@ -47,6 +47,9 @@
 		"send": "Отправить",
 		"chartAttached": "Скриншот графика прикреплен",
 		"chartAttachedDesc": "Будет отправлен и проанализирован вместе с сообщением",
-		"placeholderWithHint": "Напишите AI Co-Pilot (Enter для отправки, Shift+Enter для новой строки)..."
+		"placeholderWithHint": "Напишите AI Co-Pilot (Enter для отправки, Shift+Enter для новой строки)...",
+		"chatTab": "Чат",
+		"agentTab": "Агент",
+		"mcpSettings": "MCP-настройки"
 	}
 }

@@ -50,34 +50,23 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 	const [selectedTag, setSelectedTag] = useState<string | null>(null);
 	const [scopeFilter, setScopeFilter] = useState<"all" | "private" | "community">("all");
 	const isUserOptedIn = Boolean(
-		(user as any)?.shareCommunityMemories ||
-		(user as any)?.share_community_memories
+		user?.shareCommunityMemories || user?.share_community_memories
 	);
 	const [isCommunityOptIn, setIsCommunityOptIn] = useState(isUserOptedIn);
-	const [showOnboardingModal, setShowOnboardingModal] = useState(false);
-
-	// Sync local opt-in toggle when user profile changes
-	useEffect(() => {
-		if (user) {
-			setIsCommunityOptIn(
-				Boolean(
-					(user as any)?.shareCommunityMemories ||
-					(user as any)?.share_community_memories
-				)
-			);
-		}
-	}, [
-		(user as any)?.shareCommunityMemories,
-		(user as any)?.share_community_memories,
-	]);
-
+	// Sync local opt-in toggle when the profile value changes: adjust state
+	// during render instead of calling setState inside an effect
+	// (https://react.dev/learn/you-might-not-need-an-effect).
+	const [prevUserOptIn, setPrevUserOptIn] = useState(isUserOptedIn);
+	if (user && prevUserOptIn !== isUserOptedIn) {
+		setPrevUserOptIn(isUserOptedIn);
+		setIsCommunityOptIn(isUserOptedIn);
+	}
 	// Auto-trigger onboarding popup on first visit if not yet opted in and never seen
-	useEffect(() => {
-		const seen = localStorage.getItem("depthsight_community_memory_modal_seen");
-		if (!seen && !isUserOptedIn) {
-			setShowOnboardingModal(true);
-		}
-	}, [isUserOptedIn]);
+	const [showOnboardingModal, setShowOnboardingModal] = useState(
+		() =>
+			!localStorage.getItem("depthsight_community_memory_modal_seen") &&
+			!isUserOptedIn
+	);
 
 	// Refetch memories when autopilot finishes an iteration
 	useEffect(() => {
@@ -91,7 +80,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 		if (updateUser) {
 			updateUser({
 				shareCommunityMemories: enabled,
-				...({ share_community_memories: enabled } as any),
+				share_community_memories: enabled,
 			});
 		}
 		updateCommunitySharing.mutate(enabled, {
@@ -107,13 +96,13 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 				}
 				void refetch();
 			},
-			onError: (err: any) => {
+			onError: (err: Error) => {
 				toast.error(err?.message || "Failed to update community sharing");
 				setIsCommunityOptIn(!enabled);
 				if (updateUser) {
 					updateUser({
 						shareCommunityMemories: !enabled,
-						...({ share_community_memories: !enabled } as any),
+						share_community_memories: !enabled,
 					});
 				}
 			},
@@ -443,7 +432,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 										extractedReasoning = parsed.config_data.reasoning;
 									}
 								}
-							} catch (e) {
+							} catch {
 								prettyConfig = configStr;
 							}
 						}
@@ -589,7 +578,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({
 															);
 															void refetch();
 														},
-														onError: (err: any) => {
+														onError: (err: Error) => {
 															toast.error(
 																err?.message ||
 																	t(

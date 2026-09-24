@@ -7,6 +7,7 @@
 		"symbol": "Symbol",
 		"startDate": "Start Date",
 		"endDate": "End Date",
+		"endDateDesc": "End date and time up to which historical data will be loaded",
 		"timeframe": "Timeframe",
 		"selectTimeframe": "Select timeframe",
 		"foundationTypes": "Foundation Types",

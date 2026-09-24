@@ -87,6 +87,7 @@
 		"descriptionLabel": "Description",
 		"descriptionPlaceholder": "A brief description of the strategy's logic...",
 		"symbolLabel": "Symbol for Test/Trade",
+		"symbolHistoryTooltip": "The list shows coins for which downloaded history is available for backtesting. For live trading, any ticker listed on the exchange can be entered manually.",
 		"marketTypeLabel": "Market Type",
 		"foundationWeightsSectionTitle": "Foundations Logic",
 		"activateWeightsLabel": "Activate Foundation Weights",
@@ -1361,5 +1362,13 @@
 		"sellLimitRequired": "Base Req (Sell limits)",
 		"warningNegativeProfitTitle": "Warning!",
 		"warningNegativeProfitDesc": "Grid step is too small. Exchange fees will consume all profits."
+	},
+	"mobileStub": {
+		"badge": "PWA EDITOR",
+		"title": "Visual Editor is Optimized for Desktop",
+		"description": "Full-fledged strategy construction with complex logic trees and block dragging requires a larger screen. For managing and building strategies on mobile, please use the adapted DepthSight PWA application.",
+		"openPwa": "Open Editor in PWA",
+		"backToStrategies": "Back to Strategies",
+		"desktopHint": "Or open this section on a desktop or tablet"
 	}
 }

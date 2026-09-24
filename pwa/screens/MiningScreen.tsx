@@ -1,6 +1,6 @@
 // pwa/screens/MiningScreen.tsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { 
   Coins, 
@@ -13,52 +13,195 @@ import {
   Share2,
   Globe,
   Wallet,
-  Info
 } from "lucide-react";
 import { api } from "../services/api";
 import { Logo } from "../components/ui/logo";
 import { NodeWalletBottomSheet } from "../components/NodeWalletBottomSheet";
+import { PromoBannerPwa } from "../components/mining/PromoBannerPwa";
+import { PromoCampaignModal } from "../components/mining/PromoCampaignModal";
 
+
+interface MiningStatus {
+  nodeUuid?: string;
+  node_uuid?: string;
+  nodeName?: string;
+  node_name?: string;
+  referrerReferralCode?: string;
+  referrer_referral_code?: string;
+  stats?: Record<string, unknown>;
+  nodeReferralCode?: string;
+  node_referral_code?: string;
+  serverTotalMined?: number;
+  server_total_mined?: number;
+  totalMined?: number;
+  total_mined?: number;
+  totalDistributed?: number;
+  total_distributed?: number;
+  userCumulativeRebate?: number;
+  user_cumulative_rebate?: number;
+  dailyEmission?: number;
+  daily_emission?: number;
+  yourEpochReward?: number;
+  your_epoch_reward?: number;
+  epochTotalRebates?: number;
+  epoch_total_rebates?: number;
+  userRewardSharePercent?: number;
+  user_reward_share_percent?: number;
+  userTradeVolume?: number;
+  user_trade_volume?: number;
+  isMiningEnabled?: boolean;
+  is_mining_enabled?: boolean;
+  isGlobalMiningEnabled?: boolean;
+  is_global_mining_enabled?: boolean;
+  hasWelcomeBonus?: boolean;
+  has_welcome_bonus?: boolean;
+  [key: string]: unknown;
+}
+
+/** Coerces an unknown API value to a finite number. */
+const num = (v: unknown, fallback = 0): number => {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : fallback;
+};
+
+/** Normalizes API responses that may or may not be wrapped in `{ data }`. */
+const toMiningStatus = (res: unknown): MiningStatus | null => {
+  if (!res || typeof res !== "object") return null;
+  const obj = res as { data?: unknown };
+  const payload =
+    obj.data && typeof obj.data === "object" ? obj.data : res;
+  return payload as MiningStatus;
+};
+
+interface PromoStatus {
+  [key: string]: unknown;
+}
 
 const MiningScreen: React.FC = () => {
   const { t } = useTranslation("pwa-common");
   const [loading, setLoading] = useState(true);
-  const [miningStatus, setMiningStatus] = useState<any>(null);
+  const [miningStatus, setMiningStatus] = useState<MiningStatus | null>(null);
+  const [promoStatus, setPromoStatus] = useState<PromoStatus | null>(null);
   const [referrerCode, setReferrerCode] = useState("");
   const [isActivating, setIsActivating] = useState(false);
   const [isDeactivating, setIsDeactivating] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isPromoModalOpen, setIsPromoModalOpen] = useState(false);
 
   const fetchStatus = () => {
     setLoading(true);
     api.getMiningStatus()
-      .then((res) => {
-        if (res && res.data) {
-          setMiningStatus(res.data);
-        } else {
-          setMiningStatus(res);
+      .catch((err) => {
+        console.error("Failed to load mining status", err);
+        return null;
+      })
+      .then((miningRes) => {
+        const mData = toMiningStatus(miningRes);
+        if (mData) {
+          setMiningStatus(mData);
+        }
+        const nodeUuid = mData?.nodeUuid || mData?.node_uuid;
+        return api.getPromoStatus(nodeUuid).catch(() => null);
+      })
+      .then((promoRes) => {
+        if (promoRes && promoRes.data) {
+          setPromoStatus(promoRes.data);
+        } else if (promoRes) {
+          setPromoStatus(promoRes);
         }
       })
-      .catch((err) => console.error("Failed to load mining status", err))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchStatus();
   }, []);
+
+  const referrerCodeRef = useRef<string>("");
+  const referrerCodeFromStorage = useRef<string>("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlRef = params.get("ref") || params.get("ref_code") || params.get("referrer_code");
     const localRef = localStorage.getItem("ref_code") || localStorage.getItem("referrer_code") || localStorage.getItem("ref");
-    const apiRef = miningStatus?.referrerReferralCode || (miningStatus as any)?.referrer_referral_code;
+    const apiRef = miningStatus?.referrerReferralCode || miningStatus?.referrer_referral_code || "";
     const foundCode = urlRef || localRef || apiRef || "";
 
-    if (foundCode && !referrerCode) {
+    referrerCodeFromStorage.current = foundCode;
+
+    if (foundCode && referrerCodeRef.current === "") {
       setReferrerCode(foundCode);
+      referrerCodeRef.current = foundCode;
     }
   }, [miningStatus]);
+
+  const stats = useMemo(() => (miningStatus?.stats as Record<string, unknown>) || {}, [miningStatus]);
+
+  const groupedExchanges = useMemo(() => {
+    const rawList: string[] =
+      (stats?.eligibleExchanges as string[] | undefined) ||
+      (stats?.eligible_exchanges as string[] | undefined) ||
+      [];
+    if (!rawList.length) return [];
+
+    const rates: Record<string, number> =
+      (stats?.rebateRates as Record<string, number> | undefined) ||
+      (stats?.rebate_rates as Record<string, number> | undefined) ||
+      {};
+    const multipliers: Record<string, number> =
+      (stats?.exchangeMultipliers as Record<string, number> | undefined) ||
+      (stats?.exchange_multipliers as Record<string, number> | undefined) ||
+      {};
+
+    const map = new Map<string, {
+      baseKey: string;
+      label: string;
+      spotRate?: number;
+      futuresRate?: number;
+      generalRate?: number;
+      maxRate: number;
+      multiplier: number;
+      isBoosted: boolean;
+    }>();
+
+    for (const raw of rawList) {
+      const norm = String(raw).trim().toLowerCase().replace(/_(futures|spot|usdtm|swap|linear|usdm)$/, "");
+      const rate = rates[raw] ?? rates[norm] ?? 0.30;
+      const mult = multipliers[raw] ?? multipliers[norm] ?? (norm.includes("bitget") ? 2.0 : 1.0);
+
+      const existing = map.get(norm) || {
+        baseKey: norm,
+        label: norm.toUpperCase(),
+        maxRate: 0,
+        multiplier: 1.0,
+        isBoosted: false,
+      };
+
+      const rawLower = raw.toLowerCase();
+      if (rawLower.includes("spot")) {
+        existing.spotRate = rate;
+      } else if (rawLower.includes("futures") || rawLower.includes("swap") || rawLower.includes("linear") || rawLower.includes("usdtm")) {
+        existing.futuresRate = rate;
+      } else {
+        existing.generalRate = rate;
+      }
+
+      if (rate > existing.maxRate) existing.maxRate = rate;
+      if (mult > existing.multiplier) existing.multiplier = mult;
+      if (existing.multiplier > 1.0) existing.isBoosted = true;
+
+      map.set(norm, existing);
+    }
+
+    for (const item of map.values()) {
+      if (item.futuresRate === undefined) item.futuresRate = item.generalRate ?? item.maxRate;
+      if (item.spotRate === undefined) item.spotRate = item.generalRate ?? item.maxRate;
+    }
+
+    return Array.from(map.values());
+  }, [stats]);
 
   const [isWalletOpen, setIsWalletOpen] = useState(false);
 
@@ -66,14 +209,13 @@ const MiningScreen: React.FC = () => {
     setIsActivating(true);
     api.activateMining(referrerCode.trim() || undefined)
       .then((res) => {
-        if (res && res.data) {
-          setMiningStatus(res.data);
-        } else {
-          setMiningStatus(res);
+        const next = toMiningStatus(res);
+        if (next) {
+          setMiningStatus(next);
         }
       })
-      .catch((err: any) => {
-        const msg = err?.message || String(err);
+      .catch((err) => {
+        const msg = (err as Error)?.message ?? String(err);
         if (msg.includes("WALLET_REQUIRED") || msg.includes("wallet")) {
           setIsWalletOpen(true);
         } else {
@@ -204,20 +346,30 @@ const MiningScreen: React.FC = () => {
   }
 
   // Dashboard state (if enabled)
-  const stats = miningStatus?.stats || (miningStatus as any) || {};
-  const dailyEmission = miningStatus?.dailyEmission ?? stats?.daily_emission ?? stats?.dailyEmission ?? 547945;
-  const yourEpochReward = miningStatus?.yourEpochReward ?? stats?.your_epoch_reward ?? stats?.yourEpochReward ?? 0.0;
-  const epochTotalRebates = miningStatus?.epochTotalRebates ?? stats?.epoch_total_rebates ?? stats?.epochTotalRebates ?? 0.0;
-  const totalDistributed = miningStatus?.totalDistributed ?? stats?.totalDistributed ?? stats?.serverTotalMined ?? (miningStatus as any)?.serverTotalMined ?? 0.0;
+  const dailyEmission = num(
+    miningStatus?.dailyEmission ?? stats?.daily_emission ?? stats?.dailyEmission,
+    547945,
+  );
+  const yourEpochReward = num(
+    miningStatus?.yourEpochReward ?? stats?.your_epoch_reward ?? stats?.yourEpochReward,
+  );
+  const epochTotalRebates = num(
+    miningStatus?.epochTotalRebates ?? stats?.epoch_total_rebates ?? stats?.epochTotalRebates,
+  );
+  const totalDistributed = num(
+    miningStatus?.totalDistributed ??
+      stats?.totalDistributed ??
+      stats?.serverTotalMined ??
+      miningStatus?.serverTotalMined,
+  );
 
   const handleDeactivate = () => {
     setIsDeactivating(true);
     api.deactivateMining()
       .then((res) => {
-        if (res && res.data) {
-          setMiningStatus(res.data);
-        } else {
-          setMiningStatus(res);
+        const next = toMiningStatus(res);
+        if (next) {
+          setMiningStatus(next);
         }
       })
       .catch((err) => console.error("Deactivation failed", err))
@@ -225,7 +377,15 @@ const MiningScreen: React.FC = () => {
   };
 
   const welcomeTarget = 1.0;
-  const userCumulativeRebate = (miningStatus as any)?.userCumulativeRebate ?? stats?.your_cumulative_rebates ?? stats?.yourCumulativeRebates ?? stats?.user_cumulative_rebate ?? stats?.userCumulativeRebate ?? stats?.cumulativeRebates ?? epochTotalRebates;
+  const userCumulativeRebate = num(
+    miningStatus?.userCumulativeRebate ??
+      stats?.your_cumulative_rebates ??
+      stats?.yourCumulativeRebates ??
+      stats?.user_cumulative_rebate ??
+      stats?.userCumulativeRebate ??
+      stats?.cumulativeRebates ??
+      epochTotalRebates,
+  );
   const welcomeProgress = Math.min((userCumulativeRebate / welcomeTarget) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${miningStatus?.nodeReferralCode || ""}`;
 
@@ -257,6 +417,14 @@ const MiningScreen: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Active Partner Exchange Multiplier Promo Banner */}
+      {promoStatus?.hasActiveCampaign && (
+        <PromoBannerPwa
+          promoStatus={promoStatus}
+          onOpenQuests={() => setIsPromoModalOpen(true)}
+        />
+      )}
 
       {/* Overview Stats */}
       <div className="grid grid-cols-2 gap-3">
@@ -317,72 +485,108 @@ const MiningScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Node Sharing Policy info */}
-      {(miningStatus?.userRewardSharePercent !== undefined || stats?.userRatio !== undefined) && (
-        <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 space-y-2">
-          <div className="flex justify-between items-center text-xs">
-            <span className="text-[hsl(var(--muted-foreground))]">{t("mining.nodeSharePercentage", "Node Share Percentage:")}</span>
-            <span className="font-bold text-[hsl(var(--primary))]">{miningStatus?.userRewardSharePercent ?? 0}%</span>
-          </div>
-          {stats?.userRatio !== undefined && (
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[hsl(var(--muted-foreground))]">{t("mining.yourVolumeShare", "Your Volume Share (Today):")}</span>
-              <span className="font-bold text-[hsl(var(--foreground))]">{(stats.userRatio * 100).toFixed(2)}%</span>
-            </div>
-          )}
-          {miningStatus?.userTradeVolume !== undefined && (
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-[hsl(var(--muted-foreground))]">{t("mining.yourTotalVolume", "Your Total Volume:")}</span>
-              <span className="font-bold text-[hsl(var(--foreground))]">{miningStatus.userTradeVolume.toFixed(2)} USDT</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Supported Exchanges Card */}
-      {((stats?.eligibleExchanges || stats?.eligible_exchanges || []).length > 0) && (
-        <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 space-y-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Globe className="w-5 h-5 text-[hsl(var(--primary))]" />
-              <h3 className="text-sm font-semibold">{t("mining.supportedExchanges", "Supported Exchanges & Rebates")}</h3>
-            </div>
-            <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
-              {t("mining.supportedExchangesDesc", "Trade mining rewards are calculated for live trades executed on the following exchanges:")}
-            </p>
-          </div>
-          <div className="space-y-1.5 pt-1">
-            {(stats?.eligibleExchanges || stats?.eligible_exchanges || []).map((ex: string) => {
-              const rates = stats?.rebateRates || stats?.rebate_rates || {};
-              const rate = rates[ex] ?? 0.60;
-              const isOkx = ex.toLowerCase().includes("okx");
-              const isBybit = ex.toLowerCase().includes("bybit");
-              return (
-                <div key={ex} className="flex flex-col gap-1 bg-[hsl(var(--background))] border border-[hsl(var(--border))] px-3 py-2 rounded-xl text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold uppercase">{ex.replace("_", " ")}</span>
-                    <span className="text-[10px] font-bold text-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      {(rate * 100).toFixed(0)}% Rebate
-                      {(isOkx || isBybit) && <Info className="w-3 h-3 text-[hsl(var(--primary))]" />}
-                    </span>
+      {/* Node Sharing Policy & Supported Exchanges */}
+      {((miningStatus?.userRewardSharePercent !== undefined || stats?.userRatio !== undefined) || groupedExchanges.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch">
+          {/* Node Sharing Policy */}
+          {(miningStatus?.userRewardSharePercent !== undefined || stats?.userRatio !== undefined) && (
+            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 flex flex-col justify-between h-full space-y-3">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldCheck className="w-4 h-4 text-[hsl(var(--primary))]" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
+                    {t("mining.nodeSharingPolicy", "Node Sharing Policy")}
+                  </h3>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-xs bg-[hsl(var(--background))] p-2.5 rounded-xl border border-[hsl(var(--border))]">
+                    <span className="text-[hsl(var(--muted-foreground))]">{t("mining.nodeSharePercentage", "Node Share Percentage:")}</span>
+                    <span className="font-bold text-[hsl(var(--primary))] font-mono">{miningStatus?.userRewardSharePercent ?? 0}%</span>
                   </div>
-                  {(isOkx || isBybit) && (
-                    <p className="text-[10px] text-muted-foreground leading-tight pt-0.5">
-                      {isOkx
-                        ? t("mining.okxRebateTip", "Base rate (30%). Stacks with affiliate link (+7.5%) up to 5x rewards.")
-                        : t("mining.bybitRebateTip", "Base rate (40%). Stacks with affiliate link for maximum mining yield.")}
-                    </p>
+                  {stats?.userRatio !== undefined && (
+                    <div className="flex justify-between items-center text-xs bg-[hsl(var(--background))] p-2.5 rounded-xl border border-[hsl(var(--border))]">
+                      <span className="text-[hsl(var(--muted-foreground))]">{t("mining.yourVolumeShare", "Your Volume Share (Today):")}</span>
+                      <span className="font-bold text-[hsl(var(--foreground))] font-mono">{(num(stats?.userRatio) * 100).toFixed(2)}%</span>
+                    </div>
+                  )}
+                  {miningStatus?.userTradeVolume !== undefined && (
+                    <div className="flex justify-between items-center text-xs bg-[hsl(var(--background))] p-2.5 rounded-xl border border-[hsl(var(--border))]">
+                      <span className="text-[hsl(var(--muted-foreground))]">{t("mining.yourTotalVolume", "Your Total Volume:")}</span>
+                      <span className="font-bold text-[hsl(var(--foreground))] font-mono">{miningStatus.userTradeVolume.toFixed(2)} USDT</span>
+                    </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-          <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2.5 text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--background))]/50 p-2.5 rounded-xl">
-            <ShieldCheck className="w-4 h-4 text-[hsl(var(--primary))] shrink-0 mt-0.5" />
-            <p className="leading-relaxed">
-              {t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.")}
-            </p>
-          </div>
+              </div>
+              <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
+                <p className="leading-snug">
+                  {t("mining.nodeSharingPolicyDesc", "Rewards are distributed in real-time according to verified trade volume share and active node policy.")}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Supported Exchanges Card */}
+          {groupedExchanges.length > 0 && (
+            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 flex flex-col justify-between h-full space-y-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-[hsl(var(--primary))]" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
+                    {t("mining.supportedExchanges", "Supported Exchanges & Rebates")}
+                  </h3>
+                </div>
+                <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 mb-2.5 leading-snug">
+                  {t("mining.supportedExchangesDesc", "Trade mining rewards are calculated for live trades executed on the following exchanges:")}
+                </p>
+
+                <div className="space-y-2">
+                  {groupedExchanges.map((exItem) => {
+                    const isBitget = exItem.baseKey === "bitget";
+                    const isOkx = exItem.baseKey === "okx";
+                    const isBybit = exItem.baseKey === "bybit";
+                    return (
+                      <div key={exItem.baseKey} className={`flex flex-col gap-1.5 bg-[hsl(var(--background))] border ${exItem.isBoosted ? "border-amber-500/40 bg-amber-500/5" : "border-[hsl(var(--border))]"} p-2.5 rounded-xl text-xs transition-colors`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold uppercase tracking-wide">{exItem.label}</span>
+                            {exItem.isBoosted && (
+                              <span className="text-[9px] font-mono font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded-full animate-pulse">
+                                🔥 {exItem.multiplier}x BOOST
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-[hsl(var(--primary))]">
+                            <span className="bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 px-1.5 py-0.5 rounded" title={t("mining.futuresRebate", "Futures Rebate")}>
+                              {t("mining.futuresRebate", "Futures")}: {((exItem.futuresRate ?? exItem.maxRate) * 100).toFixed(0)}%
+                            </span>
+                            <span className="bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 px-1.5 py-0.5 rounded" title={t("mining.spotRebate", "Spot Rebate")}>
+                              {t("mining.spotRebate", "Spot")}: {((exItem.spotRate ?? exItem.maxRate) * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </div>
+                        {(isOkx || isBybit || isBitget) && (
+                          <p className="text-[10px] text-[hsl(var(--muted-foreground))] leading-tight pt-0.5">
+                            {isBitget
+                              ? t("mining.bitgetRebateTip", "Base rate (35%) + 2.0x Mining Multiplier! Stacks under our affiliate link for 2x $DEPTH token yield.")
+                              : isOkx
+                              ? t("mining.okxRebateTip", "Base rate (30%). Stacks with affiliate link (+7.5%) up to 5x rewards.")
+                              : t("mining.bybitRebateTip", "Base rate (40%). Stacks with affiliate link for maximum mining yield.")}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2 text-[11px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--background))]/50 p-2 rounded-xl">
+                <ShieldCheck className="w-3.5 h-3.5 text-[hsl(var(--primary))] shrink-0 mt-0.5" />
+                <p className="leading-snug">
+                  {t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.")}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -519,6 +723,14 @@ const MiningScreen: React.FC = () => {
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
         onWalletActivated={() => handleActivate()}
+      />
+
+      <PromoCampaignModal
+        isOpen={isPromoModalOpen}
+        onClose={() => setIsPromoModalOpen(false)}
+        promoStatus={promoStatus}
+        onRefresh={fetchStatus}
+        nodeUuid={miningStatus?.nodeUuid || miningStatus?.node_uuid}
       />
     </div>
   );

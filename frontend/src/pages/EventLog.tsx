@@ -16,7 +16,6 @@ import { useTranslation } from "react-i18next";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -28,15 +27,16 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useWebSocket } from "@/context/WebSocketProvider";
 import { useLogHistory } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { LogEntry } from "@/types/api";
 
 const getLevelBadge = (level: LogEntry["level"]) => {
 	const styles = {
-		INFO: "bg-primary/20 text-primary border-primary/30",
-		SUCCESS: "bg-profit/20 text-profit border-profit/30",
-		WARNING: "bg-warning/20 text-warning border-warning/30",
-		ERROR: "bg-loss/20 text-loss border-loss/30",
-		DEBUG: "bg-gray-500/20 text-gray-500 border-gray-500/30",
+		INFO: "bg-cyan/15 text-cyan border-cyan/30",
+		SUCCESS: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+		WARNING: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+		ERROR: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+		DEBUG: "bg-white/10 text-white/60 border-white/10",
 	};
 	return (
 		<Badge variant="outline" className={`whitespace-nowrap ${styles[level]}`}>
@@ -168,11 +168,15 @@ export default function EventLog() {
 				variant="outline"
 				size="sm"
 				onClick={() => setIsPaused(!isPaused)}
+				className={cn(
+					"border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer",
+					isPaused && "border-amber-500/40 bg-amber-500/10 text-amber-300",
+				)}
 			>
 				{isPaused ? (
-					<Play className="w-4 h-4 mr-2" />
+					<Play className="w-4 h-4 mr-2 text-amber-400" />
 				) : (
-					<Pause className="w-4 h-4 mr-2" />
+					<Pause className="w-4 h-4 mr-2 text-cyan" />
 				)}
 				{isPaused ? t("resumeButton") : t("pauseButton")}
 			</Button>
@@ -181,11 +185,17 @@ export default function EventLog() {
 				size="sm"
 				onClick={handleExport}
 				disabled={filteredLogs.length === 0}
+				className="border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer disabled:opacity-40"
 			>
-				<Download className="w-4 h-4 mr-2" />
+				<Download className="w-4 h-4 mr-2 text-white/70" />
 				{t("exportButton")}
 			</Button>
-			<Button variant="destructive" size="sm" onClick={handleClearLogs}>
+			<Button
+				variant="destructive"
+				size="sm"
+				onClick={handleClearLogs}
+				className="border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-rose-200 transition-all cursor-pointer"
+			>
 				<Trash2 className="w-4 h-4 mr-2" />
 				{t("clearButton")}
 			</Button>
@@ -198,67 +208,65 @@ export default function EventLog() {
 			icon={Terminal}
 			headerActions={headerActions}
 		>
-			<Card className="mb-6">
-				<CardContent className="p-4 flex flex-wrap items-center gap-4">
-					<div className="relative flex-grow min-w-[300px]">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-						<Input
-							placeholder={t("searchPlaceholder")}
-							className="pl-10"
-							value={searchTerm}
-							onChange={(e) => setSearchTerm(e.target.value)}
-						/>
-					</div>
-					<div className="flex items-center gap-2">
-						<Filter className="h-4 w-4 text-muted-foreground" />
-						<Select
-							value={levelFilter}
-							onValueChange={(value) =>
-								setLevelFilter(value as LogEntry["level"] | "all")
-							}
-						>
-							<SelectTrigger className="w-[150px]">
-								<SelectValue placeholder={t("allLevels")} />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="all">{t("allLevels")}</SelectItem>
-								<SelectItem value="ERROR">{t("levelError")}</SelectItem>
-								<SelectItem value="WARNING">{t("levelWarning")}</SelectItem>
-								<SelectItem value="SUCCESS">{t("levelSuccess")}</SelectItem>
-								<SelectItem value="INFO">{t("levelInfo")}</SelectItem>
-								<SelectItem value="DEBUG">{t("levelDebug")}</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="flex items-center gap-2">
-						<Select value={sourceFilter} onValueChange={setSourceFilter}>
-							<SelectTrigger className="w-[180px]">
-								<SelectValue placeholder={t("allSources")} />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="all">{t("allSources")}</SelectItem>
-								{sources.map((s) => (
-									<SelectItem key={s} value={s}>
-										{s}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-				</CardContent>
-			</Card>
+			<div className="mb-6 rounded-2xl border border-white/10 glass shadow-xl p-4 flex flex-wrap items-center gap-4">
+				<div className="relative flex-grow min-w-[280px]">
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+					<Input
+						placeholder={t("searchPlaceholder")}
+						className="pl-10 bg-white/[0.03] border-white/10 text-white placeholder:text-white/40 focus-visible:ring-cyan/30 rounded-xl"
+						value={searchTerm}
+						onChange={(e) => setSearchTerm(e.target.value)}
+					/>
+				</div>
+				<div className="flex items-center gap-2">
+					<Filter className="h-4 w-4 text-white/40" />
+					<Select
+						value={levelFilter}
+						onValueChange={(value) =>
+							setLevelFilter(value as LogEntry["level"] | "all")
+						}
+					>
+						<SelectTrigger className="w-[150px] bg-white/[0.03] border-white/10 text-white rounded-xl">
+							<SelectValue placeholder={t("allLevels")} />
+						</SelectTrigger>
+						<SelectContent className="bg-[#0c0d12]/95 border-white/10 text-white backdrop-blur-xl">
+							<SelectItem value="all">{t("allLevels")}</SelectItem>
+							<SelectItem value="ERROR">{t("levelError")}</SelectItem>
+							<SelectItem value="WARNING">{t("levelWarning")}</SelectItem>
+							<SelectItem value="SUCCESS">{t("levelSuccess")}</SelectItem>
+							<SelectItem value="INFO">{t("levelInfo")}</SelectItem>
+							<SelectItem value="DEBUG">{t("levelDebug")}</SelectItem>
+						</SelectContent>
+					</Select>
+				</div>
+				<div className="flex items-center gap-2">
+					<Select value={sourceFilter} onValueChange={setSourceFilter}>
+						<SelectTrigger className="w-[180px] bg-white/[0.03] border-white/10 text-white rounded-xl">
+							<SelectValue placeholder={t("allSources")} />
+						</SelectTrigger>
+						<SelectContent className="bg-[#0c0d12]/95 border-white/10 text-white backdrop-blur-xl">
+							<SelectItem value="all">{t("allSources")}</SelectItem>
+							{sources.map((s) => (
+								<SelectItem key={s} value={s}>
+									{s}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+			</div>
 
 			<div
 				ref={logContainerRef}
-				className="h-[calc(100vh-250px)] overflow-y-auto rounded-lg bg-card p-2 border font-mono text-xs"
+				className="h-[calc(100vh-250px)] overflow-y-auto rounded-2xl border border-white/10 glass shadow-xl p-4 font-mono text-xs"
 			>
 				{isLoadingHistory ? (
-					<div className="flex items-center justify-center h-full text-muted-foreground">
-						<Loader2 className="w-8 h-8 animate-spin mr-4" />
-						{t("loadingHistory")}
+					<div className="flex flex-col items-center justify-center h-full gap-3 text-white/70">
+						<Loader2 className="w-8 h-8 animate-spin text-cyan" />
+						<span className="text-sm font-sans tracking-wide">{t("loadingHistory")}</span>
 					</div>
 				) : filteredLogs.length === 0 ? (
-					<div className="flex items-center justify-center h-full text-muted-foreground">
+					<div className="flex items-center justify-center h-full text-white/40">
 						{t("noLogs")}
 					</div>
 				) : (
@@ -266,16 +274,18 @@ export default function EventLog() {
 						{filteredLogs.map((log) => (
 							<div
 								key={log.id}
-								className="flex items-start space-x-4 p-2 rounded-md hover:bg-accent"
+								className="flex flex-col sm:flex-row items-start gap-1 sm:gap-3 px-2.5 sm:px-3 py-2 rounded-xl hover:bg-white/[0.04] border border-transparent hover:border-white/5 transition-colors min-w-0 w-full"
 							>
-								<span className="text-muted-foreground">
-									{new Date(log.timestamp).toLocaleTimeString()}
-								</span>
-								<span>{getLevelBadge(log.level)}</span>
-								<span className="text-primary font-medium w-36 truncate">
-									[{log.component}]
-								</span>
-								<span className="text-foreground flex-1 whitespace-pre-wrap">
+								<div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap">
+									<span className="text-white/40 font-mono shrink-0 whitespace-nowrap text-[11px] sm:text-xs">
+										{new Date(log.timestamp).toLocaleTimeString()}
+									</span>
+									<span className="shrink-0">{getLevelBadge(log.level)}</span>
+									<span className="text-cyan font-medium shrink-0 font-mono text-[11px] sm:text-xs whitespace-nowrap">
+										[{log.component}]
+									</span>
+								</div>
+								<span className="text-white/90 flex-1 whitespace-pre-wrap break-words font-mono min-w-0 w-full sm:w-auto text-xs leading-relaxed">
 									{log.message}
 								</span>
 							</div>

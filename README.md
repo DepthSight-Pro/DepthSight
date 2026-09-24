@@ -11,7 +11,7 @@
   <a href="#-one-click-deploy"><img src="https://img.shields.io/badge/deploy-one--click-00C853.svg?logo=gnubash&logoColor=white" alt="One-Click Deploy"></a>
   <a href="https://depthsight.pro"><img src="https://img.shields.io/badge/website-depthsight.pro-lightgrey.svg" alt="Website"></a>
   <a href="https://depthsight.pro/docs/overview"><img src="https://img.shields.io/badge/docs-depthsight.pro-00b0aa?style=flat&logo=googledocs&logoColor=white" alt="Documentation"></a>
-  <a href="https://github.com/DepthSight-Pro/DepthSight/actions"><img src="https://img.shields.io/badge/tests-1500%2B%20passed-brightgreen" alt="Tests"></a>
+  <a href="https://github.com/DepthSight-Pro/DepthSight/actions"><img src="https://img.shields.io/badge/tests-1800%2B%20passed-brightgreen" alt="Tests"></a>
 </p>
 
 <p align="center">
@@ -78,7 +78,7 @@ DepthSight is built for heavy-duty algorithmic trading, requiring a minimum of 4
 3. **Horizontal Worker Scaling:** Trading bot processes run in a sharded, stateless pool, evenly dividing computation and risk management processing across CPU cores or physical nodes.
 4. **PgBouncer-Ready:** Designed to pool PostgreSQL connections, seamlessly handling thousands of concurrent connections from stateless FastAPI or bot worker nodes.
 
-- **Supported Exchanges:** Native integration with **Binance**, **Bybit**, **OKX**, and **WEEX** (Fully tested and stable). Support for **Bitget**, **Gate.io**, and **BingX** is currently in development and will be enabled in future updates. 
+- **Supported Exchanges:** Native integration with **Binance**, **Bybit**, **OKX**, **Bitget** and **WEEX** (Fully tested and stable). Support for **Gate.io**, and **BingX** is currently in development and will be enabled in future updates. 
   *Note: We recommend using Binance, Bybit, OKX, or WEEX for live trading at this stage.*
 - **Multi-Tenant SaaS Ready:** Built-in JWT authentication, Redis-based quota management, and fully isolated execution environments designed for multi-user, commercial deployments.
 - **Crypto Billing & Payments:** Native integration with Bitcart for processing cryptocurrency subscriptions and payments.

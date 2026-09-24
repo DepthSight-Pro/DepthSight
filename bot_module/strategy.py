@@ -2213,12 +2213,16 @@ class BaseStrategy:
         """
         aggregated_depth = market_data.get("depth_analysis")
         details = {"params": params, "source": "depth_analysis"}
+        # Data-provider block: missing inputs are fail-closed in live mode
+        # (broken depth pipeline must not accrue weight silently) and
+        # fail-open only in backtest/tests where depth is unavailable by design.
+        live_mode = bool(pair_info.get("is_live_mode"))
 
         if not aggregated_depth or not isinstance(aggregated_depth, dict):
             details["error"] = (
                 "Aggregated depth data (depth_analysis) is missing or invalid."
             )
-            return True, details
+            return (False, details) if live_mode else (True, details)
 
         side = params.get("side", "bids").lower()
         range_type = params.get("range_type", "Percentage")
@@ -2230,7 +2234,7 @@ class BaseStrategy:
 
         if not last_price or last_price <= 0:
             details["error"] = "last_price not available or invalid in pair_info"
-            return True, details
+            return (False, details) if live_mode else (True, details)
 
         calculated_percentage_range = 0.0
         if range_type == "Percentage":
@@ -2238,13 +2242,13 @@ class BaseStrategy:
         elif range_type == "ATR Multiplier":
             if not atr or atr <= 0:
                 details["error"] = "ATR not available for ATR Multiplier range type"
-                return True, details
+                return (False, details) if live_mode else (True, details)
             calculated_percentage_range = (atr * range_value / last_price) * 100
         elif range_type == "Ticks":
             tick_size = pair_info.get("tick_size")
             if not tick_size or tick_size <= 0:
                 details["error"] = "tick_size not available for Ticks range type"
-                return True, details
+                return (False, details) if live_mode else (True, details)
             calculated_percentage_range = (tick_size * range_value / last_price) * 100
 
         target_buckets = aggregated_depth.get(side, [])
@@ -2345,11 +2349,17 @@ class BaseStrategy:
 
         # TOR 3.1: On backtest, this block should always return True and log a warning.
         # We determine the backtest mode by the absence of 'depth_trading'.
+        # In live mode missing L2 is a broken pipeline and must fail closed.
         if (
             not full_l2_depth
             or not isinstance(full_l2_depth, dict)
             or not full_l2_depth.get("bids")
         ):
+            if pair_info.get("is_live_mode"):
+                details["error"] = (
+                    "L2 order book (depth_trading) is missing in live mode."
+                )
+                return False, details
             logger.debug(
                 f"[{self.NAME}] L2 microstructure check skipped (likely backtest mode or no data)."
             )
@@ -2950,11 +2960,13 @@ class BaseStrategy:
         BLOCK_DATA_REQUIREMENTS = {
             # Order book blocks
             "order_book_zone": {"depth"},
+            "orderbook_condition": {"depth"},
             "l2_microstructure": {"depth"},
             "l2_microstructure_check": {"depth"},
             "orderbook_imbalance": {"depth"},
             # Tape of trades
             "tape_analysis": {"aggTrade"},
+            "tape_condition": {"aggTrade"},
             "volume_spike": {"aggTrade"},
             # Levels (require higher TFs to determine significant levels)
             "significant_level": {"kline_1h", "kline_4h", "kline_1d"},
@@ -3034,16 +3046,93 @@ class BaseStrategy:
             if node.get("source") == "indicator" and isinstance(node.get("key"), str):
                 required.add(node["key"])
 
-            # 2. Look for blocks that implicitly use indicators
+            # 2. Look for blocks that implicitly use indicators.
+            # Must stay in parity with VisualBuilderStrategy
+            # ._get_all_required_indicators_from_json: every block reading
+            # pair_info indicator keys has to register them, otherwise live
+            # pair_info misses the value and the checker silently falls back
+            # to a neutral default (e.g. relative_volume -> 1.0).
             node_type = node.get("type")
             params = node.get("params", {})
             if node_type == "trend_direction":
-                if isinstance(params.get("sma_fast_period"), int):
-                    required.add(f"SMA_{params['sma_fast_period']}")
-                if isinstance(params.get("sma_slow_period"), int):
-                    required.add(f"SMA_{params['sma_slow_period']}")
-                if isinstance(params.get("rsi_period"), int):
-                    required.add(f"RSI_{params['rsi_period']}")
+                f_p = params.get("sma_fast_period", params.get("fast_period"))
+                s_p = params.get("sma_slow_period", params.get("slow_period"))
+                r_p = params.get("rsi_period", 14)
+                if isinstance(f_p, int):
+                    required.add(f"SMA_{f_p}")
+                if isinstance(s_p, int):
+                    required.add(f"SMA_{s_p}")
+                if isinstance(r_p, int):
+                    required.add(f"RSI_{r_p}")
+            elif node_type == "rsi_condition":
+                required.add(f"RSI_{params.get('period', 14)}")
+            elif node_type == "volatility_filter":
+                ind = params.get("indicator", "ATR")
+                if ind == "ATR":
+                    required.add(f"ATR_{params.get('period', 14)}")
+                elif ind == "BBW":
+                    period = params.get("period", 20)
+                    std = params.get("std_dev", 2.0)
+                    required.add(f"BBL_{period}_{std}")
+                    required.add(f"BBU_{period}_{std}")
+                    required.add(f"BBB_{period}_{std}")
+            elif node_type == "adx_filter":
+                required.add(f"ADX_{params.get('period', 14)}")
+            elif node_type == "natr_filter":
+                required.add(f"NATR_{params.get('period', 14)}")
+            elif node_type in ("stoch_condition", "stochastic_condition"):
+                k = params.get("k_period", 14)
+                d = params.get("d_period", 3)
+                smooth = params.get("smooth_k", 3)
+                required.add(f"STOCHk_{k}_{d}_{smooth}")
+                required.add(f"STOCHd_{k}_{d}_{smooth}")
+            elif node_type in (
+                "bollinger_bands_condition",
+                "bb_condition",
+            ):
+                period = params.get("period", 20)
+                std = params.get("std_dev", 2.0)
+                required.add(f"BBL_{period}_{std}")
+                required.add(f"BBU_{period}_{std}")
+                required.add(f"BBB_{period}_{std}")
+            elif node_type == "trend_filter" and params.get("indicator") == "ADX":
+                required.add("ADX_14")
+            elif node_type == "macd_condition":
+                fast = params.get("fast_period", params.get("fast", 12))
+                slow = params.get("slow_period", params.get("slow", 26))
+                signal_param = params.get("signal_period", params.get("signal", 9))
+                required.add(f"MACD_{fast}_{slow}_{signal_param}")
+                required.add(f"MACDs_{fast}_{slow}_{signal_param}")
+                required.add(f"MACDh_{fast}_{slow}_{signal_param}")
+                required.add(f"MACD_hist_{fast}_{slow}_{signal_param}")
+            elif node_type == "ma_cross_condition":
+                # The checker reads EMA_* columns.
+                required.add(f"EMA_{params.get('fast_period', 9)}")
+                required.add(f"EMA_{params.get('slow_period', 21)}")
+            elif node_type in (
+                "rel_vol_filter",
+                "volume_confirmation",
+                "market_activity",
+            ):
+                lookback = params.get("lookback_period", 20)
+                required.add(f"VOL_LOOKBACK_{lookback}")
+                required.add("RELATIVE_VOLUME")
+                if node_type == "market_activity":
+                    required.add("IS_VOLUME_SPIKE")
+                    # Percentile-independent leg reads pair_info['natr'],
+                    # which is produced only by the NATR_30 computation.
+                    required.add("NATR_30")
+            elif node_type == "tape_condition":
+                window = params.get("window_sec", 5)
+                avg_lookback = params.get("avg_lookback_sec", 60)
+                required.add(f"tape_delta_volume_usd_{window}s")
+                required.add(f"tape_delta_count_{window}s")
+                required.add(f"tape_buy_sell_ratio_volume_{window}s")
+                required.add(f"tape_buy_sell_ratio_count_{window}s")
+                required.add(f"tape_accel_mult_volume_{window}s_{avg_lookback}s")
+                required.add(f"tape_accel_mult_count_{window}s_{avg_lookback}s")
+                required.add(f"tape_total_volume_usd_{window}s")
+                required.add(f"tape_total_count_{window}s")
 
             elif node_type == "tape_analysis":
                 window = params.get("time_window_sec", 5)
@@ -5902,6 +5991,15 @@ class BaseStrategy:
             "rel_vol_actual": pair_info.get("relative_volume"),
             "natr_actual": pair_info.get("natr"),
         }
+        if not result and (
+            details["rel_vol_actual"] is None
+            or details["natr_actual"] is None
+            or pair_info.get("is_volume_spike") is None
+        ):
+            details["error"] = (
+                "Market activity inputs are missing in pair_info "
+                "(natr/is_volume_spike/relative_volume)."
+            )
         return result, details
 
     def _check_condition_tape_analysis(
@@ -5962,8 +6060,15 @@ class BaseStrategy:
                 f"[{pair_info.get('symbol', 'Unknown')}:F_TapeAnalysis] Not all metrics were found in pair_info for window {time_window_sec}s."
             )
             details["warning"] = "Some metrics were not pre-calculated."
+            if pair_info.get("is_live_mode"):
+                details["error"] = (
+                    f"Tape metrics for window {time_window_sec}s are missing "
+                    "in live mode."
+                )
+                return False, details
 
-        # As a data provider, this block always returns True.
+        # As a data provider, this block returns True in backtest/tests where
+        # tape history is unavailable by design.
         # The actual logic is performed in other blocks that consume this data.
         return True, details
 
@@ -6024,11 +6129,15 @@ class BaseStrategy:
         }
 
         if value is None:
-            # Tape is not loaded — skipping the condition (True for compatibility)
             details["warning"] = f"Tape column '{col_name}' not found in pair_info"
             logger.warning(
                 f"[{pair_info.get('symbol', 'Unknown')}:tape_condition] {details['warning']}"
             )
+            # Missing tape data must not pass silently: in live it means the
+            # tape pipeline is broken, in backtest/tests tape may be absent.
+            if pair_info.get("is_live_mode"):
+                details["error"] = f"Tape column '{col_name}' is missing in live mode."
+                return False, details
             return True, details
 
         # Apply operator
@@ -6235,13 +6344,15 @@ class BaseStrategy:
         from .condition_core import evaluate_time_filter_logic
 
         filter_mode = params.get("filter_mode", "session")
-        current_hour = pair_info.get("timestamp_dt", {})
+        current_ts = pair_info.get("timestamp_dt")
 
-        if hasattr(current_hour, "hour"):
-            current_hour = current_hour.hour
+        if hasattr(current_ts, "hour"):
+            current_hour = current_ts.hour
         else:
-            # Fallback
-            current_hour = 12
+            return False, {
+                "error": "timestamp_dt is missing, cannot evaluate trading session.",
+                "filter_mode": filter_mode,
+            }
 
         details = {"current_hour_utc": current_hour, "filter_mode": filter_mode}
 
@@ -6296,22 +6407,62 @@ class BaseStrategy:
         """
         indicator = params.get("indicator", "ATR")
         indicator_str = str(indicator).upper()
-        if (
-            indicator_str in {"NATR", "SCALPER_NATR"}
-            or ("indicator" not in params and "natr_threshold" in params)
+        if indicator_str in {"NATR", "SCALPER_NATR"} or (
+            "indicator" not in params and "natr_threshold" in params
         ):
             return self._check_filter_natr(pair_info, market_data, params, context)
 
         operator = params.get("operator", "gt")
         value = self._resolve_value(params.get("value", 0), context)
         if indicator == "ATR":
-            actual_value = float(pair_info.get("atr", 0))
+            actual_raw = pair_info.get("atr")
+            if actual_raw is None:
+                return False, {
+                    "error": "atr is missing in pair_info.",
+                    "indicator": indicator,
+                }
+            actual_value = float(actual_raw)
         elif indicator == "BBW":
             period = params.get("period", 20)
             std = params.get("std_dev", 2.0)
-            actual_value = float(pair_info.get(f"bbb_{period}_{float(std)}", 0))
+            # Key formatting is fragile across producers (BBW_20_2 vs
+            # BBW_20_2.0, bbb_ vs BBW_): match prefix + period exactly and
+            # compare the std suffix numerically.
+            bbw_raw = None
+            try:
+                std_f = float(std)
+            except (TypeError, ValueError):
+                std_f = None
+            try:
+                period_s = str(int(period))
+            except (TypeError, ValueError):
+                period_s = str(period)
+            for key, val in pair_info.items():
+                if not isinstance(key, str):
+                    continue
+                parts = key.split("_")
+                if (
+                    len(parts) == 3
+                    and parts[0].lower() in ("bbb", "bbw")
+                    and parts[1] == period_s
+                ):
+                    try:
+                        if std_f is not None and float(parts[2]) == std_f:
+                            bbw_raw = val
+                            break
+                    except (TypeError, ValueError):
+                        continue
+            if bbw_raw is None:
+                return False, {
+                    "error": f"BBW value for period={period} std={std} is missing.",
+                    "indicator": indicator,
+                }
+            actual_value = float(bbw_raw)
         else:
-            actual_value = 0.0
+            return False, {
+                "error": f"Unknown volatility indicator: {indicator}",
+                "indicator": indicator,
+            }
         result = False
         if operator == "gt":
             result = actual_value > value
@@ -7017,67 +7168,90 @@ class BaseStrategy:
     def _check_condition_trend_direction(
         self, pair_info: Dict, market_data: Dict, params: Dict, context: Dict
     ) -> Tuple[bool, Dict]:
-        # 1. Getting new parameters
+        # 1. Getting new parameters (support both fast_period and sma_fast_period aliases)
         required_trend = params.get("required_trend", "ANY_TREND").upper()
         timeframe = params.get("timeframe", pair_info.get("candle_timeframe", "1m"))
-        sma_fast_p = int(params.get("fast_period", 10))
-        sma_slow_p = int(params.get("slow_period", 50))
+        sma_fast_p = int(params.get("fast_period", params.get("sma_fast_period", 10)))
+        sma_slow_p = int(params.get("slow_period", params.get("sma_slow_period", 50)))
         rsi_p = int(params.get("rsi_period", 14))
         rsi_low = float(params.get("rsi_lower_bound", 40))
         rsi_high = float(params.get("rsi_upper_bound", 60))
 
-        details = {"required": required_trend, "timeframe": timeframe}
+        details = {
+            "required": required_trend,
+            "timeframe": timeframe,
+            "mode": "last_closed",
+        }
 
-        # 2. Getting the required DataFrame and index
+        # 2. Getting the required DataFrame.
+        # NOTE: intentionally no timestamp_dt -> index lookup here.
+        # The trend is always evaluated on the last CLOSED candle of the
+        # requested timeframe (iloc[-2] semantics: last row may still be
+        # forming in live). This matches the backtester and avoids
+        # multi-TF desync rejections like "Could not find candle index".
         candles_df = market_data.get(f"kline_{timeframe}")
         if candles_df is None or candles_df.empty:
             details["error"] = f"Kline data for {timeframe} not found."
             return False, details
 
-        current_ts = pair_info.get("timestamp_dt")
-        try:
-            idx = candles_df.index.get_indexer([current_ts], method="ffill")[0]
-            if idx == -1:
-                raise IndexError("No valid candle index found")
-        except Exception:
+        if len(candles_df) < 2:
             details["error"] = (
-                f"Could not find candle index for {current_ts} on {timeframe}."
+                f"Not enough history on {timeframe} "
+                f"(rows={len(candles_df)}, need at least 2)."
             )
             return False, details
 
-        # 3. Attempting to get values from pair_info (for tests and optimization)
+        # All rows except the last one (the last one may be a forming candle).
+        closed_df = candles_df.iloc[:-1]
+
+        try:
+            closed_time = closed_df.index[-1]
+            details["closed_time"] = (
+                closed_time.isoformat()
+                if hasattr(closed_time, "isoformat")
+                else str(closed_time)
+            )
+        except Exception:
+            pass
+        details["closed_rows"] = len(closed_df)
+
+        # 3. Indicator values.
+        # pair_info SMA/RSI overrides are only valid for the main (strategy)
+        # timeframe — for HTF they belong to another TF and must be ignored.
+        main_tf = pair_info.get("candle_timeframe", "1m")
         sma_fast_val = pair_info.get(f"SMA_{sma_fast_p}")
         sma_slow_val = pair_info.get(f"SMA_{sma_slow_p}")
         rsi_val = pair_info.get(f"RSI_{rsi_p}")
+        if timeframe != main_tf:
+            sma_fast_val = None
+            sma_slow_val = None
+            rsi_val = None
 
-        # If something is missing — calculate on the fly
+        # If something is missing — calculate on the last closed candles.
+        # History sufficiency is required only in this branch: ready-made
+        # override values (tests, precomputed HTF context) need no history.
         if sma_fast_val is None or sma_slow_val is None or rsi_val is None:
-            if idx < sma_slow_p or idx < rsi_p:
-                details["info"] = "Not enough history on this timeframe."
+            if len(closed_df) < sma_slow_p or len(closed_df) < rsi_p:
+                details["error"] = (
+                    f"Not enough history on {timeframe} "
+                    f"(closed_rows={len(closed_df)}, need slow={sma_slow_p}, "
+                    f"rsi={rsi_p})."
+                )
                 return False, details
-
             if sma_fast_val is None:
                 sma_fast_val = (
-                    candles_df["close"]
-                    .iloc[: idx + 1]
-                    .rolling(window=sma_fast_p)
-                    .mean()
-                    .iloc[-1]
+                    closed_df["close"].rolling(window=sma_fast_p).mean().iloc[-1]
                 )
             if sma_slow_val is None:
                 sma_slow_val = (
-                    candles_df["close"]
-                    .iloc[: idx + 1]
-                    .rolling(window=sma_slow_p)
-                    .mean()
-                    .iloc[-1]
+                    closed_df["close"].rolling(window=sma_slow_p).mean().iloc[-1]
                 )
 
             if rsi_val is None:
                 # RSI calculation
-                delta = candles_df["close"].diff()
-                gain = (delta.where(delta > 0, 0)).iloc[: idx + 1]
-                loss = (-delta.where(delta < 0, 0)).iloc[: idx + 1]
+                delta = closed_df["close"].diff()
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
                 avg_gain = gain.rolling(window=rsi_p).mean().iloc[-1]
                 avg_loss = loss.rolling(window=rsi_p).mean().iloc[-1]
                 if avg_loss > 0:
@@ -7086,9 +7260,18 @@ class BaseStrategy:
                 else:
                     rsi_val = 100 if avg_gain > 0 else 50
 
-        details["sma_fast"] = sma_fast_val
-        details["sma_slow"] = sma_slow_val
-        details["rsi"] = rsi_val
+        try:
+            details["sma_fast"] = (
+                float(sma_fast_val) if sma_fast_val is not None else None
+            )
+            details["sma_slow"] = (
+                float(sma_slow_val) if sma_slow_val is not None else None
+            )
+            details["rsi"] = float(rsi_val) if rsi_val is not None else None
+        except (TypeError, ValueError):
+            details["sma_fast"] = sma_fast_val
+            details["sma_slow"] = sma_slow_val
+            details["rsi"] = rsi_val
 
         # 4. Define trend
         detected_trend = _determine_trend_direction_from_values(
@@ -7662,12 +7845,12 @@ class BaseStrategy:
 
         rsi_key = f"RSI_{period}"
 
-        # Trying to get a ready value from pair_info (safe to 0.0)
+        # Trying to get a ready value from pair_info for the exact period.
+        # No cross-period fallback: RSI_14 must not silently stand in for
+        # e.g. RSI_21.
         rsi_value = pair_info.get(rsi_key)
         if rsi_value is None:
             rsi_value = pair_info.get(rsi_key.lower())
-        if rsi_value is None:
-            rsi_value = pair_info.get("RSI_14")
 
         # If a ready value exists, use it
         if rsi_value is not None:
@@ -7840,11 +8023,12 @@ class BaseStrategy:
         k_val = pair_info.get(k_key)
         d_val = pair_info.get(d_key)
 
-        # If values are present in pair_info, use them
-        if k_val is not None:
+        # If values are present in pair_info, use them.
+        # Both K and D are required: a missing D must not silently become 0.0.
+        if k_val is not None and d_val is not None:
             try:
                 k0 = float(k_val)
-                d0 = float(d_val) if d_val is not None else 0.0
+                d0 = float(d_val)
                 k1 = self._get_previous_indicator_value(
                     pair_info, market_data, k_key, 1
                 )
@@ -8028,6 +8212,7 @@ class BaseStrategy:
         lookback = int(self._resolve_value(params.get("lookback_period", 20), context))
 
         # If a custom period is specified, calculate on the spot
+        rel_vol = None
         if lookback != 20:
             candle_tf = pair_info.get("candle_timeframe", "1m")
             df = market_data.get(f"kline_{candle_tf}")
@@ -8041,15 +8226,13 @@ class BaseStrategy:
                     )
                     if avg_vol > 1e-9:
                         rel_vol = curr_vol / avg_vol
-                    else:
-                        rel_vol = 1.0
                 except Exception as e:
                     logger.warning(f"Error calculating dynamic rel_vol: {e}")
-                    rel_vol = pair_info.get("relative_volume", 1.0)
-            else:
-                rel_vol = pair_info.get("relative_volume", 1.0)
-        else:
-            rel_vol = pair_info.get("relative_volume", 1.0)
+
+        if rel_vol is None:
+            # No neutral 1.0 default: a missing relative_volume means the
+            # volume pipeline did not deliver data and must be visible.
+            rel_vol = pair_info.get("relative_volume")
 
         details = {
             "relative_volume": rel_vol,
@@ -9311,10 +9494,11 @@ class VisualBuilderStrategy(BaseStrategy):
             required.add(f"MACDh_{fast}_{slow}_{signal_param}")
             required.add(f"MACD_hist_{fast}_{slow}_{signal_param}")
         elif node_type == "ma_cross_condition":
+            # The checker reads EMA_* columns (see _check_condition_ma_cross).
             fast = params.get("fast_period", 9)
             slow = params.get("slow_period", 21)
-            required.add(f"SMA_{fast}")
-            required.add(f"SMA_{slow}")
+            required.add(f"EMA_{fast}")
+            required.add(f"EMA_{slow}")
         elif node_type == "tape_analysis":
             window = params.get("time_window_sec", 5)
             metric_suffixes = [
@@ -9336,10 +9520,31 @@ class VisualBuilderStrategy(BaseStrategy):
             accel_suffixes = ["volume", "count"]
             for suffix in accel_suffixes:
                 required.add(f"tape_accel_mult_{suffix}_{window}s_{avg_lookback}s")
+        elif node_type == "tape_condition":
+            window = params.get("window_sec", 5)
+            avg_lookback = params.get("avg_lookback_sec", 60)
+            required.add(f"tape_delta_volume_usd_{window}s")
+            required.add(f"tape_delta_count_{window}s")
+            required.add(f"tape_buy_sell_ratio_volume_{window}s")
+            required.add(f"tape_buy_sell_ratio_count_{window}s")
+            required.add(f"tape_accel_mult_volume_{window}s_{avg_lookback}s")
+            required.add(f"tape_accel_mult_count_{window}s_{avg_lookback}s")
+            required.add(f"tape_total_volume_usd_{window}s")
+            required.add(f"tape_total_count_{window}s")
         elif node_type in ["rel_vol_filter", "volume_confirmation", "market_activity"]:
             # Adding a dummy indicator with the required period for correct warmup
             lookback = params.get("lookback_period", 20)
             required.add(f"VOL_LOOKBACK_{lookback}")
+            # Live DataConsumer computes the 'relative_volume' column only when
+            # RELATIVE_VOLUME is requested (see _recalculate_kline_indicators).
+            # Without it pair_info lacks 'relative_volume' and the filter falls
+            # back to the 1.0 default, rejecting every signal.
+            required.add("RELATIVE_VOLUME")
+            if node_type == "market_activity":
+                # Default 'percentile' mode reads pair_info['is_volume_spike'],
+                # the natr leg reads pair_info['natr'] (NATR_30 computation).
+                required.add("IS_VOLUME_SPIKE")
+                required.add("NATR_30")
 
         # 4. Recursive traversal of children
         for key, value in node.items():

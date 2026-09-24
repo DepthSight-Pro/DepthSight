@@ -14,13 +14,15 @@ interface AdvancedStatCardProps {
 
 // Map bg-color classes to actual colors
 const colorMap: Record<string, { bg: string; text: string }> = {
-	"bg-emerald-500": { bg: "rgba(16, 185, 129, 0.1)", text: "#10b981" },
-	"bg-rose-500": { bg: "rgba(244, 63, 94, 0.1)", text: "#f43f5e" },
-	"bg-amber-500": { bg: "rgba(245, 158, 11, 0.1)", text: "#f59e0b" },
-	"bg-indigo-500": { bg: "rgba(99, 102, 241, 0.1)", text: "#6366f1" },
-	"bg-purple-500": { bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7" },
-	"bg-sky-500": { bg: "rgba(14, 165, 233, 0.1)", text: "#0ea5e9" },
-	"bg-violet-500": { bg: "rgba(139, 92, 246, 0.1)", text: "#8b5cf6" },
+	"bg-emerald-500": { bg: "rgba(16, 224, 160, 0.12)", text: "#10e0a0" },
+	"bg-rose-500": { bg: "rgba(255, 59, 92, 0.12)", text: "#ff3b5c" },
+	"bg-amber-500": { bg: "rgba(245, 158, 11, 0.12)", text: "#f59e0b" },
+	"bg-indigo-500": { bg: "rgba(99, 102, 241, 0.12)", text: "#6366f1" },
+	"bg-purple-500": { bg: "rgba(168, 85, 247, 0.12)", text: "#a855f7" },
+	"bg-sky-500": { bg: "rgba(14, 165, 233, 0.12)", text: "#0ea5e9" },
+	"bg-violet-500": { bg: "rgba(139, 92, 246, 0.12)", text: "#8b5cf6" },
+	"bg-blue-500": { bg: "rgba(0, 212, 255, 0.12)", text: "#00d4ff" },
+	"bg-zinc-500": { bg: "rgba(156, 163, 175, 0.1)", text: "#9ca3af" },
 };
 
 export const AdvancedStatCard: React.FC<AdvancedStatCardProps> = ({
@@ -39,32 +41,50 @@ export const AdvancedStatCard: React.FC<AdvancedStatCardProps> = ({
 
 	if (isLoading) {
 		return (
-			<div className="bg-card border border-border p-5 rounded-2xl animate-pulse">
+			<div className="glass relative rounded-2xl p-4 overflow-hidden border border-white/5 animate-pulse">
 				<div className="flex items-center justify-between mb-3">
-					<div className="h-4 w-20 bg-muted rounded" />
-					<div className="h-9 w-9 bg-muted rounded-lg" />
+					<div className="h-3.5 w-16 bg-white/10 rounded" />
+					<div className="h-8 w-8 bg-white/10 rounded-xl" />
 				</div>
-				<div className="h-7 w-24 bg-muted rounded" />
+				<div className="h-6 w-20 bg-white/10 rounded mt-2" />
 			</div>
 		);
 	}
 
 	return (
-		<div className="bg-card border border-border p-5 rounded-2xl transition-all duration-200 hover:shadow-md">
-			<div className="flex items-center justify-between mb-3">
-				<span className="text-muted-foreground text-sm font-medium">
+		<div className="glass relative rounded-2xl p-4 overflow-hidden border border-white/10 hover:border-white/20 transition-all group animate-fade-up">
+			{/* Ambient background glow */}
+			<div
+				className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full blur-2xl opacity-15 group-hover:opacity-30 transition-opacity"
+				style={{ background: colors.text }}
+			/>
+
+			<div className="flex items-center justify-between mb-2">
+				<span className="text-[11px] font-semibold uppercase tracking-wider text-white/40 font-mono truncate mr-2">
 					{label}
 				</span>
-				<div className="p-2 rounded-lg" style={{ backgroundColor: colors.bg }}>
-					<Icon className="w-5 h-5" style={{ color: colors.text }} />
+				<div
+					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-all"
+					style={{
+						borderColor: `${colors.text}33`,
+						backgroundColor: colors.bg,
+					}}
+				>
+					{Icon && <Icon className="w-4 h-4" style={{ color: colors.text }} />}
 				</div>
 			</div>
+
 			<div className="flex flex-col">
-				<span className="text-2xl font-bold" style={{ color: colors.text }}>
+				<span
+					className="text-xl font-bold font-mono tracking-tight tabular-nums truncate"
+					style={{ color: colors.text }}
+				>
 					{value}
 				</span>
 				{subValue && (
-					<span className="text-muted-foreground text-xs mt-1">{subValue}</span>
+					<span className="text-[11px] font-mono text-white/40 mt-1 truncate">
+						{subValue}
+					</span>
 				)}
 			</div>
 		</div>

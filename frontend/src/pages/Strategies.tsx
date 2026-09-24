@@ -1,449 +1,213 @@
 // src/pages/Strategies.tsx
 
 import { formatDistanceToNowStrict } from "date-fns";
-import { AnimatePresence, motion } from "framer-motion";
 import {
-	AlertTriangle,
-	Cog,
-	Eye,
-	FlaskConical,
+	GitBranch,
+	Layers,
 	Loader2,
 	Pencil,
 	Play,
 	Plus,
-	Search,
+	RefreshCw,
 	Square,
+	Star,
 	Trash2,
+	TrendingUp,
+	X,
 } from "lucide-react";
-import { forwardRef, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router-dom";
-
-// UI Components
+import { useNavigate } from "react-router-dom";
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { PageLayout } from "@/components/layout/PageLayout";
-import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
+import { useWebSocket } from "@/context/WebSocketProvider";
+import { useLiveMarks } from "@/hooks/useLiveMarks";
+import { normalizeExchangeKey } from "@/lib/exchanges";
 import {
-	type BacktestFormData,
-	BacktestModal,
-} from "@/components/strategies/BacktestModal";
+	applyLiveMarksToPositions,
+	overlayLiveStrategyPnl,
+} from "@/lib/livePnl";
+import { resolveStrategyTimeframe } from "@/lib/strategyMeta";
+import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
 import {
 	type LaunchFormData,
 	LaunchStrategyModal,
 } from "@/components/strategies/LaunchStrategyModal";
 import { StrategyDetailsPanel } from "@/components/strategies/StrategyDetailsPanel";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardFooter,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+	Badge,
+	Btn,
+	fmt,
+	Panel,
+	Segmented,
+	Stat,
+	toneText,
+} from "@/components/ui/quant-ui";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { useToast } from "@/components/ui/use-toast";
-// API & Types
-import {
 	useDeleteStrategyConfig,
-	useRunBacktest,
+	usePositions,
 	useStartStrategy,
 	useStopStrategy,
 	useStrategies,
 	useStrategyConfigsList,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { useAccountStore } from "@/stores/accountStore";
-import type { StrategyConfig, StrategyData } from "@/types/api";
+import type { PositionData, StrategyConfig, StrategyData } from "@/types/api";
 
-// --- Helper Functions ---
+// Helper to format runtime
 const calculateRuntime = (startTime: string | undefined): string => {
 	if (!startTime) return "—";
 	try {
 		return formatDistanceToNowStrict(new Date(startTime));
 	} catch {
-		return "N/A";
+		return "—";
 	}
 };
 
-const getStatusColor = (status: string | undefined) => {
-	const s = status?.toLowerCase() || "stopped";
-	if (s === "running" || s === "active" || s === "in_position")
-		return "bg-emerald-500 hover:bg-emerald-600 text-white";
-	if (s === "stopped" || s === "paused")
-		return "bg-slate-400 hover:bg-slate-500 text-white";
-	if (s === "error" || s === "failed")
-		return "bg-red-500 hover:bg-red-600 text-white";
-	return "bg-slate-400 hover:bg-slate-500 text-white";
-};
-
-// --- Export CombinedStrategy for reuse ---
 export type CombinedStrategy = StrategyConfig &
 	Partial<Omit<StrategyData, "id" | "name">> & {
 		instances?: StrategyData[];
 	};
-type FilterType = "all" | "running" | "stopped" | "paper" | "live";
 
-// --- Strategy Card Component ---
-const StrategyCard = forwardRef<
-	HTMLDivElement,
-	{
-		strategy: CombinedStrategy;
-		onView: () => void;
-		onStart: () => void;
-		onStop: (instance: StrategyData) => void;
-		onDelete: () => void;
-		onBacktest: () => void;
-		isPending: boolean;
-		pendingInstanceId: string | null;
-	}
->(
-	(
-		{
-			strategy,
-			onView,
-			onStart,
-			onStop,
-			onDelete,
-			onBacktest,
-			isPending,
-			pendingInstanceId,
-		},
-		ref,
-	) => {
-		const { t } = useTranslation(["strategies", "common"]);
-		const instances = strategy.instances ?? [];
-		const isRunning = instances.length > 0;
-		const primary = instances[0];
+type FilterType = "all" | "running" | "stopped" | "paper" | "live" | "favorites";
 
-		return (
-			<TooltipProvider>
-				<motion.div
-					ref={ref}
-					layout
-					initial={{ opacity: 0, scale: 0.9 }}
-					animate={{ opacity: 1, scale: 1 }}
-					exit={{ opacity: 0, scale: 0.9 }}
-					transition={{ duration: 0.2 }}
-				>
-					<Card className="h-full flex flex-col hover:shadow-lg transition-all border-2 hover:border-primary/50">
-						<CardHeader className="pb-3">
-							<div className="flex items-start justify-between gap-2">
-								<div className="flex-1 min-w-0">
-									<CardTitle className="text-lg truncate">
-										{strategy.name}
-									</CardTitle>
-									<CardDescription className="text-xs mt-1 font-mono truncate">
-										{strategy.id}
-									</CardDescription>
-								</div>
-								<div className="flex flex-col gap-1 items-end flex-shrink-0">
-									<Badge className={getStatusColor(strategy.status)}>
-										{isRunning ? "RUNNING" : strategy.status?.toUpperCase() || "STOPPED"}
-									</Badge>
-									{instances.length > 1 && (
-										<Badge variant="outline" className="text-xs">
-											{t("copiesCount", "{{count}} copies", {
-												count: instances.length,
-											})}
-										</Badge>
-									)}
-									{primary && (
-										<Badge
-											variant={primary.mode === "live" ? "destructive" : "secondary"}
-											className="text-xs"
-										>
-											{primary.mode?.toUpperCase() || "PAPER"}
-										</Badge>
-									)}
-								</div>
-							</div>
-							{strategy.description && (
-								<p className="text-xs text-muted-foreground mt-2 line-clamp-2">
-									{strategy.description}
-								</p>
-							)}
-						</CardHeader>
+const FAVORITES_STORAGE_KEY = "depthsight_favorite_strategies";
 
-						<CardContent className="flex-1 space-y-3 pb-3">
-							{/* Strategy Type */}
-							<div className="flex items-center justify-between text-sm">
-								<span className="text-muted-foreground">
-									{t("colStrategy")}:
-								</span>
-								<span className="font-medium">
-									{strategy.strategy_name ||
-										strategy.config_data?.strategy_name ||
-										"N/A"}
-								</span>
-							</div>
-
-							{/* Running Instances */}
-							{isRunning ? (
-								instances.map((inst) => (
-									<div
-										key={inst.id}
-										className="rounded-md border border-accent bg-accent/30 p-2 space-y-1"
-									>
-										<div className="flex items-center justify-between text-sm">
-											<span className="text-muted-foreground text-xs">
-												{t("colSymbols")}:
-											</span>
-											<span className="font-medium text-xs truncate max-w-[140px]">
-												{inst.symbol_selection_mode === "STATIC"
-													? inst.symbols?.join(", ") || "N/A"
-													: "Dynamic"}
-											</span>
-										</div>
-
-										{inst.pnl != null && (
-											<div className="flex items-center justify-between text-sm">
-												<span className="text-muted-foreground font-medium text-xs">
-													{t("colTotalPnl")}:
-												</span>
-												<span
-													className={`font-bold text-xs ${inst.pnl >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}
-												>
-													{inst.pnl >= 0 ? "+" : ""}
-													{inst.pnl.toFixed(2)} USDT
-												</span>
-											</div>
-										)}
-
-										{inst.open_positions != null && (
-											<div className="flex items-center justify-between text-sm">
-												<span className="text-muted-foreground text-xs">
-													{t("openPositions", "Open Positions")}:
-												</span>
-												<Badge variant="outline" className="font-medium text-xs">
-													{inst.open_positions}
-												</Badge>
-											</div>
-										)}
-
-										<div className="flex items-center justify-between pt-1">
-											<span className="text-xs text-muted-foreground">
-												{calculateRuntime(inst.started_at)}
-											</span>
-											<Tooltip>
-												<TooltipTrigger asChild>
-													<Button
-														size="sm"
-														variant="outline"
-														onClick={() => onStop(inst)}
-														disabled={isPending && pendingInstanceId === inst.id}
-														className="h-7 px-2 text-xs bg-amber-500/80 hover:bg-amber-600 text-white"
-													>
-														{isPending && pendingInstanceId === inst.id ? (
-															<Loader2 className="h-3 w-3 animate-spin" />
-														) : (
-															<Square className="h-3 w-3" />
-														)}
-														<span className="ml-1">
-															{t("stopTooltip", "Stop")}
-														</span>
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>
-													<p>{t("stopTooltip", "Stop")}</p>
-												</TooltipContent>
-											</Tooltip>
-										</div>
-									</div>
-								))
-							) : (
-								<div className="flex items-center justify-between text-sm">
-									<span className="text-muted-foreground">
-										{t("colSymbols")}:
-									</span>
-									<span className="font-medium text-xs truncate max-w-[150px]">
-										{strategy.symbol_selection_mode === "STATIC"
-											? strategy.symbols?.join(", ") || "N/A"
-											: "Dynamic"}
-									</span>
-								</div>
-							)}
-						</CardContent>
-
-						<CardFooter className="pt-3 border-t flex gap-2 justify-end">
-							{/* View Details */}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										size="icon"
-										onClick={onView}
-										className="bg-blue-500/80 hover:bg-blue-600 text-white"
-									>
-										<Eye className="h-4 w-4" />
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>
-									<p>{t("viewButton", "Details")}</p>
-								</TooltipContent>
-							</Tooltip>
-
-							{/* Edit */}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										size="icon"
-										asChild
-										className="bg-emerald-500/80 hover:bg-emerald-600 text-white"
-									>
-										<Link to={`/editor/${strategy.id}`}>
-											<Pencil className="h-4 w-4" />
-										</Link>
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>
-									<p>{t("editButton", "Edit")}</p>
-								</TooltipContent>
-							</Tooltip>
-
-							{/* Backtest */}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										size="icon"
-										onClick={onBacktest}
-										disabled={isPending}
-										className="bg-purple-500/80 hover:bg-purple-600 text-white"
-									>
-										<FlaskConical className="h-4 w-4" />
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>
-									<p>{t("backtestTooltip", "Backtest")}</p>
-								</TooltipContent>
-							</Tooltip>
-
-							{/* Start/Add Copy Button */}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										size="icon"
-										onClick={onStart}
-										disabled={isPending}
-										className="bg-emerald-500/80 hover:bg-emerald-600 text-white"
-									>
-										{isPending ? (
-											<Loader2 className="h-4 w-4 animate-spin" />
-										) : (
-											<Play className="h-4 w-4" />
-										)}
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>
-									<p>
-										{isRunning
-											? t("addCopyTooltip", "Start copy on another coin")
-											: t("startTooltip", "Start")}
-									</p>								</TooltipContent>
-							</Tooltip>
-
-							{/* Delete Button - Only when stopped */}
-							{!isRunning && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											size="icon"
-											onClick={onDelete}
-											disabled={isPending}
-											className="bg-red-500/80 hover:bg-red-600 text-white"
-										>
-											{isPending ? (
-												<Loader2 className="h-4 w-4 animate-spin" />
-											) : (
-												<Trash2 className="h-4 w-4" />
-											)}
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>
-										<p>{t("deleteTooltip", "Delete")}</p>
-									</TooltipContent>
-								</Tooltip>
-							)}
-						</CardFooter>
-					</Card>
-				</motion.div>
-			</TooltipProvider>
-		);
-	},
-);
-
-// --- Empty State Component ---
-const EmptyState = () => {
-	const { t } = useTranslation("strategies");
-	return (
-		<div className="flex flex-col items-center justify-center py-16 text-center">
-			<div className="rounded-full bg-primary/10 p-6 mb-4">
-				<Cog className="h-12 w-12 text-primary" />
-			</div>
-			<h3 className="text-xl font-semibold mb-2">
-				{t("emptyState.title", "No Strategies Yet")}
-			</h3>
-			<p className="text-muted-foreground mb-6 max-w-md">
-				{t(
-					"emptyState.description",
-					"Create your first trading strategy to start automating your trading.",
-				)}
-			</p>
-			<Button asChild size="lg" className="bg-primary hover:bg-primary/90">
-				<Link to="/editor">
-					<Plus className="h-4 w-4 mr-2" />
-					{t("createButton", "Create")}
-				</Link>
-			</Button>
-		</div>
-	);
-};
-
-// --- Main Component ---
 export default function Strategies() {
 	const { t } = useTranslation(["strategies", "common"]);
 	const navigate = useNavigate();
-	const { toast } = useToast();
-
-	// Global account filter
 	const { selectedApiKeyId } = useAccountStore();
+	const { readyState } = useWebSocket();
+	const wsLive = readyState === 1;
+	const strategiesPoll = wsLive ? false : 5000;
 
-	const { data: liveRunningStrategies = [], isLoading: isLoadingLive } =
-		useStrategies({
-			mode: "live",
-			apiKeyId: selectedApiKeyId,
-		});
-	const { data: paperRunningStrategies = [], isLoading: isLoadingPaper } =
-		useStrategies({ mode: "paper" });
+	// Fetch live and paper running strategies (push-driven; poll on WS outage)
+	const {
+		data: liveRunning = [],
+		isLoading: isLoadingLive,
+		refetch: refetchLive,
+	} = useStrategies({
+		mode: "live",
+		apiKeyId: selectedApiKeyId,
+		refetchInterval: strategiesPoll,
+	});
+
+	const {
+		data: paperRunning = [],
+		isLoading: isLoadingPaper,
+		refetch: refetchPaper,
+	} = useStrategies({ mode: "paper", refetchInterval: strategiesPoll });
+
 	const {
 		data: savedConfigs = [],
 		isLoading: isLoadingConfigs,
-		isError: isErrorConfigs,
-		error: errorConfigs,
+		refetch: refetchConfigs,
 	} = useStrategyConfigsList();
 
-	const runningStrategies = useMemo(() => {
-		return [...liveRunningStrategies, ...paperRunningStrategies];
-	}, [liveRunningStrategies, paperRunningStrategies]);
+	const isInitialLoading =
+		isLoadingLive || isLoadingPaper || isLoadingConfigs;
 
-	const isLoadingRunning = isLoadingLive || isLoadingPaper;
+	const runningStrategies = useMemo(() => {
+		// Dedupe by instance id: live/paper queries + WS pushes can deliver
+		// the same instance twice, which doubled Total P&L.
+		const all = [...liveRunning, ...paperRunning];
+		const seen = new Set<string>();
+		return all.filter((inst) => {
+			const key = String(
+				inst.id ?? `${inst.config_id}-${inst.mode}-${inst.api_key_id}`,
+			);
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+	}, [liveRunning, paperRunning]);
+
+	// Live overlay for strategy PnL: snapshot positions give entry/qty,
+	// exchange ticks move the unrealized part (indicative, like Positions tab).
+	// Push snapshots keep these queries fresh; poll only on socket outage.
+	const { data: liveModePositions } = usePositions({
+		mode: "live",
+		refetchInterval: strategiesPoll,
+	});
+	const { data: paperModePositions } = usePositions({
+		mode: "paper",
+		refetchInterval: strategiesPoll,
+	});
+	const snapshotPositions = useMemo(
+		() => [...(liveModePositions ?? []), ...(paperModePositions ?? [])],
+		[liveModePositions, paperModePositions],
+	);
+	const liveStrategySymbols = useMemo(
+		() =>
+			snapshotPositions.map((p: PositionData) => ({
+				symbol: String(p.symbol),
+				exchange: p.exchange ?? null,
+			})),
+		[snapshotPositions],
+	);
+	const { marks: strategyMarks } = useLiveMarks(liveStrategySymbols);
+	const liveSnapshotPositions = useMemo(
+		() => applyLiveMarksToPositions(snapshotPositions, strategyMarks),
+		[snapshotPositions, strategyMarks],
+	);
+	const liveRunningStrategies = useMemo(
+		() =>
+			overlayLiveStrategyPnl(
+				runningStrategies,
+				snapshotPositions,
+				liveSnapshotPositions,
+			) ?? runningStrategies,
+		[runningStrategies, snapshotPositions, liveSnapshotPositions],
+	);
+
+	// API Mutations
 	const { mutate: stopStrategy, isPending: isStopping } = useStopStrategy();
 	const { mutate: startStrategy, isPending: isStarting } = useStartStrategy();
 	const { mutate: deleteStrategyConfig, isPending: isDeleting } =
 		useDeleteStrategyConfig();
 
+	// Local State
+	const [searchQuery, setSearchQuery] = useState("");
+	const [filterType, setFilterType] = useState<FilterType>("all");
+
+	// Favorites State
+	const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
+		try {
+			const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+			return raw ? JSON.parse(raw) : [];
+		} catch {
+			return [];
+		}
+	});
+
+	const toggleFavorite = (id: string) => {
+		setFavoriteIds((prev) => {
+			const next = prev.includes(id)
+				? prev.filter((item) => item !== id)
+				: [...prev, id];
+			try {
+				localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+			} catch (e) {
+				console.error("Failed to save favorites to localStorage", e);
+			}
+			return next;
+		});
+	};
 	const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(
 		null,
 	);
 	const [pendingActionId, setPendingActionId] = useState<string | null>(null);
-	const [searchQuery, setSearchQuery] = useState("");
-	const [filterType, setFilterType] = useState<FilterType>("all");
+
+	// Launch Strategy Modal State
+	const [launchConfig, setLaunchConfig] = useState<{
+		open: boolean;
+		configId: string | null;
+		strategy: CombinedStrategy | null;
+	}>({ open: false, configId: null, strategy: null });
+
+	// Confirmation Modal State
 	const [confirmAction, setConfirmAction] = useState<{
 		open: boolean;
 		actionType: "stop" | "delete" | null;
@@ -459,29 +223,23 @@ export default function Strategies() {
 		title: "",
 		description: "",
 	});
-	const [launchConfig, setLaunchConfig] = useState<{
-		open: boolean;
-		configId: string | null;
-		strategy: CombinedStrategy | null;
-	}>({ open: false, configId: null, strategy: null });
-	const [backtestConfig, setBacktestConfig] = useState<{
-		open: boolean;
-		configId: string | null;
-		strategy: CombinedStrategy | null;
-	}>({ open: false, configId: null, strategy: null });
 
-	const { mutate: runBacktest, isPending: isBacktesting } = useRunBacktest();
-
+	// Combine saved configs with running instances
 	const combinedStrategies = useMemo((): CombinedStrategy[] => {
 		if (!savedConfigs) return [];
-		// Group running instances by source config id (fall back to legacy id match).
+
 		const instancesByConfig = new Map<string, StrategyData[]>();
-		for (const inst of runningStrategies) {
+		for (const inst of liveRunningStrategies) {
 			const key = inst.config_id || inst.id;
 			const arr = instancesByConfig.get(key) ?? [];
-			arr.push(inst);
+			// Guard against the same instance landing here twice
+			// (live+paper overlap / WS push duplicates).
+			if (!arr.some((existing) => existing.id === inst.id)) {
+				arr.push(inst);
+			}
 			instancesByConfig.set(key, arr);
 		}
+
 		return savedConfigs.map((config) => {
 			const instances = instancesByConfig.get(config.id) ?? [];
 			const primary = instances[0];
@@ -494,174 +252,128 @@ export default function Strategies() {
 				instances,
 			};
 		});
-	}, [savedConfigs, runningStrategies]);
+	}, [savedConfigs, liveRunningStrategies]);
 
-	// Filtering and searching
+	// Filtered list
 	const filteredStrategies = useMemo(() => {
 		let result = combinedStrategies;
 
-		// Apply search
-		if (searchQuery) {
-			const query = searchQuery.toLowerCase();
+		if (searchQuery.trim()) {
+			const q = searchQuery.toLowerCase().trim();
 			result = result.filter(
 				(s) =>
-					s.name.toLowerCase().includes(query) ||
-					s.id.toLowerCase().includes(query) ||
-					s.config_data.strategy_name?.toLowerCase().includes(query),
+					s.name.toLowerCase().includes(q) ||
+					s.id.toLowerCase().includes(q) ||
+					s.config_data?.strategy_name?.toLowerCase().includes(q) ||
+					(s.symbols || []).some((sym) => sym.toLowerCase().includes(q)) ||
+					(Array.isArray(s.config_data?.symbols) &&
+						s.config_data.symbols.some((sym: string) =>
+							sym.toLowerCase().includes(q),
+						)),
 			);
 		}
 
-		// Apply filter
 		if (filterType !== "all") {
 			result = result.filter((s) => {
-				if (filterType === "running")
-					return s.status?.toLowerCase() !== "stopped";
-				if (filterType === "stopped")
-					return s.status?.toLowerCase() === "stopped";
-				if (filterType === "paper") return s.mode === "paper";
-				if (filterType === "live") return s.mode === "live";
+				const isRunning = (s.instances ?? []).length > 0;
+				if (filterType === "running") return isRunning;
+				if (filterType === "stopped") return !isRunning;
+				if (filterType === "paper")
+					return s.mode === "paper" || s.instances?.some((i) => i.mode === "paper");
+				if (filterType === "live")
+					return s.mode === "live" || s.instances?.some((i) => i.mode === "live");
+				if (filterType === "favorites")
+					return favoriteIds.includes(s.id);
 				return true;
 			});
 		}
 
-		return result;
-	}, [combinedStrategies, searchQuery, filterType]);
+		// Sort priority: running first, then favorites, then alphabetically by name.
+		return [...result].sort((a, b) => {
+			const aRunning = (a.instances ?? []).length > 0 ? 0 : 1;
+			const bRunning = (b.instances ?? []).length > 0 ? 0 : 1;
+			if (aRunning !== bRunning) return aRunning - bRunning;
+			const aFav = favoriteIds.includes(a.id) ? 0 : 1;
+			const bFav = favoriteIds.includes(b.id) ? 0 : 1;
+			if (aFav !== bFav) return aFav - bFav;
+			return a.name.localeCompare(b.name, undefined, {
+				sensitivity: "base",
+			});
+		});
+	}, [combinedStrategies, searchQuery, filterType, favoriteIds]);
 
-	const selectedStrategy = combinedStrategies.find(
-		(s) => s.id === selectedStrategyId,
-	);
+	// Summary statistics
+	const totalRunningCount = useMemo(() => {
+		return combinedStrategies.filter(
+			(s) => (s.instances ?? []).length > 0,
+		).length;
+	}, [combinedStrategies]);
 
-	const strategyForPanel = useMemo(() => {
-		if (!selectedStrategy) return null;
-		return {
-			id: selectedStrategy.id,
-			name: selectedStrategy.name,
-			strategy_name:
-				selectedStrategy.config_data.strategy_name || "Unknown Type",
-			symbol:
-				selectedStrategy.config_data.symbol ||
-				(selectedStrategy.symbols || [])[0] ||
-				"N/A",
-			market_type:
-				selectedStrategy.market_type ||
-				selectedStrategy.config_data.marketType ||
-				"FUTURES",
-			status: selectedStrategy.status || "STOPPED",
-			pnl: selectedStrategy.pnl ?? 0,
-			open_positions: selectedStrategy.open_positions ?? 0,
-			started_at: selectedStrategy.started_at || "",
-			params: selectedStrategy.config_data as unknown as Record<
-				string,
-				unknown
-			>, // Always use the full config_data
-			mode: selectedStrategy.mode || "paper",
-			config_data: selectedStrategy.config_data,
-			symbols: selectedStrategy.symbols ?? undefined,
-		};
-	}, [selectedStrategy]);
+	const totalRealizedPnl = useMemo(() => {
+		// Sum unique instances only so Total P&L matches the sum of cards.
+		const seen = new Set<string>();
+		return liveRunningStrategies.reduce((sum, inst) => {
+			const key = String(
+				inst.id ?? `${inst.config_id}-${inst.mode}-${inst.api_key_id}`,
+			);
+			if (seen.has(key)) return sum;
+			seen.add(key);
+			return sum + (inst.pnl || 0);
+		}, 0);
+	}, [liveRunningStrategies]);
 
+	const totalOpenPositions = useMemo(() => {
+		const seen = new Set<string>();
+		return runningStrategies.reduce((sum, inst) => {
+			const key = String(
+				inst.id ?? `${inst.config_id}-${inst.mode}-${inst.api_key_id}`,
+			);
+			if (seen.has(key)) return sum;
+			seen.add(key);
+			return sum + (inst.open_positions || 0);
+		}, 0);
+	}, [runningStrategies]);
+
+	// Refresh all data
+	const handleRefresh = () => {
+		refetchLive();
+		refetchPaper();
+		refetchConfigs();
+	};
+
+	// Start strategy -> open LaunchStrategyModal
 	const handleStart = (strategy: CombinedStrategy) => {
-		setLaunchConfig({ open: true, configId: strategy.id, strategy });
+		setLaunchConfig({
+			open: true,
+			configId: strategy.id,
+			strategy,
+		});
 	};
 
-	const handleBacktest = (strategy: CombinedStrategy) => {
-		setBacktestConfig({ open: true, configId: strategy.id, strategy });
-	};
-
-	const handleConfirmBacktest = (formData: BacktestFormData) => {
-		if (!backtestConfig.strategy) return;
-
-		const configPayload = backtestConfig.strategy.config_data;
-
-		runBacktest(
-			{
-				strategy_name: configPayload.strategy_name || "VisualBuilderStrategy",
-				symbol: formData.symbol,
-				market_type: (configPayload.marketType?.toLowerCase() || "futures") as
-					| "futures"
-					| "spot",
-				start_date: formData.startDate,
-				end_date: formData.endDate,
-				min_foundation_weight_threshold:
-					configPayload.min_foundation_weight_threshold,
-				foundation_weights: configPayload.foundation_weights,
-				params: { config: configPayload },
-			},
-			{
-				onSuccess: (data) => {
-					toast({
-						title: t("common:successTitle"),
-						description: t("common:taskSubmittedWithId", {
-							taskId: data.task_id,
-						}),
-					});
-					setBacktestConfig({ open: false, configId: null, strategy: null });
-					navigate("/research");
-				},
-			},
-		);
-	};
-
+	// Confirm Start in Modal
 	const handleConfirmStart = (formData: LaunchFormData) => {
 		if (!launchConfig.configId) return;
 
 		setPendingActionId(launchConfig.configId);
 
-		// Prepare symbols array
 		let symbolsArray: string[] | undefined;
-		if (formData.symbolSelectionMode === "STATIC" && formData.symbols) {
+		if (formData.symbols) {
 			symbolsArray = formData.symbols
 				.split(",")
 				.map((s) => s.trim())
 				.filter(Boolean);
 		}
 
-		// Construct dynamic configuration overrides
-		const configDataOverrides: Record<string, unknown> = {};
-		if (formData.symbolSelectionMode === "DYNAMIC") {
-			configDataOverrides.max_concurrent_symbols =
-				formData.maxConcurrentSymbols;
-
-			if (formData.dynamicMode === "DYNAMIC_NATR") {
-				configDataOverrides.natr_settings = { min_natr: formData.minNatr };
-				// Clear oracle settings if switching modes
-				configDataOverrides.oracle_settings = null;
-				// Reset oracle settings at the top level
-				configDataOverrides.oracle_regime = null;
-				configDataOverrides.oracle_confidence = 0;
-			} else if (formData.dynamicMode === "DYNAMIC_ORACLE") {
-				const regime = parseInt(formData.oracleRegime || "1", 10);
-				const confidence = formData.oracleConfidence || 95;
-				configDataOverrides.oracle_settings = {
-					regime: regime,
-					confidence: confidence,
-				};
-				// Synchronize with the top level for compatibility with backtests
-				configDataOverrides.oracle_regime = regime;
-				configDataOverrides.oracle_confidence = confidence;
-				// Clear natr settings if switching modes
-				configDataOverrides.natr_settings = null;
-			}
-		} else {
-			// STATIC mode - reset oracle settings
-			configDataOverrides.oracle_regime = null;
-			configDataOverrides.oracle_confidence = 0;
-		}
-
-		// ML & Regime settings - always apply
-		configDataOverrides.use_ml_confirmation =
-			formData.useMlConfirmation ?? false;
-		configDataOverrides.breakeven_on_regime_change =
-			formData.breakevenOnRegimeChange ?? false;
-
 		startStrategy(
 			{
 				configId: launchConfig.configId,
 				mode: formData.mode,
-				symbol_selection_mode: formData.symbolSelectionMode,
+				symbol_selection_mode: formData.symbolSelectionMode || "STATIC",
 				symbols: symbolsArray,
-				// Pass overrides as part of params (which merges into config_data on backend)
-				params: configDataOverrides,
+				params: {
+					use_ml_confirmation: formData.useMlConfirmation ?? false,
+					breakeven_on_regime_change: formData.breakevenOnRegimeChange ?? false,
+				},
 				apiKeyId:
 					typeof formData.apiKeyId === "number"
 						? formData.apiKeyId
@@ -673,38 +385,71 @@ export default function Strategies() {
 				onSettled: () => {
 					setPendingActionId(null);
 					setLaunchConfig({ open: false, configId: null, strategy: null });
+					handleRefresh();
 				},
 			},
 		);
 	};
 
-	const openConfirmationModal = (
-		actionType: "stop" | "delete",
+	// Stop click -> confirm dialog
+	const handleStopClick = (
 		strategy: CombinedStrategy,
 		instance?: StrategyData,
 	) => {
-		const isRunning = (strategy.instances ?? []).length > 0;
-		if (actionType === "delete" && isRunning) return;
+		const inst = instance || strategy.instances?.[0];
+		if (!inst) return;
+
 		setConfirmAction({
 			open: true,
-			actionType,
+			actionType: "stop",
 			configId: strategy.id,
-			instanceId: instance?.id ?? null,
-			title: t(`confirmation.${actionType}Title`, { name: strategy.name }),
-			description: t(`confirmation.${actionType}Description`),
+			instanceId: inst.id,
+			title: t("confirmation.stopTitle", {
+				defaultValue: `Stop "${strategy.name}"?`,
+				name: strategy.name,
+			}),
+			description: t("confirmation.stopDescription", {
+				defaultValue:
+					"Are you sure you want to stop this running bot instance? Active orders may be canceled.",
+			}),
 		});
 	};
 
+	// Delete click -> confirm dialog
+	const handleDeleteClick = (strategy: CombinedStrategy) => {
+		const isRunning = (strategy.instances ?? []).length > 0;
+		if (isRunning) return;
+
+		setConfirmAction({
+			open: true,
+			actionType: "delete",
+			configId: strategy.id,
+			instanceId: null,
+			title: t("confirmation.deleteTitle", {
+				defaultValue: `Delete "${strategy.name}"?`,
+				name: strategy.name,
+			}),
+			description: t("confirmation.deleteDescription", {
+				defaultValue:
+					"Are you sure you want to permanently delete this strategy configuration? This action cannot be undone.",
+			}),
+		});
+	};
+
+	// Execute confirmed action (Stop or Delete)
 	const handleConfirmAction = () => {
 		if (!confirmAction.configId || !confirmAction.actionType) return;
+
 		setPendingActionId(
 			confirmAction.actionType === "stop"
 				? confirmAction.instanceId || confirmAction.configId
 				: confirmAction.configId,
 		);
+
 		const onSettled = () => {
-			if (selectedStrategyId === confirmAction.configId)
+			if (selectedStrategyId === confirmAction.configId) {
 				setSelectedStrategyId(null);
+			}
 			setConfirmAction({
 				open: false,
 				actionType: null,
@@ -714,158 +459,622 @@ export default function Strategies() {
 				description: "",
 			});
 			setPendingActionId(null);
+			handleRefresh();
 		};
-		if (confirmAction.actionType === "stop")
+
+		if (confirmAction.actionType === "stop") {
 			stopStrategy(confirmAction.instanceId || confirmAction.configId, {
 				onSettled,
 			});
-		else if (confirmAction.actionType === "delete")
-			deleteStrategyConfig(confirmAction.configId, { onSettled });
+		} else if (confirmAction.actionType === "delete") {
+			deleteStrategyConfig(confirmAction.configId, {
+				onSettled,
+			});
+		}
 	};
 
-	const headerActions = (
-		<Button asChild>
-			<Link to="/editor">
-				<Plus className="w-4 h-4 mr-2" />
-				{t("createButton")}
-			</Link>
-		</Button>
+	// Strategy detail drawer selection
+	const selectedStrategy = combinedStrategies.find(
+		(s) => s.id === selectedStrategyId,
 	);
 
-	const isLoading = isLoadingConfigs || isLoadingRunning;
-	const isActionPending = isStarting || isStopping || isDeleting;
+	const strategyForPanel = useMemo(() => {
+		if (!selectedStrategy) return null;
+		return {
+			id: selectedStrategy.id,
+			name: selectedStrategy.name,
+			strategy_name:
+				selectedStrategy.config_data?.strategy_name || "Unknown Type",
+			symbol:
+				selectedStrategy.config_data?.symbol ||
+				(selectedStrategy.symbols || [])[0] ||
+				"N/A",
+			market_type:
+				selectedStrategy.market_type ||
+				selectedStrategy.config_data?.marketType ||
+				"FUTURES",
+			status: selectedStrategy.status || "STOPPED",
+			pnl: selectedStrategy.pnl ?? 0,
+			open_positions: selectedStrategy.open_positions ?? 0,
+			started_at: selectedStrategy.started_at || "",
+			params: (selectedStrategy.config_data ||
+			{}) as unknown as Record<string, unknown>,
+			mode: selectedStrategy.mode || "paper",
+			config_data: selectedStrategy.config_data,
+			symbols: selectedStrategy.symbols ?? undefined,
+		};
+	}, [selectedStrategy]);
 
 	return (
-		<PageLayout title={t("pageTitle")} icon={Cog} headerActions={headerActions}>
-			{/* Search and Filters */}
-			<div className="mb-6 flex flex-col sm:flex-row gap-4">
-				<div className="relative flex-1">
-					<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-					<Input
-						placeholder={t("searchPlaceholder", "Search strategies...")}
-						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-						className="pl-10"
+		<PageLayout title={t("pageTitle", "Strategies")} hideHeader={true}>
+			<div className="space-y-4">
+				{/* 1. Top Summary Stats Bar */}
+				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+					<Stat
+						label={t("statRunning", "Running Bots")}
+						value={<span className="text-profit">{totalRunningCount}</span>}
+						accent="#10e0a0"
+						icon={<Play size={14} />}
+					/>
+					<Stat
+						label={t("statRealizedPnl", "Total P&L")}
+						value={
+							<span
+								className={
+									totalRealizedPnl >= 0 ? "text-profit" : "text-rose-400"
+								}
+							>
+								{fmt.usd(totalRealizedPnl, 2)}
+							</span>
+						}
+						accent={totalRealizedPnl >= 0 ? "#00d4ff" : "#ff3b5c"}
+						icon={<TrendingUp size={14} />}
+					/>
+					<Stat
+						label={t("openPositions", "Active Positions")}
+						value={totalOpenPositions}
+						accent="#0066ff"
+						icon={<Layers size={14} />}
+					/>
+					<Stat
+						label={t("statSlots", "Saved Strategies")}
+						value={
+							<>
+								{combinedStrategies.length}
+								<span className="text-base text-white/30">
+									{" "}
+									/ {Math.max(10, combinedStrategies.length)}
+								</span>
+							</>
+						}
+						accent="#ffb547"
 					/>
 				</div>
-				<div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-					{(["all", "running", "stopped", "paper", "live"] as FilterType[]).map(
-						(filter) => (
-							<Button
-								key={filter}
-								variant={filterType === filter ? "default" : "outline"}
-								size="sm"
-								onClick={() => setFilterType(filter)}
-								className="whitespace-nowrap"
+
+				{/* 2. Filter & Action Toolbar */}
+				<div className="flex flex-wrap items-center gap-2">
+					<Segmented
+						size="sm"
+						value={filterType}
+						onChange={(v) => setFilterType(v as FilterType)}
+						options={[
+							{ value: "all", label: t("filters.all", "All") },
+							{
+								value: "running",
+								label: (
+									<span className="text-emerald-400">
+										{t("filters.running", "Running")}
+									</span>
+								),
+							},
+							{
+								value: "stopped",
+								label: (
+									<span className="text-white/50">
+										{t("filters.stopped", "Stopped")}
+									</span>
+								),
+							},
+							{
+								value: "paper",
+								label: (
+									<span className="text-cyan">
+										{t("filters.paper", "Paper")}
+									</span>
+								),
+							},
+							{
+								value: "live",
+								label: (
+									<span className="text-rose-400">
+										{t("filters.live", "Live")}
+									</span>
+								),
+							},
+							{
+								value: "favorites",
+								label: (
+									<span className="flex items-center gap-1.5 text-amber-400 font-medium">
+										<Star
+											className={cn(
+												"w-3 h-3 transition-all",
+												favoriteIds.length > 0
+													? "fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.6)]"
+													: "text-amber-400/70",
+											)}
+										/>
+										<span>{t("filters.favorites", "Favorites")}</span>
+										{favoriteIds.length > 0 && (
+											<span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/15 text-amber-400 border border-amber-400/25 leading-none">
+												{favoriteIds.length}
+											</span>
+										)}
+									</span>
+								),
+							},
+						]}
+					/>
+
+					{/* Search Box */}
+					<div className="relative">
+						<input
+							type="text"
+							placeholder={t("searchPlaceholder", "Search strategies, symbols...")}
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							className="h-7.5 w-48 sm:w-60 rounded-lg border border-white/10 bg-white/[0.03] pl-2.5 pr-7 text-[11px] text-white placeholder-white/30 outline-none transition-colors focus:border-cyan/40"
+						/>
+						{searchQuery && (
+							<button
+								type="button"
+								onClick={() => setSearchQuery("")}
+								className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
 							>
-								{t(
-									`filters.${filter}`,
-									filter.charAt(0).toUpperCase() + filter.slice(1),
-								)}
-							</Button>
-						),
-					)}
+								<X size={11} />
+							</button>
+						)}
+					</div>
+
+					{/* Refresh Button */}
+					<Btn
+						variant="ghost"
+						size="sm"
+						icon={
+							<RefreshCw
+								size={11}
+								className={isInitialLoading ? "animate-spin" : ""}
+							/>
+						}
+						onClick={handleRefresh}
+					>
+						{t("common:refresh", "Refresh")}
+					</Btn>
+					<span
+						className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
+							wsLive
+								? "border-emerald-400/30 text-emerald-300"
+								: "border-amber-400/30 text-amber-300"
+						}`}
+						title={
+							wsLive
+								? "Live push snapshots from engine"
+								: "Socket down — polling every 5s"
+						}
+					>
+						{wsLive ? "live push" : "polling 5s"}
+					</span>
+
+					<div className="flex-1" />
+
+					{/* Deploy / Create Strategy Button */}
+					<Btn
+						variant="primary"
+						size="sm"
+						icon={<Plus size={13} />}
+						onClick={() => navigate("/editor")}
+					>
+						{t("createButton", "Deploy Strategy")}
+					</Btn>
 				</div>
+
+				{/* 3. Strategies Cards Grid */}
+				{isInitialLoading ? (
+					<div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+						{[1, 2, 3, 4, 5, 6].map((i) => (
+							<div
+								key={i}
+								className="glass rounded-2xl p-4 space-y-3 animate-pulse border-white/5"
+							>
+								<div className="flex items-center gap-3">
+									<Skeleton className="h-10 w-10 rounded-xl bg-white/5" />
+									<div className="space-y-1 flex-1">
+										<Skeleton className="h-4 w-32 bg-white/5" />
+										<Skeleton className="h-3 w-20 bg-white/5" />
+									</div>
+								</div>
+								<Skeleton className="h-10 w-full bg-white/5 rounded-lg" />
+								<Skeleton className="h-8 w-full bg-white/5 rounded-lg" />
+							</div>
+						))}
+					</div>
+				) : filteredStrategies.length === 0 ? (
+					/* Empty State */
+					<Panel noPad className="p-12 text-center">
+						<div
+							className={cn(
+								"mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border mb-3",
+								filterType === "favorites"
+									? "border-amber-400/30 bg-amber-400/10 text-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.2)]"
+									: "border-cyan/30 bg-cyan/10 text-cyan",
+							)}
+						>
+							{filterType === "favorites" ? (
+								<Star size={24} className="fill-amber-400 text-amber-400" />
+							) : (
+								<GitBranch size={24} />
+							)}
+						</div>
+						<h3 className="text-sm font-semibold text-white">
+							{filterType === "favorites"
+								? t("noFavoritesTitle", "No favorite strategies yet")
+								: searchQuery || filterType !== "all"
+									? t("noResults", "No strategies match your filter.")
+									: t("emptyState.title", "No Strategies Yet")}
+						</h3>
+						<p className="mt-1 text-xs text-white/40 max-w-sm mx-auto">
+							{filterType === "favorites"
+								? t(
+										"noFavoritesDesc",
+										"Click the star icon in the upper right corner of any strategy card to add it to your favorites.",
+									)
+								: searchQuery || filterType !== "all"
+									? t(
+											"tryChangingFilters",
+											"Try resetting your search query or switching the category filter.",
+										)
+									: t(
+											"emptyState.description",
+											"Create your first trading strategy to automate your executions.",
+										)}
+						</p>
+						<div className="mt-4">
+							<Btn
+								variant="primary"
+								size="sm"
+								icon={<Plus size={13} />}
+								onClick={() => navigate("/editor")}
+							>
+								{t("createButton", "Deploy Strategy")}
+							</Btn>
+						</div>
+					</Panel>
+				) : (
+					<div className="grid gap-3.5 md:grid-cols-2 2xl:grid-cols-3">
+						{filteredStrategies.map((s) => {
+							const isRunning = (s.instances ?? []).length > 0;
+							const primary = s.instances?.[0];
+							const exchange =
+								normalizeExchangeKey(
+									(s as CombinedStrategy & { exchange?: string | null }).exchange ??
+										primary?.exchange ??
+										(s.config_data as StrategyConfig["config_data"] & {
+											exchange?: string | null;
+										})?.exchange,
+								) ?? null;
+							const symbolsList: string[] =
+								s.symbols && s.symbols.length > 0
+									? s.symbols
+									: Array.isArray(s.config_data?.symbols) &&
+											s.config_data.symbols.length > 0
+										? s.config_data.symbols
+										: s.config_data?.symbol
+											? [s.config_data.symbol]
+											: ["BTCUSDT"];
+						const pnl = s.pnl ?? primary?.pnl ?? 0;
+						const openPositions =
+							s.open_positions ?? primary?.open_positions ?? 0;
+						const timeframe =
+							resolveStrategyTimeframe(s.config_data) ?? "15m";
+						const isActionPending =
+							pendingActionId === s.id ||
+							(primary && pendingActionId === primary.id);
+
+							return (
+								<div
+									key={s.id}
+									className={cn(
+										"glass group relative rounded-2xl p-4 transition-all hover:-translate-y-0.5 hover:border-white/15 animate-fade-up flex flex-col justify-between",
+										isRunning &&
+											"border-cyan/30 shadow-[0_0_30px_-15px_rgba(0,212,255,0.35)]",
+										s.status === "ERROR" && "border-rose-500/30",
+									)}
+								>
+									{/* Glow when running */}
+									{isRunning && (
+										<div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-cyan/10 blur-3xl" />
+									)}
+
+									{/* Star in Upper Right Corner */}
+									<button
+										type="button"
+										onClick={(e) => {
+											e.stopPropagation();
+											toggleFavorite(s.id);
+										}}
+										className={cn(
+											"absolute top-3.5 right-3.5 z-10 flex items-center justify-center w-7 h-7 rounded-lg transition-all",
+											favoriteIds.includes(s.id)
+												? "text-amber-400 bg-amber-400/10 border border-amber-400/30 hover:bg-amber-400/20 shadow-[0_0_12px_rgba(251,191,36,0.35)]"
+												: "text-white/30 hover:text-amber-400 hover:bg-white/5 border border-transparent opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100",
+										)}
+										title={
+											favoriteIds.includes(s.id)
+												? t("removeFromFavorites", "Remove from favorites")
+												: t("addToFavorites", "Add to favorites")
+										}
+										aria-label={
+											favoriteIds.includes(s.id)
+												? t("removeFromFavorites", "Remove from favorites")
+												: t("addToFavorites", "Add to favorites")
+										}
+									>
+										<Star
+											className={cn(
+												"w-4 h-4 transition-transform active:scale-90",
+												favoriteIds.includes(s.id)
+													? "fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]"
+													: "hover:scale-110",
+											)}
+										/>
+									</button>
+
+									<div>
+										{/* Top Row: Exchange Logo + Name + Badges */}
+										<div className="flex items-start gap-3">
+											<div className="relative shrink-0">
+												<ExchangeBadge
+													exchange={exchange}
+													size="xl"
+													className={cn(
+														"rounded-xl transition-all shadow-md",
+														// No exchange logo -> "?" placeholder: muted gray
+														// background instead of bright white, with the "?"
+														// recolored so it stays readable on gray.
+														!exchange &&
+															"bg-neutral-600 border-white/10 [&_span]:text-white/75",
+														isRunning &&
+															"ring-2 ring-cyan/50 shadow-[0_0_15px_-2px_rgba(0,212,255,0.4)]",
+													)}
+												/>
+											</div>
+
+											<div className="min-w-0 flex-1 pr-7">
+												<div className="flex items-center gap-1.5 flex-wrap">
+													<span
+														className="truncate text-[13.5px] font-semibold text-white hover:text-cyan cursor-pointer transition-colors"
+														onClick={() => setSelectedStrategyId(s.id)}
+														title={s.name}
+													>
+														{s.name}
+													</span>
+													<Badge
+														tone={
+															isRunning
+																? "profit"
+																: s.status === "ERROR"
+																	? "loss"
+																	: "neutral"
+														}
+														dot
+														pulse={isRunning}
+													>
+														{isRunning ? "RUNNING" : s.status || "STOPPED"}
+													</Badge>
+													{primary && (
+														<Badge
+															tone={
+																primary.mode === "live"
+																	? "loss"
+																	: "cyan"
+															}
+														>
+															{primary.mode?.toUpperCase() || "PAPER"}
+														</Badge>
+													)}
+												</div>
+
+											{/* Sub-bar: Type + Timeframe */}
+											<div className="mt-1 flex items-center gap-2 text-[10.5px] text-white/40">
+												<span className="font-mono uppercase text-white/60">
+													{timeframe}
+												</span>
+													<span>·</span>
+													<span className="truncate">
+														{s.config_data?.strategy_name ||
+															"VisualBuilder"}
+													</span>
+												</div>
+											</div>
+										</div>
+
+										{/* Symbol Tags */}
+										<div className="mt-3 flex flex-wrap gap-1 items-center">
+											{symbolsList.slice(0, 4).map((sym) => (
+												<span
+													key={sym}
+													className="rounded-md border border-white/8 bg-white/[0.03] px-2 py-0.5 font-mono text-[10.5px] text-white/70"
+												>
+													{sym}
+												</span>
+											))}
+											{symbolsList.length > 4 && (
+												<span className="rounded-md border border-white/5 bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] text-white/40">
+													+{symbolsList.length - 4}
+												</span>
+											)}
+										</div>
+
+									{/* Total P&L (live-ticked when running) */}
+									<div className="mt-3.5 flex items-end justify-end">
+										<div className="text-right font-mono">
+												<div
+													className={cn(
+														"text-[16px] font-semibold leading-tight",
+														toneText(pnl),
+													)}
+												>
+													{fmt.signed(pnl, 2)} USDT
+												</div>
+												<div className="text-[10px] text-white/35">
+													{t("colTotalPnl", "Total P&L")}
+												</div>
+											</div>
+										</div>
+
+										{/* Mini Metric Rail */}
+										<div className="mt-3 grid grid-cols-3 gap-1.5 rounded-xl border border-white/5 bg-white/[0.02] p-2 text-center">
+											<div>
+												<div className="text-[9.5px] uppercase tracking-wider text-white/35">
+													{t("openPositions", "Positions")}
+												</div>
+												<div className="font-mono text-[11.5px] font-medium text-white">
+													{openPositions}
+												</div>
+											</div>
+											<div>
+												<div className="text-[9.5px] uppercase tracking-wider text-white/35">
+													{t("copies", "Copies")}
+												</div>
+												<div className="font-mono text-[11.5px] font-medium text-white">
+													{s.instances?.length || 0}
+												</div>
+											</div>
+											<div>
+												<div className="text-[9.5px] uppercase tracking-wider text-white/35">
+													{t("colRuntime", "Runtime")}
+												</div>
+												<div className="font-mono text-[11px] text-white/70 truncate">
+													{calculateRuntime(primary?.started_at)}
+												</div>
+											</div>
+										</div>
+									</div>
+
+									{/* Bottom Action Bar:
+										No Pause! Only Stop and Start, and Load in editor, plus Delete when stopped
+									*/}
+									<div className="mt-4 flex items-center gap-1.5 border-t border-white/5 pt-3">
+										{/* Stop Button (if running) */}
+										{isRunning ? (
+											<Btn
+												variant="danger"
+												size="xs"
+												icon={<Square size={11} />}
+												onClick={() => handleStopClick(s, primary)}
+												disabled={isActionPending || isStopping}
+											>
+												{isActionPending && isStopping ? (
+													<Loader2 size={11} className="animate-spin mr-1" />
+												) : null}
+												{t("stopTooltip", "Stop")}
+											</Btn>
+										) : (
+											/* Start Button (if stopped) */
+											<Btn
+												variant="primary"
+												size="xs"
+												icon={<Play size={11} />}
+												onClick={() => handleStart(s)}
+												disabled={isActionPending || isStarting}
+											>
+												{isActionPending && isStarting ? (
+													<Loader2 size={11} className="animate-spin mr-1" />
+												) : null}
+												{t("startTooltip", "Start")}
+											</Btn>
+										)}
+
+										{/* Delete Button (Allowed when stopped) */}
+										{!isRunning && (
+											<Btn
+												variant="ghost"
+												size="xs"
+												icon={<Trash2 size={11} />}
+												onClick={() => handleDeleteClick(s)}
+												disabled={isActionPending || isDeleting}
+												className="text-white/30 hover:text-rose-400 hover:bg-rose-500/10"
+												title={t("deleteTooltip", "Delete Strategy")}
+											>
+												{t("deleteTooltip", "Delete")}
+											</Btn>
+										)}
+
+										<div className="flex-1" />
+
+										{/* Load in editor ("Загрузить в редактор") */}
+										<Btn
+											variant="ghost"
+											size="xs"
+											icon={<Pencil size={11} />}
+											onClick={() => navigate(`/editor/${s.id}`)}
+											title={t("editButton", "Load in editor")}
+											className="text-white/60 hover:text-cyan hover:bg-cyan/10"
+										>
+											{t("editButton", "Загрузить в редактор")}
+										</Btn>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				)}
 			</div>
 
-			{/* Content */}
-			{isLoading ? (
-				<div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-					{[...Array(6)].map((_, i) => (
-						<Skeleton key={i} className="h-[320px] w-full" />
-					))}
-				</div>
-			) : isErrorConfigs ? (
-				<Alert variant="destructive">
-					<AlertTriangle className="h-4 w-4" />
-					<AlertTitle>{t("common:errorTitle")}</AlertTitle>
-					<AlertDescription>
-						{errorConfigs instanceof Error
-							? errorConfigs.message
-							: t("common:errors.unknownError")}
-					</AlertDescription>
-				</Alert>
-			) : filteredStrategies.length === 0 ? (
-				searchQuery || filterType !== "all" ? (
-					<div className="text-center py-16">
-						<p className="text-muted-foreground">
-							{t("noResults", "No strategies found matching your filters.")}
-						</p>
-					</div>
-				) : (
-					<EmptyState />
-				)
-			) : (
-				<div className="grid gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-					<AnimatePresence mode="popLayout">
-						{filteredStrategies.map((strategy) => (
-							<StrategyCard
-								key={strategy.id}
-								strategy={strategy}
-								onView={() => setSelectedStrategyId(strategy.id)}
-								onStart={() => handleStart(strategy)}
-								onStop={(instance) =>
-									openConfirmationModal("stop", strategy, instance)
-								}
-								onDelete={() => openConfirmationModal("delete", strategy)}
-								onBacktest={() => handleBacktest(strategy)}
-								isPending={isActionPending}
-								pendingInstanceId={pendingActionId}
-							/>
-						))}
-					</AnimatePresence>
-				</div>
+			{/* Launch Strategy Modal (Configures launch and starts bot) */}
+			{launchConfig.strategy && (
+				<LaunchStrategyModal
+					isOpen={launchConfig.open}
+					onClose={() =>
+						setLaunchConfig({ open: false, configId: null, strategy: null })
+					}
+					onConfirm={handleConfirmStart}
+					strategyName={launchConfig.strategy.name}
+					isLoading={isStarting}
+					strategy={launchConfig.strategy}
+					currentSymbols={launchConfig.strategy.symbols}
+					currentMode={
+						(launchConfig.strategy.symbol_selection_mode as
+							| "STATIC"
+							| "DYNAMIC") || "STATIC"
+					}
+				/>
 			)}
 
-			{/* Strategy Details Panel */}
-			<AnimatePresence>
-				{strategyForPanel && (
-					<motion.div
-						initial={{ opacity: 0, y: 20 }}
-						animate={{ opacity: 1, y: 0 }}
-						exit={{ opacity: 0, y: 20 }}
-						className="mt-6"
-					>
-						<StrategyDetailsPanel
-							selectedStrategy={strategyForPanel}
-							onClose={() => setSelectedStrategyId(null)}
-						/>
-					</motion.div>
-				)}
-			</AnimatePresence>
-
-			{/* Modals */}
+			{/* Stop / Delete Confirmation Modal */}
 			<ConfirmationModal
 				open={confirmAction.open}
-				onOpenChange={(open) => setConfirmAction((prev) => ({ ...prev, open }))}
+				onOpenChange={(open) =>
+					!open && setConfirmAction((prev) => ({ ...prev, open: false }))
+				}
 				title={confirmAction.title}
 				description={confirmAction.description}
 				onConfirm={handleConfirmAction}
-				loading={isStopping || isDeleting}
+				loading={confirmAction.actionType === "stop" ? isStopping : isDeleting}
 			/>
 
-			<LaunchStrategyModal
-				isOpen={launchConfig.open}
-				onClose={() =>
-					setLaunchConfig({ open: false, configId: null, strategy: null })
-				}
-				onConfirm={handleConfirmStart}
-				strategyName={launchConfig.strategy?.name}
-				isLoading={isStarting}
-				currentSymbols={launchConfig.strategy?.symbols || []}
-				currentMode={launchConfig.strategy?.symbol_selection_mode}
-			/>
-
-			<BacktestModal
-				isOpen={backtestConfig.open}
-				onClose={() =>
-					setBacktestConfig({ open: false, configId: null, strategy: null })
-				}
-				onConfirm={handleConfirmBacktest}
-				strategyName={backtestConfig.strategy?.name}
-				isLoading={isBacktesting}
-				strategy={backtestConfig.strategy}
-			/>
+			{/* Strategy Detail Drawer */}
+			{strategyForPanel && (
+				<StrategyDetailsPanel
+					strategy={strategyForPanel}
+					isOpen={!!selectedStrategyId}
+					onClose={() => setSelectedStrategyId(null)}
+					onStart={() => selectedStrategy && handleStart(selectedStrategy)}
+					onStop={() =>
+						selectedStrategy && handleStopClick(selectedStrategy)
+					}
+					onEdit={() => navigate(`/editor/${strategyForPanel.id}`)}
+				/>
+			)}
 		</PageLayout>
 	);
 }

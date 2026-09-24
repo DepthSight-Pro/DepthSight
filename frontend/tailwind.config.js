@@ -54,6 +54,12 @@ module.exports = {
 				profit: "hsl(var(--profit))",
 				loss: "hsl(var(--destructive))",
 				warning: "hsl(var(--warning))",
+				void: "#07080b",
+				obsidian: "#0b0d12",
+				panel: "#0e1117",
+				cyan: "#00d4ff",
+				azure: "#0066ff",
+				amber: "#ffb547",
 				sidebar: {
 					DEFAULT: "hsl(var(--sidebar-background))",
 					foreground: "hsl(var(--sidebar-foreground))",

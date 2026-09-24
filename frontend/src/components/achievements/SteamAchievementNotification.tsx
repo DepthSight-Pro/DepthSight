@@ -174,29 +174,50 @@ export const SteamAchievementNotification: React.FC = () => {
 	const { subscribe, unsubscribe } = useWebSocket();
 	const { user } = useAuth();
 
-	const [queue, setQueue] = useState<UnlockedAchievementData[]>([]);
-	const [current, setCurrent] = useState<UnlockedAchievementData | null>(null);
+	const [state, setState] = useState<{
+		current: UnlockedAchievementData | null;
+		queue: UnlockedAchievementData[];
+	}>({ current: null, queue: [] });
 
 	const enqueue = useCallback((item: UnlockedAchievementData) => {
-		setQueue((prev) => [...prev, item]);
+		setState((prev) => {
+			// If nothing is currently displayed, show this item immediately.
+			// Otherwise, add it to the queue for sequential display.
+			if (!prev.current) {
+				return { current: item, queue: prev.queue };
+			}
+			return { current: prev.current, queue: [...prev.queue, item] };
+		});
 	}, []);
 
-	// Handle next item in queue
+	const dismiss = useCallback(() => {
+		setState((prev) => {
+			// If another item is queued, show it immediately.
+			// Otherwise, clear the current item.
+			if (prev.queue.length > 0) {
+				return { current: prev.queue[0], queue: prev.queue.slice(1) };
+			}
+			return { current: null, queue: prev.queue };
+		});
+	}, []);
+
+	// Destructure for clean effect dependency tracking
+	const { current } = state;
+
+	// Effect manages only the auto-dismiss timer.
+	// All state transitions live in enqueue/dismiss callbacks, so no
+	// setState is called synchronously within the effect body.
 	useEffect(() => {
-		if (!current && queue.length > 0) {
-			const nextItem = queue[0];
-			setCurrent(nextItem);
-			setQueue((prev) => prev.slice(1));
-			playAchievementChime();
+		if (!current) return;
 
-			// Auto-dismiss after 6.5s
-			const timer = setTimeout(() => {
-				setCurrent(null);
-			}, 6500);
+		playAchievementChime();
 
-			return () => clearTimeout(timer);
-		}
-	}, [current, queue]);
+		const timer = setTimeout(() => {
+			dismiss();
+		}, 6500);
+
+		return () => clearTimeout(timer);
+	}, [current, dismiss]);
 
 	// WebSocket listener for achievement events
 	useEffect(() => {
@@ -277,7 +298,7 @@ export const SteamAchievementNotification: React.FC = () => {
 						</div>
 						<button
 							type="button"
-							onClick={() => setCurrent(null)}
+							onClick={dismiss}
 							className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5 rounded"
 						>
 							<X className="w-3.5 h-3.5" />
@@ -332,3 +353,5 @@ export const SteamAchievementNotification: React.FC = () => {
 		</div>
 	);
 };
+
+

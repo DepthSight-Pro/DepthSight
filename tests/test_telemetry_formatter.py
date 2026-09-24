@@ -45,9 +45,7 @@ def test_telemetry_extracts_full_screenshot_data_and_resolves_filter():
         "entryConditions": {
             "id": "root_entry",
             "type": "OR",
-            "children": [
-                {"id": "w_breakout_long", "type": "AND", "children": []}
-            ],
+            "children": [{"id": "w_breakout_long", "type": "AND", "children": []}],
         },
     }
 

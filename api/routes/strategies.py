@@ -4,6 +4,7 @@ import uuid
 from typing import List, Optional
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, models, schemas, ai_assistant
@@ -41,6 +42,7 @@ strategies_router = APIRouter(
 async def list_strategies(
     redis_client: redis.Redis = Depends(get_redis_client),
     current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
     mode: str = Query("live", enum=["live", "paper"]),
     api_key_id: Optional[int] = Query(
         None, description="Filter by specific API key (subaccount)"
@@ -91,6 +93,34 @@ async def list_strategies(
             user_mode_strategies = [
                 s for s in user_mode_strategies if s.get("api_key_id") == api_key_id
             ]
+
+        # Fallback: fill missing exchange from ApiKey (controller is
+        # primary source, DB is secondary).
+        try:
+            key_rows = (
+                await db.execute(
+                    select(models.ApiKey.id, models.ApiKey.exchange).where(
+                        models.ApiKey.user_id == current_user.id
+                    )
+                )
+            ).all()
+            exchange_by_key = {
+                int(k_id): str(k_ex or "").lower()
+                for k_id, k_ex in key_rows
+                if k_id is not None
+            }
+            for s in user_mode_strategies:
+                if not s.get("exchange") and s.get("api_key_id") is not None:
+                    try:
+                        fallback_ex = exchange_by_key.get(int(s.get("api_key_id")))
+                    except (TypeError, ValueError):
+                        fallback_ex = None
+                    if fallback_ex:
+                        s["exchange"] = fallback_ex
+        except Exception as ex_err:
+            logger.warning(
+                f"Failed to backfill strategy exchange from ApiKeys: {ex_err}"
+            )
 
         validated_strategies = [schemas.StrategyInfo(**s) for s in user_mode_strategies]
         return {"data": validated_strategies}
@@ -505,7 +535,8 @@ async def start_strategy_instance(
         allow_free_bybit = limits.get("allow_free_bybit_trading", False)
         allow_free_weex = limits.get("allow_free_weex_trading", False)
         allow_free_okx = limits.get("allow_free_okx_trading", False)
-        if allow_free_bybit or allow_free_weex or allow_free_okx:
+        allow_free_bitget = limits.get("allow_free_bitget_trading", False)
+        if allow_free_bybit or allow_free_weex or allow_free_okx or allow_free_bitget:
             exch = (
                 api_key.exchange.strip().lower()
                 if (api_key and api_key.exchange)
@@ -518,6 +549,8 @@ async def start_strategy_instance(
                 is_valid = True
             elif allow_free_okx and exch.startswith("okx"):
                 is_valid = True
+            elif allow_free_bitget and exch.startswith("bitget"):
+                is_valid = True
 
             if not is_valid:
                 allowed_exchanges = []
@@ -527,6 +560,8 @@ async def start_strategy_instance(
                     allowed_exchanges.append("WEEX")
                 if allow_free_okx:
                     allowed_exchanges.append("OKX")
+                if allow_free_bitget:
+                    allowed_exchanges.append("Bitget")
                 allowed_str = " or ".join(allowed_exchanges)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -675,6 +710,7 @@ async def stop_strategy_instance(
             limits.get("allow_free_bybit_trading", False)
             or limits.get("allow_free_weex_trading", False)
             or limits.get("allow_free_okx_trading", False)
+            or limits.get("allow_free_bitget_trading", False)
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

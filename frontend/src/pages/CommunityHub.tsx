@@ -38,6 +38,7 @@ import { EquityCurveChart } from "@/components/research/EquityCurveChart";
 import { NodeLeaderboard } from "@/components/community/NodeLeaderboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Footer } from "@/components/layout/Footer";
 import {
 	Card,
@@ -68,7 +69,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/context/AuthContext";
 import { useSaveStrategyConfig } from "@/lib/api";
-import type { StrategyConfigCreatePayload } from "@/types/api";
+import type { AdminPlanItem, StrategyConfigCreatePayload } from "@/types/api";
 import { cn } from "@/lib/utils";
 
 interface NewsItem {
@@ -118,6 +119,14 @@ interface HubCommentResponse {
 	is_admin?: boolean;
 }
 
+interface NewsComment {
+	id: number | string;
+	author_name: string;
+	text: string;
+	created_at: string;
+	is_admin?: boolean;
+}
+
 interface HubNodeResponse {
 	name: string;
 	latitude?: number;
@@ -134,7 +143,22 @@ interface HubNodeResponse {
 	total_mined?: number;
 	is_mining_server?: boolean;
 	created_at?: string;
-	public_plans?: Record<string, any>;
+	public_plans?: Record<string, AdminPlanItem>;
+}
+
+interface GeoPolygon {
+	type: "Polygon" | "MultiPolygon";
+	coordinates: unknown;
+}
+
+interface GeoFeature {
+	type: "Feature";
+	geometry: GeoPolygon | null;
+}
+
+interface GeoData {
+	type: "FeatureCollection";
+	features?: GeoFeature[];
 }
 
 
@@ -198,7 +222,7 @@ const NetworkMap: React.FC<{
 	t: (key: string, options?: unknown) => string;
 }> = ({ activeNodes, isRu, t }) => {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const [geoData, setGeoData] = useState<any>(null);
+	const [geoData, setGeoData] = useState<GeoData | null>(null);
 
 	// Zoom and Pan states using refs to prevent React re-renders during high-frequency mouse dragging
 	const zoomRef = useRef(1.4);
@@ -282,7 +306,7 @@ const NetworkMap: React.FC<{
 				offscreenCtx.fillStyle = "rgba(15, 23, 42, 0.45)";     // dark slate background
 				offscreenCtx.lineWidth = 0.8;
 
-				geoData.features?.forEach((feature: any) => {
+				geoData.features?.forEach((feature: GeoFeature) => {
 					const geom = feature.geometry;
 					if (!geom) return;
 
@@ -303,9 +327,11 @@ const NetworkMap: React.FC<{
 					};
 
 					if (geom.type === "Polygon") {
-						drawPolygon(geom.coordinates);
+						drawPolygon(geom.coordinates as number[][][]);
 					} else if (geom.type === "MultiPolygon") {
-						geom.coordinates.forEach((poly: any) => drawPolygon(poly));
+						(geom.coordinates as number[][][][]).forEach((poly: number[][][]) =>
+							drawPolygon(poly),
+						);
 					}
 				});
 				offscreenCtx.restore();
@@ -575,6 +601,7 @@ const NetworkMap: React.FC<{
 
 const CommunityHub = () => {
 	const { t, i18n } = useTranslation(["navigation", "common", "community"]);
+	const { isMobile } = useSidebar();
 	const isRu = i18n.language.startsWith("ru");
 	const navigate = useNavigate();
 	const saveConfig = useSaveStrategyConfig();
@@ -807,7 +834,7 @@ const CommunityHub = () => {
 
 	// News detailed view and comments state
 	const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
-	const [newsComments, setNewsComments] = useState<Record<string, unknown>[]>(
+	const [newsComments, setNewsComments] = useState<NewsComment[]>(
 		[],
 	);
 	const [loadingNewsComments, setLoadingNewsComments] = useState(false);
@@ -987,7 +1014,7 @@ const CommunityHub = () => {
 					if (!res.ok) throw new Error();
 					return res.json();
 				})
-				.then((data) => {
+				.then((data: NewsComment[]) => {
 					setNewsComments(data);
 					setLoadingNewsComments(false);
 				})
@@ -1242,9 +1269,12 @@ const CommunityHub = () => {
 			);
 
 			if (!res.ok) throw new Error();
-			const newComment = await res.json();
+			const newComment = (await res.json()) as NewsComment;
 
-			setComments((prev) => [...prev, newComment]);
+			setComments((prev) => [
+				...prev,
+				{ ...newComment, topic_id: selectedTopic.id } as HubCommentResponse,
+			]);
 			setNewCommentText("");
 			setSelectedTopic((prev) =>
 				prev
@@ -1300,7 +1330,7 @@ const CommunityHub = () => {
 			});
 
 			if (!res.ok) throw new Error();
-			const newComment = await res.json();
+			const newComment = (await res.json()) as NewsComment;
 
 			setNewsComments((prev) => [...prev, newComment]);
 			setNewNewsCommentText("");
@@ -1686,24 +1716,28 @@ const CommunityHub = () => {
 	};
 
 	return (
-		<div className="min-h-screen bg-background text-foreground pb-20 flex flex-col">
-			<div className="flex-1">
-			{/* Banner Hero */}
-			<section className="relative overflow-hidden pt-12 pb-16 px-4 border-b border-border/40 bg-black/20">
-				<div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))]" />
+		<div className="min-h-full flex-1 flex flex-col justify-between overflow-x-hidden min-w-0 w-full">
+			<div className="flex-1 min-w-0 w-full">
+				{isMobile && (
+					<div className="px-4 pt-4 flex items-center">
+						<SidebarTrigger className="h-8 w-8 text-white/70 hover:text-white border border-white/10 bg-white/5 hover:bg-white/10 rounded-lg shrink-0" />
+					</div>
+				)}
+				{/* Banner Hero */}
+				<section className="relative overflow-hidden pt-4 md:pt-10 pb-14 px-4">
 				<div className="max-w-5xl mx-auto text-center relative z-10 space-y-4">
 					<motion.div
 						initial={{ scale: 0.8, opacity: 0 }}
 						animate={{ scale: 1, opacity: 1 }}
 						transition={{ duration: 0.5 }}
-						className="inline-flex items-center justify-center p-3 mb-2 rounded-2xl bg-primary/10 text-primary border border-primary/20"
+						className="inline-flex items-center justify-center p-3 mb-2 rounded-2xl bg-cyan/10 text-cyan border border-cyan/30 shadow-[0_0_20px_-4px_rgba(0,212,255,0.3)]"
 					>
 						<Globe className="w-7 h-7" />
 					</motion.div>
 					<motion.h1
 						initial={{ y: 15, opacity: 0 }}
 						animate={{ y: 0, opacity: 1 }}
-						className="text-4xl md:text-5xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground via-foreground/90 to-primary"
+						className="text-4xl md:text-5xl font-bold tracking-tight text-white"
 					>
 						{t("community:title", "Discovery Hub")}
 					</motion.h1>
@@ -1711,7 +1745,7 @@ const CommunityHub = () => {
 						initial={{ y: 15, opacity: 0 }}
 						animate={{ y: 0, opacity: 1 }}
 						transition={{ delay: 0.1 }}
-						className="text-muted-foreground max-w-xl mx-auto text-sm md:text-base"
+						className="text-white/60 max-w-xl mx-auto text-sm md:text-base leading-relaxed"
 					>
 						{t("community:description")}
 					</motion.p>
@@ -1719,48 +1753,50 @@ const CommunityHub = () => {
 			</section>
 
 			{/* Main Layout Grid */}
-			<div className="max-w-[1600px] mx-auto px-4 mt-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
+			<div className="max-w-[1600px] mx-auto px-4 mt-4 grid grid-cols-1 lg:grid-cols-4 gap-8 min-w-0 w-full">
 				{/* Left Columns (3/4 width on large screens) */}
-				<div className="lg:col-span-3 space-y-6">
+				<div className="lg:col-span-3 space-y-6 min-w-0 w-full">
 					{/* Navigation Tabs */}
 					<Tabs
 						value={activeTab}
 						onValueChange={setActiveTab}
-						className="w-full"
+						className="w-full min-w-0"
 					>
-						<div className="flex justify-between items-center border-b border-border/40 pb-2">
-							<TabsList className="bg-muted/50 border border-border/20">
-								<TabsTrigger
-									value="verified"
-									className="gap-2 text-xs md:text-sm"
-								>
-									<Sparkles className="w-3.5 h-3.5" />
-									{t("community:tabs.verified", "Verified Templates")}
-								</TabsTrigger>
-								<TabsTrigger
-									value="community"
-									className="gap-2 text-xs md:text-sm"
-								>
-									<TrendingUp className="w-3.5 h-3.5" />
-									{t("community:tabs.community", "Trading Ideas")}
-								</TabsTrigger>
-								<TabsTrigger
-									value="discussion"
-									className="gap-2 text-xs md:text-sm"
-								>
-									<MessageSquare className="w-3.5 h-3.5" />
-									{t("community:tabs.discussion", "Discussions")}
-								</TabsTrigger>
-								<TabsTrigger
-									value="network"
-									className="gap-2 text-xs md:text-sm"
-								>
-									<Network className="w-3.5 h-3.5" />
-									{t("community:tabs.network", "Network Status")}
-								</TabsTrigger>
-							</TabsList>
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3 min-w-0 w-full">
+							<div className="w-full min-w-0 overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+								<TabsList className="inline-flex w-max bg-white/[0.04] border border-white/10 p-1 rounded-xl gap-1 h-auto">
+									<TabsTrigger
+										value="verified"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+									>
+										<Sparkles className="w-3.5 h-3.5 text-cyan" />
+										{t("community:tabs.verified", "Verified Templates")}
+									</TabsTrigger>
+									<TabsTrigger
+										value="community"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+									>
+										<TrendingUp className="w-3.5 h-3.5 text-cyan" />
+										{t("community:tabs.community", "Trading Ideas")}
+									</TabsTrigger>
+									<TabsTrigger
+										value="discussion"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+									>
+										<MessageSquare className="w-3.5 h-3.5 text-cyan" />
+										{t("community:tabs.discussion", "Discussions")}
+									</TabsTrigger>
+									<TabsTrigger
+										value="network"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+									>
+										<Network className="w-3.5 h-3.5 text-cyan" />
+										{t("community:tabs.network", "Network Status")}
+									</TabsTrigger>
+								</TabsList>
+							</div>
 
-							<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
 								<Button
 									size="sm"
 									variant="ghost"
@@ -1812,9 +1848,9 @@ const CommunityHub = () => {
 							{loadingVerified ? (
 								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 									{[1, 2].map((i) => (
-										<Card
+										<div
 											key={i}
-											className="animate-pulse bg-card/40 border-border/20 h-48"
+											className="animate-pulse glass border border-white/10 rounded-2xl h-48"
 										/>
 									))}
 								</div>
@@ -1835,16 +1871,16 @@ const CommunityHub = () => {
 													onClick={() => setSelectedTopic(strategy)}
 													className="cursor-pointer"
 												>
-													<Card className="h-full border border-border/30 hover:border-primary/30 bg-card/30 hover:bg-card/60 transition-all duration-300 hover:shadow-lg flex flex-col justify-between overflow-hidden relative group">
-														<div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary/50 transition-colors" />
+													<Card className="h-full glass rounded-2xl border border-white/10 hover:border-cyan/40 bg-card/20 hover:bg-card/40 transition-all duration-300 hover:shadow-xl flex flex-col justify-between overflow-hidden relative group">
+														<div className="absolute top-0 left-0 w-1 h-full bg-cyan/40 group-hover:bg-cyan transition-colors" />
 														<CardHeader className="pb-2">
 															<div className="flex justify-between items-start">
-																<CardTitle className="text-base font-bold text-foreground/90">
+																<CardTitle className="text-base font-bold text-white group-hover:text-cyan transition-colors">
 																	{getTopicTitle(strategy, t)}
 																</CardTitle>
 																<Badge
 																	variant="secondary"
-																	className="text-[10px] scale-90 px-2"
+																	className="text-[10px] scale-90 px-2 bg-cyan/10 border border-cyan/30 text-cyan"
 																>
 																	{t(
 																		"community:verified.officialBadge",
@@ -1852,7 +1888,7 @@ const CommunityHub = () => {
 																	)}
 																</Badge>
 															</div>
-															<CardDescription className="line-clamp-3 text-xs pt-1">
+															<CardDescription className="line-clamp-3 text-xs pt-1 text-white/60">
 																{strategy.description}
 															</CardDescription>
 														</CardHeader>
@@ -1865,7 +1901,7 @@ const CommunityHub = () => {
 																			<Badge
 																				key={tag}
 																				variant="outline"
-																				className="text-[9px] px-1.5 py-0"
+																				className="text-[9px] px-1.5 py-0 bg-white/[0.03] border-white/10 text-white/70"
 																			>
 																				{tag}
 																			</Badge>
@@ -1873,9 +1909,9 @@ const CommunityHub = () => {
 																	</div>
 																)}
 														</CardContent>
-														<CardFooter className="pt-2 border-t border-border/10 bg-black/10 flex gap-2">
+														<CardFooter className="pt-2 border-t border-white/10 bg-white/[0.02] flex gap-2">
 															<Button
-																className="flex-1 gap-2 text-xs h-8"
+																className="flex-1 gap-2 text-xs h-8 bg-cyan/20 hover:bg-cyan/30 text-cyan border border-cyan/40"
 																variant="secondary"
 																onClick={(e) => {
 																	e.stopPropagation();
@@ -1897,7 +1933,7 @@ const CommunityHub = () => {
 																<Button
 																	variant="outline"
 																	size="icon"
-																	className="h-8 w-8 text-muted-foreground hover:text-red-500 border-border/40 hover:border-red-500/40"
+																	className="h-8 w-8 text-white/50 hover:text-rose-400 border-white/10 hover:border-rose-400/40"
 																	onClick={(e) => {
 																		e.stopPropagation();
 																		handleToggleVerify(strategy, e);
@@ -1920,7 +1956,7 @@ const CommunityHub = () => {
 											<Button
 												variant="outline"
 												size="icon"
-												className="h-8 w-8"
+												className="h-8 w-8 border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white"
 												disabled={verifiedPage === 1}
 												onClick={() =>
 													setVerifiedPage((prev) => Math.max(prev - 1, 1))
@@ -1928,7 +1964,7 @@ const CommunityHub = () => {
 											>
 												<ChevronLeft className="w-4 h-4" />
 											</Button>
-											<span className="text-xs text-muted-foreground font-mono">
+											<span className="text-xs text-white/60 font-mono">
 												{verifiedPage} /{" "}
 												{Math.ceil(
 													verifiedStrategies.length / PRESETS_PER_PAGE,
@@ -1937,7 +1973,7 @@ const CommunityHub = () => {
 											<Button
 												variant="outline"
 												size="icon"
-												className="h-8 w-8"
+												className="h-8 w-8 border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white"
 												disabled={
 													verifiedPage ===
 													Math.ceil(
@@ -1961,9 +1997,9 @@ const CommunityHub = () => {
 									)}
 								</>
 							) : (
-								<div className="text-center py-16 bg-card/20 rounded-2xl border border-dashed border-border/40">
-									<BookOpen className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-									<p className="text-muted-foreground text-sm">
+								<div className="text-center py-16 glass rounded-2xl border border-dashed border-white/10">
+									<BookOpen className="w-8 h-8 mx-auto text-white/40 mb-2" />
+									<p className="text-white/50 text-sm">
 										{t(
 											"community:verified.noTemplates",
 											"No strategy templates found.",
@@ -1978,9 +2014,9 @@ const CommunityHub = () => {
 							{loadingShared ? (
 								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 									{[1, 2].map((i) => (
-										<Card
+										<div
 											key={i}
-											className="animate-pulse bg-card/40 border-border/20 h-52"
+											className="animate-pulse glass border border-white/10 rounded-2xl h-52"
 										/>
 									))}
 								</div>
@@ -2004,21 +2040,21 @@ const CommunityHub = () => {
 														transition={{ delay: idx * 0.05 }}
 														onClick={() => setSelectedTopic(idea)}
 													>
-														<Card className="h-full border border-border/30 hover:border-primary/40 bg-card/20 hover:bg-card/40 transition-all duration-300 hover:shadow-lg cursor-pointer flex flex-col justify-between overflow-hidden relative group">
+														<Card className="h-full glass rounded-2xl border border-white/10 hover:border-cyan/40 bg-card/20 hover:bg-card/40 transition-all duration-300 hover:shadow-xl cursor-pointer flex flex-col justify-between overflow-hidden relative group">
 															<CardHeader className="pb-2">
 																<div className="flex justify-between items-start">
 																	<div className="space-y-1">
 																		<Badge
 																			variant="outline"
-																			className="text-[9px] uppercase border-primary/20 text-primary px-1.5 py-0"
+																			className="text-[9px] uppercase border-cyan/30 text-cyan bg-cyan/10 px-1.5 py-0"
 																		>
 																			{idea.symbol || "Global"}
 																		</Badge>
-																		<CardTitle className="text-base font-bold text-foreground/90 group-hover:text-primary transition-colors">
+																		<CardTitle className="text-base font-bold text-white group-hover:text-cyan transition-colors">
 																			{getTopicTitle(idea, t)}
 																		</CardTitle>
 																	</div>
-																	<span className={cn("text-[10px] text-muted-foreground flex items-center gap-1", idea.is_admin && "text-purple-400 font-bold")}>
+																	<span className={cn("text-[10px] text-white/50 flex items-center gap-1", idea.is_admin && "text-purple-400 font-bold")}>
 																		<UserIcon className={cn("w-3 h-3", idea.is_admin && "text-purple-400")} />
 																		{idea.author_name}
 																		{idea.is_admin && (
@@ -2031,38 +2067,38 @@ const CommunityHub = () => {
 																		)}
 																	</span>
 																</div>
-																<CardDescription className="line-clamp-2 text-xs pt-1">
+																<CardDescription className="line-clamp-2 text-xs pt-1 text-white/60">
 																	{idea.description}
 																</CardDescription>
 															</CardHeader>
 
 															<CardContent className="pb-3 space-y-3">
 																{/* Mini KPIs badges */}
-																<div className="grid grid-cols-4 gap-2 text-center bg-black/20 p-2 rounded-lg border border-border/10">
+																<div className="grid grid-cols-4 gap-2 text-center bg-white/[0.03] p-2 rounded-xl border border-white/5">
 																	<div>
-																		<div className="text-[9px] text-muted-foreground uppercase">
+																		<div className="text-[9px] text-white/50 uppercase">
 																			{t("community:community.pnl", "PnL")}
 																		</div>
 																		<div
-																			className={`text-xs font-bold ${isPnlPositive ? "text-green-500" : "text-red-500"}`}
+																			className={`text-xs font-bold ${isPnlPositive ? "text-emerald-400" : "text-rose-400"}`}
 																		>
 																			{isPnlPositive ? "+" : "-"}$
 																			{Math.abs(pnl).toFixed(2)}
 																		</div>
 																	</div>
 																	<div>
-																		<div className="text-[9px] text-muted-foreground uppercase">
+																		<div className="text-[9px] text-white/50 uppercase">
 																			WinRate
 																		</div>
-																		<div className="text-xs font-bold text-foreground">
+																		<div className="text-xs font-bold text-white">
 																			{(idea.kpis?.win_rate || 0).toFixed(1)}%
 																		</div>
 																	</div>
 																	<div>
-																		<div className="text-[9px] text-muted-foreground uppercase">
+																		<div className="text-[9px] text-white/50 uppercase">
 																			Drawdown
 																		</div>
-																		<div className="text-xs font-bold text-foreground">
+																		<div className="text-xs font-bold text-white">
 																			{(idea.kpis?.max_drawdown || 0).toFixed(
 																				2,
 																			)}
@@ -2070,13 +2106,13 @@ const CommunityHub = () => {
 																		</div>
 																	</div>
 																	<div>
-																		<div className="text-[9px] text-muted-foreground uppercase">
+																		<div className="text-[9px] text-white/50 uppercase">
 																			{t(
 																				"community:community.trades",
 																				"Trades",
 																			)}
 																		</div>
-																		<div className="text-xs font-bold text-foreground">
+																		<div className="text-xs font-bold text-white">
 																			{idea.kpis?.trades || 0}
 																		</div>
 																	</div>
@@ -2089,14 +2125,14 @@ const CommunityHub = () => {
 																	)}
 															</CardContent>
 
-															<CardFooter className="pt-2 pb-2.5 px-4 border-t border-border/10 bg-black/15 flex justify-between items-center text-xs">
+															<CardFooter className="pt-2 pb-2.5 px-4 border-t border-white/10 bg-white/[0.02] flex justify-between items-center text-xs">
 																<div className="flex gap-4">
 																	<button
 																		className={cn(
 																			"flex items-center gap-1 transition-colors",
 																			likedTopics.includes(idea.id)
-																				? "text-primary font-bold cursor-default"
-																				: "text-muted-foreground hover:text-primary",
+																				? "text-cyan font-bold cursor-default"
+																				: "text-white/60 hover:text-cyan",
 																		)}
 																		onClick={(e) => handleLike(idea.id, e)}
 																	>
@@ -2104,18 +2140,18 @@ const CommunityHub = () => {
 																			className={cn(
 																				"w-3.5 h-3.5",
 																				likedTopics.includes(idea.id) &&
-																					"fill-primary/20",
+																					"fill-cyan/20",
 																			)}
 																		/>
 																		<span>{idea.likes_count}</span>
 																	</button>
-																	<div className="flex items-center gap-1 text-muted-foreground">
+																	<div className="flex items-center gap-1 text-white/50">
 																		<MessageSquare className="w-3.5 h-3.5" />
 																		<span>{idea.comments_count || 0}</span>
 																	</div>
 																	{adminKey && (
 																		<button
-																			className={`flex items-center gap-1 transition-colors ${idea.is_verified ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}`}
+																			className={`flex items-center gap-1 transition-colors ${idea.is_verified ? "text-yellow-400 hover:text-yellow-300" : "text-white/50 hover:text-yellow-400"}`}
 																			onClick={(e) => {
 																				e.stopPropagation();
 																				handleToggleVerify(idea, e);
@@ -2136,7 +2172,7 @@ const CommunityHub = () => {
 																	)}
 																	{isDeletionAuthorized(idea.id) && (
 																		<button
-																			className="flex items-center gap-1 text-muted-foreground hover:text-red-500 transition-colors"
+																			className="flex items-center gap-1 text-white/50 hover:text-rose-400 transition-colors"
 																			onClick={(e) =>
 																				handleDeleteTopic(idea.id, e)
 																			}
@@ -2150,7 +2186,7 @@ const CommunityHub = () => {
 																	)}
 																</div>
 
-																<span className="text-primary group-hover:translate-x-1 transition-transform flex items-center gap-1 font-medium text-[11px]">
+																<span className="text-cyan group-hover:translate-x-1 transition-transform flex items-center gap-1 font-medium text-[11px]">
 																	{t("community:community.inspect", "Inspect")}
 																	<ArrowRight className="w-3 h-3" />
 																</span>
@@ -2165,7 +2201,7 @@ const CommunityHub = () => {
 											<Button
 												variant="outline"
 												size="icon"
-												className="h-8 w-8"
+												className="h-8 w-8 border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white"
 												disabled={communityPage === 1}
 												onClick={() =>
 													setCommunityPage((prev) => Math.max(prev - 1, 1))
@@ -2173,7 +2209,7 @@ const CommunityHub = () => {
 											>
 												<ChevronLeft className="w-4 h-4" />
 											</Button>
-											<span className="text-xs text-muted-foreground font-mono">
+											<span className="text-xs text-white/60 font-mono">
 												{communityPage} /{" "}
 												{Math.ceil(
 													sharedStrategies.length / COMMUNITY_PER_PAGE,
@@ -2182,7 +2218,7 @@ const CommunityHub = () => {
 											<Button
 												variant="outline"
 												size="icon"
-												className="h-8 w-8"
+												className="h-8 w-8 border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white"
 												disabled={
 													communityPage ===
 													Math.ceil(
@@ -2206,9 +2242,9 @@ const CommunityHub = () => {
 									)}
 								</>
 							) : (
-								<div className="text-center py-16 bg-card/20 rounded-2xl border border-dashed border-border/40">
-									<BookOpen className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-									<p className="text-muted-foreground text-sm">
+								<div className="text-center py-16 glass rounded-2xl border border-dashed border-white/10">
+									<BookOpen className="w-8 h-8 mx-auto text-white/40 mb-2" />
+									<p className="text-white/50 text-sm">
 										{t(
 											"community:community.noIdeas",
 											"No trading ideas found.",
@@ -2225,7 +2261,7 @@ const CommunityHub = () => {
 									{[1, 2].map((i) => (
 										<div
 											key={i}
-											className="h-16 animate-pulse bg-card/40 rounded-xl border border-border/20"
+											className="h-16 animate-pulse glass rounded-xl border border-white/10"
 										/>
 									))}
 								</div>
@@ -2239,12 +2275,12 @@ const CommunityHub = () => {
 											transition={{ delay: idx * 0.05 }}
 											onClick={() => setSelectedTopic(topic)}
 										>
-											<div className="p-4 rounded-xl border border-border/30 bg-card/20 hover:bg-card/40 transition-all duration-200 hover:shadow cursor-pointer flex justify-between items-center group">
+											<div className="p-4 rounded-2xl glass border border-white/10 hover:border-cyan/40 hover:bg-white/[0.04] transition-all duration-200 hover:shadow-lg cursor-pointer flex justify-between items-center group">
 												<div className="space-y-1 pr-4">
-													<h4 className="text-sm md:text-base font-semibold group-hover:text-primary transition-colors">
+													<h4 className="text-sm md:text-base font-semibold text-white group-hover:text-cyan transition-colors">
 														{topic.title}
 													</h4>
-													<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+													<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/50">
 														<span className={cn("flex items-center gap-1", topic.is_admin && "text-purple-400 font-bold")}>
 															<UserIcon className={cn("w-3 h-3", topic.is_admin && "text-purple-400")} />
 															{topic.author_name}
@@ -2266,13 +2302,13 @@ const CommunityHub = () => {
 													</div>
 												</div>
 
-												<div className="flex items-center gap-4 text-xs text-muted-foreground">
+												<div className="flex items-center gap-4 text-xs text-white/60">
 													<button
 														className={cn(
 															"flex items-center gap-1.5 transition-colors p-1",
 															likedTopics.includes(topic.id)
-																? "text-primary font-bold cursor-default"
-																: "hover:text-primary",
+																? "text-cyan font-bold cursor-default"
+																: "hover:text-cyan",
 														)}
 														onClick={(e) => handleLike(topic.id, e)}
 													>
@@ -2280,18 +2316,18 @@ const CommunityHub = () => {
 															className={cn(
 																"w-3.5 h-3.5",
 																likedTopics.includes(topic.id) &&
-																	"fill-primary/20",
+																	"fill-cyan/20",
 															)}
 														/>
 														<span>{topic.likes_count}</span>
 													</button>
-													<div className="flex items-center gap-1.5 text-muted-foreground p-1">
+													<div className="flex items-center gap-1.5 text-white/50 p-1">
 														<MessageSquare className="w-3.5 h-3.5" />
 														<span>{topic.comments_count || 0}</span>
 													</div>
 													{isDeletionAuthorized(topic.id) && (
 														<button
-															className="flex items-center gap-1 hover:text-red-500 transition-colors p-1"
+															className="flex items-center gap-1 hover:text-rose-400 transition-colors p-1"
 															onClick={(e) => handleDeleteTopic(topic.id, e)}
 															title={t(
 																"community:discussion.deleteTopic",
@@ -2302,7 +2338,7 @@ const CommunityHub = () => {
 														</button>
 													)}
 													<span className="group-hover:translate-x-1 transition-transform">
-														<ChevronRight className="w-4 h-4 text-muted-foreground" />
+														<ChevronRight className="w-4 h-4 text-white/40 group-hover:text-cyan" />
 													</span>
 												</div>
 											</div>
@@ -2310,9 +2346,9 @@ const CommunityHub = () => {
 									))}
 								</div>
 							) : (
-								<div className="text-center py-16 bg-card/20 rounded-2xl border border-dashed border-border/40">
-									<MessageSquare className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
-									<p className="text-muted-foreground text-sm">
+								<div className="text-center py-16 glass rounded-2xl border border-dashed border-white/10">
+									<MessageSquare className="w-8 h-8 mx-auto text-white/40 mb-2" />
+									<p className="text-white/50 text-sm">
 										{t(
 											"community:discussion.noDiscussions",
 											"No active discussion topics.",
@@ -2326,36 +2362,36 @@ const CommunityHub = () => {
 						<TabsContent value="network" className="mt-6 space-y-6">
 							{/* Statistics Grid */}
 							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-								<Card className="border border-border/30 bg-card/20 backdrop-blur-sm">
+								<Card className="glass rounded-2xl border border-white/10 shadow-lg">
 									<CardHeader className="p-4 pb-1">
-										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-											<Network className="w-3.5 h-3.5 text-blue-500" />
+										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+											<Network className="w-3.5 h-3.5 text-cyan" />
 											{t("community:network.activeNodes", "Active Nodes")}
 										</CardDescription>
 									</CardHeader>
 									<CardContent className="p-4 pt-1 pb-3">
-										<div className="text-xl md:text-2xl font-mono font-bold text-foreground">
+										<div className="text-xl md:text-2xl font-mono font-bold text-white">
 											{activeNodes.length > 0 ? activeNodes.length : "1"}
 										</div>
-										<p className="text-[9px] text-green-550 font-mono mt-0.5">
+										<p className="text-[9px] text-emerald-400 font-mono mt-0.5">
 											▲ +{activeNodes.filter((n) => !n.is_master).length}{" "}
 											{t("community:network.thisHour", "this hour")}
 										</p>
 									</CardContent>
 								</Card>
 
-								<Card className="border border-border/30 bg-card/20 backdrop-blur-sm">
+								<Card className="glass rounded-2xl border border-white/10 shadow-lg">
 									<CardHeader className="p-4 pb-1">
-										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-white/50 flex items-center gap-1.5">
 											<Clock className="w-3.5 h-3.5 text-emerald-400" />
 											{t("community:network.avgLatency", "Average Latency")}
 										</CardDescription>
 									</CardHeader>
 									<CardContent className="p-4 pt-1 pb-3">
-										<div className="text-xl md:text-2xl font-mono font-bold text-foreground">
+										<div className="text-xl md:text-2xl font-mono font-bold text-white">
 											{avgLatency}ms
 										</div>
-										<p className="text-[9px] text-muted-foreground font-mono mt-0.5">
+										<p className="text-[9px] text-white/50 font-mono mt-0.5">
 											{t(
 												"community:network.optimizedRouting",
 												"Optimized routing",
@@ -2364,18 +2400,18 @@ const CommunityHub = () => {
 									</CardContent>
 								</Card>
 
-								<Card className="border border-border/30 bg-card/20 backdrop-blur-sm">
+								<Card className="glass rounded-2xl border border-white/10 shadow-lg">
 									<CardHeader className="p-4 pb-1">
-										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-white/50 flex items-center gap-1.5">
 											<Cpu className="w-3.5 h-3.5 text-indigo-400" />
 											{t("community:network.uptimeSla", "Uptime SLA")}
 										</CardDescription>
 									</CardHeader>
 									<CardContent className="p-4 pt-1 pb-3">
-										<div className="text-xl md:text-2xl font-mono font-bold text-foreground">
+										<div className="text-xl md:text-2xl font-mono font-bold text-white">
 											99.99%
 										</div>
-										<p className="text-[9px] text-green-550 font-mono mt-0.5">
+										<p className="text-[9px] text-emerald-400 font-mono mt-0.5">
 											{t(
 												"community:network.consensusVerified",
 												"Consensus verified",
@@ -2384,19 +2420,19 @@ const CommunityHub = () => {
 									</CardContent>
 								</Card>
 
-								<Card className="border border-border/30 bg-card/20 backdrop-blur-sm">
+								<Card className="glass rounded-2xl border border-white/10 shadow-lg">
 									<CardHeader className="p-4 pb-1">
-										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-											<Activity className="w-3.5 h-3.5 text-primary" />
+										<CardDescription className="text-[10px] font-mono uppercase tracking-wider text-white/50 flex items-center gap-1.5">
+											<Activity className="w-3.5 h-3.5 text-cyan" />
 											{t("community:network.relayStatus", "Relay Status")}
 										</CardDescription>
 									</CardHeader>
 									<CardContent className="p-4 pt-1 pb-3">
-										<div className="text-xl md:text-2xl font-mono font-bold text-green-500 flex items-center gap-1.5">
-											<span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+										<div className="text-xl md:text-2xl font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+											<span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
 											{t("community:network.connected", "CONNECTED")}
 										</div>
-										<p className="text-[9px] text-muted-foreground font-mono mt-0.5">
+										<p className="text-[9px] text-white/50 font-mono mt-0.5">
 											SSL SHA-256 Validated
 										</p>
 									</CardContent>
@@ -2407,26 +2443,26 @@ const CommunityHub = () => {
 							<NodeLeaderboard activeNodes={activeNodes} isRu={isRu} t={t} />
 
 							{/* Node Map Canvas container */}
-							<Card className="border border-border/30 bg-card/25 backdrop-blur-sm overflow-hidden">
-								<CardHeader className="pb-3 border-b border-border/10">
+							<Card className="glass rounded-2xl border border-white/10 shadow-xl overflow-hidden">
+								<CardHeader className="pb-3 border-b border-white/10">
 									<div className="flex justify-between items-center gap-4">
-										<CardTitle className="text-sm font-bold font-mono tracking-wider text-foreground/90 uppercase flex items-center gap-2">
-											<Activity className="w-4 h-4 text-green-500 animate-pulse" />
+										<CardTitle className="text-sm font-bold font-mono tracking-wider text-white uppercase flex items-center gap-2">
+											<Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
 											{t("community:network.topologyTitle")}
 										</CardTitle>
-										<div className="text-[10px] font-mono text-muted-foreground flex items-center gap-3">
+										<div className="text-[10px] font-mono text-white/50 flex items-center gap-3">
 											<span className="flex items-center gap-1.5">
-												<span className="w-2 h-2 rounded-full bg-blue-500" />
+												<span className="w-2 h-2 rounded-full bg-cyan" />
 												{t("community:network.masterHub")}
 											</span>
 											<span className="flex items-center gap-1.5">
-												<span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+												<span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
 												{t("community:network.federatedNode")}
 											</span>
 										</div>
 									</div>
 								</CardHeader>
-								<CardContent className="p-0 relative bg-black/40">
+								<CardContent className="p-0 relative">
 									<div className="relative overflow-hidden h-[650px] w-full">
 										<NetworkMap activeNodes={activeNodes} isRu={isRu} t={t} />
 									</div>
@@ -2440,10 +2476,10 @@ const CommunityHub = () => {
 				<div className="space-y-6">
 					{/* News Feed */}
 					<div className="space-y-4">
-						<div className="flex justify-between items-center pb-2 border-b border-border/40">
+						<div className="flex justify-between items-center pb-2 border-b border-white/10">
 							<div className="flex items-center gap-2">
-								<Newspaper className="w-4.5 h-4.5 text-primary" />
-								<h3 className="text-base font-bold">
+								<Newspaper className="w-4.5 h-4.5 text-cyan" />
+								<h3 className="text-base font-bold text-white">
 									{t("community:news.title", "News & Releases")}
 								</h3>
 							</div>
@@ -2451,7 +2487,7 @@ const CommunityHub = () => {
 								<Button
 									size="sm"
 									variant="ghost"
-									className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+									className="h-7 w-7 p-0 text-white/50 hover:text-white hover:bg-white/[0.08]"
 									onClick={() => setIsAddNewsOpen(true)}
 									title={t("community:admin.addNews")}
 								>
@@ -2464,7 +2500,7 @@ const CommunityHub = () => {
 								{[1, 2].map((i) => (
 									<div
 										key={i}
-										className="h-20 animate-pulse bg-card/30 rounded-lg"
+										className="h-20 animate-pulse glass rounded-xl border border-white/10"
 									/>
 								))}
 							</div>
@@ -2484,30 +2520,30 @@ const CommunityHub = () => {
 													animate={{ opacity: 1, x: 0 }}
 													transition={{ delay: idx * 0.05 }}
 													onClick={() => setSelectedNews(item)}
-													className="p-3.5 rounded-lg border border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer space-y-1.5 group animate-fadeIn relative overflow-hidden"
+													className="p-3.5 rounded-2xl glass border border-cyan/40 bg-cyan/5 hover:bg-cyan/10 transition-colors cursor-pointer space-y-1.5 group animate-fadeIn relative overflow-hidden shadow-lg"
 												>
-													<div className="absolute top-0 left-0 bottom-0 w-[3px] bg-primary" />
+													<div className="absolute top-0 left-0 bottom-0 w-[3px] bg-cyan shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
 													<div className="flex justify-between items-center gap-2 pl-1.5">
 														<div className="flex items-center gap-1.5 min-w-0 flex-1">
-															<Pin className="w-3.5 h-3.5 text-primary shrink-0 rotate-45" />
-															<h4 className="text-xs font-bold text-foreground/90 group-hover:text-primary transition-colors line-clamp-1">
+															<Pin className="w-3.5 h-3.5 text-cyan shrink-0 rotate-45" />
+															<h4 className="text-xs font-bold text-white group-hover:text-cyan transition-colors line-clamp-1">
 																{item.title}
 															</h4>
 															<Badge
 																variant="outline"
-																className="text-[8px] h-4 border-primary/30 text-primary bg-primary/5 px-1 py-0 uppercase tracking-wide shrink-0"
+																className="text-[8px] h-4 border-cyan/30 text-cyan bg-cyan/10 px-1 py-0 uppercase tracking-wide shrink-0"
 															>
 																{isRu ? "Закреплено" : "Pinned"}
 															</Badge>
 														</div>
 														<div className="flex items-center gap-1.5 shrink-0">
-															<span className="text-[8px] text-muted-foreground font-mono">
+															<span className="text-[8px] text-white/50 font-mono">
 																{item.date}
 															</span>
 															{adminKey && item.id !== undefined && (
 																<div className="flex items-center gap-1">
 																	<button
-																		className="text-primary hover:text-primary/80 transition-colors p-0.5"
+																		className="text-cyan hover:text-cyan/80 transition-colors p-0.5"
 																		onClick={(e) => {
 																			e.stopPropagation();
 																			handleTogglePinNewsItem(item.id!, false, e);
@@ -2517,7 +2553,7 @@ const CommunityHub = () => {
 																		<Pin className="w-3 h-3 rotate-45" />
 																	</button>
 																	<button
-																		className="text-muted-foreground hover:text-red-500 transition-colors p-0.5"
+																		className="text-white/50 hover:text-rose-400 transition-colors p-0.5"
 																		onClick={(e) => {
 																			e.stopPropagation();
 																			handleDeleteNewsItem(item.id!, e);
@@ -2530,16 +2566,16 @@ const CommunityHub = () => {
 															)}
 														</div>
 													</div>
-													<p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 pl-5">
+													<p className="text-[11px] text-white/60 leading-relaxed line-clamp-2 pl-5">
 														{item.text}
 													</p>
-													<div className="flex gap-3 pt-1 text-[10px] text-muted-foreground border-t border-border/5 pl-5">
+													<div className="flex gap-3 pt-1 text-[10px] text-white/50 border-t border-white/10 pl-5">
 														<button
 															className={cn(
 																"flex items-center gap-1 transition-colors",
 																likedNews.includes(item.id!)
-																	? "text-primary font-bold cursor-default"
-																	: "hover:text-primary",
+																	? "text-cyan font-bold cursor-default"
+																	: "hover:text-cyan",
 															)}
 															onClick={(e) => {
 																e.stopPropagation();
@@ -2550,7 +2586,7 @@ const CommunityHub = () => {
 																className={cn(
 																	"w-3 h-3",
 																	likedNews.includes(item.id!) &&
-																		"fill-primary/20",
+																		"fill-cyan/20",
 																)}
 															/>
 															<span>{item.likes_count ?? 0}</span>
@@ -2576,20 +2612,20 @@ const CommunityHub = () => {
 														animate={{ opacity: 1, x: 0 }}
 														transition={{ delay: idx * 0.05 }}
 														onClick={() => setSelectedNews(item)}
-														className="p-3.5 rounded-lg border border-border/30 bg-card/20 hover:bg-card/45 transition-colors cursor-pointer space-y-1.5 group animate-fadeIn"
+														className="p-3.5 rounded-2xl glass border border-white/10 hover:border-cyan/40 hover:bg-white/[0.04] transition-colors cursor-pointer space-y-1.5 group animate-fadeIn shadow-md"
 													>
 														<div className="flex justify-between items-center gap-2">
-															<h4 className="text-xs font-bold text-foreground/90 group-hover:text-primary transition-colors line-clamp-1 flex-1">
+															<h4 className="text-xs font-bold text-white group-hover:text-cyan transition-colors line-clamp-1 flex-1">
 																{item.title}
 															</h4>
 															<div className="flex items-center gap-1.5 shrink-0">
-																<span className="text-[8px] text-muted-foreground font-mono">
+																<span className="text-[8px] text-white/50 font-mono">
 																	{item.date}
 																</span>
 																{adminKey && item.id !== undefined && (
 																	<div className="flex items-center gap-1">
 																		<button
-																			className="text-muted-foreground hover:text-primary transition-colors p-0.5"
+																			className="text-white/50 hover:text-cyan transition-colors p-0.5"
 																			onClick={(e) => {
 																				e.stopPropagation();
 																				handleTogglePinNewsItem(item.id!, true, e);
@@ -2599,7 +2635,7 @@ const CommunityHub = () => {
 																			<Pin className="w-3 h-3" />
 																		</button>
 																		<button
-																			className="text-muted-foreground hover:text-red-500 transition-colors p-0.5"
+																			className="text-white/50 hover:text-rose-400 transition-colors p-0.5"
 																			onClick={(e) => {
 																				e.stopPropagation();
 																				handleDeleteNewsItem(item.id!, e);
@@ -2612,16 +2648,16 @@ const CommunityHub = () => {
 																)}
 															</div>
 														</div>
-														<p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+														<p className="text-[11px] text-white/60 leading-relaxed line-clamp-2">
 															{item.text}
 														</p>
-														<div className="flex gap-3 pt-1 text-[10px] text-muted-foreground border-t border-border/5">
+														<div className="flex gap-3 pt-1 text-[10px] text-white/50 border-t border-white/10">
 															<button
 																className={cn(
 																	"flex items-center gap-1 transition-colors",
 																	likedNews.includes(item.id!)
-																		? "text-primary font-bold cursor-default"
-																		: "hover:text-primary",
+																		? "text-cyan font-bold cursor-default"
+																		: "hover:text-cyan",
 																)}
 																onClick={(e) => {
 																	e.stopPropagation();
@@ -2632,7 +2668,7 @@ const CommunityHub = () => {
 																	className={cn(
 																		"w-3 h-3",
 																		likedNews.includes(item.id!) &&
-																			"fill-primary/20",
+																			"fill-cyan/20",
 																	)}
 																/>
 																<span>{item.likes_count ?? 0}</span>
@@ -2652,7 +2688,7 @@ const CommunityHub = () => {
 												<Button
 													variant="outline"
 													size="icon"
-													className="h-7 w-7"
+													className="h-7 w-7 border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white"
 													disabled={newsPage === 1}
 													onClick={() =>
 														setNewsPage((prev) => Math.max(prev - 1, 1))
@@ -2660,13 +2696,13 @@ const CommunityHub = () => {
 												>
 													<ChevronLeft className="w-3.5 h-3.5" />
 												</Button>
-												<span className="text-[11px] text-muted-foreground font-mono">
+												<span className="text-[11px] text-white/60 font-mono">
 													{newsPage} / {Math.ceil(regularNews.length / NEWS_PER_PAGE)}
 												</span>
 												<Button
 													variant="outline"
 													size="icon"
-													className="h-7 w-7"
+													className="h-7 w-7 border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white"
 													disabled={
 														newsPage ===
 														Math.ceil(regularNews.length / NEWS_PER_PAGE)
@@ -2688,7 +2724,7 @@ const CommunityHub = () => {
 								);
 							})()
 						) : (
-							<p className="text-xs text-muted-foreground">
+							<p className="text-xs text-white/50">
 								{t("community:news.noUpdates", "No news updates available.")}
 							</p>
 						)}
@@ -2696,31 +2732,31 @@ const CommunityHub = () => {
 
 					{/* Feedback Form */}
 					<div className="space-y-4">
-						<div className="flex items-center gap-2 pb-2 border-b border-border/40">
-							<MessageSquare className="w-4.5 h-4.5 text-primary" />
-							<h3 className="text-base font-bold">
+						<div className="flex items-center gap-2 pb-2 border-b border-white/10">
+							<MessageSquare className="w-4.5 h-4.5 text-cyan" />
+							<h3 className="text-base font-bold text-white">
 								{t("community:feedback.title", "Send Feedback")}
 							</h3>
 						</div>
 
-						<Card className="border border-border/30 bg-card/10 backdrop-blur-sm relative overflow-hidden">
-							<div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-primary/30 to-primary/80" />
+						<Card className="glass rounded-2xl border border-white/10 shadow-xl relative overflow-hidden">
+							<div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-cyan/40 via-cyan to-cyan/40" />
 							<CardHeader className="p-4 pb-2">
-								<CardDescription className="text-[11px] leading-relaxed">
+								<CardDescription className="text-[11px] leading-relaxed text-white/60">
 									{t("community:feedback.description")}
 								</CardDescription>
 							</CardHeader>
 							<CardContent className="p-4 pt-2">
 								<form onSubmit={handleFeedbackSubmit} className="space-y-3">
 									<div className="space-y-1">
-										<label className="text-[10px] font-medium text-muted-foreground">
+										<label className="text-[10px] font-medium text-white/60">
 											{t("community:feedback.category")}
 										</label>
 										<Select value={category} onValueChange={setCategory}>
-											<SelectTrigger className="h-8 text-xs bg-black/20">
+											<SelectTrigger className="h-8 text-xs bg-white/[0.03] border-white/10 text-white rounded-xl">
 												<SelectValue />
 											</SelectTrigger>
-											<SelectContent>
+											<SelectContent className="glass border-white/10 bg-slate-900/95 text-white">
 												<SelectItem value="bug">
 													{t("community:feedback.categories.bug")}
 												</SelectItem>
@@ -2735,20 +2771,20 @@ const CommunityHub = () => {
 									</div>
 
 									<div className="space-y-1">
-										<label className="text-[10px] font-medium text-muted-foreground">
+										<label className="text-[10px] font-medium text-white/60">
 											{t("community:feedback.message")}
 										</label>
 										<Textarea
 											value={feedbackText}
 											onChange={(e) => setFeedbackText(e.target.value)}
 											placeholder={t("community:feedback.placeholder")}
-											className="min-h-[80px] text-xs resize-none bg-black/20"
+											className="min-h-[80px] text-xs resize-none bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 											required
 										/>
 									</div>
 
 									<div className="space-y-1">
-										<label className="text-[10px] font-medium text-muted-foreground">
+										<label className="text-[10px] font-medium text-white/60">
 											{t("community:feedback.email")}
 										</label>
 										<Input
@@ -2756,13 +2792,13 @@ const CommunityHub = () => {
 											value={contactEmail}
 											onChange={(e) => setContactEmail(e.target.value)}
 											placeholder="your-email@example.com"
-											className="h-8 text-xs bg-black/20"
+											className="h-8 text-xs bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 										/>
 									</div>
 
 									<Button
 										type="submit"
-										className="w-full gap-1.5 text-xs h-8"
+										className="w-full gap-1.5 text-xs h-8 bg-gradient-to-r from-cyan to-blue-500 hover:from-cyan/90 hover:to-blue-500/90 text-black font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] rounded-xl"
 										disabled={submittingFeedback}
 									>
 										{submittingFeedback ? (
@@ -2782,9 +2818,9 @@ const CommunityHub = () => {
 					{/* My Support Tickets List */}
 					{localFeedbackTickets.length > 0 && (
 						<div className="space-y-4 pt-2">
-							<div className="flex items-center gap-2 pb-2 border-b border-border/40">
-								<MessageSquare className="w-4.5 h-4.5 text-primary" />
-								<h3 className="text-base font-bold">
+							<div className="flex items-center gap-2 pb-2 border-b border-white/10">
+								<MessageSquare className="w-4.5 h-4.5 text-cyan" />
+								<h3 className="text-base font-bold text-white">
 									{t("community:feedback.myTickets", "My Support Tickets")}
 								</h3>
 							</div>
@@ -2797,13 +2833,13 @@ const CommunityHub = () => {
 										<Card
 											key={ticketId}
 											onClick={() => setSelectedHubTicket(ticket)}
-											className="border border-border/20 bg-card/25 hover:bg-card/45 hover:border-primary/30 transition-all cursor-pointer p-3 group relative overflow-hidden"
+											className="glass rounded-xl border border-white/10 hover:border-cyan/40 hover:bg-white/[0.04] transition-all cursor-pointer p-3 group relative overflow-hidden shadow-sm"
 										>
 											<div className="flex items-center justify-between gap-2 mb-1.5">
 												<div className="flex items-center gap-1.5">
 													<Badge
 														variant="outline"
-														className="text-[9px] uppercase tracking-wider h-4 py-0"
+														className="text-[9px] uppercase tracking-wider h-4 py-0 bg-white/[0.03] border-white/10 text-white/70"
 													>
 														{(ticket.category as string) === "bug"
 															? t("community:feedback.badges.bug")
@@ -2812,10 +2848,10 @@ const CommunityHub = () => {
 																: t("community:feedback.badges.question")}
 													</Badge>
 													{unreadCount > 0 && (
-														<span className="flex h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+														<span className="flex h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
 													)}
 												</div>
-												<span className="text-[9px] text-muted-foreground">
+												<span className="text-[9px] text-white/50">
 													{new Intl.DateTimeFormat(isRu ? "ru-RU" : "en-US", {
 														month: "short",
 														day: "numeric",
@@ -2825,13 +2861,13 @@ const CommunityHub = () => {
 												</span>
 											</div>
 											<div className="flex items-center justify-between gap-2">
-												<p className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors flex-1">
+												<p className="text-xs text-white/60 truncate group-hover:text-white transition-colors flex-1">
 													{ticket.text as string}
 												</p>
 												{unreadCount > 0 && (
 													<Badge
 														variant="destructive"
-														className="rounded-full px-1.5 py-0 bg-red-500 text-white text-[9px] font-bold shrink-0 animate-pulse"
+														className="rounded-full px-1.5 py-0 bg-rose-500 text-white text-[9px] font-bold shrink-0 animate-pulse"
 													>
 														{unreadCount}
 													</Badge>
@@ -2848,20 +2884,20 @@ const CommunityHub = () => {
 
 			{/* Create Topic Dialog */}
 			<Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-				<DialogContent className="sm:max-w-[450px] border border-border/40 bg-card">
+				<DialogContent className="sm:max-w-[450px] glass border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl text-white">
 					<form onSubmit={handleCreateTopic}>
 						<DialogHeader>
-							<DialogTitle>
+							<DialogTitle className="text-white text-lg font-bold">
 								{t("community:createTopic.title", "Create Discussion Topic")}
 							</DialogTitle>
-							<DialogDescription>
+							<DialogDescription className="text-white/60 text-xs">
 								{t("community:createTopic.description")}
 							</DialogDescription>
 						</DialogHeader>
 
 						<div className="space-y-4 py-4">
 							<div className="space-y-2">
-								<Label htmlFor="topic-title">
+								<Label htmlFor="topic-title" className="text-xs text-white/70">
 									{t("community:createTopic.topicTitle", "Title")}
 								</Label>
 								<Input
@@ -2873,10 +2909,11 @@ const CommunityHub = () => {
 										"community:createTopic.topicTitlePlaceholder",
 										"Topic title...",
 									)}
+									className="bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 								/>
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="topic-desc">
+								<Label htmlFor="topic-desc" className="text-xs text-white/70">
 									{t("community:createTopic.topicDesc", "Description")}
 								</Label>
 								<Textarea
@@ -2888,21 +2925,26 @@ const CommunityHub = () => {
 										"community:createTopic.topicDescPlaceholder",
 										"Provide details for the discussion...",
 									)}
-									className="min-h-[120px] resize-none"
+									className="min-h-[120px] resize-none bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 								/>
 							</div>
 						</div>
 
-						<DialogFooter>
+						<DialogFooter className="gap-2">
 							<Button
 								type="button"
 								variant="outline"
 								onClick={() => setIsCreateDialogOpen(false)}
 								disabled={publishingTopic}
+								className="border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white rounded-xl text-xs h-8"
 							>
 								{t("community:detailedView.cancel", "Cancel")}
 							</Button>
-							<Button type="submit" disabled={publishingTopic}>
+							<Button
+								type="submit"
+								disabled={publishingTopic}
+								className="bg-gradient-to-r from-cyan to-blue-500 hover:from-cyan/90 hover:to-blue-500/90 text-black font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] rounded-xl text-xs h-8"
+							>
 								{publishingTopic
 									? t("community:createTopic.publishing", "Publishing...")
 									: t("community:createTopic.publish", "Publish")}
@@ -2917,7 +2959,7 @@ const CommunityHub = () => {
 				open={!!selectedTopic}
 				onOpenChange={(open) => !open && setSelectedTopic(null)}
 			>
-				<DialogContent className="max-w-[1000px] max-h-[85vh] overflow-y-auto border border-border/40 bg-card p-6">
+				<DialogContent className="max-w-[1000px] max-h-[85vh] overflow-y-auto glass border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl text-white p-6">
 					{selectedTopic && (
 						<div className="space-y-6">
 							{/* Header */}
@@ -2926,13 +2968,13 @@ const CommunityHub = () => {
 									<div className="flex flex-wrap gap-2 items-center">
 										<Badge
 											variant="outline"
-											className="text-[10px] uppercase font-mono px-2"
+											className="text-[10px] uppercase font-mono px-2 bg-cyan/10 border-cyan/30 text-cyan"
 										>
 											{selectedTopic.topic_type === "strategy"
 												? selectedTopic.symbol || "Strategy"
 												: "Discussion"}
 										</Badge>
-										<span className={cn("text-xs text-muted-foreground flex items-center gap-1", selectedTopic.is_admin && "text-purple-400 font-bold")}>
+										<span className={cn("text-xs text-white/50 flex items-center gap-1", selectedTopic.is_admin && "text-purple-400 font-bold")}>
 											<UserIcon className={cn("w-3.5 h-3.5", selectedTopic.is_admin && "text-purple-400")} />
 											{selectedTopic.author_name}
 											{selectedTopic.is_admin && (
@@ -2945,7 +2987,7 @@ const CommunityHub = () => {
 											)}
 										</span>
 									</div>
-									<h2 className="text-xl md:text-2xl font-bold leading-tight">
+									<h2 className="text-xl md:text-2xl font-bold leading-tight text-white">
 										{getTopicTitle(selectedTopic, t)}
 									</h2>
 								</div>
@@ -2959,9 +3001,10 @@ const CommunityHub = () => {
 												: "outline"
 										}
 										className={cn(
-											"h-8 gap-1.5 text-xs",
-											likedTopics.includes(selectedTopic.id) &&
-												"bg-primary text-primary-foreground pointer-events-none",
+											"h-8 gap-1.5 text-xs rounded-xl",
+											likedTopics.includes(selectedTopic.id)
+												? "bg-cyan text-black font-semibold pointer-events-none"
+												: "border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white",
 										)}
 										onClick={() => handleLike(selectedTopic.id)}
 									>
@@ -2974,7 +3017,7 @@ const CommunityHub = () => {
 										/>
 										<span>{selectedTopic.likes_count}</span>
 									</Button>
-									<div className="h-8 flex items-center gap-1.5 px-3 rounded-md border border-border/10 bg-black/10 text-xs text-muted-foreground">
+									<div className="h-8 flex items-center gap-1.5 px-3 rounded-xl border border-white/10 bg-white/[0.03] text-xs text-white/60">
 										<MessageSquare className="w-3.5 h-3.5" />
 										<span>{selectedTopic.comments_count || 0}</span>
 									</div>
@@ -2982,7 +3025,7 @@ const CommunityHub = () => {
 										<Button
 											size="sm"
 											variant="outline"
-											className="h-8 gap-1.5 text-xs border-red-500/20 text-red-400 hover:text-red-500 hover:bg-red-500/10"
+											className="h-8 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl"
 											onClick={() => handleDeleteTopic(selectedTopic.id)}
 										>
 											<Trash2 className="w-3.5 h-3.5" />
@@ -2995,7 +3038,7 @@ const CommunityHub = () => {
 							</div>
 
 							{/* Description */}
-							<div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap bg-black/10 p-4 rounded-xl border border-border/10">
+							<div className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap bg-white/[0.02] p-4 rounded-xl border border-white/10">
 								{selectedTopic.description}
 							</div>
 
@@ -3005,52 +3048,52 @@ const CommunityHub = () => {
 									{/* KPIs Grid */}
 									{selectedTopic.kpis && (
 										<div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-											<div className="bg-black/20 p-3 rounded-lg border border-border/15 text-center">
-												<div className="text-[10px] text-muted-foreground uppercase">
+											<div className="bg-white/[0.03] p-3 rounded-xl border border-white/10 text-center">
+												<div className="text-[10px] text-white/50 uppercase">
 													{t("community:detailedView.netProfit", "Net Profit")}
 												</div>
 												<div
-													className={`text-base font-bold ${selectedTopic.kpis.total_pnl >= 0 ? "text-green-500" : "text-red-500"}`}
+													className={`text-base font-bold ${selectedTopic.kpis.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}
 												>
 													{selectedTopic.kpis.total_pnl >= 0 ? "+" : "-"}$
 													{Math.abs(selectedTopic.kpis.total_pnl).toFixed(2)}
 												</div>
 											</div>
-											<div className="bg-black/20 p-3 rounded-lg border border-border/15 text-center">
-												<div className="text-[10px] text-muted-foreground uppercase">
+											<div className="bg-white/[0.03] p-3 rounded-xl border border-white/10 text-center">
+												<div className="text-[10px] text-white/50 uppercase">
 													{t("community:detailedView.winRate", "Win Rate")}
 												</div>
-												<div className="text-base font-bold text-foreground">
+												<div className="text-base font-bold text-white">
 													{(selectedTopic.kpis.win_rate || 0).toFixed(1)}%
 												</div>
 											</div>
-											<div className="bg-black/20 p-3 rounded-lg border border-border/15 text-center">
-												<div className="text-[10px] text-muted-foreground uppercase">
+											<div className="bg-white/[0.03] p-3 rounded-xl border border-white/10 text-center">
+												<div className="text-[10px] text-white/50 uppercase">
 													{t(
 														"community:detailedView.max_drawdown",
 														"Max Drawdown",
 													)}
 												</div>
-												<div className="text-base font-bold text-foreground">
+												<div className="text-base font-bold text-white">
 													{(selectedTopic.kpis.max_drawdown || 0).toFixed(2)}%
 												</div>
 											</div>
-											<div className="bg-black/20 p-3 rounded-lg border border-border/15 text-center">
-												<div className="text-[10px] text-muted-foreground uppercase">
+											<div className="bg-white/[0.03] p-3 rounded-xl border border-white/10 text-center">
+												<div className="text-[10px] text-white/50 uppercase">
 													{t(
 														"community:detailedView.totalTrades",
 														"Total Trades",
 													)}
 												</div>
-												<div className="text-base font-bold text-foreground">
+												<div className="text-base font-bold text-white">
 													{selectedTopic.kpis.trades || 0}
 												</div>
 											</div>
-											<div className="bg-black/20 p-3 rounded-lg border border-border/15 text-center">
-												<div className="text-[10px] text-muted-foreground uppercase">
+											<div className="bg-white/[0.03] p-3 rounded-xl border border-white/10 text-center">
+												<div className="text-[10px] text-white/50 uppercase">
 													Sharpe
 												</div>
-												<div className="text-base font-bold text-foreground">
+												<div className="text-base font-bold text-white">
 													{(selectedTopic.kpis.sharpe_ratio || 0).toFixed(2)}
 												</div>
 											</div>
@@ -3060,8 +3103,8 @@ const CommunityHub = () => {
 									{/* Equity Curve Chart */}
 									{selectedTopic.equity_curve &&
 										selectedTopic.equity_curve.length > 0 && (
-											<div className="bg-black/15 border border-border/10 p-4 rounded-xl">
-												<h3 className="text-sm font-semibold mb-3">
+											<div className="bg-white/[0.02] border border-white/10 p-4 rounded-xl">
+												<h3 className="text-sm font-semibold mb-3 text-white">
 													{t(
 														"community:detailedView.equityCurve",
 														"Equity Curve",
@@ -3078,9 +3121,9 @@ const CommunityHub = () => {
 
 									{/* Strategy JSON Inspector */}
 									{selectedTopic.strategy_json && (
-										<div className="bg-black/15 border border-border/10 p-4 rounded-xl space-y-3">
+										<div className="bg-white/[0.02] border border-white/10 p-4 rounded-xl space-y-3">
 											<div className="flex justify-between items-center">
-												<h3 className="text-sm font-semibold">
+												<h3 className="text-sm font-semibold text-white">
 													{t(
 														"community:detailedView.configTitle",
 														"Strategy Configuration",
@@ -3088,7 +3131,7 @@ const CommunityHub = () => {
 												</h3>
 												<Button
 													size="sm"
-													className="h-8 gap-2 text-xs"
+													className="h-8 gap-2 text-xs bg-cyan/20 hover:bg-cyan/30 text-cyan border border-cyan/40 rounded-xl"
 													onClick={() =>
 														handleImport(
 															selectedTopic.title as string,
@@ -3102,8 +3145,8 @@ const CommunityHub = () => {
 													{t("community:detailedView.import", "Import")}
 												</Button>
 											</div>
-											<div className="relative max-h-60 overflow-y-auto rounded-lg bg-black/40 border border-border/15 p-3 text-xs font-mono">
-												<pre className="text-muted-foreground/80 whitespace-pre-wrap">
+											<div className="relative max-h-60 overflow-y-auto rounded-xl bg-black/40 border border-white/10 p-3 text-xs font-mono">
+												<pre className="text-white/70 whitespace-pre-wrap">
 													{JSON.stringify(selectedTopic.strategy_json, null, 2)}
 												</pre>
 											</div>
@@ -3113,9 +3156,9 @@ const CommunityHub = () => {
 							)}
 
 							{/* Comments Section */}
-							<div className="border-t border-border/40 pt-5 space-y-4">
-								<h3 className="text-base font-semibold flex items-center gap-2">
-									<MessageSquare className="w-4 h-4 text-primary" />
+							<div className="border-t border-white/10 pt-5 space-y-4">
+								<h3 className="text-base font-semibold flex items-center gap-2 text-white">
+									<MessageSquare className="w-4 h-4 text-cyan" />
 									{t("community:detailedView.comments", "Comments")} (
 									{comments.length})
 								</h3>
@@ -3127,7 +3170,7 @@ const CommunityHub = () => {
 											{[1, 2].map((i) => (
 												<div
 													key={i}
-													className="h-10 animate-pulse bg-muted/40 rounded-lg"
+													className="h-10 animate-pulse glass rounded-xl border border-white/10"
 												/>
 											))}
 										</div>
@@ -3135,10 +3178,10 @@ const CommunityHub = () => {
 										comments.map((comment) => (
 											<div
 												key={comment.id}
-												className="p-3 rounded-lg bg-card border border-border/20 space-y-1"
+												className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-1"
 											>
 												<div className="flex justify-between text-xs">
-													<span className={cn("font-semibold text-foreground/80 flex items-center gap-1", comment.is_admin && "text-purple-400 font-bold")}>
+													<span className={cn("font-semibold text-white/90 flex items-center gap-1", comment.is_admin && "text-purple-400 font-bold")}>
 														{comment.author_name}
 														{comment.is_admin && (
 															<Badge
@@ -3149,19 +3192,19 @@ const CommunityHub = () => {
 															</Badge>
 														)}
 													</span>
-													<span className="text-[10px] text-muted-foreground font-mono">
+													<span className="text-[10px] text-white/50 font-mono">
 														{new Date(comment.created_at).toLocaleString(
 															isRu ? "ru-RU" : "en-US",
 														)}
 													</span>
 												</div>
-												<p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+												<p className="text-xs text-white/70 leading-relaxed whitespace-pre-wrap">
 													{comment.text}
 												</p>
 											</div>
 										))
 									) : (
-										<p className="text-xs text-muted-foreground italic py-2">
+										<p className="text-xs text-white/50 italic py-2">
 											{t("community:detailedView.noComments")}
 										</p>
 									)}
@@ -3174,13 +3217,13 @@ const CommunityHub = () => {
 										value={newCommentText}
 										onChange={(e) => setNewCommentText(e.target.value)}
 										placeholder={t("community:detailedView.replyPlaceholder")}
-										className="min-h-[60px] text-xs resize-none bg-black/25"
+										className="min-h-[60px] text-xs resize-none bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 									/>
 									<div className="flex justify-end">
 										<Button
 											type="submit"
 											size="sm"
-											className="h-8 text-xs gap-1.5"
+											className="h-8 text-xs gap-1.5 bg-gradient-to-r from-cyan to-blue-500 hover:from-cyan/90 hover:to-blue-500/90 text-black font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] rounded-xl"
 											disabled={submittingComment}
 										>
 											<Send className="w-3.5 h-3.5" />
@@ -3201,7 +3244,7 @@ const CommunityHub = () => {
 				open={!!selectedNews}
 				onOpenChange={(open) => !open && setSelectedNews(null)}
 			>
-				<DialogContent className="max-w-[600px] max-h-[85vh] overflow-y-auto border border-border/40 bg-card p-6">
+				<DialogContent className="max-w-[600px] max-h-[85vh] overflow-y-auto glass border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl text-white p-6">
 					{selectedNews && (
 						<div className="space-y-6">
 							{/* Header */}
@@ -3210,15 +3253,15 @@ const CommunityHub = () => {
 									<div className="flex items-center gap-2">
 										<Badge
 											variant="outline"
-											className="text-[10px] uppercase font-mono px-2"
+											className="text-[10px] uppercase font-mono px-2 bg-cyan/10 border-cyan/30 text-cyan"
 										>
 											{"Platform"}
 										</Badge>
-										<span className="text-[10px] text-muted-foreground font-mono">
+										<span className="text-[10px] text-white/50 font-mono">
 											{selectedNews.date}
 										</span>
 									</div>
-									<h2 className="text-lg md:text-xl font-bold leading-tight">
+									<h2 className="text-lg md:text-xl font-bold leading-tight text-white">
 										{selectedNews.title}
 									</h2>
 								</div>
@@ -3232,9 +3275,10 @@ const CommunityHub = () => {
 												: "outline"
 										}
 										className={cn(
-											"h-8 gap-1.5 text-xs",
-											likedNews.includes(selectedNews.id!) &&
-												"bg-primary text-primary-foreground pointer-events-none",
+											"h-8 gap-1.5 text-xs rounded-xl",
+											likedNews.includes(selectedNews.id!)
+												? "bg-cyan text-black font-semibold pointer-events-none"
+												: "border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white",
 										)}
 										onClick={() => handleNewsLike(selectedNews.id!)}
 									>
@@ -3246,7 +3290,7 @@ const CommunityHub = () => {
 										/>
 										<span>{selectedNews.likes_count ?? 0}</span>
 									</Button>
-									<div className="h-8 flex items-center gap-1.5 px-3 rounded-md border border-border/10 bg-black/10 text-xs text-muted-foreground">
+									<div className="h-8 flex items-center gap-1.5 px-3 rounded-xl border border-white/10 bg-white/[0.03] text-xs text-white/60">
 										<MessageSquare className="w-3.5 h-3.5" />
 										<span>{selectedNews.comments_count ?? 0}</span>
 									</div>
@@ -3254,14 +3298,14 @@ const CommunityHub = () => {
 							</div>
 
 							{/* Text */}
-							<div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap bg-black/10 p-4 rounded-xl border border-border/10">
+							<div className="text-xs text-white/70 leading-relaxed whitespace-pre-wrap bg-white/[0.02] p-4 rounded-xl border border-white/10">
 								{selectedNews.text}
 							</div>
 
 							{/* Comments Section */}
-							<div className="border-t border-border/40 pt-5 space-y-4">
-								<h3 className="text-sm font-semibold flex items-center gap-2">
-									<MessageSquare className="w-3.5 h-3.5 text-primary" />
+							<div className="border-t border-white/10 pt-5 space-y-4">
+								<h3 className="text-sm font-semibold flex items-center gap-2 text-white">
+									<MessageSquare className="w-3.5 h-3.5 text-cyan" />
 									{"Comments"} ({newsComments.length})
 								</h3>
 
@@ -3272,20 +3316,20 @@ const CommunityHub = () => {
 											{[1, 2].map((i) => (
 												<div
 													key={i}
-													className="h-10 animate-pulse bg-muted/40 rounded-lg"
+													className="h-10 animate-pulse glass rounded-xl border border-white/10"
 												/>
 											))}
 										</div>
 									) : newsComments.length > 0 ? (
 										newsComments.map((comment) => (
 											<div
-												key={comment.id as string}
-												className="p-3 rounded-lg bg-card border border-border/20 space-y-1"
+												key={comment.id}
+												className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-1"
 											>
 												<div className="flex justify-between text-xs">
-													<span className={cn("font-semibold text-foreground/80 flex items-center gap-1", (comment as any).is_admin && "text-purple-400 font-bold")}>
-														{comment.author_name as string}
-														{(comment as any).is_admin && (
+													<span className={cn("font-semibold text-white/90 flex items-center gap-1", comment.is_admin && "text-purple-400 font-bold")}>
+														{comment.author_name}
+														{comment.is_admin && (
 															<Badge
 																variant="outline"
 																className="text-[8px] h-3.5 border-purple-500/30 text-purple-400 bg-purple-500/5 px-1 py-0 uppercase tracking-wide shrink-0"
@@ -3294,19 +3338,19 @@ const CommunityHub = () => {
 															</Badge>
 														)}
 													</span>
-													<span className="text-[10px] text-muted-foreground font-mono">
-														{new Date(comment.created_at as string).toLocaleString(
+													<span className="text-[10px] text-white/50 font-mono">
+														{new Date(comment.created_at).toLocaleString(
 															isRu ? "ru-RU" : "en-US",
 														)}
 													</span>
 												</div>
-												<p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-													{comment.text as string}
+												<p className="text-xs text-white/70 leading-relaxed whitespace-pre-wrap">
+													{comment.text}
 												</p>
 											</div>
 										))
 									) : (
-										<p className="text-xs text-muted-foreground italic py-2">
+										<p className="text-xs text-white/50 italic py-2">
 											{"No comments yet."}
 										</p>
 									)}
@@ -3324,13 +3368,13 @@ const CommunityHub = () => {
 										placeholder={
 											"Write a reply..."
 										}
-										className="min-h-[60px] text-xs resize-none bg-black/25"
+										className="min-h-[60px] text-xs resize-none bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 									/>
 									<div className="flex justify-end">
 										<Button
 											type="submit"
 											size="sm"
-											className="h-8 text-xs gap-1.5"
+											className="h-8 text-xs gap-1.5 bg-gradient-to-r from-cyan to-blue-500 hover:from-cyan/90 hover:to-blue-500/90 text-black font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] rounded-xl"
 											disabled={submittingNewsComment}
 										>
 											<Send className="w-3.5 h-3.5" />
@@ -3348,20 +3392,20 @@ const CommunityHub = () => {
 
 			{/* Add News Item Dialog */}
 			<Dialog open={isAddNewsOpen} onOpenChange={setIsAddNewsOpen}>
-				<DialogContent className="sm:max-w-[450px] border border-border/40 bg-card">
+				<DialogContent className="sm:max-w-[450px] glass border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl text-white">
 					<form onSubmit={handleCreateNewsItem}>
 						<DialogHeader>
-							<DialogTitle>
+							<DialogTitle className="text-white text-lg font-bold">
 								{t("community:addNews.title", "Add News Update")}
 							</DialogTitle>
-							<DialogDescription>
+							<DialogDescription className="text-white/60 text-xs">
 								{t("community:addNews.description")}
 							</DialogDescription>
 						</DialogHeader>
 
 						<div className="space-y-4 py-4">
 							<div className="space-y-2">
-								<Label htmlFor="news-title">
+								<Label htmlFor="news-title" className="text-xs text-white/70">
 									{t("community:addNews.newsTitle", "Title")}
 								</Label>
 								<Input
@@ -3369,10 +3413,11 @@ const CommunityHub = () => {
 									required
 									value={newsTitle}
 									onChange={(e) => setNewsTitle(e.target.value)}
+									className="bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 								/>
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="news-text">
+								<Label htmlFor="news-text" className="text-xs text-white/70">
 									{t("community:addNews.content", "Content")}
 								</Label>
 								<Textarea
@@ -3384,21 +3429,26 @@ const CommunityHub = () => {
 										"community:addNews.contentPlaceholder",
 										"News item text...",
 									)}
-									className="min-h-[120px] resize-none"
+									className="min-h-[120px] resize-none bg-white/[0.03] border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50"
 								/>
 							</div>
 						</div>
 
-						<DialogFooter>
+						<DialogFooter className="gap-2">
 							<Button
 								type="button"
 								variant="outline"
 								onClick={() => setIsAddNewsOpen(false)}
 								disabled={publishingNews}
+								className="border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white rounded-xl text-xs h-8"
 							>
 								{t("community:detailedView.cancel", "Cancel")}
 							</Button>
-							<Button type="submit" disabled={publishingNews}>
+							<Button
+								type="submit"
+								disabled={publishingNews}
+								className="bg-gradient-to-r from-cyan to-blue-500 hover:from-cyan/90 hover:to-blue-500/90 text-black font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] rounded-xl text-xs h-8"
+							>
 								{publishingNews
 									? t("community:createTopic.publishing", "Publishing...")
 									: t("community:addNews.publish", "Publish")}
@@ -3413,23 +3463,23 @@ const CommunityHub = () => {
 				open={!!selectedHubTicket}
 				onOpenChange={(open) => !open && setSelectedHubTicket(null)}
 			>
-				<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col p-6 bg-background/95 backdrop-blur-md border border-border/85 rounded-2xl shadow-2xl">
-					<DialogHeader className="pb-4 border-b border-border/40">
+				<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col p-6 glass border border-white/10 rounded-2xl shadow-2xl backdrop-blur-2xl text-white">
+					<DialogHeader className="pb-4 border-b border-white/10">
 						<div className="flex items-center justify-between gap-4">
 							<div className="flex items-center gap-2">
 								<Badge
 									variant="outline"
 									className={`text-[10px] uppercase tracking-wider ${
 										hubTicketStatus === "OPEN"
-											? "bg-blue-500/10 text-blue-500 border-blue-500/20"
+											? "bg-cyan/10 text-cyan border-cyan/20"
 											: hubTicketStatus === "IN_PROGRESS"
-												? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-												: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+												? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+												: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
 									}`}
 								>
 									{hubTicketStatus}
 								</Badge>
-								<Badge variant="outline" className="capitalize text-[10px]">
+								<Badge variant="outline" className="capitalize text-[10px] bg-white/[0.03] border-white/10 text-white/70">
 									{selectedHubTicket?.category as string}
 								</Badge>
 							</div>
@@ -3438,7 +3488,7 @@ const CommunityHub = () => {
 									<Button
 										variant="outline"
 										size="sm"
-										className="h-7 text-[10px] gap-1 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+										className="h-7 text-[10px] gap-1 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/50 rounded-lg"
 										onClick={handleCloseHubTicket}
 										disabled={updatingHubStatus}
 									>
@@ -3446,12 +3496,12 @@ const CommunityHub = () => {
 									</Button>
 								)}
 						</div>
-						<DialogTitle className="text-lg font-bold tracking-tight mt-3">
+						<DialogTitle className="text-lg font-bold tracking-tight text-white mt-3">
 							{t("community:hubTicket.details", "Feedback Ticket Details")}
 						</DialogTitle>
-						<DialogDescription className="text-xs text-muted-foreground">
+						<DialogDescription className="text-xs text-white/50">
 							ID:{" "}
-							<code className="font-mono text-[10px]">
+							<code className="font-mono text-[10px] text-cyan">
 								{selectedHubTicket?.id as string}
 							</code>
 						</DialogDescription>
@@ -3459,19 +3509,19 @@ const CommunityHub = () => {
 
 					<div className="flex-1 py-4 space-y-6 overflow-y-auto max-h-[40vh] pr-1">
 						{/* Initial text */}
-						<div className="p-4 rounded-xl bg-muted/40 border border-border/30">
-							<h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+						<div className="p-4 rounded-xl glass border border-white/10 bg-white/[0.02]">
+							<h4 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-2">
 								{t("community:hubTicket.yourFeedback", "Your Feedback")}
 							</h4>
-							<p className="text-xs whitespace-pre-wrap leading-relaxed">
+							<p className="text-xs whitespace-pre-wrap leading-relaxed text-white/80">
 								{selectedHubTicket?.text as string}
 							</p>
 						</div>
 
 						{/* Dialogue Messages */}
-						<div className="pt-4 border-t border-border/40 space-y-4">
-							<h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-								<MessageSquare className="w-3.5 h-3.5 text-primary" />
+						<div className="pt-4 border-t border-white/10 space-y-4">
+							<h4 className="text-xs font-bold text-white/50 uppercase tracking-wider flex items-center gap-1.5">
+								<MessageSquare className="w-3.5 h-3.5 text-cyan" />
 								{t("community:hubTicket.messageHistory", "Message History")}
 							</h4>
 
@@ -3481,7 +3531,7 @@ const CommunityHub = () => {
 										{[1, 2].map((i) => (
 											<div
 												key={i}
-												className="h-12 animate-pulse bg-muted/30 rounded-xl"
+												className="h-12 animate-pulse glass rounded-xl border border-white/10"
 											/>
 										))}
 									</div>
@@ -3505,15 +3555,15 @@ const CommunityHub = () => {
 											<div
 												className={`p-3 rounded-2xl text-xs leading-relaxed ${
 													msgIsAdmin
-														? "bg-secondary text-secondary-foreground rounded-tl-none border border-border/30"
-														: "bg-primary text-primary-foreground rounded-tr-none"
+														? "bg-white/[0.08] text-white rounded-tl-none border border-white/10 shadow-md"
+														: "bg-gradient-to-r from-cyan to-blue-500 text-black font-medium rounded-tr-none shadow-md"
 												}`}
 											>
 												{msgText && (
 													<p className="whitespace-pre-wrap">{msgText}</p>
 												)}
 												{msgImage && (
-													<div className="mt-2 rounded-xl overflow-hidden border border-border/20 max-h-[180px] bg-black/10 flex justify-center">
+													<div className="mt-2 rounded-xl overflow-hidden border border-white/10 max-h-[180px] bg-black/20 flex justify-center">
 														<img
 															src={msgImage}
 															alt="Attached"
@@ -3523,9 +3573,9 @@ const CommunityHub = () => {
 													</div>
 												)}
 											</div>
-											<div className="flex items-center gap-1.5 mt-1 px-1 text-[10px] text-muted-foreground font-medium">
+											<div className="flex items-center gap-1.5 mt-1 px-1 text-[10px] text-white/50 font-medium">
 												{msgIsAdmin ? (
-													<span className="text-primary font-semibold">
+													<span className="text-cyan font-semibold">
 														{t(
 															"community:hubTicket.supportName",
 															"DepthSight Support",
@@ -3549,7 +3599,7 @@ const CommunityHub = () => {
 										);
 									})
 								) : (
-									<div className="text-center py-6 text-xs text-muted-foreground bg-muted/20 border border-dashed rounded-xl">
+									<div className="text-center py-6 text-xs text-white/50 bg-white/[0.02] border border-dashed border-white/10 rounded-xl">
 										{t("community:hubTicket.noReplies")}
 									</div>
 								)}
@@ -3559,9 +3609,9 @@ const CommunityHub = () => {
 
 					{/* Chat Input */}
 					{hubTicketStatus !== "CLOSED" && hubTicketStatus !== "RESOLVED" ? (
-						<div className="pt-4 border-t border-border/40 space-y-2">
+						<div className="pt-4 border-t border-white/10 space-y-2">
 							{newHubImage && (
-								<div className="relative w-16 h-16 rounded-xl overflow-hidden border border-border/30 bg-muted/40 group">
+								<div className="relative w-16 h-16 rounded-xl overflow-hidden border border-white/10 bg-white/[0.04] group">
 									<img
 										src={newHubImage}
 										alt="Preview"
@@ -3592,7 +3642,7 @@ const CommunityHub = () => {
 									type="button"
 									variant="ghost"
 									size="icon"
-									className="h-10 w-10 text-muted-foreground hover:text-foreground shrink-0 rounded-xl border border-border/30 bg-card/25"
+									className="h-10 w-10 text-white/60 hover:text-white shrink-0 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08]"
 									onClick={() => hubReplyFileRef.current?.click()}
 								>
 									<Paperclip className="w-5 h-5" />
@@ -3604,7 +3654,7 @@ const CommunityHub = () => {
 										"community:hubTicket.typeMessage",
 										"Type message...",
 									)}
-									className="min-h-[44px] max-h-[120px] text-xs resize-none bg-black/20 focus-visible:ring-primary flex-1"
+									className="min-h-[44px] max-h-[120px] text-xs resize-none bg-white/[0.03] border border-white/10 text-white rounded-xl placeholder:text-white/30 focus:border-cyan/50 focus-visible:ring-0 flex-1"
 									required={!newHubImage}
 									onKeyDown={(e) => {
 										if (e.key === "Enter" && !e.shiftKey) {
@@ -3618,7 +3668,7 @@ const CommunityHub = () => {
 									disabled={
 										submittingHubReply || (!newHubReply.trim() && !newHubImage)
 									}
-									className="h-10 px-4 shrink-0"
+									className="h-10 px-4 shrink-0 bg-gradient-to-r from-cyan to-blue-500 hover:from-cyan/90 hover:to-blue-500/90 text-black font-semibold shadow-[0_0_15px_rgba(6,182,212,0.3)] rounded-xl"
 								>
 									{submittingHubReply ? (
 										t("community:feedback.sending")
@@ -3629,14 +3679,14 @@ const CommunityHub = () => {
 							</form>
 						</div>
 					) : (
-						<div className="pt-4 border-t border-border/40 text-center text-xs text-muted-foreground italic">
+						<div className="pt-4 border-t border-white/10 text-center text-xs text-white/50 italic">
 							{t("community:hubTicket.ticketClosed")}
 						</div>
 					)}
 				</DialogContent>
 			</Dialog>
 			</div>
-			<Footer className="mt-12 flex-shrink-0" />
+			<Footer className="mt-auto flex-shrink-0" />
 		</div>
 	);
 };

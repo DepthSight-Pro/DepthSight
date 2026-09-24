@@ -129,6 +129,25 @@ class TestChannelAccessValidation:
 
         assert _is_channel_allowed(channel, user_id) is True
 
+    def test_user_can_access_own_trades_channel(self):
+        """User can subscribe to their own trades-invalidation channel."""
+        from api.websocket_server import _is_channel_allowed
+
+        user_id = 9
+        channel = f"depthsight:events:trades:{user_id}"
+
+        assert _is_channel_allowed(channel, user_id) is True
+
+    def test_user_cannot_access_other_user_trades_channel(self):
+        """User CANNOT subscribe to another user's trades channel."""
+        from api.websocket_server import _is_channel_allowed
+
+        user_id = 9
+        other_user_id = 10
+        channel = f"depthsight:events:trades:{other_user_id}"
+
+        assert _is_channel_allowed(channel, user_id) is False
+
     def test_user_cannot_access_other_user_portfolio_channel(self):
         """User cannot subscribe to another user's portfolio channel."""
         from api.websocket_server import _is_channel_allowed
@@ -177,6 +196,7 @@ class TestChannelAccessValidation:
             "depthsight:events:positions",
             "depthsight:events:strategies",
             "depthsight:events:portfolio",
+            "depthsight:events:trades",
         ],
     )
     def test_user_cannot_access_unscoped_user_data_channels(self, channel):

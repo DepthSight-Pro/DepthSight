@@ -5,13 +5,11 @@ import {
 	ArrowLeft,
 	Bitcoin,
 	Check,
-	CheckCircle2,
 	CircleDollarSign,
 	Clock,
 	Coins,
 	Copy,
 	Info,
-	Layers,
 	Loader2,
 	PartyPopper,
 	Sparkles,
@@ -203,7 +201,7 @@ const PaymentCheckout: React.FC<{
 
 	if (isPaid) {
 		return (
-			<div className="py-12 flex flex-col items-center text-center space-y-6">
+			<div className="py-8 sm:py-12 flex flex-col items-center text-center space-y-4 sm:space-y-6 px-2">
 				<div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center">
 					<PartyPopper className="h-10 w-10 text-green-500" />
 				</div>
@@ -224,8 +222,8 @@ const PaymentCheckout: React.FC<{
 
 	if (!selectedMethod) {
 		return (
-			<div className="space-y-6 py-4">
-				<div className="flex items-center gap-3">
+			<div className="space-y-4 sm:space-y-6 py-2 sm:py-4">
+				<div className="flex items-center gap-2 sm:gap-3">
 					<Button
 						variant="ghost"
 						size="icon"
@@ -234,21 +232,21 @@ const PaymentCheckout: React.FC<{
 					>
 						<ArrowLeft className="h-4 w-4" />
 					</Button>
-					<h3 className="text-xl font-bold">
+					<h3 className="text-lg sm:text-xl font-bold">
 						{t("pricingModal.selectCurrency", {
 							defaultValue: "Select Payment Method",
 						})}
 					</h3>
 				</div>
-				<div className="grid gap-3">
+				<div className="grid gap-2 sm:gap-3">
 					{paymentData.payments?.map((method) => (
 						<Button
 							key={`${method.currency}-${method.payment_method}`}
 							variant="outline"
-							className="h-20 justify-start gap-4 px-6 border-2 hover:border-primary hover:bg-primary/5 transition-all"
+							className="h-auto min-h-[4.5rem] sm:h-20 justify-start gap-3 sm:gap-4 px-4 sm:px-6 py-3 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/60 hover:bg-primary/10"
 							onClick={() => setSelectedMethod(method)}
 						>
-							<div className="bg-muted p-2 rounded-lg">
+							<div className="rounded-lg border border-white/10 bg-white/5 p-2">
 								{getCoinIcon(method.currency, method.payment_method)}
 							</div>
 							<div className="text-left flex-1">
@@ -271,9 +269,9 @@ const PaymentCheckout: React.FC<{
 	}
 
 	return (
-		<div className="space-y-6 py-4">
+		<div className="space-y-4 sm:space-y-6 py-2 sm:py-4">
 			{/* Header */}
-			<div className="flex items-center gap-3">
+			<div className="flex items-start sm:items-center gap-2 sm:gap-3">
 				<Button
 					variant="ghost"
 					size="icon"
@@ -283,8 +281,8 @@ const PaymentCheckout: React.FC<{
 				>
 					<ArrowLeft className="h-4 w-4" />
 				</Button>
-				<div>
-					<h3 className="text-lg font-semibold flex items-center gap-2">
+				<div className="min-w-0">
+					<h3 className="text-base sm:text-lg font-semibold flex flex-wrap items-center gap-2 break-words">
 						{getCoinIcon(
 							selectedMethod.currency,
 							selectedMethod.payment_method,
@@ -294,7 +292,7 @@ const PaymentCheckout: React.FC<{
 							selectedMethod.payment_method,
 						)}{" "}
 						{t("payment", { defaultValue: "Payment" })}
-						<span className="text-xs bg-muted px-2 py-0.5 rounded text-muted-foreground font-normal">
+						<span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-normal text-muted-foreground">
 							{getNetworkName(
 								selectedMethod.currency,
 								selectedMethod.payment_method,
@@ -352,11 +350,11 @@ const PaymentCheckout: React.FC<{
 			{/* QR Code */}
 			{selectedMethod.payment_url && (
 				<div className="flex justify-center">
-					<div className="bg-white p-4 rounded-xl shadow-sm border">
+					<div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border">
 						<img
 							src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(selectedMethod.payment_url)}`}
 							alt="Payment QR Code"
-							className="w-48 h-48"
+							className="w-40 h-40 sm:w-48 sm:h-48"
 						/>
 					</div>
 				</div>
@@ -372,7 +370,7 @@ const PaymentCheckout: React.FC<{
 							})}
 						</label>
 						<div className="flex items-center gap-2">
-							<code className="flex-1 p-3 bg-muted rounded-lg text-sm font-mono break-all select-all">
+							<code className="flex-1 rounded-xl border border-white/10 bg-white/5 p-3 text-sm font-mono break-all select-all backdrop-blur-sm">
 								{selectedMethod.payment_address}
 							</code>
 							<Button
@@ -399,7 +397,7 @@ const PaymentCheckout: React.FC<{
 							{t("pricingModal.amountLabel", { defaultValue: "Amount" })}
 						</label>
 						<div className="flex items-center gap-2">
-							<code className="flex-1 p-3 bg-muted rounded-lg text-sm font-mono">
+							<code className="flex-1 rounded-xl border border-white/10 bg-white/5 p-3 text-sm font-mono backdrop-blur-sm">
 								{selectedMethod.amount}{" "}
 								{getCurrencyDisplay(
 									selectedMethod.currency,
@@ -426,7 +424,7 @@ const PaymentCheckout: React.FC<{
 			</div>
 
 			{/* Info */}
-			<Alert className="bg-muted/50 border-none">
+			<Alert className="glass rounded-xl border-white/10">
 				<Info className="h-4 w-4 text-primary" />
 				<AlertDescription className="text-xs">
 					{t("pricingModal.automaticActivationNote", {
@@ -751,9 +749,15 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
 	return (
 		<Dialog open={isOpen} onOpenChange={onClose}>
-			<DialogContent className={cn(dialogMaxWidthClass, "transition-all")}>
+			{/* Translucent glass dialog matching the platform style */}
+			<DialogContent
+				className={cn(
+					dialogMaxWidthClass,
+					"w-[calc(100vw-2rem)] sm:w-full max-h-[90vh] overflow-y-auto overscroll-contain rounded-2xl border-white/10 bg-obsidian/85 p-4 sm:p-6 shadow-2xl backdrop-blur-xl",
+				)}
+			>
 				<DialogHeader>
-					<DialogTitle className="text-3xl font-bold">
+					<DialogTitle className="text-2xl sm:text-3xl font-bold pr-8">
 						{showCheckout ? "" : t("pricingModal.title")}
 					</DialogTitle>
 					{!showCheckout && (
@@ -770,8 +774,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 						onSuccess={handlePaymentSuccess}
 					/>
 				) : (
-					<div className="py-6">
-						<Alert className="mb-6 bg-muted/50 border-none">
+					<div className="py-4 sm:py-6">
+						<Alert className="glass mb-4 sm:mb-6 rounded-xl border-white/10">
 							<Info className="h-4 w-4 text-primary" />
 							<AlertDescription className="text-sm font-medium">
 								{t("pricingModal.agreementNotice.blocksNote")}
@@ -828,7 +832,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
 								<div
 									className={cn(
-										"grid gap-6",
+										"grid gap-4 sm:gap-6",
 										activePlans.length === 1 && "grid-cols-1 max-w-sm mx-auto",
 										activePlans.length === 2 && "grid-cols-1 md:grid-cols-2 max-w-2xl mx-auto",
 										activePlans.length === 3 && "grid-cols-1 md:grid-cols-3",

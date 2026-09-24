@@ -1,6 +1,115 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+@theme {
+	--color-void: #07080b;
+	--color-obsidian: #0b0d12;
+	--color-panel: #0e1117;
+	--color-cyan: #00d4ff;
+	--color-azure: #0066ff;
+	--animate-scan: scan 6s linear infinite;
+	--animate-fade-up: fadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+	--animate-shimmer: shimmer 2.4s linear infinite;
+	--animate-ticker: ticker 40s linear infinite;
+	--animate-glow: glow 2.8s ease-in-out infinite;
+	--animate-dash: dash 1.6s ease-in-out infinite;
+
+	@keyframes scan {
+		0% { transform: translateY(-100%); }
+		100% { transform: translateY(100vh); }
+	}
+	@keyframes fadeUp {
+		0% { opacity: 0; transform: translateY(8px); }
+		100% { opacity: 1; transform: translateY(0); }
+	}
+	@keyframes ticker {
+		0% { transform: translateX(0); }
+		100% { transform: translateX(-50%); }
+	}
+	@keyframes glow {
+		0%, 100% { opacity: 0.55; }
+		50% { opacity: 1; }
+	}
+	@keyframes dash {
+		0% { stroke-dashoffset: 60; }
+		100% { stroke-dashoffset: 0; }
+	}
+}
+
+@utility glass {
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.012) 100%);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	backdrop-filter: blur(14px);
+	-webkit-backdrop-filter: blur(14px);
+}
+
+@utility glass-strong {
+	background: linear-gradient(180deg, rgba(14, 17, 23, 0.92) 0%, rgba(11, 13, 18, 0.88) 100%);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+}
+
+/* Horizontal strips (timeframe switchers) scroll without a visible scrollbar. */
+@utility no-scrollbar {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+	&::-webkit-scrollbar {
+		width: 0;
+		height: 0;
+		display: none;
+	}
+}
+
+@utility grid-bg {
+	background-image:
+		linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+	background-size: 32px 32px;
+}
+
+@utility dot-bg {
+	background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+	background-size: 22px 22px;
+}
+
+@utility text-gradient {
+	background: linear-gradient(135deg, #00d4ff 0%, #0066ff 100%);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+@utility neon-border {
+	position: relative;
+	&::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		padding: 1px;
+		background: linear-gradient(135deg, rgba(0, 212, 255, 0.6), rgba(0, 102, 255, 0.1) 50%, rgba(0, 212, 255, 0.3));
+		-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+		mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+		-webkit-mask-composite: xor;
+		mask-composite: exclude;
+		pointer-events: none;
+	}
+}
+
+@utility shimmer-text {
+	background: linear-gradient(90deg, rgba(255,255,255,0.4) 0%, #fff 50%, rgba(255,255,255,0.4) 100%);
+	background-size: 200% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: shimmer 2.4s linear infinite;
+}
+
+@utility tabular {
+	font-variant-numeric: tabular-nums;
+}
+
 /* --- Dark Theme (Root) --- */
 @layer base {
 	:root {
@@ -39,7 +148,7 @@
 		--ring: var(--primary);
 		--radius: 0.5rem;
 
-		--sidebar-background: var(--background);
+		--sidebar-background: 223 24% 6%; /* #0b0d12 obsidian */
 		--sidebar-foreground: var(--foreground);
 		--sidebar-primary: var(--primary);
 		--sidebar-primary-foreground: var(--primary-foreground);

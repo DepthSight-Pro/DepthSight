@@ -1129,7 +1129,18 @@ async def test_handle_order_update_entry_filled(
     assert mock_executor.place_order.call_count == 2
     calls = mock_executor.place_order.call_args_list
 
-    sl_call_args, sl_call_kwargs = calls[0]
+    # SL and TP are placed by concurrent tasks, so their execution order is
+    # not guaranteed. Locate each call by order type instead of position.
+    def _kwargs_for(order_type: str):
+        for c in calls:
+            _, kw = c
+            if kw.get("order_type") == order_type:
+                return kw
+        raise AssertionError(
+            f"No place_order call with order_type={order_type}. Calls: {calls}"
+        )
+
+    sl_call_kwargs = _kwargs_for("STOP_MARKET")
     assert (
         sl_call_kwargs["symbol"] == symbol
         and sl_call_kwargs["side"] == "SELL"
@@ -1140,7 +1151,7 @@ async def test_handle_order_update_entry_filled(
         and sl_call_kwargs["quantity"] == initial_qty
     )
 
-    tp_call_args, tp_call_kwargs = calls[1]
+    tp_call_kwargs = _kwargs_for("LIMIT")
     assert (
         tp_call_kwargs["symbol"] == symbol
         and tp_call_kwargs["side"] == "SELL"

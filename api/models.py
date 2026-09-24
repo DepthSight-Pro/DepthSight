@@ -1166,9 +1166,10 @@ class HubNode(Base):
     wallet_address = Column(String(42), unique=True, nullable=True, index=True)
     # Exchange-account binding used by the broker verifier to prove that a
     # reported trade belongs to THIS node (attribution-theory protection).
-    # Weex, OKX, and Bybit UIDs resolve dynamically from user API keys.
+    # Weex, OKX, Bitget, and Bybit UIDs resolve dynamically from user API keys.
     bybit_uid = Column(String(32), nullable=True, index=True)
     okx_uid = Column(String(50), nullable=True, index=True)
+    bitget_uid = Column(String(50), nullable=True, index=True)
     public_plans = Column(JSON, nullable=True)
 
 
@@ -1230,6 +1231,7 @@ class HubTelemetryReport(Base):
     is_mining_eligible = Column(Boolean, default=False, nullable=False)
 
     # Mining reward
+    mining_multiplier = Column(Float, default=1.0, nullable=False, server_default="1.0")
     reward_tokens = Column(Float, default=0.0, nullable=False)
     epoch_date = Column(Date, nullable=True, index=True)
 
@@ -1300,6 +1302,9 @@ class MiningConfig(Base):
     )
     referral_mining_boost = Column(Float, default=0.10, nullable=False)
     rebate_rates = Column(JSON, default=dict, nullable=False, server_default="{}")
+    exchange_multipliers = Column(
+        JSON, default=dict, nullable=False, server_default="{}"
+    )
     total_operator_fee_collected = Column(
         Float, default=0.0, nullable=False, server_default="0.0"
     )
@@ -1392,4 +1397,64 @@ class SystemSetting(Base):
 
     updated_by = relationship(
         "User", foreign_keys=[updated_by_user_id], lazy="selectin"
+    )
+
+
+class PromoCampaign(Base):
+    __tablename__ = "promo_campaigns"
+
+    id = Column(String(50), primary_key=True)  # e.g. "bitget_launch_2026"
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    exchange_id = Column(
+        String(50), default="bitget", nullable=False, server_default="bitget"
+    )
+    total_pool = Column(Float, nullable=False)
+    distributed = Column(Float, default=0.0, nullable=False, server_default="0.0")
+    admin_only = Column(Boolean, default=True, nullable=False, server_default="true")
+    is_active = Column(Boolean, default=False, nullable=False, server_default="false")
+    quests = Column(JSON, nullable=False)
+    ui_config = Column(JSON, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PromoClaim(Base):
+    __tablename__ = "promo_claims"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    campaign_id = Column(
+        String(50), ForeignKey("promo_campaigns.id"), nullable=False, index=True
+    )
+    quest_type = Column(String(50), nullable=False)  # "api_volume" | "node_runner"
+    node_uuid = Column(String(36), ForeignKey("hub_nodes.node_uuid"), nullable=False)
+    exchange_uid = Column(String(50), nullable=False, index=True)
+    wallet_address = Column(String(42), nullable=False, index=True)
+    reward_amount = Column(Float, nullable=False)
+    verified_volume = Column(Float, default=0.0, nullable=False, server_default="0.0")
+    status = Column(
+        String(20), default="credited", nullable=False, server_default="credited"
+    )
+    claimed_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_id", "quest_type", "exchange_uid", name="uix_promo_quest_uid"
+        ),
+        UniqueConstraint(
+            "campaign_id", "quest_type", "wallet_address", name="uix_promo_quest_wallet"
+        ),
     )

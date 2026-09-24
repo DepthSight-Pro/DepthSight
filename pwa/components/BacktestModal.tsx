@@ -79,20 +79,23 @@ const BacktestModal: React.FC<BacktestModalProps> = ({
 
 	// Fetch available historical data coverage when symbol changes (checks session cache first)
 	useEffect(() => {
-		if (!symbol) {
-			setStorageRange(null);
-			return;
-		}
-		const clean = symbol.replace("/", "").replace(":", "").toUpperCase();
-		if (historicalRangesCache.has(clean)) {
-			setStorageRange(historicalRangesCache.get(clean) || null);
-			return;
-		}
-
 		let isMounted = true;
-		setIsLoadingHistory(true);
-		api.getHistoricalRanges(symbol)
-			.then((list) => {
+		const load = async () => {
+			await Promise.resolve();
+			if (!isMounted) return;
+			if (!symbol) {
+				setStorageRange(null);
+				return;
+			}
+			const clean = symbol.replace("/", "").replace(":", "").toUpperCase();
+			if (historicalRangesCache.has(clean)) {
+				setStorageRange(historicalRangesCache.get(clean) || null);
+				return;
+			}
+
+			setIsLoadingHistory(true);
+			try {
+				const list = await api.getHistoricalRanges(symbol);
 				if (!isMounted) return;
 				const match =
 					list?.find(
@@ -111,13 +114,13 @@ const BacktestModal: React.FC<BacktestModalProps> = ({
 					historicalRangesCache.set(clean, null);
 					setStorageRange(null);
 				}
-			})
-			.catch(() => {
+			} catch {
 				if (isMounted) setStorageRange(null);
-			})
-			.finally(() => {
+			} finally {
 				if (isMounted) setIsLoadingHistory(false);
-			});
+			}
+		};
+		void load();
 		return () => {
 			isMounted = false;
 		};

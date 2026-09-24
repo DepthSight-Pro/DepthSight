@@ -4,7 +4,6 @@ import { Copy } from "lucide-react";
 import type React from "react";
 import { useTranslation } from "react-i18next"; // Import useTranslation
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BacktestRunDetailsData } from "@/types/api";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -20,8 +19,8 @@ const InfoItem: React.FC<{
 	className?: string;
 }> = ({ label, children, className }) => (
 	<div className={className}>
-		<p className="text-xs text-muted-foreground">{label}</p>
-		<div className="text-sm font-medium leading-tight">{children}</div>
+		<p className="text-xs text-white/50">{label}</p>
+		<div className="text-sm font-medium text-white/90 leading-tight mt-0.5">{children}</div>
 	</div>
 );
 
@@ -51,7 +50,7 @@ export const TaskSummaryCard: React.FC<TaskSummaryCardProps> = ({ run }) => {
 		status: BacktestRunDetailsData["status"],
 	) => {
 		const statusKey = `statuses.${status.toLowerCase()}`;
-		return <Badge variant="outline">{t(statusKey, status)}</Badge>;
+		return <Badge variant="outline" className="border-white/10 text-white/80">{t(statusKey, status)}</Badge>;
 	};
 
 	const handleCopy = (text: string) => {
@@ -63,23 +62,21 @@ export const TaskSummaryCard: React.FC<TaskSummaryCardProps> = ({ run }) => {
 	};
 
 	return (
-		<Card className="h-full flex flex-col">
-			<CardHeader className="pb-2">
-				<div className="flex justify-between items-start">
-					<CardTitle className="text-lg">
-						{t("backtestViewer.tabSummary")}
-					</CardTitle>
-					<div>{getTranslatedStatusBadge(run.status)}</div>
-				</div>
-			</CardHeader>
-			<CardContent className="flex-grow flex flex-col pt-2 space-y-3 min-h-0">
+		<div className="h-full flex flex-col rounded-2xl border border-white/10 glass shadow-xl p-6">
+			<div className="flex justify-between items-start pb-4 border-b border-white/5 mb-4">
+				<h3 className="text-lg font-bold text-white tracking-wide">
+					{t("backtestViewer.tabSummary")}
+				</h3>
+				<div>{getTranslatedStatusBadge(run.status)}</div>
+			</div>
+			<div className="flex-grow flex flex-col space-y-4 min-h-0">
 				<InfoItem label={t("taskSummary.taskIdLabel")}>
-					<div className="flex items-center gap-1 font-mono text-xs">
+					<div className="flex items-center gap-1 font-mono text-xs text-cyan">
 						<span>{run.task_id}</span>
 						<Button
 							variant="ghost"
 							size="icon"
-							className="h-5 w-5"
+							className="h-5 w-5 hover:bg-white/10 text-white/60 hover:text-white"
 							onClick={() => handleCopy(run.task_id)}
 						>
 							<Copy className="w-3 h-3" />
@@ -103,14 +100,14 @@ export const TaskSummaryCard: React.FC<TaskSummaryCardProps> = ({ run }) => {
 						label={t("launchForm.paramsLabel")}
 						className="flex-grow flex flex-col min-h-0"
 					>
-						<ScrollArea className="mt-1 flex-grow rounded-md border bg-muted/50">
-							<pre className="text-xs p-2 font-mono whitespace-pre-wrap">
+						<ScrollArea className="mt-2 flex-grow rounded-xl border border-white/10 bg-white/[0.02] p-1">
+							<pre className="text-xs p-3 font-mono whitespace-pre-wrap text-white/80">
 								{JSON.stringify(configToDisplay, null, 2)}
 							</pre>
 						</ScrollArea>
 					</InfoItem>
 				)}
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 };

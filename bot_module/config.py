@@ -68,6 +68,7 @@ ACTIVE_TRADING_ENVIRONMENT = (
 BYBIT_BROKER_ID = "Gt001094"
 WEEX_BROKER_ID = "b-WEEX111159"
 OKX_BROKER_ID = "bb39c7c267cfBCDE"
+BITGET_BROKER_ID = "78e7v"
 
 # --- NEW BLOCK: Loading ALL keys from .env ---
 # Mainnet Keys
@@ -266,6 +267,9 @@ REDIS_STATE_KEY_STRATEGIES = os.environ.get(
 REDIS_STATE_KEY_POSITIONS = os.environ.get(
     "REDIS_STATE_KEY_POSITIONS", "depthsight:state:positions"
 )
+# Ephemeral state: refreshed on every publish (see TradingController).
+# Keys of dead controllers expire instead of haunting "all accounts" views.
+REDIS_STATE_TTL_SECONDS = int(os.environ.get("REDIS_STATE_TTL_SECONDS", 30))
 
 # Market-data specific Redis (separate instance for fan-out).
 MARKET_REDIS_HOST = os.environ.get("MARKET_REDIS_HOST", REDIS_HOST)
@@ -533,6 +537,15 @@ RISK_MANAGER_MIN_STOP_DISTANCE_PCT = 0.05
 RISK_MANAGER_MIN_DOLLAR_RR_RATIO = 1.0
 # Minimum distance from the entry price to the partial take-profit in percent of the entry price
 MIN_PARTIAL_TP_DISTANCE_PCT = 0.005  # 0.5%
+
+# Freshness (seconds) of the cached balance used by assess_signal instead of a
+# synchronous REST fetch on the hot path. Force-refresh when older.
+RISK_BALANCE_CACHE_TTL_SECONDS = 15.0
+# TTL (seconds) for the cached trading blacklist/config lookup in assess_signal.
+RISK_BLACKLIST_CACHE_TTL_SECONDS = 15.0
+# Max allowed MARKET-entry slippage as a fraction of the signal TP distance.
+# If the fill deviates more, the position is closed immediately.
+ENTRY_MAX_SLIPPAGE_FRACTION_OF_TP = 0.5
 
 RISK_MANAGER_STATE_FILE_PATH = "data/data_rm.json"
 

@@ -14,14 +14,6 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardFooter,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
-import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
@@ -93,32 +85,32 @@ export const BacktestTradeHistoryTable: React.FC<
 	};
 
 	return (
-		<Card className="h-full flex flex-col">
-			<CardHeader className="shrink-0">
-				<CardTitle>{t("tradeHistoryTable.title")}</CardTitle>
-				<CardDescription>{t("tradeHistoryTable.description")}</CardDescription>
-			</CardHeader>
-			<CardContent className="flex-grow overflow-auto p-0">
+		<div className="h-full glass rounded-2xl border border-white/10 shadow-xl overflow-hidden flex flex-col">
+			<div className="p-4 sm:p-6 border-b border-white/5 shrink-0">
+				<h3 className="text-base font-bold text-white tracking-tight">{t("tradeHistoryTable.title")}</h3>
+				<p className="text-xs text-white/50 mt-1">{t("tradeHistoryTable.description")}</p>
+			</div>
+			<div className="flex-grow overflow-x-auto p-0">
 				{/* --- Wrapper for tooltips --- */}
 				<TooltipProvider>
-					<Table>
-						<TableHeader className="sticky top-0 bg-card z-10">
-							<TableRow>
-								<TableHead>{t("tradeHistoryTable.headerExitTime")}</TableHead>
-								<TableHead>{t("tradeHistoryTable.headerDirection")}</TableHead>
-								<TableHead className="text-right">
+					<Table className="min-w-[650px]">
+						<TableHeader className="sticky top-0 bg-white/[0.03] backdrop-blur-md border-b border-white/5 z-10">
+							<TableRow className="hover:bg-transparent border-b border-white/5">
+								<TableHead className="whitespace-nowrap">{t("tradeHistoryTable.headerExitTime")}</TableHead>
+								<TableHead className="whitespace-nowrap">{t("tradeHistoryTable.headerDirection")}</TableHead>
+								<TableHead className="text-right whitespace-nowrap">
 									{t("tradeHistoryTable.headerEntry")}
 								</TableHead>
-								<TableHead className="text-right">
+								<TableHead className="text-right whitespace-nowrap">
 									{t("tradeHistoryTable.headerExit")}
 								</TableHead>
-								<TableHead className="text-right">
+								<TableHead className="text-right whitespace-nowrap">
 									{t("tradeHistoryTable.headerPnl")}
 								</TableHead>
-								<TableHead className="text-center">
+								<TableHead className="text-center whitespace-nowrap">
 									{t("tradeHistoryTable.headerTrace")}
 								</TableHead>
-								<TableHead className="text-center">
+								<TableHead className="text-center whitespace-nowrap">
 									{t("tradeHistoryTable.headerVisualize")}
 								</TableHead>
 							</TableRow>
@@ -130,7 +122,7 @@ export const BacktestTradeHistoryTable: React.FC<
 								<TableRow>
 									<TableCell
 										colSpan={7}
-										className="h-24 text-center text-destructive"
+										className="h-24 text-center text-destructive whitespace-nowrap"
 									>
 										Error loading trades
 									</TableCell>
@@ -139,7 +131,7 @@ export const BacktestTradeHistoryTable: React.FC<
 								<TableRow>
 									<TableCell
 										colSpan={7}
-										className="h-24 text-center text-muted-foreground"
+										className="h-24 text-center text-muted-foreground whitespace-nowrap"
 									>
 										{status === "running"
 											? t("tradeHistoryTable.waitingForFirstTrade")
@@ -152,14 +144,14 @@ export const BacktestTradeHistoryTable: React.FC<
 										key={trade.id}
 										className={isFetching ? "opacity-50" : ""}
 									>
-										<TableCell className="font-mono text-xs text-muted-foreground">
+										<TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
 											{trade.timestamp_exit
 												? format(new Date(trade.timestamp_exit), "HH:mm:ss", {
 														locale: currentLocale === "ru" ? ru : enUS,
 													})
 												: t("tradeHistoryTable.inProgress", "Running...")}
 										</TableCell>
-										<TableCell>
+										<TableCell className="whitespace-nowrap">
 											<Badge
 												variant={
 													trade.direction === "LONG" ? "default" : "destructive"
@@ -173,19 +165,19 @@ export const BacktestTradeHistoryTable: React.FC<
 												{trade.direction}
 											</Badge>
 										</TableCell>
-										<TableCell className="text-right font-mono text-xs">
+										<TableCell className="text-right font-mono text-xs whitespace-nowrap">
 											${trade.entry_price.toFixed(2)}
 										</TableCell>
-										<TableCell className="text-right font-mono text-xs">
+										<TableCell className="text-right font-mono text-xs whitespace-nowrap">
 											${trade.exit_price.toFixed(2)}
 										</TableCell>
 										<TableCell
-											className={`text-right font-mono text-sm font-medium ${trade.pnl >= 0 ? "text-profit" : "text-loss"}`}
+											className={`text-right font-mono text-sm font-medium whitespace-nowrap ${trade.pnl >= 0 ? "text-profit" : "text-loss"}`}
 										>
 											{trade.pnl >= 0 ? "+" : ""}
 											{trade.pnl.toFixed(2)}
 										</TableCell>
-										<TableCell className="text-center">
+										<TableCell className="text-center whitespace-nowrap">
 											<Popover>
 												<PopoverTrigger asChild>
 													<Button
@@ -215,7 +207,7 @@ export const BacktestTradeHistoryTable: React.FC<
 											</Popover>
 										</TableCell>
 										{/* --- New cell with button and tooltip --- */}
-										<TableCell className="text-center">
+										<TableCell className="text-center whitespace-nowrap">
 											<Tooltip>
 												<TooltipTrigger asChild>
 													<Button
@@ -239,22 +231,23 @@ export const BacktestTradeHistoryTable: React.FC<
 						</TableBody>
 					</Table>
 				</TooltipProvider>
-			</CardContent>
+			</div>
 			{totalTrades > 0 && (
-				<CardFooter className="flex items-center justify-between border-t pt-4">
-					<div className="text-sm text-muted-foreground">
+				<div className="flex items-center justify-between border-t border-white/5 p-4 shrink-0">
+					<div className="text-xs font-mono text-white/50">
 						{t("common:pagination.totalItems", { count: totalTrades })}
 					</div>
 					<div className="flex items-center space-x-2">
 						<Button
 							variant="outline"
 							size="sm"
+							className="h-8 w-8 p-0 rounded-lg bg-white/[0.03] border-white/10 text-white hover:bg-white/10"
 							onClick={() => setPage((p) => Math.max(1, p - 1))}
 							disabled={page <= 1}
 						>
 							<ChevronLeft className="h-4 w-4" />
 						</Button>
-						<span className="text-sm font-medium">
+						<span className="text-xs font-mono text-white/70">
 							{t("common:pagination.pageInfo", {
 								page: page,
 								totalPages: totalPages > 0 ? totalPages : 1,
@@ -263,14 +256,15 @@ export const BacktestTradeHistoryTable: React.FC<
 						<Button
 							variant="outline"
 							size="sm"
+							className="h-8 w-8 p-0 rounded-lg bg-white/[0.03] border-white/10 text-white hover:bg-white/10"
 							onClick={() => setPage((p) => p + 1)}
 							disabled={page >= totalPages}
 						>
 							<ChevronRight className="h-4 w-4" />
 						</Button>
 					</div>
-				</CardFooter>
+				</div>
 			)}
-		</Card>
+		</div>
 	);
 };

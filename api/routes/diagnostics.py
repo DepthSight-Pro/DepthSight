@@ -284,6 +284,151 @@ async def proxy_bybit_klines(
         )
 
 
+# Exchanges supported by the unified klines proxy (ccxt ids).
+SUPPORTED_KLINE_EXCHANGES = frozenset({"binance", "bybit", "okx", "bitget", "weex"})
+
+SUPPORTED_KLINE_INTERVALS = frozenset(
+    {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"}
+)
+
+
+def _normalize_kline_exchange(exchange: str | None) -> str:
+    """Strips market-type/testnet suffixes down to a ccxt exchange id."""
+    raw = (exchange or "binance").strip().lower()
+    raw = raw.removesuffix("_testnet")
+    for suffix in ("_futures", "_usdtm", "_usdm", "_linear", "_swap", "_spot"):
+        if raw.endswith(suffix):
+            raw = raw[: -len(suffix)]
+            break
+    return raw
+
+
+def _to_ccxt_swap_symbol(symbol: str) -> str:
+    """Converts 'BTCUSDT' to ccxt swap format 'BTC/USDT:USDT' (passthrough if already ccxt)."""
+    s = (symbol or "").strip().upper()
+    if "/" in s:
+        if ":" not in s:
+            quote = s.split("/", 1)[1].split(":", 1)[0]
+            return f"{s}:{quote}"
+        return s
+    for quote in ("USDT", "USDC", "USD"):
+        if s.endswith(quote) and len(s) > len(quote):
+            base = s[: -len(quote)]
+            return f"{base}/{quote}:{quote}"
+    return s
+
+
+@diagnostics_router.get("/proxy/klines")
+async def proxy_klines(
+    symbol: str,
+    interval: str,
+    response: Response,
+    exchange: str = "binance",
+    startTime: Optional[int] = None,
+    endTime: Optional[int] = None,
+    limit: int = 500,
+    current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    """
+    Unified multi-exchange klines proxy (public market data, no API keys needed).
+
+    Uses ccxt to fetch OHLCV from the requested exchange and normalizes the
+    response to Binance-style kline rows: [ts_ms, o, h, l, c, v, ...].
+    Keeps /proxy/binance/klines and /proxy/bybit/klines intact for backward compat.
+    """
+    exchange_id = _normalize_kline_exchange(exchange)
+    if exchange_id not in SUPPORTED_KLINE_EXCHANGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported exchange '{exchange}'. "
+            f"Supported: {sorted(SUPPORTED_KLINE_EXCHANGES)}",
+        )
+    if interval not in SUPPORTED_KLINE_INTERVALS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported interval '{interval}'. "
+            f"Supported: {sorted(SUPPORTED_KLINE_INTERVALS)}",
+        )
+    limit = max(5, min(int(limit or 500), 1000))
+
+    ccxt_symbol = _to_ccxt_swap_symbol(symbol)
+    default_type = "future" if exchange_id == "binance" else "swap"
+
+    try:
+        import asyncio
+
+        import ccxt.async_support as ccxt
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"ccxt is not installed: {exc}",
+        )
+
+    exchange_instance = None
+    try:
+        exchange_cls = getattr(ccxt, exchange_id, None)
+        if exchange_cls is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Exchange '{exchange_id}' is not available in ccxt",
+            )
+        exchange_instance = exchange_cls(
+            {
+                "enableRateLimit": True,
+                "timeout": 15000,
+                "options": {"defaultType": default_type},
+            }
+        )
+        ohlcv = await asyncio.wait_for(
+            exchange_instance.fetch_ohlcv(
+                ccxt_symbol,
+                timeframe=interval,
+                since=startTime,
+                limit=limit,
+            ),
+            timeout=25,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            f"Unified klines proxy failed for {symbol} on {exchange_id}: {exc}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{exchange_id} klines error for {symbol}: {exc}",
+        )
+    finally:
+        if exchange_instance is not None:
+            try:
+                await exchange_instance.close()
+            except Exception:
+                pass
+
+    rows: List[List[Any]] = []
+    for candle in ohlcv or []:
+        try:
+            ts = int(candle[0])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if endTime and ts > int(endTime):
+            continue
+        try:
+            o, h, low, c = (
+                float(candle[1]),
+                float(candle[2]),
+                float(candle[3]),
+                float(candle[4]),
+            )
+        except (TypeError, ValueError, IndexError):
+            continue
+        v = float(candle[5]) if len(candle) > 5 and candle[5] is not None else 0.0
+        rows.append([ts, o, h, low, c, v])
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
 @diagnostics_router.get(
     "/diagnostics/preview-foundation",
     response_model=schemas.ApiResponseData[schemas.FoundationPreviewResponse],
@@ -1006,8 +1151,10 @@ async def find_available_symbols(
 
         found_symbols.sort()
 
-        limit = 50 if q else 10
-        return {"data": found_symbols[:limit]}
+        # Return the full list: the UI renders it in a scrollable dropdown.
+        # The list contains coins with downloaded history (available for
+        # backtests); for live trading any exchange ticker can be typed in.
+        return {"data": found_symbols}
 
     except Exception as e:
         logger.error(f"Error scanning directory '{base_path}': {e}", exc_info=True)

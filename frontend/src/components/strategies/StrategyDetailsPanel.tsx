@@ -25,17 +25,34 @@ type CombinedStrategyForPanel = StrategyData & {
 };
 
 interface StrategyDetailsPanelProps {
-	selectedStrategy: CombinedStrategyForPanel | null;
+	selectedStrategy?: CombinedStrategyForPanel | null;
+	/** Alias used by the Strategies page (`strategy=`). */
+	strategy?: CombinedStrategyForPanel | null;
+	isOpen?: boolean;
 	onClose: () => void;
+	onStart?: () => void;
+	onStop?: () => void;
+	onEdit?: () => void;
 }
 
 export const StrategyDetailsPanel: React.FC<StrategyDetailsPanelProps> = ({
 	selectedStrategy,
+	strategy,
+	isOpen,
 	onClose,
+	onStart,
+	onStop,
+	onEdit,
 }) => {
 	const { t } = useTranslation("strategies");
 
-	if (!selectedStrategy) {
+	const resolvedStrategy = selectedStrategy ?? strategy ?? null;
+
+	if (isOpen === false) {
+		return null;
+	}
+
+	if (!resolvedStrategy) {
 		return (
 			<Card className="mt-6">
 				<CardHeader>
@@ -49,10 +66,11 @@ export const StrategyDetailsPanel: React.FC<StrategyDetailsPanelProps> = ({
 	}
 
 	const displaySymbols =
-		selectedStrategy.symbols?.join(", ") ||
-		selectedStrategy.config_data?.symbol ||
+		resolvedStrategy.symbols?.join(", ") ||
+		resolvedStrategy.config_data?.symbol ||
 		"N/A";
-	const displayName = selectedStrategy.name;
+	const displayName = resolvedStrategy.name;
+	const hasActions = onStart || onStop || onEdit;
 
 	return (
 		<Card className="mt-6 sticky top-6">
@@ -64,7 +82,7 @@ export const StrategyDetailsPanel: React.FC<StrategyDetailsPanelProps> = ({
 					<CardDescription>
 						{t("detailsPanel.description", {
 							symbol: displaySymbols,
-							id: selectedStrategy.id,
+							id: resolvedStrategy.id,
 						})}
 					</CardDescription>
 				</div>
@@ -73,6 +91,25 @@ export const StrategyDetailsPanel: React.FC<StrategyDetailsPanelProps> = ({
 				</Button>
 			</CardHeader>
 			<CardContent>
+				{hasActions && (
+					<div className="mb-4 flex flex-wrap gap-2">
+						{onStart && (
+							<Button variant="default" size="sm" onClick={onStart}>
+								{t("startTooltip", "Start")}
+							</Button>
+						)}
+						{onStop && (
+							<Button variant="outline" size="sm" onClick={onStop}>
+								{t("stopTooltip", "Stop")}
+							</Button>
+						)}
+						{onEdit && (
+							<Button variant="ghost" size="sm" onClick={onEdit}>
+								{t("editButton", "Load in editor")}
+							</Button>
+						)}
+					</div>
+				)}
 				<Tabs defaultValue="overview">
 					<TabsList className="grid w-full grid-cols-2">
 						<TabsTrigger value="overview">
@@ -84,11 +121,11 @@ export const StrategyDetailsPanel: React.FC<StrategyDetailsPanelProps> = ({
 					</TabsList>
 
 					<TabsContent value="overview" className="pt-4">
-						<StrategyOverviewTab strategy={selectedStrategy} />
+						<StrategyOverviewTab strategy={resolvedStrategy} />
 					</TabsContent>
 
 					<TabsContent value="trade-history" className="pt-4">
-						<StrategyTradeHistoryTab strategyId={selectedStrategy.id} />
+						<StrategyTradeHistoryTab strategyId={resolvedStrategy.id} />
 					</TabsContent>
 				</Tabs>
 			</CardContent>

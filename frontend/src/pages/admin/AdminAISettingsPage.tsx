@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import {
 	Brain,
 	Cpu,
@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	useAdminAISettings,
 	useAdminUpdateAISettings,
@@ -123,8 +123,16 @@ export const AdminAISettingsPage: React.FC = () => {
 	const { mutate: updateSettings, isPending: isUpdating } = useAdminUpdateAISettings();
 	const { mutate: testConnection } = useAdminTestAIConnection();
 
-	const [settings, setSettings] = useState<AdminAISettings | null>(null);
-	const [activeTab, setActiveTab] = useState<string>("google");
+	/**
+	 * Unsaved local edits layered on top of the server payload. `base` keeps the exact
+	 * react-query snapshot the draft was derived from, so a fresh fetch (e.g. after a
+	 * successful save) discards the draft without syncing state inside an effect.
+	 */
+	const [draftSettings, setDraftSettings] = useState<{
+		base: AdminAISettings;
+		value: AdminAISettings;
+	} | null>(null);
+	const [activeTabOverride, setActiveTabOverride] = useState<string | null>(null);
 
 	// Show/hide plaintext keys
 	const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -133,14 +141,16 @@ export const AdminAISettingsPage: React.FC = () => {
 	const [testResults, setTestResults] = useState<Record<string, AdminAITestResponse>>({});
 	const [testingProvider, setTestingProvider] = useState<string | null>(null);
 
-	useEffect(() => {
-		if (remoteSettings) {
-			setSettings(JSON.parse(JSON.stringify(remoteSettings)));
-			if (remoteSettings.active_provider) {
-				setActiveTab(remoteSettings.active_provider);
-			}
-		}
-	}, [remoteSettings]);
+	// Effective settings: the unsaved draft while it is still in sync with the query data, a deep copy of the server state otherwise.
+	const settings = useMemo<AdminAISettings | null>(() => {
+		if (!remoteSettings) return null;
+		return draftSettings && draftSettings.base === remoteSettings
+			? draftSettings.value
+			: structuredClone(remoteSettings);
+	}, [draftSettings, remoteSettings]);
+
+	// Selected provider tab: the explicit user choice first, the server-side active provider as fallback.
+	const activeTab = activeTabOverride ?? settings?.active_provider ?? "google";
 
 	if (isLoading || !settings) {
 		return (
@@ -159,18 +169,28 @@ export const AdminAISettingsPage: React.FC = () => {
 		);
 	}
 
+	/** Store a locally edited settings object as an unsaved draft. */
+	const applySettingsDraft = (next: AdminAISettings) => {
+		if (!remoteSettings) return;
+		setDraftSettings({ base: remoteSettings, value: next });
+	};
+
 	const toggleShowKey = (provider: string) => {
 		setShowKeys((prev) => ({ ...prev, [provider]: !prev[provider] }));
 	};
 
-	const handleProviderFieldChange = (provider: string, field: string, value: any) => {
+	const handleProviderFieldChange = (
+		provider: string,
+		field: string,
+		value: string | number | boolean,
+	) => {
 		if (!settings) return;
 		const currentProviders = { ...settings.providers };
 		const provData = { ...(currentProviders[provider] || {}) };
 		provData[field] = value;
 		currentProviders[provider] = provData;
 
-		setSettings({
+		applySettingsDraft({
 			...settings,
 			providers: currentProviders,
 		});
@@ -178,11 +198,11 @@ export const AdminAISettingsPage: React.FC = () => {
 
 	const handleSetActiveProvider = (providerKey: string) => {
 		if (!settings) return;
-		setSettings({
+		applySettingsDraft({
 			...settings,
 			active_provider: providerKey,
 		});
-		setActiveTab(providerKey);
+		setActiveTabOverride(providerKey);
 	};
 
 	const handleRunTest = (providerKey: string) => {
@@ -317,7 +337,7 @@ export const AdminAISettingsPage: React.FC = () => {
 
 			{/* Provider Configuration Detailed Panel */}
 			<div className="space-y-4">
-				<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+				<Tabs value={activeTab} onValueChange={setActiveTabOverride} className="space-y-4">
 					<TabsList className="grid grid-cols-5 w-full">
 						<TabsTrigger value="google">Google Gemini</TabsTrigger>
 						<TabsTrigger value="qwen">Qwen</TabsTrigger>

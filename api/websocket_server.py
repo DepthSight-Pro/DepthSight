@@ -83,7 +83,9 @@ async def add_security_headers(request: Request, call_next):
         f"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
         f"frame-src 'self' https://accounts.google.com; "
         f"connect-src 'self' {ws_url} {public_base_url} https://accounts.google.com "
-        f"https://api.binance.com https://fapi.binance.com https://api.bybit.com; "
+        f"https://api.binance.com https://fapi.binance.com wss://fstream.binance.com "
+        f"https://api.bybit.com wss://stream.bybit.com "
+        f"https://www.okx.com wss://ws.okx.com https://api.bitget.com wss://ws.bitget.com; "
         f"style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; "
         f"font-src 'self' data: https://fonts.gstatic.com; "
         f"img-src 'self' data: https://lh3.googleusercontent.com; "
@@ -103,6 +105,7 @@ def _is_channel_allowed(channel: str, user_id: int) -> bool:
     - depthsight:events:positions:{user_id}
     - depthsight:events:strategies:{user_id}
     - depthsight:events:portfolio:{user_id}
+    - depthsight:events:trades:{user_id}
     """
     # Patterns of protected channels that require matching user_id
     protected_patterns = [
@@ -111,6 +114,7 @@ def _is_channel_allowed(channel: str, user_id: int) -> bool:
         r"^depthsight:events:positions:(\d+)$",
         r"^depthsight:events:strategies:(\d+)$",
         r"^depthsight:events:portfolio:(\d+)$",
+        r"^depthsight:events:trades:(\d+)$",
         r"^log_history:(\d+)$",
         r"^user:(\d+):notifications$",
         # HFT Channels are currently global for the singleton engine
@@ -124,6 +128,7 @@ def _is_channel_allowed(channel: str, user_id: int) -> bool:
         "depthsight:events:positions",
         "depthsight:events:strategies",
         "depthsight:events:portfolio",
+        "depthsight:events:trades",
     }
 
     if channel in legacy_user_data_channels:

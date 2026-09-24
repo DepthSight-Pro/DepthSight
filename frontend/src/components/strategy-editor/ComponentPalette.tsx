@@ -34,7 +34,6 @@ import {
 	AccordionItem,
 	AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Card } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { useBlockRestrictions } from "@/lib/api";
 import { hasProPlanAccess } from "@/lib/strategyRestrictions";
@@ -90,52 +89,52 @@ export const DraggablePaletteItem: React.FC<DraggablePaletteItemProps> = ({
 	};
 
 	return (
-		<Card
+		<div
 			ref={setNodeRef}
 			{...(isLocked
 				? { onClick: handleLockedClick }
 				: { ...listeners, ...attributes })}
 			data-tutorial-id={dataTutorialId}
 			className={cn(
-				"cursor-grab p-3 transition-all duration-200 relative overflow-hidden",
-				"hover:bg-accent hover:shadow-lg hover:-translate-y-0.5",
-				isDragging ? "opacity-50 cursor-grabbing" : "",
+				"cursor-grab p-3 transition-all duration-200 relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-md",
+				"hover:border-white/20 hover:bg-white/[0.06] hover:shadow-lg hover:-translate-y-0.5",
+				isDragging ? "opacity-50 cursor-grabbing border-cyan/40 bg-cyan/10" : "",
 				isLocked ? "opacity-75 cursor-not-allowed grayscale-[0.5]" : "",
-				isPro ? "border-violet-500/30 bg-violet-500/5" : "",
+				isPro ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/40" : "",
 			)}
 		>
 			{isPro && (
-				<div className="absolute top-0 right-0 px-1.5 py-0.5 bg-violet-600 text-[8px] font-bold text-white rounded-bl-md uppercase tracking-wider z-10">
+				<div className="absolute top-0 right-0 px-1.5 py-0.5 bg-gradient-to-r from-amber-500 to-amber-600 text-black text-[9px] font-mono font-bold rounded-bl-md uppercase tracking-wider z-10 shadow-sm">
 					Pro
 				</div>
 			)}
 			<div className="flex items-start gap-3">
 				<div
 					className={cn(
-						"text-muted-foreground mt-1",
-						isPro ? "text-violet-500" : "",
+						"mt-0.5 text-cyan",
+						isPro ? "text-amber-400" : "text-cyan",
 					)}
 				>
 					{icon}
 				</div>
-				<div className="flex-grow">
+				<div className="flex-grow min-w-0">
 					<div className="flex items-center justify-between">
-						<h4 className="font-semibold text-sm">{title}</h4>
-						<InfoTooltip blockType={type} className="-mr-2 -mt-2" />
+						<h4 className="font-medium text-xs text-white/90 tracking-wide">{title}</h4>
+						<InfoTooltip blockType={type} className="-mr-2 -mt-2 text-white/40 hover:text-white/80" />
 					</div>
-					<p className="text-xs text-muted-foreground line-clamp-2">
+					<p className="text-[11px] text-white/40 line-clamp-2 mt-0.5 leading-relaxed">
 						{description}
 					</p>
 				</div>
 			</div>
 			{isLocked && (
-				<div className="absolute inset-0 bg-background/40 backdrop-blur-[1px] flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity z-20">
-					<div className="bg-violet-600 text-white text-[10px] px-2 py-1 rounded shadow-lg font-bold">
+				<div className="absolute inset-0 bg-[#050608]/80 backdrop-blur-[2px] flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity z-20">
+					<div className="bg-gradient-to-r from-amber-500 to-amber-600 text-black text-[10px] px-2 py-1 rounded shadow-lg font-mono font-bold tracking-wider">
 						UPGRADE TO PRO
 					</div>
 				</div>
 			)}
-		</Card>
+		</div>
 	);
 };
 
@@ -497,23 +496,23 @@ export const ComponentPalette = ({
 	}, [restrictions?.proOnly, restrictions?.klineOnly]);
 
 	return (
-		<div className="flex flex-col h-full bg-background border-r">
-			<div className="flex items-center gap-2 p-4 pb-2 px-6 flex-shrink-0">
-				<Globe className="w-6 h-6 text-primary" />
-				<h3 className="text-lg font-semibold">{t("palette.title")}</h3>
+		<div className="flex flex-col h-full bg-transparent border-r border-white/10">
+			<div className="flex items-center gap-2 p-4 pb-2 px-5 flex-shrink-0 border-b border-white/5">
+				<Globe className="w-5 h-5 text-cyan" />
+				<h3 className="text-sm font-semibold tracking-wide text-white">{t("palette.title")}</h3>
 			</div>
-			<div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+			<div className="flex-1 overflow-y-auto p-3 min-h-0 space-y-1">
 				<Accordion
 					type="multiple"
 					value={value}
 					onValueChange={onValueChange}
-					className="w-full"
+					className="w-full space-y-1"
 				>
 					{PALETTE_CONFIG.map((group) => (
 						<AccordionItem
 							key={group.groupKey}
 							value={group.groupKey}
-							className="border-b-0"
+							className="border-b-0 border border-white/5 rounded-xl bg-white/[0.01] overflow-hidden mb-2"
 						>
 							<AccordionTrigger
 								data-tutorial-id={
@@ -521,11 +520,11 @@ export const ComponentPalette = ({
 										? "indicators-accordion"
 										: undefined
 								}
-								className="text-sm font-bold text-muted-foreground hover:no-underline px-2"
+								className="text-xs font-semibold text-white/70 hover:text-white hover:no-underline px-3 py-2.5 transition-colors"
 							>
 								{t(group.groupTitleKey)}
 							</AccordionTrigger>
-							<AccordionContent>
+							<AccordionContent className="pt-1 pb-3 px-2">
 								<div className="space-y-2">
 									{group.items.map((item) => (
 										<DraggablePaletteItem
@@ -534,7 +533,7 @@ export const ComponentPalette = ({
 											category={item.category}
 											title={t(item.titleKey)}
 											description={t(item.descriptionKey)}
-											icon={<item.icon className="w-5 h-5" />}
+											icon={<item.icon className="w-4 h-4" />}
 											isPro={proRestricted.has(item.type)}
 											userTier={userTier}
 											data-tutorial-id={

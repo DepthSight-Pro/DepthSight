@@ -5,13 +5,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+
 import {
 	Table,
 	TableBody,
@@ -185,84 +179,76 @@ export const CombinationsPerformanceTable: React.FC<{
 	};
 
 	return (
-		<Card className="h-full flex flex-col">
-			<CardHeader>
-				<CardTitle>{t("combinationsPerformance.title")}</CardTitle>
-				<CardDescription>
-					{t("combinationsPerformance.description")}
-				</CardDescription>
-			</CardHeader>
-			<CardContent className="flex-grow overflow-auto">
-				{sortedData.length === 0 ? (
-					<div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-						{t("combinationsPerformance.noTrades")}
-					</div>
-				) : (
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>
-									<div className="flex items-center">
-										{t("combinationsPerformance.header.combination")}
-									</div>
-								</TableHead>
-								<TableHead
-									onClick={() => handleSort("pnl")}
-									className="cursor-pointer text-right"
+		<div className="flex-grow overflow-x-auto">
+			{sortedData.length === 0 ? (
+				<div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+					{t("combinationsPerformance.noTrades")}
+				</div>
+			) : (
+				<Table className="min-w-[420px]">
+					<TableHeader>
+						<TableRow>
+							<TableHead className="whitespace-nowrap">
+								<div className="flex items-center">
+									{t("combinationsPerformance.header.combination")}
+								</div>
+							</TableHead>
+							<TableHead
+								onClick={() => handleSort("pnl")}
+								className="cursor-pointer text-right whitespace-nowrap"
+							>
+								<div className="flex items-center justify-end">
+									{t("combinationsPerformance.header.pnl")}{" "}
+									{renderSortArrow("pnl")}
+								</div>
+							</TableHead>
+							<TableHead
+								onClick={() => handleSort("winRate")}
+								className="cursor-pointer text-right whitespace-nowrap"
+							>
+								<div className="flex items-center justify-end">
+									{t("combinationsPerformance.header.winRate")}{" "}
+									{renderSortArrow("winRate")}
+								</div>
+							</TableHead>
+							<TableHead
+								onClick={() => handleSort("totalTrades")}
+								className="cursor-pointer text-right whitespace-nowrap"
+							>
+								<div className="flex items-center justify-end">
+									{t("combinationsPerformance.header.totalTrades")}{" "}
+									{renderSortArrow("totalTrades")}
+								</div>
+							</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{sortedData.map((data, index) => (
+							<TableRow key={index}>
+								<TableCell className="flex flex-wrap gap-1 whitespace-nowrap">
+									{/* --- Displaying ID, not type --- */}
+									{data.combination.map((c) => (
+										<Badge key={c} variant="outline">
+											{c.replace("w_", "")}
+										</Badge>
+									))}
+								</TableCell>
+								<TableCell
+									className={`text-right font-medium whitespace-nowrap ${data.pnl > 0 ? "text-green-500" : "text-red-500"}`}
 								>
-									<div className="flex items-center justify-end">
-										{t("combinationsPerformance.header.pnl")}{" "}
-										{renderSortArrow("pnl")}
-									</div>
-								</TableHead>
-								<TableHead
-									onClick={() => handleSort("winRate")}
-									className="cursor-pointer text-right"
-								>
-									<div className="flex items-center justify-end">
-										{t("combinationsPerformance.header.winRate")}{" "}
-										{renderSortArrow("winRate")}
-									</div>
-								</TableHead>
-								<TableHead
-									onClick={() => handleSort("totalTrades")}
-									className="cursor-pointer text-right"
-								>
-									<div className="flex items-center justify-end">
-										{t("combinationsPerformance.header.totalTrades")}{" "}
-										{renderSortArrow("totalTrades")}
-									</div>
-								</TableHead>
+									{data.pnl.toFixed(2)}
+								</TableCell>
+								<TableCell className="text-right whitespace-nowrap">
+									{data.winRate.toFixed(2)}%
+								</TableCell>
+								<TableCell className="text-right whitespace-nowrap">
+									{data.totalTrades}
+								</TableCell>
 							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{sortedData.map((data, index) => (
-								<TableRow key={index}>
-									<TableCell className="flex flex-wrap gap-1">
-										{/* --- Displaying ID, not type --- */}
-										{data.combination.map((c) => (
-											<Badge key={c} variant="outline">
-												{c.replace("w_", "")}
-											</Badge>
-										))}
-									</TableCell>
-									<TableCell
-										className={`text-right font-medium ${data.pnl > 0 ? "text-green-500" : "text-red-500"}`}
-									>
-										{data.pnl.toFixed(2)}
-									</TableCell>
-									<TableCell className="text-right">
-										{data.winRate.toFixed(2)}%
-									</TableCell>
-									<TableCell className="text-right">
-										{data.totalTrades}
-									</TableCell>
-								</TableRow>
-							))}
-						</TableBody>
-					</Table>
-				)}
-			</CardContent>
-		</Card>
+						))}
+					</TableBody>
+				</Table>
+			)}
+		</div>
 	);
 };

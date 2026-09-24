@@ -13,7 +13,6 @@ import {
 	XAxis,
 	YAxis,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TradeData } from "@/types/api";
 
 interface InteractiveAssetChartProps {
@@ -53,89 +52,85 @@ export const InteractiveAssetChart: React.FC<InteractiveAssetChartProps> = ({
 
 	if (!trades || trades.length === 0) {
 		return (
-			<Card>
-				<CardHeader className="pb-2">
-					<CardTitle className="text-base">
-						{t("assetPerformance", "PnL by assets")}
-					</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<div className="h-[350px] flex items-center justify-center text-muted-foreground">
-						{t("noData", "No Data")}
-					</div>
-				</CardContent>
-			</Card>
+			<div className="glass relative rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
+				<div className="text-[13px] font-semibold text-white/90 pb-2">
+					{t("assetPerformance", "PnL by assets")}
+				</div>
+				<div className="h-[350px] flex items-center justify-center text-white/40 font-mono text-xs">
+					{t("noData", "No Data")}
+				</div>
+			</div>
 		);
 	}
 
 	return (
-		<Card>
-			<CardHeader className="pb-2">
-				<div className="flex items-center justify-between">
-					<CardTitle className="flex items-center gap-2 text-base">
-						<BarChart3 className="w-5 h-5 text-primary" />
-						{t("assetPerformance", "PnL by assets")}
-					</CardTitle>
-					<div className="flex items-center gap-1 text-[9px] text-muted-foreground font-bold uppercase">
-						<MousePointerClick className="w-3 h-3" />
-						<span>{t("toggleCoins", "Toggle Coins")}</span>
-					</div>
+		<div className="glass relative rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
+			<div className="flex items-center justify-between pb-3 mb-2 border-b border-white/5">
+				<div className="flex items-center gap-2 text-[13px] font-semibold text-white/90">
+					<BarChart3 className="w-4 h-4 text-cyan" />
+					{t("assetPerformance", "PnL by assets")}
 				</div>
-			</CardHeader>
-			<CardContent>
-				<div className="h-[350px]">
-					<ResponsiveContainer width="100%" height="100%">
-						<BarChart layout="vertical" data={chartData}>
-							<XAxis type="number" hide />
-							<YAxis
-								dataKey="ticker"
-								type="category"
-								stroke="hsl(var(--muted-foreground))"
-								fontSize={10}
-								width={80}
-								tickLine={false}
-								axisLine={false}
-							/>
-							<Tooltip
-								cursor={{ fill: "transparent" }}
-								contentStyle={{
-									backgroundColor: "hsl(var(--card))",
-									border: "1px solid hsl(var(--border))",
-									borderRadius: "12px",
-								}}
-								formatter={(value: unknown) => [
-									`$${Number(value ?? 0).toFixed(2)}`,
-									"PnL",
-								]}
-							/>
-							<Bar
-								dataKey="pnl"
-								radius={[0, 4, 4, 0]}
-								onClick={(data) =>
-									onToggleTicker((data.payload as { ticker: string }).ticker)
-								}
-								style={{ cursor: "pointer" }}
-							>
-								{chartData.map((entry, index) => {
-									const isActive = activeTickers.includes(entry.ticker);
-									const color =
-										entry.pnl >= 0 ? "hsl(var(--profit))" : "hsl(var(--loss))";
-									return (
-										<Cell
-											key={`cell-${index}`}
-											fill={isActive ? color : "hsl(var(--muted))"}
-											fillOpacity={isActive ? 0.8 : 0.2}
-											stroke={isActive ? color : "hsl(var(--border))"}
-											strokeWidth={isActive ? 0 : 1}
-											strokeDasharray={isActive ? "0" : "4 2"}
-										/>
-									);
-								})}
-							</Bar>
-						</BarChart>
-					</ResponsiveContainer>
+				<div className="flex items-center gap-1 text-[9px] text-cyan/80 font-mono font-bold uppercase tracking-wider bg-cyan/10 px-2 py-0.5 rounded-md border border-cyan/20">
+					<MousePointerClick className="w-3 h-3" />
+					<span>{t("toggleCoins", "Toggle Coins")}</span>
 				</div>
-			</CardContent>
-		</Card>
+			</div>
+			<div className="h-[350px]">
+				<ResponsiveContainer width="100%" height="100%">
+					<BarChart layout="vertical" data={chartData}>
+						<XAxis type="number" hide />
+						<YAxis
+							dataKey="ticker"
+							type="category"
+							stroke="rgba(255, 255, 255, 0.4)"
+							fontSize={10}
+							fontFamily="monospace"
+							width={80}
+							tickLine={false}
+							axisLine={false}
+						/>
+						<Tooltip
+							cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
+							contentStyle={{
+								backgroundColor: "rgba(7, 8, 11, 0.95)",
+								border: "1px solid rgba(255, 255, 255, 0.15)",
+								borderRadius: "12px",
+								color: "#fff",
+								fontFamily: "monospace",
+								boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
+							}}
+							formatter={(value: unknown) => [
+								`$${Number(value ?? 0).toFixed(2)}`,
+								"PnL",
+							]}
+						/>
+						<Bar
+							dataKey="pnl"
+							radius={[0, 4, 4, 0]}
+							onClick={(data) =>
+								onToggleTicker((data.payload as { ticker: string }).ticker)
+							}
+							style={{ cursor: "pointer" }}
+						>
+							{chartData.map((entry, index) => {
+								const isActive = activeTickers.includes(entry.ticker);
+								const color =
+									entry.pnl >= 0 ? "#10e0a0" : "#ff3b5c";
+								return (
+									<Cell
+										key={`cell-${index}`}
+										fill={isActive ? color : "rgba(255, 255, 255, 0.1)"}
+										fillOpacity={isActive ? 0.85 : 0.2}
+										stroke={isActive ? color : "rgba(255, 255, 255, 0.15)"}
+										strokeWidth={isActive ? 0 : 1}
+										strokeDasharray={isActive ? "0" : "4 2"}
+									/>
+								);
+							})}
+						</Bar>
+					</BarChart>
+				</ResponsiveContainer>
+			</div>
+		</div>
 	);
 };

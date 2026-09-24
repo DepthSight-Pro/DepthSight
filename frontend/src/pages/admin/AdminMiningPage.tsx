@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Pickaxe, Settings, Coins, RefreshCw, AlertCircle, Server, Globe, ShieldCheck, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, KeyRound, CalendarIcon, UploadCloud, FileSpreadsheet, CheckCircle2 } from "lucide-react";
+import React, { useState } from "react";
+import { Pickaxe, Settings, Coins, RefreshCw, AlertCircle, Globe, ShieldCheck, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, KeyRound, CalendarIcon, UploadCloud, FileSpreadsheet, CheckCircle2, Flame } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, startOfToday } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,8 +29,13 @@ import {
 	useUpdateHubMiningConfig,
 	useTriggerMiningEpoch,
 	useImportBybitXlsx,
+	useImportWeexXlsx,
 	type ImportBybitXlsxResult,
+	type ImportWeexXlsxResult,
+	type LocalMiningStats,
+	type NodeMiningConfigUpdate,
 } from "@/lib/api";
+import type { HubMiningConfig } from "@/types/api";
 
 const PRESET_EXCHANGES = [
 	{ id: "weex_futures", name: "WEEX Futures" },
@@ -41,7 +46,19 @@ const PRESET_EXCHANGES = [
 	{ id: "binance_spot", name: "Binance Spot" },
 	{ id: "okx_futures", name: "OKX Futures" },
 	{ id: "okx_spot", name: "OKX Spot" },
+	{ id: "bitget_futures", name: "Bitget Futures" },
+	{ id: "bitget_spot", name: "Bitget Spot" },
 ];
+
+// Broker XLSX importers live in closed-source hub_private and may be absent
+// in open-source builds (backend answers 501). Map that to a clear message
+// instead of a raw error so the page never looks broken.
+const importErrorMessage = (err: Error, fallback: string) => {
+	if (err.message.includes("not included in this build")) {
+		return "XLSX import module is not included in this backend build. Contact your hub operator.";
+	}
+	return err.message || fallback;
+};
 
 const AdminMiningPage: React.FC = () => {
 	const { toast } = useToast();
@@ -82,6 +99,12 @@ const AdminMiningPage: React.FC = () => {
 	const [importResult, setImportResult] = useState<ImportBybitXlsxResult | null>(null);
 	const { mutate: importBybitXlsx, isPending: isImportingXlsx } = useImportBybitXlsx();
 
+	// Weex cabinet export Import state
+	const [weexFile, setWeexFile] = useState<File | null>(null);
+	const [weexMarketType, setWeexMarketType] = useState<string>("futures");
+	const [weexImportResult, setWeexImportResult] = useState<ImportWeexXlsxResult | null>(null);
+	const { mutate: importWeexXlsx, isPending: isImportingWeexXlsx } = useImportWeexXlsx();
+
 	const handleBybitFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		if (e.target.files && e.target.files[0]) {
 			setBybitFile(e.target.files[0]);
@@ -101,8 +124,7 @@ const AdminMiningPage: React.FC = () => {
 		importBybitXlsx(
 			{ file: bybitFile, dryRun: isDryRun },
 			{
-				onSuccess: (res: any) => {
-					const data: ImportBybitXlsxResult = res?.data || res;
+				onSuccess: (data: ImportBybitXlsxResult) => {
 					setImportResult(data);
 					toast({
 						title: isDryRun ? "Dry Run Completed" : "Bybit Import Successful",
@@ -110,10 +132,48 @@ const AdminMiningPage: React.FC = () => {
 					});
 					refetchStatus();
 				},
-				onError: (err: any) => {
+				onError: (err: Error) => {
 					toast({
 						title: "Bybit Import Failed",
-						description: err.message || "Failed to parse or apply Bybit XLSX file.",
+						description: importErrorMessage(err, "Failed to parse or apply Bybit XLSX file."),
+						variant: "destructive",
+					});
+				},
+			}
+		);
+	};
+
+	const handleWeexFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		if (e.target.files && e.target.files[0]) {
+			setWeexFile(e.target.files[0]);
+			setWeexImportResult(null);
+		}
+	};
+
+	const handleImportWeex = () => {
+		if (!weexFile) {
+			toast({
+				title: "No file selected",
+				description: "Please select an .xlsx/.csv file downloaded from Weex Broker Cabinet.",
+				variant: "destructive",
+			});
+			return;
+		}
+		importWeexXlsx(
+			{ file: weexFile, dryRun: isDryRun, marketType: weexMarketType },
+			{
+				onSuccess: (data: ImportWeexXlsxResult) => {
+					setWeexImportResult(data);
+					toast({
+						title: isDryRun ? "Dry Run Completed" : "Weex Import Successful",
+						description: data?.message || `Processed ${data?.stats?.verified_reports || 0} verified reports.`,
+					});
+					refetchStatus();
+				},
+				onError: (err: Error) => {
+					toast({
+						title: "Weex Import Failed",
+						description: importErrorMessage(err, "Failed to parse or apply Weex export file."),
 						variant: "destructive",
 					});
 				},
@@ -142,41 +202,59 @@ const AdminMiningPage: React.FC = () => {
 		binance_futures: 0.25,
 		binance_spot: 0.20,
 	});
+	const [exchangeMultipliers, setExchangeMultipliers] = useState<Record<string, number>>({
+		bitget_futures: 2.0,
+		bitget_spot: 2.0,
+		bitget: 2.0,
+		bybit_futures: 1.0,
+		bybit_spot: 1.0,
+		bybit: 1.0,
+		okx: 1.0,
+		weex: 1.0,
+	});
 	const [customExchange, setCustomExchange] = useState("");
 
-	// Sync local node state when configData loads
-	useEffect(() => {
-		if (configData) {
-			setGlobalMiningEnabled(configData.isGlobalMiningEnabled);
-			setUserRewardShare(configData.userRewardSharePercent);
-		}
-	}, [configData]);
+	// Sync the local node form when the fetched config changes. React's
+	// documented "adjust state when props change" pattern — guarded setState
+	// during render — replaces the former sync effect that tripped
+	// `react-hooks/set-state-in-effect` (cascading renders). The triggers and
+	// the resulting state are the same as before.
+	const [lastSyncedConfigData, setLastSyncedConfigData] = useState<NodeMiningConfigUpdate | null>(null);
+	if (configData && configData !== lastSyncedConfigData) {
+		setLastSyncedConfigData(configData);
+		setGlobalMiningEnabled(configData.isGlobalMiningEnabled);
+		setUserRewardShare(configData.userRewardSharePercent);
+	}
 
-	// Sync Central Hub state when hubConfig loads
-	useEffect(() => {
-		if (hubConfig) {
-			setHubMiningEnabled(hubConfig.isMiningEnabled ?? false);
-			setEligibleExchanges(hubConfig.eligibleExchanges || []);
-			if (hubConfig.dailyEmissionBase !== undefined) {
-				setDailyEmission(hubConfig.dailyEmissionBase);
-			}
-			if (hubConfig.minTradeDurationSec !== undefined) {
-				setMinTradeDuration(hubConfig.minTradeDurationSec);
-			}
-			if (hubConfig.minPriceMovementPercent !== undefined) {
-				setMinPriceMovement(hubConfig.minPriceMovementPercent);
-			}
-			if (hubConfig.qualityGateOperator) {
-				setQualityGateOperator(hubConfig.qualityGateOperator.toUpperCase() as "AND" | "OR");
-			}
-			if (hubConfig.referralMiningBoost !== undefined) {
-				setReferralBoost(hubConfig.referralMiningBoost);
-			}
-			if (hubConfig.rebateRates) {
-				setRebateRates((prev) => ({ ...prev, ...hubConfig.rebateRates }));
-			}
+	// Sync the Central Hub form when the fetched hub config changes (same
+	// guarded render-time pattern as above).
+	const [lastSyncedHubConfig, setLastSyncedHubConfig] = useState<HubMiningConfig | null>(null);
+	if (hubConfig && hubConfig !== lastSyncedHubConfig) {
+		setLastSyncedHubConfig(hubConfig);
+		setHubMiningEnabled(hubConfig.isMiningEnabled ?? false);
+		setEligibleExchanges(hubConfig.eligibleExchanges || []);
+		if (hubConfig.dailyEmissionBase !== undefined) {
+			setDailyEmission(hubConfig.dailyEmissionBase);
 		}
-	}, [hubConfig]);
+		if (hubConfig.minTradeDurationSec !== undefined) {
+			setMinTradeDuration(hubConfig.minTradeDurationSec);
+		}
+		if (hubConfig.minPriceMovementPercent !== undefined) {
+			setMinPriceMovement(hubConfig.minPriceMovementPercent);
+		}
+		if (hubConfig.qualityGateOperator) {
+			setQualityGateOperator(hubConfig.qualityGateOperator.toUpperCase() as "AND" | "OR");
+		}
+		if (hubConfig.referralMiningBoost !== undefined) {
+			setReferralBoost(hubConfig.referralMiningBoost);
+		}
+		if (hubConfig.rebateRates) {
+			setRebateRates((prev) => ({ ...prev, ...hubConfig.rebateRates }));
+		}
+		if (hubConfig.exchangeMultipliers) {
+			setExchangeMultipliers((prev) => ({ ...prev, ...hubConfig.exchangeMultipliers }));
+		}
+	}
 
 	const handleSaveConfig = () => {
 		updateConfig(
@@ -193,7 +271,7 @@ const AdminMiningPage: React.FC = () => {
 					refetchConfig();
 					refetchStatus();
 				},
-				onError: (error: any) => {
+				onError: (error: Error) => {
 					toast({
 						title: "Failed to Update",
 						description: error.message || "An error occurred while updating settings.",
@@ -215,6 +293,7 @@ const AdminMiningPage: React.FC = () => {
 				qualityGateOperator: qualityGateOperator,
 				referralMiningBoost: referralBoost,
 				rebateRates,
+				exchangeMultipliers,
 			},
 			{
 				onSuccess: () => {
@@ -225,7 +304,7 @@ const AdminMiningPage: React.FC = () => {
 					refetchHubConfig();
 					refetchStatus();
 				},
-				onError: (error: any) => {
+				onError: (error: Error) => {
 					toast({
 						title: "Failed to Update Hub",
 						description: error.message || "An error occurred while updating Hub settings.",
@@ -245,7 +324,7 @@ const AdminMiningPage: React.FC = () => {
 				});
 				refetchStatus();
 			},
-			onError: (error: any) => {
+			onError: (error: Error) => {
 				toast({
 					title: t("epochProcessingFailedTitle"),
 					description: error.message || t("epochProcessingFailedDesc"),
@@ -272,7 +351,7 @@ const AdminMiningPage: React.FC = () => {
 	};
 
 	const handleRefresh = async () => {
-		const promises: Promise<any>[] = [refetchStatus(), refetchConfig()];
+		const promises: Promise<unknown>[] = [refetchStatus(), refetchConfig()];
 		if (isCentralHub) promises.push(refetchHubConfig());
 		await Promise.all(promises);
 		toast({
@@ -281,11 +360,11 @@ const AdminMiningPage: React.FC = () => {
 		});
 	};
 
-	// Parse user metrics from stats dict
-	const userMetrics = (statusData?.stats as any)?.userMetrics || [];
-	const totalNodeMined = (statusData?.stats as any)?.serverTotalMined || statusData?.totalMined || 0.0;
-	const operatorFeeBalance = (statusData?.stats as any)?.operatorFeeBalance || 0.0;
-	const totalNodeVol = (statusData?.stats as any)?.serverTotalVolume || statusData?.userTradeVolume || 0.0;
+	// Parse user metrics & totals from the typed stats blob
+	const userMetrics: NonNullable<LocalMiningStats["userMetrics"]> = statusData?.stats?.userMetrics ?? [];
+	const totalNodeMined = statusData?.stats?.serverTotalMined || statusData?.totalMined || 0.0;
+	const operatorFeeBalance = statusData?.stats?.operatorFeeBalance || 0.0;
+	const totalNodeVol = statusData?.stats?.serverTotalVolume || statusData?.userTradeVolume || 0.0;
 	const hubStatus = statusData?.registeredOnHub ? "Connected" : "Disconnected";
 
 	const totalTablePages = Math.ceil(userMetrics.length / ITEMS_PER_PAGE) || 1;
@@ -564,6 +643,67 @@ const AdminMiningPage: React.FC = () => {
 										</div>
 									)}
 
+									{/* Exchange Specific Mining Multipliers (Partner Farming Boost) */}
+									{eligibleExchanges.length > 0 && (
+										<div className="space-y-3 p-4 border rounded-xl bg-card/40">
+											<div>
+												<p className="font-bold text-sm flex items-center gap-2">
+													<Flame className="h-4 w-4 text-amber-500" />
+													Exchange Mining Multipliers (Token Farming Boost)
+												</p>
+												<p className="text-xs text-muted-foreground mt-0.5">
+													Configure trade mining reward multipliers per exchange (e.g., 2.0x for Bitget) to steer user volume. Weights points in daily pool; daily emission remains fixed without inflation.
+												</p>
+											</div>
+
+											<div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+												{eligibleExchanges.map((ex) => {
+													const mult = exchangeMultipliers[ex] ?? (ex.toLowerCase().includes("bitget") ? 2.0 : 1.0);
+													const isBoosted = mult > 1.0;
+													return (
+														<div
+															key={ex}
+															className={`flex items-center justify-between p-2.5 border rounded-lg bg-background/50 text-xs transition-colors ${
+																isBoosted ? "border-amber-500/40 bg-amber-500/5 shadow-sm" : ""
+															}`}
+														>
+															<div className="flex items-center gap-2">
+																<span className="font-mono font-semibold">{ex}</span>
+																{isBoosted && (
+																	<Badge
+																		variant="outline"
+																		className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-500 border-amber-500/30 animate-pulse"
+																	>
+																		🔥 {mult}x BOOST
+																	</Badge>
+																)}
+															</div>
+															<div className="flex items-center gap-2">
+																<Input
+																	type="number"
+																	step="0.1"
+																	min="0.1"
+																	max="10.0"
+																	value={mult}
+																	onChange={(e) =>
+																		setExchangeMultipliers({
+																			...exchangeMultipliers,
+																			[ex]: parseFloat(e.target.value) || 1.0,
+																		})
+																	}
+																	className="w-20 h-8 text-xs font-mono font-bold text-right"
+																/>
+																<span className="font-bold text-muted-foreground w-6 text-right">
+																	x
+																</span>
+															</div>
+														</div>
+													);
+												})}
+											</div>
+										</div>
+									)}
+
 									<Button
 										onClick={handleSaveHubConfig}
 										disabled={isUpdatingHub}
@@ -715,6 +855,111 @@ const AdminMiningPage: React.FC = () => {
 														<span className="font-bold text-muted-foreground">{importResult.stats.skipped_gated_reports}</span>
 													</div>
 												</div>
+											</div>
+										)}
+									</div>
+								</div>
+
+								{/* Weex Broker Cabinet Import (Central Hub only) */}
+								<div className="border-t border-border/40 pt-4">
+									<p className="font-bold text-sm mb-1 flex items-center gap-2">
+										<FileSpreadsheet className="h-4 w-4 text-emerald-500" />
+										Weex Broker Cabinet Import
+									</p>
+									<p className="text-xs text-muted-foreground mb-3">
+										Upload official Weex Broker Cabinet order-history export (<code className="text-[11px] bg-muted px-1 rounded">.xlsx/.csv</code>) to verify trading volumes. Rebate is computed as sum(|fee|) × live MiningConfig rate (weex_futures / weex_spot).
+									</p>
+
+									<div className="space-y-3 p-3.5 border rounded-xl bg-card/60">
+										<div className="flex flex-col gap-2">
+											<Label htmlFor="weex-xlsx-file" className="text-xs font-semibold text-muted-foreground">
+												Select export file from Weex Broker Cabinet
+											</Label>
+											<Input
+												id="weex-xlsx-file"
+												type="file"
+												accept=".xlsx,.csv"
+												onChange={handleWeexFileChange}
+												className="text-xs cursor-pointer file:cursor-pointer file:font-semibold file:text-xs file:bg-primary/10 file:text-primary file:border-0 file:rounded-md file:mr-2 file:px-2 file:py-1"
+											/>
+										</div>
+
+										<div className="flex items-center gap-3">
+											<Label htmlFor="weex-market-type" className="text-xs font-semibold text-muted-foreground">
+												Market
+											</Label>
+											<select
+												id="weex-market-type"
+												value={weexMarketType}
+												onChange={(e) => setWeexMarketType(e.target.value)}
+												className="text-xs bg-background border rounded-md px-2 py-1"
+											>
+												<option value="futures">Futures</option>
+												<option value="spot">Spot</option>
+											</select>
+										</div>
+
+										<div className="flex items-center justify-between pt-1">
+											<label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+												<input
+													type="checkbox"
+													checked={isDryRun}
+													onChange={(e) => setIsDryRun(e.target.checked)}
+													className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+												/>
+												<span>Dry Run (simulate without committing)</span>
+											</label>
+
+											<Button
+												onClick={handleImportWeex}
+												disabled={!weexFile || isImportingWeexXlsx}
+												size="sm"
+												className="font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+											>
+												{isImportingWeexXlsx ? (
+													<span className="flex items-center gap-2">
+														<RefreshCw className="h-3.5 w-3.5 animate-spin" />
+														Importing...
+													</span>
+												) : (
+													<span className="flex items-center gap-2">
+														<UploadCloud className="h-3.5 w-3.5" />
+														Upload & Apply
+													</span>
+												)}
+											</Button>
+										</div>
+
+										{/* Import Result Box */}
+										{weexImportResult && (
+											<div className="mt-3 p-3 rounded-lg border bg-emerald-950/20 border-emerald-800/40 text-xs space-y-1.5">
+												<div className="flex items-center gap-1.5 font-bold text-emerald-400">
+													<CheckCircle2 className="h-4 w-4 text-emerald-400" />
+													<span>{weexImportResult.message}</span>
+												</div>
+												<div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+													<div className="p-1.5 rounded bg-background/60">
+														<span className="text-muted-foreground block text-[10px]">Verified Trades</span>
+														<span className="font-bold text-emerald-400">{weexImportResult.stats.verified_reports}</span>
+													</div>
+													<div className="p-1.5 rounded bg-background/60">
+														<span className="text-muted-foreground block text-[10px]">Rebate Assigned</span>
+														<span className="font-bold text-primary">${weexImportResult.stats.total_rebate_distributed.toFixed(4)} USDT</span>
+													</div>
+													<div className="p-1.5 rounded bg-background/60">
+														<span className="text-muted-foreground block text-[10px]">Volume Verified</span>
+														<span className="font-bold">{weexImportResult.stats.total_volume_verified.toFixed(2)} USDT</span>
+													</div>
+													<div className="p-1.5 rounded bg-background/60">
+														<span className="text-muted-foreground block text-[10px]">Gated / Skipped</span>
+														<span className="font-bold text-muted-foreground">{weexImportResult.stats.skipped_gated_reports}</span>
+													</div>
+												</div>
+												{weexImportResult.stats.unmatched_groups.length > 0 && (
+													<div className="pt-1 text-[11px] text-amber-400">
+														Unmatched: {weexImportResult.stats.unmatched_groups.map((u) => `${u.uid}/${u.symbol}/${u.date}`).join(", ")}
+													</div>
+												)}
 											</div>
 										)}
 									</div>
@@ -892,12 +1137,12 @@ const AdminMiningPage: React.FC = () => {
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{paginatedUserMetrics.map((user: any) => {
+									{paginatedUserMetrics.map((user) => {
 										const volume = Number(user.tradeVolume) || 0.0;
 										const rebate = Number(user.estimatedRebate) || 0.0;
 										
 										// Calculate user's proportional share of the total node/hub mined tokens
-										const totalRebate = userMetrics.reduce((sum: number, u: any) => sum + (Number(u.estimatedRebate) || 0), 0);
+										const totalRebate = userMetrics.reduce((sum, u) => sum + (Number(u.estimatedRebate) || 0), 0);
 										const userTokens = totalRebate > 0 ? (rebate / totalRebate) * totalNodeMined : 0.0;
 										
 										const shareEarned = userTokens * (userRewardShare / 100.0);

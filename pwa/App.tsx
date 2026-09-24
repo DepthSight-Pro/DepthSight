@@ -40,6 +40,7 @@ import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import { useAuth } from "./contexts/AuthContext";
 import { useAIChat } from "./contexts/AIChatContext";
 import { api } from "./services/api";
+import { useRealtimeStore, type PushEnvelope } from "./stores/realtimeStore";
 
 import DashboardScreen from "./screens/DashboardScreen";
 import StrategiesScreen from "./screens/StrategiesScreen";
@@ -466,12 +467,41 @@ const MainAppLayout = () => {
 			);
 			wsRef.current = websocket;
 			websocket.onopen = () => {
-				websocket.send(
-					JSON.stringify({ action: "subscribe", channel: `user:${user.id}` }),
-				);
+				useRealtimeStore.getState().setWsConnected(true);
+				const sub = (channel: string) =>
+					websocket.send(JSON.stringify({ action: "subscribe", channel }));
+				sub(`user:${user.id}`);
+				// Engine push channels (positions/strategies/portfolio/trades).
+				// The server forwards ONLY subscribed topics.
+				sub(`depthsight:events:positions:${user.id}`);
+				sub(`depthsight:events:strategies:${user.id}`);
+				sub(`depthsight:events:portfolio:${user.id}`);
+				sub(`depthsight:events:trades:${user.id}`);
 			};
 			websocket.onmessage = (event) => {
 				const message = JSON.parse(event.data);
+				const topic = message.topic as string | undefined;
+				const payload = message.payload as Record<string, unknown> | undefined;
+				if (typeof topic === "string") {
+					const rt = useRealtimeStore.getState();
+					const envelope = (payload ?? {}) as PushEnvelope;
+					if (topic.startsWith("depthsight:events:positions:")) {
+						rt.applyPositionsPush(envelope);
+						return;
+					}
+					if (topic.startsWith("depthsight:events:strategies:")) {
+						rt.applyStrategiesPush(envelope);
+						return;
+					}
+					if (topic.startsWith("depthsight:events:portfolio:")) {
+						rt.bumpPortfolio();
+						return;
+					}
+					if (topic.startsWith("depthsight:events:trades:")) {
+						rt.bumpTrades();
+						return;
+					}
+				}
 				const eventType = message.payload?.event_type || message.event_type;
 				const eventData = message.payload?.data || message.data;
 				if (eventType === "achievement_unlocked") {
@@ -505,6 +535,7 @@ const MainAppLayout = () => {
 				}
 			};
 			websocket.onclose = () => {
+				useRealtimeStore.getState().setWsConnected(false);
 				if (!isCleaningUp)
 					reconnectTimeoutRef.current = window.setTimeout(
 						connectWebSocket,

@@ -560,9 +560,22 @@ def test_foundation_blocks(
         df_1d = market_data["kline_1d"].copy()
         if len(df_1d) > 2:
             update_info = market_data_update["kline_1d"]
-            df_1d.iloc[
-                update_info["index"], df_1d.columns.get_loc(update_info["column"])
-            ] = update_info["value"]
+            # Mirror production semantics: significant levels read the last
+            # CLOSED daily candle strictly before current_dt's bucket (see
+            # _get_recent_closed_candles with include_current=False). A fixed
+            # iloc[-2] is today's still-forming candle right after UTC
+            # midnight and is correctly ignored by production, which made
+            # this test wall-clock flaky.
+            try:
+                pos = df_1d.index.get_indexer(
+                    [pd.Timestamp(current_dt)], method="ffill"
+                )[0]
+            except Exception:
+                pos = len(df_1d) - 1
+            target = pos - 1 if pos > 0 else update_info["index"]
+            df_1d.iloc[target, df_1d.columns.get_loc(update_info["column"])] = (
+                update_info["value"]
+            )
             market_data["kline_1d"] = df_1d
         else:
             pytest.skip("Not enough 1d data for sig_level test.")

@@ -15,7 +15,7 @@ export function Logo({ iconOnly = false, ...props }: LogoProps) {
 
 	return (
 		<svg
-			viewBox={iconOnly ? "0 0 75 75" : "0 0 320 100"}
+			viewBox={iconOnly ? "0 0 60 60" : "0 0 320 100"}
 			xmlns="http://www.w3.org/2000/svg"
 			shapeRendering="geometricPrecision"
 			textRendering="optimizeLegibility"
@@ -43,7 +43,7 @@ export function Logo({ iconOnly = false, ...props }: LogoProps) {
 			</defs>
 
 			{/* 4. Use unique IDs in references to definitions */}
-			<g transform="translate(25, 25)">
+			<g transform={iconOnly ? "translate(5, 5)" : "translate(25, 25)"}>
 				<circle
 					cx="25"
 					cy="25"

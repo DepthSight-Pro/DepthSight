@@ -89,6 +89,13 @@ class CcxtExecutor:
                 exchange_options["tag"] = broker_id
                 logger.info(f"CcxtExecutor: Using OKX Broker ID: {broker_id}")
 
+        # Inject Bitget Broker ID if configured
+        if self.exchange_id == "bitget":
+            broker_id = getattr(config, "BITGET_BROKER_ID", None)
+            if broker_id:
+                exchange_options["brokerId"] = broker_id
+                logger.info(f"CcxtExecutor: Using Bitget Broker ID: {broker_id}")
+
         elif "spot" in self.market_type:
             exchange_options["defaultType"] = "spot"
             # exchange_options['fetchMarkets'] = ['spot'] # Can cause KeyErrors in some sandbox environments
@@ -333,10 +340,84 @@ class CcxtExecutor:
         self.user_data_stream_active = False
         self._user_data_running = False
         self._user_data_task: Optional[asyncio.Task] = None
+        # Auth circuit-breaker: repeated fatal auth errors (expired/revoked key,
+        # abnormal account) trip the breaker so we stop spamming the exchange
+        # and the logs. One-shot events are consumed by the controller for
+        # user notification + api_keys.status updates.
+        self._auth_consec_failures = 0
+        self._auth_invalid = False
+        self._auth_invalid_since: Optional[float] = None
+        self._auth_event: Optional[str] = None
 
         logger.info(
             f"CcxtExecutor initialized for exchange: {self.exchange_id}, market: {self.market_type}, sandbox: {self.sandbox}"
         )
+
+    # Exchange error codes that mean "this key/account will never work until
+    # the user acts" (expired/revoked key, abnormal account). Unlike network
+    # blips these must trip the auth circuit-breaker instead of retrying.
+    _FATAL_AUTH_MARKERS = ("33004", "30011", "30012", "30015", "40013")
+    _AUTH_FAILURE_THRESHOLD = 3
+    _AUTH_REPROBE_SECONDS = 600.0
+
+    def _is_fatal_auth_error(self, error: Exception) -> bool:
+        try:
+            if isinstance(error, ccxt.AuthenticationError):
+                return True
+        except Exception:
+            pass
+        msg = str(error) if error is not None else ""
+        return any(marker in msg for marker in self._FATAL_AUTH_MARKERS)
+
+    def _record_auth_failure(self, error: Exception, source: str) -> None:
+        """Counts a fatal auth failure; trips the breaker at threshold."""
+        if not self._is_fatal_auth_error(error):
+            return
+        count = int(getattr(self, "_auth_consec_failures", 0) or 0) + 1
+        self._auth_consec_failures = count
+        if count >= self._AUTH_FAILURE_THRESHOLD and not getattr(
+            self, "_auth_invalid", False
+        ):
+            self._auth_invalid = True
+            self._auth_invalid_since = time.time()
+            self._auth_event = "invalid"
+            logger.critical(
+                f"API key for {self.exchange_id} looks invalid/expired "
+                f"({count} consecutive auth failures via {source}). "
+                f"Private WS and REST polling suspended; re-probing every "
+                f"{int(self._AUTH_REPROBE_SECONDS)}s."
+            )
+
+    def _record_positions_fetch_failure(self, error: Exception) -> None:
+        self._record_auth_failure(error, "rest")
+
+    def _reset_auth_breaker(self) -> None:
+        was_invalid = bool(getattr(self, "_auth_invalid", False))
+        had_failures = bool(getattr(self, "_auth_consec_failures", 0))
+        self._auth_consec_failures = 0
+        self._auth_invalid = False
+        self._auth_invalid_since = None
+        if was_invalid or had_failures:
+            if was_invalid:
+                self._auth_event = "recovered"
+            logger.info(
+                f"API key for {self.exchange_id} is working again. "
+                f"Auth circuit-breaker reset."
+            )
+
+    def _auth_breaker_open(self) -> bool:
+        if not getattr(self, "_auth_invalid", False):
+            return False
+        since = getattr(self, "_auth_invalid_since", None)
+        if since is not None and (time.time() - since) >= self._AUTH_REPROBE_SECONDS:
+            return False  # re-probe window: allow one attempt
+        return True
+
+    def pop_auth_event(self) -> Optional[str]:
+        """One-shot auth event for the controller ('invalid'/'recovered')."""
+        event = getattr(self, "_auth_event", None)
+        self._auth_event = None
+        return event
 
     async def _get_okx_dual_side(self) -> bool:
         """Determines if OKX account is in Long/Short (Hedge) mode or Net (One-Way) mode."""
@@ -428,7 +509,8 @@ class CcxtExecutor:
             }
 
         if "positionRisk" in endpoint:
-            return await self.get_open_positions()
+            # Preserve the legacy list shape for this compat shim.
+            return await self.get_open_positions() or []
 
         return {}
 
@@ -678,6 +760,14 @@ class CcxtExecutor:
             if len(cid_str) > 32:
                 cid_str = cid_str[:32]
             return cid_str
+        elif self.exchange_id == "bitget":
+            broker_id = getattr(config, "BITGET_BROKER_ID", None)
+            clean_cid = "".join(c for c in cid_str if c.isalnum() or c in "-_")
+            if broker_id and not clean_cid.startswith(broker_id):
+                clean_cid = f"{broker_id}{clean_cid}"
+            if len(clean_cid) > 32:
+                clean_cid = clean_cid[:32]
+            return clean_cid
         return cid_str
 
     async def place_order(
@@ -703,6 +793,10 @@ class CcxtExecutor:
             broker_id = getattr(config, "OKX_BROKER_ID", None)
             if broker_id:
                 params["tag"] = broker_id
+        elif self.exchange_id == "bitget":
+            broker_id = getattr(config, "BITGET_BROKER_ID", None)
+            if broker_id:
+                params["brokerId"] = broker_id
 
         stop_price = kwargs.get("stopPrice")
         if stop_price is not None:
@@ -821,12 +915,10 @@ class CcxtExecutor:
 
         ccxt_order_side = ccxt_side
         if self.exchange_id == "bitget" and self.supports_positions:
-            if getattr(self, "_bitget_is_unilateral", False):
-                params["hedged"] = False
-            else:
-                params["hedged"] = True
-                params.pop("tradeSide", None)
-                params.pop("positionSide", None)
+            is_unilateral = bool(getattr(self, "_bitget_is_unilateral", False))
+            params["hedged"] = not is_unilateral
+            params.pop("tradeSide", None)
+            params.pop("positionSide", None)
 
             is_reduce_only = (
                 kwargs.get("reduceOnly") is True
@@ -836,8 +928,19 @@ class CcxtExecutor:
                 "STOP" in order_type_upper or "TAKE_PROFIT" in order_type_upper
             )
             if is_reduce_only and is_tpsl_trigger:
-                # CCXT Bitget maps TPSL holdSide from `side`, not from the close order side.
-                ccxt_order_side = "buy" if ccxt_side == "sell" else "sell"
+                # NOTE: do NOT invert side here. CCXT derives Bitget TPSL
+                # holdSide from the close side:
+                #   hedge (default): sell -> long, buy -> short
+                #   one-way: sell -> buy, buy -> sell
+                # Inverting (as before) produced holdSide=short for a LONG
+                # SL and Bitget rejected it with 45122
+                # "Short position stop loss price please > mark price".
+                # Pass holdSide explicitly so both modes work even if the
+                # CCXT derivation changes.
+                if is_unilateral:
+                    params["holdSide"] = "buy" if ccxt_side == "sell" else "sell"
+                else:
+                    params["holdSide"] = "long" if ccxt_side == "sell" else "short"
 
         try:
             # Check if this is Binance Futures Algo Order
@@ -1782,9 +1885,19 @@ class CcxtExecutor:
             )
             return None
 
-    async def get_open_positions(self) -> List[Dict[str, Any]]:
+    async def get_open_positions(self) -> Optional[List[Dict[str, Any]]]:
+        """Fetches open futures positions mapped to the legacy shape.
+
+        Returns None when the request itself failed (auth/network) so callers
+        can distinguish "unknown" from "no positions". An empty list means the
+        exchange positively reports zero open positions.
+        """
         if not self.supports_positions:
             return []
+        if self._auth_breaker_open():
+            # Key is known-bad and inside the quiet window: skip the request
+            # entirely (no REST load, no log spam). Re-probe happens on timer.
+            return None
 
         try:
             # fetch_positions generally returns all positions across markets
@@ -1828,13 +1941,47 @@ class CcxtExecutor:
                             "liquidationPrice": str(pos.get("liquidationPrice", "0")),
                         }
                     )
+            self._reset_auth_breaker()
             return mapped_positions
         except Exception as e:
             logger.error(
                 f"Error fetching open positions on {self.exchange_id}: {e}",
                 exc_info=True,
             )
-            return []
+            self._record_positions_fetch_failure(e)
+            return None
+
+    async def get_order_info(self, symbol: str, order_id: Any) -> Dict[str, Any]:
+        """Fetches a single order and maps it to the Binance-like shape.
+
+        Used by the close-reason fallback to determine directly whether our
+        SL/TP order FILLED (with its average price) when WS fills were missed.
+        Returns {} when the order cannot be fetched (already cleaned up, etc.).
+        """
+        if not hasattr(self, "_exchange") or self._exchange is None:
+            return {}
+        if not hasattr(self._exchange, "fetch_order"):
+            return {}
+        try:
+            ccxt_symbol = self._normalize_symbol(symbol)
+            params: Dict[str, Any] = {}
+            if self.exchange_id == "bitget" and self.supports_positions:
+                params["productType"] = "USDT-FUTURES"
+            if self.exchange_id == "gateio" and self.supports_positions:
+                params["type"] = "swap"
+                params["settle"] = "usdt"
+            if self.exchange_id in {"bingx", "weex"}:
+                params["type"] = "swap" if self.supports_positions else "spot"
+            raw = await self._exchange.fetch_order(str(order_id), ccxt_symbol, params)
+            if not raw:
+                return {}
+            return self._map_ccxt_order_to_binance(raw)
+        except Exception as e:
+            logger.debug(
+                f"Could not fetch order {order_id} for {symbol} "
+                f"on {self.exchange_id}: {e}"
+            )
+            return {}
 
     async def get_my_trades(self, symbol: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Fetches recent user trades from exchange via CCXT."""
@@ -1891,7 +2038,7 @@ class CcxtExecutor:
             )
             return None
 
-        if self.sandbox and self.exchange_id in {"gateio", "bingx"}:
+        if self.sandbox and self.exchange_id in {"gateio", "bingx", "bitget"}:
             logger.warning(
                 "CCXT Pro UserData Stream disabled for %s sandbox. "
                 "Testnet private WebSocket is unreliable/unsupported in CCXT Pro; "
@@ -1901,6 +2048,12 @@ class CcxtExecutor:
             return None
 
         self._user_data_running = True
+        # Health of the private WS: set True on first received batch, False on errors.
+        # Controllers use it to decide whether REST fallback polling is needed.
+        self._user_data_healthy = False
+        self._user_data_last_msg_ts: Optional[float] = None
+        self._user_data_failures = 0
+        self._user_data_tasks: List[asyncio.Task] = []
 
         # Gate.io requires UID for private websocket subscriptions
         if self.exchange_id == "gateio" and not getattr(
@@ -1935,7 +2088,8 @@ class CcxtExecutor:
             except Exception as e:
                 logger.warning(f"Failed to auto-detect Gate.io UID: {e}")
 
-        async def user_data_listener():
+        async def user_data_listener(extra_params: Optional[Dict[str, Any]] = None):
+            listener_params = dict(extra_params or {})
             while self._user_data_running:
                 try:
                     # CCXT.pro unified stream for orders across most exchanges
@@ -1943,36 +2097,101 @@ class CcxtExecutor:
                     params = {}
                     if self.exchange_id == "gateio":
                         params["type"] = "swap" if self.supports_positions else "spot"
+                    if self.exchange_id == "bitget" and self.supports_positions:
+                        # Explicit productType so CCXT resolves instType to
+                        # USDT-FUTURES deterministically instead of falling back
+                        # to defaults (which may subscribe e.g. COIN-FUTURES and
+                        # then stay silent forever without errors).
+                        params["productType"] = "USDT-FUTURES"
+                    params.update(listener_params)
 
                     orders = await self._exchange_pro.watch_orders(params=params)
+                    self._user_data_failures = 0
+                    self._reset_auth_breaker()
                     if orders:
+                        self._user_data_healthy = True
+                        self._user_data_last_msg_ts = time.time()
                         for order in orders:
                             execution_report = self._to_execution_report(order)
                             await callback(execution_report)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
+                    self._user_data_healthy = False
+                    if self._is_fatal_auth_error(e):
+                        self._record_auth_failure(e, "ws")
+                        if self._auth_breaker_open():
+                            # Key will never work until the user acts (expired /
+                            # revoked / abnormal). Park the listener on the
+                            # re-probe interval instead of hot-spinning.
+                            logger.error(
+                                f"Private WS for {self.exchange_id} suspended: API key "
+                                f"looks invalid/expired. Re-probing in "
+                                f"{int(self._AUTH_REPROBE_SECONDS)}s."
+                            )
+                            await asyncio.sleep(self._AUTH_REPROBE_SECONDS)
+                            continue
+                    self._user_data_failures += 1
+                    # Exponential backoff (5s -> 60s max). A tight reconnect loop
+                    # on errors like Bitget 30017 "Account logoff" only kicks the
+                    # surviving session again, so back off instead.
+                    backoff = min(5 * (2 ** (self._user_data_failures - 1)), 60)
                     logger.error(
-                        f"Error in CCXT Pro UserData listener for {self.exchange_id}: {e}",
+                        f"Error in CCXT Pro UserData listener for {self.exchange_id} "
+                        f"(fail #{self._user_data_failures}, retry in {backoff}s): {e}",
                         exc_info=True,
                     )
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(backoff)
 
-        self._user_data_task = asyncio.create_task(
-            user_data_listener(), name=f"CcxtProUserData_{self.exchange_id}"
-        )
+        listeners: List[asyncio.Task] = [
+            asyncio.create_task(
+                user_data_listener(), name=f"CcxtProUserData_{self.exchange_id}"
+            )
+        ]
+        # Bitget futures SL/TP are plan (trigger) orders living on the separate
+        # 'orders-algo' channel. The plain watch_orders() call above only covers
+        # regular orders, so without this second subscription SL fills can never
+        # arrive via WS (other exchanges deliver everything on one channel and
+        # are intentionally left untouched).
+        if self.exchange_id == "bitget" and self.supports_positions:
+            listeners.append(
+                asyncio.create_task(
+                    user_data_listener(
+                        {"trigger": True, "productType": "USDT-FUTURES"}
+                    ),
+                    name=f"CcxtProUserData_{self.exchange_id}_algo",
+                )
+            )
+            logger.info(
+                f"CCXT Pro UserData Stream subscribed to Bitget plan orders "
+                f"(orders-algo) for {self.exchange_id}."
+            )
+        self._user_data_task = listeners[0]
+        self._user_data_tasks = listeners
         logger.info(f"CCXT Pro UserData Stream started for {self.exchange_id}.")
         return self._user_data_task
 
     async def stop_user_data_stream(self) -> Any:
         self._user_data_running = False
-        if self._user_data_task and not self._user_data_task.done():
-            self._user_data_task.cancel()
-            try:
-                await self._user_data_task
-            except asyncio.CancelledError:
-                pass
+        self._user_data_healthy = False
+        tasks = list(getattr(self, "_user_data_tasks", None) or [])
+        legacy = getattr(self, "_user_data_task", None)
+        if legacy is not None and legacy not in tasks:
+            tasks.append(legacy)
+        for task in tasks:
+            if task and not task.done():
+                task.cancel()
+        for task in tasks:
+            if task:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         logger.info(f"CCXT Pro UserData Stream stopped for {self.exchange_id}.")
+
+    def is_user_data_healthy(self) -> bool:
+        """True if the private WS recently delivered order updates."""
+        return bool(getattr(self, "_user_data_healthy", False))
 
     # --- Internal Helpers ---
 
@@ -2389,17 +2608,32 @@ class CcxtExecutor:
             or "0"
         )
         info_dict = ccxt_order.get("info") or {}
-        weex_latest_fill = info_dict.get("latestFillPrice")
+        bitget_fill_price = (
+            info_dict.get("avgFillPrice")
+            or info_dict.get("fillPrice")
+            or info_dict.get("executedPrice")
+        )
         if (
-            self.exchange_id == "weex"
-            and weex_latest_fill
-            and self._safe_float(weex_latest_fill) > 0
+            self.exchange_id == "bitget"
+            and bitget_fill_price
+            and self._safe_float(bitget_fill_price) > 0
         ):
-            exec_avg_price = str(weex_latest_fill)
+            # Bitget plan (trigger) orders report the trigger price in the
+            # unified 'price' field while the real fill sits in info
+            # (avgFillPrice). Prefer it, same as the WEEX latestFillPrice hack.
+            exec_avg_price = str(bitget_fill_price)
         else:
-            exec_avg_price = str(
-                ccxt_order.get("average") or ccxt_order.get("price") or "0"
-            )
+            weex_latest_fill = info_dict.get("latestFillPrice")
+            if (
+                self.exchange_id == "weex"
+                and weex_latest_fill
+                and self._safe_float(weex_latest_fill) > 0
+            ):
+                exec_avg_price = str(weex_latest_fill)
+            else:
+                exec_avg_price = str(
+                    ccxt_order.get("average") or ccxt_order.get("price") or "0"
+                )
 
         fee = ccxt_order.get("fee") or {}
         order_data = {

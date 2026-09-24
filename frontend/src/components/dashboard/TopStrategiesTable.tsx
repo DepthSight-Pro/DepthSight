@@ -30,6 +30,8 @@ const getStatusBadgeVariant = (status: string) => {
 	switch (status.toLowerCase()) {
 		case "running":
 		case "active":
+		case "in_position":
+		case "in-position":
 			return "bg-green-500 hover:bg-green-600";
 		case "stopped":
 		case "paused":
@@ -41,6 +43,19 @@ const getStatusBadgeVariant = (status: string) => {
 	}
 };
 
+const isActiveStrategy = (s: { status?: string; open_positions?: number | null }) => {
+	const st = String(s.status || "").toLowerCase();
+	if (
+		st === "running" ||
+		st === "active" ||
+		st === "in_position" ||
+		st === "in-position"
+	)
+		return true;
+	return Number(s.open_positions ?? 0) > 0;
+};
+
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { useAccountStore } from "@/stores/accountStore";
 
 export const TopStrategiesTable: React.FC<{ topN?: number }> = ({
@@ -66,11 +81,22 @@ export const TopStrategiesTable: React.FC<{ topN?: number }> = ({
 		return enUS;
 	}, [i18n.language]);
 
-	const topStrategies = useMemo(() => {
-		if (!strategies) return [];
-		return [...strategies]
-			.sort((a, b) => (b.pnl || 0) - (a.pnl || 0)) // Sort by PnL descending
+	// Active now (running/active/in_position or open_positions>0), sorted by PnL,
+	// then top by PnL across all (active first so a fresh 0-PnL bot never vanishes).
+	const { runningNow, topStrategies } = useMemo(() => {
+		if (!strategies) return { runningNow: [], topStrategies: [] };
+		const running = [...strategies]
+			.filter(isActiveStrategy)
+			.sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
+		const top = [...strategies]
+			.sort((a, b) => {
+				const aActive = isActiveStrategy(a) ? 0 : 1;
+				const bActive = isActiveStrategy(b) ? 0 : 1;
+				if (aActive !== bActive) return aActive - bActive;
+				return (b.pnl || 0) - (a.pnl || 0);
+			})
 			.slice(0, topN);
+		return { runningNow: running, topStrategies: top };
 	}, [strategies, topN]);
 
 	const handleRowClick = (strategyId: string) => {
@@ -111,73 +137,141 @@ export const TopStrategiesTable: React.FC<{ topN?: number }> = ({
 					{t("index:topStrategies.description")}
 				</CardDescription>
 			</CardHeader>
-			<CardContent>
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>{t("index:topStrategies.colName")}</TableHead>
-							<TableHead>{t("index:topStrategies.colSymbol")}</TableHead>
-							<TableHead className="text-center">
-								{t("index:topStrategies.colStatus")}
-							</TableHead>
-							<TableHead className="text-right">
-								{t("index:topStrategies.colPnl")}
-							</TableHead>
-							<TableHead className="text-right">
-								{t("index:topStrategies.colRuntime")}
-							</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{isLoading ? (
-							[...Array(topN)].map((_, i) => (
+			<CardContent className="space-y-4">
+				{isLoading ? (
+					<Table>
+						<TableBody>
+							{[...Array(topN)].map((_, i) => (
 								<TableRow key={`skeleton-${i}`}>
 									<TableCell colSpan={5}>
 										<Skeleton className="h-8 w-full" />
 									</TableCell>
 								</TableRow>
-							))
-						) : topStrategies.length === 0 ? (
-							<TableRow>
-								<TableCell
-									colSpan={5}
-									className="h-24 text-center text-muted-foreground"
-								>
-									{t("index:topStrategies.noData")}
-								</TableCell>
-							</TableRow>
-						) : (
-							topStrategies.map((strategy) => (
-								<TableRow
-									key={strategy.id}
-									onClick={() => handleRowClick(strategy.id)}
-									className="cursor-pointer hover:bg-muted/50"
-								>
-									<TableCell className="font-medium">
-										{strategy.name || strategy.strategy_name}
-									</TableCell>
-									<TableCell className="font-mono text-sm">
-										{strategy.symbol}
-									</TableCell>
-									<TableCell className="text-center">
-										<Badge className={getStatusBadgeVariant(strategy.status)}>
-											{strategy.status.toUpperCase()}
-										</Badge>
-									</TableCell>
-									<TableCell
-										className={`text-right font-medium mono ${strategy.pnl >= 0 ? "text-profit" : "text-loss"}`}
-									>
-										{strategy.pnl >= 0 ? "+" : ""}
-										{strategy.pnl.toFixed(2)}
-									</TableCell>
-									<TableCell className="text-right text-sm text-muted-foreground">
-										{calculateRuntime(strategy.started_at)}
-									</TableCell>
-								</TableRow>
-							))
+							))}
+						</TableBody>
+					</Table>
+				) : (
+					<>
+						{runningNow.length > 0 && (
+							<div>
+								<div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+									{t("index:topStrategies.runningNow", "Running now")}
+								</div>
+								<Table>
+									<TableBody>
+										{runningNow.map((strategy) => (
+											<TableRow
+												key={`running-${strategy.id}`}
+												onClick={() => handleRowClick(strategy.id)}
+												className="cursor-pointer hover:bg-muted/50"
+											>
+												<TableCell className="font-medium">
+													<span className="flex items-center gap-2">
+														<ExchangeBadge
+															exchange={strategy.exchange}
+															size="xs"
+														/>
+														{strategy.name || strategy.strategy_name}
+													</span>
+												</TableCell>
+												<TableCell className="font-mono text-sm">
+													{strategy.symbol}
+												</TableCell>
+												<TableCell className="text-center">
+													<Badge
+														className={getStatusBadgeVariant(strategy.status)}
+													>
+														{strategy.status.toUpperCase()}
+													</Badge>
+												</TableCell>
+												<TableCell
+													className={`text-right font-medium mono ${strategy.pnl >= 0 ? "text-profit" : "text-loss"}`}
+												>
+													{strategy.pnl >= 0 ? "+" : ""}
+													{strategy.pnl.toFixed(2)}
+												</TableCell>
+												<TableCell className="text-right text-sm text-muted-foreground">
+													{calculateRuntime(strategy.started_at)}
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</div>
 						)}
-					</TableBody>
-				</Table>
+						<div>
+							<div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								{t("index:topStrategies.topByPnl", "Top by PnL")}
+							</div>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>{t("index:topStrategies.colName")}</TableHead>
+										<TableHead>{t("index:topStrategies.colSymbol")}</TableHead>
+										<TableHead className="text-center">
+											{t("index:topStrategies.colStatus")}
+										</TableHead>
+										<TableHead className="text-right">
+											{t("index:topStrategies.colPnl")}
+										</TableHead>
+										<TableHead className="text-right">
+											{t("index:topStrategies.colRuntime")}
+										</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{topStrategies.length === 0 ? (
+										<TableRow>
+											<TableCell
+												colSpan={5}
+												className="h-24 text-center text-muted-foreground"
+											>
+												{t("index:topStrategies.noData")}
+											</TableCell>
+										</TableRow>
+									) : (
+										topStrategies.map((strategy) => (
+											<TableRow
+												key={strategy.id}
+												onClick={() => handleRowClick(strategy.id)}
+												className="cursor-pointer hover:bg-muted/50"
+											>
+												<TableCell className="font-medium">
+													<span className="flex items-center gap-2">
+														<ExchangeBadge
+															exchange={strategy.exchange}
+															size="xs"
+														/>
+														{strategy.name || strategy.strategy_name}
+													</span>
+												</TableCell>
+												<TableCell className="font-mono text-sm">
+													{strategy.symbol}
+												</TableCell>
+												<TableCell className="text-center">
+													<Badge
+														className={getStatusBadgeVariant(strategy.status)}
+													>
+														{strategy.status.toUpperCase()}
+													</Badge>
+												</TableCell>
+												<TableCell
+													className={`text-right font-medium mono ${strategy.pnl >= 0 ? "text-profit" : "text-loss"}`}
+												>
+													{strategy.pnl >= 0 ? "+" : ""}
+													{strategy.pnl.toFixed(2)}
+												</TableCell>
+												<TableCell className="text-right text-sm text-muted-foreground">
+													{calculateRuntime(strategy.started_at)}
+												</TableCell>
+											</TableRow>
+										))
+									)}
+								</TableBody>
+							</Table>
+						</div>
+					</>
+				)}
 			</CardContent>
 		</Card>
 	);

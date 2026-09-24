@@ -27,4 +27,6 @@ jobs:
 
     - name: Run tests
       run: |
-        python -m pytest tests/
+        # prod_e2e opens live exchange connections and takes minutes per
+        # exchange; it runs nightly/manually with PROD_E2E_ENABLED=1, never in CI.
+        python -m pytest tests/ -m "not prod_e2e"

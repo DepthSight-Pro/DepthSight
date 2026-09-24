@@ -328,9 +328,8 @@ class FastVectorBacktester:
             indicator_keys.append(f"SMA_{int(params['threshold'])}")
         elif node_type == "volatility_filter":
             indicator = str(params.get("indicator", "")).upper()
-            if (
-                indicator in {"NATR", "SCALPER_NATR"}
-                or ("indicator" not in params and "natr_threshold" in params)
+            if indicator in {"NATR", "SCALPER_NATR"} or (
+                "indicator" not in params and "natr_threshold" in params
             ):
                 indicator_keys.append(f"NATR_{int(params.get('period', 14))}")
             elif indicator in {"ATR", "BBW", ""}:
@@ -4030,9 +4029,8 @@ class FastVectorBacktester:
         # Legacy fallback: ONLY when the block is explicitly configured for NATR
         # or has no indicator specified at all and only natr_threshold.
         # An explicit ATR or BBW indicator MUST NEVER be treated as NATR!
-        if (
-            indicator_str in {"NATR", "SCALPER_NATR"}
-            or ("indicator" not in params and "natr_threshold" in params)
+        if indicator_str in {"NATR", "SCALPER_NATR"} or (
+            "indicator" not in params and "natr_threshold" in params
         ):
             natr_params = dict(params)
             if "natr_threshold" in params:
@@ -4656,9 +4654,8 @@ class FastVectorBacktester:
 
         elif node_type == "volatility_filter":
             indicator = str(params.get("indicator", "")).upper()
-            if (
-                indicator in {"NATR", "SCALPER_NATR"}
-                or ("indicator" not in params and "natr_threshold" in params)
+            if indicator in {"NATR", "SCALPER_NATR"} or (
+                "indicator" not in params and "natr_threshold" in params
             ):
                 period = int(params.get("period", 14))
                 indicators[f"NATR_{period}"] = {"period": period, "timeframe": tf}

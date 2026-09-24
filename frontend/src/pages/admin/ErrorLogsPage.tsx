@@ -286,22 +286,24 @@ const ErrorLogsPage: React.FC = () => {
 								return (
 									<div
 										key={`${log.id}-${index}`}
-										className="flex items-start gap-3 p-2 rounded-md hover:bg-accent text-xs font-mono"
+										className="flex flex-col sm:flex-row items-start gap-1 sm:gap-3 p-2 rounded-md hover:bg-accent text-xs font-mono w-full min-w-0"
 									>
-										<span className="text-muted-foreground whitespace-nowrap">
-											{new Date(log.timestamp).toLocaleTimeString()}
-										</span>
-										<span>{getLevelBadge(log.level)}</span>
-										<span
-											className="text-blue-600 font-medium cursor-pointer hover:underline"
-											onClick={() => navigate(`/admin/users/${userId}`)}
-										>
-											{getUsernameById(userId)}
-										</span>
-										<span className="text-primary font-medium w-36 truncate">
-											[{log.component}]
-										</span>
-										<span className="text-foreground flex-1 whitespace-pre-wrap break-words">
+										<div className="flex items-center gap-2 shrink-0 flex-wrap">
+											<span className="text-muted-foreground whitespace-nowrap">
+												{new Date(log.timestamp).toLocaleTimeString()}
+											</span>
+											<span>{getLevelBadge(log.level)}</span>
+											<span
+												className="text-blue-600 font-medium cursor-pointer hover:underline whitespace-nowrap"
+												onClick={() => navigate(`/admin/users/${userId}`)}
+											>
+												{getUsernameById(userId)}
+											</span>
+											<span className="text-primary font-medium shrink-0 whitespace-nowrap">
+												[{log.component}]
+											</span>
+										</div>
+										<span className="text-foreground flex-1 whitespace-pre-wrap break-words min-w-0 w-full sm:w-auto">
 											{log.message}
 										</span>
 									</div>

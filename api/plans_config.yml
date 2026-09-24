@@ -37,13 +37,15 @@ plans:
       max_free_bybit_live_strategies: 5
       allow_free_weex_trading: true
       max_free_weex_live_strategies: 5
+      allow_free_okx_trading: true
+      max_free_okx_live_strategies: 5
       max_live_strategies: 0
       allow_intracandle_triggers: false
       max_backtest_duration_days: 90
       celery_task_priority: 9
       max_concurrent_tasks: 1
-      allow_free_okx_trading: true
-      max_free_okx_live_strategies: 5
+      allow_free_bitget_trading: true
+      max_free_bitget_live_strategies: 5
     quotas:
       run_vector_backtest_per_day: 20
       run_kline_backtest_per_day: 0
@@ -55,6 +57,7 @@ plans:
       train_model_per_month: 0
     features:
     - 5 live strategies on OKX
+    - 5 live strategies on Bitget
   standard:
     name: Standard
     price_usd: 45

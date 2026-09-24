@@ -360,7 +360,7 @@ class TestUserPlans:
         response = await free_user_client.post("/api/v1/strategies", json=payload)
         assert response.status_code == 403
         assert (
-            "only allowed using Bybit or WEEX or OKX API keys"
+            "only allowed using Bybit or WEEX or OKX or Bitget API keys"
             in response.json()["error"]
         )
 
@@ -438,6 +438,43 @@ class TestUserPlans:
             f"Failed starting strategy with OKX key: {response.text}"
         )
 
+    async def test_free_user_bitget_trading(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mock_redis_client,
+        mock_celery_tasks,
+    ):
+        """Verifies that a free plan user can trade on Bitget."""
+        from api import models
+
+        # 1. Add a Bitget API key for the free user
+        bitget_key = models.ApiKey(
+            user_id=free_user.id,
+            name="Bitget Test Key",
+            exchange="bitget",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="bitget...1234",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(bitget_key)
+        await db_session.commit()
+        await db_session.refresh(bitget_key)
+
+        # 2. Try starting strategy with the Bitget key (should return 202)
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": bitget_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202, (
+            f"Failed starting strategy with Bitget key: {response.text}"
+        )
+
     async def test_free_user_exchange_limits(
         self,
         free_user,
@@ -498,9 +535,21 @@ class TestUserPlans:
             status="valid",
             is_active=True,
         )
+        bitget_key = models.ApiKey(
+            id=40,
+            user_id=free_user.id,
+            name="Bitget Key",
+            exchange="bitget",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="bitget...1234",
+            status="valid",
+            is_active=True,
+        )
         db_session.add(bybit_key)
         db_session.add(weex_key)
         db_session.add(okx_key)
+        db_session.add(bitget_key)
         await db_session.commit()
 
         # Start 6th Bybit strategy (should return 429)
@@ -522,6 +571,11 @@ class TestUserPlans:
 
         # Start 1st OKX strategy (should return 202, since OKX has 0 running)
         payload["api_key_id"] = okx_key.id
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202
+
+        # Start 1st Bitget strategy (should return 202, since Bitget has 0 running)
+        payload["api_key_id"] = bitget_key.id
         response = await free_user_client.post("/api/v1/strategies", json=payload)
         assert response.status_code == 202
 
@@ -596,4 +650,79 @@ class TestUserPlans:
         await db_session.refresh(setting)
         assert (
             setting.value["plans"]["free"]["limits"]["allow_free_okx_trading"] is True
+        )
+
+    async def test_free_user_bitget_trading_with_outdated_db_config(
+        self,
+        free_user,
+        free_user_client,
+        db_session,
+        mock_redis_client,
+        mock_celery_tasks,
+    ):
+        """
+        Verifies that even if system_settings has an older plans_config snapshot
+        missing allow_free_bitget_trading, plans_config automatically backfills it
+        and allows free Bitget strategy execution without 403 error.
+        """
+        from api import models
+
+        outdated_plans = {
+            "plans": {
+                "free": {
+                    "name": "Free",
+                    "permissions": ["view_dashboard", "run_backtest"],
+                    "limits": {
+                        "allow_real_trading": False,
+                        "allow_free_bybit_trading": True,
+                        "max_free_bybit_live_strategies": 5,
+                        "allow_free_weex_trading": True,
+                        "max_free_weex_live_strategies": 5,
+                        "allow_free_okx_trading": True,
+                        "max_free_okx_live_strategies": 5,
+                        # allow_free_bitget_trading is explicitly missing
+                    },
+                    "quotas": {"run_vector_backtest_per_day": 20},
+                }
+            }
+        }
+        setting = models.SystemSetting(
+            key="plans_config",
+            value=outdated_plans,
+            description="Outdated platform settings",
+        )
+        db_session.add(setting)
+        await db_session.commit()
+
+        # 2. Add a Bitget key for free user
+        bitget_key = models.ApiKey(
+            user_id=free_user.id,
+            name="Bitget Legacy Test Key",
+            exchange="bitget",
+            encrypted_api_key="enc-key",
+            encrypted_api_secret="enc-secret",
+            key_prefix="bitget...5678",
+            status="valid",
+            is_active=True,
+        )
+        db_session.add(bitget_key)
+        await db_session.commit()
+        await db_session.refresh(bitget_key)
+
+        # 3. Start strategy with the Bitget key - should succeed (202)
+        payload = {
+            "config_id": "existing_config_id",
+            "api_key_id": bitget_key.id,
+            "mode": "live",
+        }
+        response = await free_user_client.post("/api/v1/strategies", json=payload)
+        assert response.status_code == 202, (
+            f"Failed starting strategy with Bitget key with outdated DB: {response.text}"
+        )
+
+        # 4. Verify DB was updated with the backfilled allow_free_bitget_trading
+        await db_session.refresh(setting)
+        assert (
+            setting.value["plans"]["free"]["limits"]["allow_free_bitget_trading"]
+            is True
         )

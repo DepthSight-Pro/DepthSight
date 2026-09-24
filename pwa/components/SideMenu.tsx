@@ -94,6 +94,13 @@ interface SideMenuProps {
 	onNavigate: (screen: Screen) => void;
 }
 
+interface SideMenuMiningStatus {
+	isGlobalMiningEnabled?: boolean;
+	isMiningEnabled?: boolean;
+	totalMined?: number;
+	[key: string]: unknown;
+}
+
 const MenuItem: React.FC<{
 	icon: React.ElementType;
 	label: string;
@@ -200,20 +207,19 @@ const SideMenu: React.FC<SideMenuProps> = ({
 }) => {
 	const { logout } = useAuth();
 	const { t } = useTranslation("pwa-common");
-	const [miningStatus, setMiningStatus] = useState<any>(null);
+	const [miningStatus, setMiningStatus] = useState<SideMenuMiningStatus | null>(null);
 
 	useEffect(() => {
-		if (isOpen) {
-			api.getMiningStatus()
-				.then((res) => {
-					if (res && res.data) {
-						setMiningStatus(res.data);
-					} else {
-						setMiningStatus(res);
-					}
-				})
-				.catch((err) => console.error("Failed to load mining status in PWA", err));
-		}
+		if (!isOpen) return;
+		let active = true;
+		api.getMiningStatus()
+			.then((res) => {
+				if (active) setMiningStatus(res);
+			})
+			.catch((err) => console.error("Failed to load mining status in PWA", err));
+		return () => {
+			active = false;
+		};
 	}, [isOpen]);
 
 	const handleNavigation = (screen: Screen) => {
