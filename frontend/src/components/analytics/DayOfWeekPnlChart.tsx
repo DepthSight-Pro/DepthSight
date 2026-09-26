@@ -34,11 +34,11 @@ const CustomDayTooltip = ({ active, payload }: CustomDayTooltipProps) => {
 	const isProfit = pnl >= 0;
 
 	return (
-		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
-			<div className="text-[11px] font-semibold text-white/70 mb-1">{data.name}</div>
+		<div className="rounded-xl border border-border dark:border-white/15 bg-card/95 dark:bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono text-popover-foreground">
+			<div className="text-[11px] font-semibold text-muted-foreground dark:text-white/70 mb-1">{data.name}</div>
 			<div className="flex items-center gap-2 text-xs">
-				<span className="text-white/50">PnL:</span>
-				<span className={`font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+				<span className="text-muted-foreground dark:text-white/50">PnL:</span>
+				<span className={`font-bold ${isProfit ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400"}`}>
 					{isProfit ? "+" : ""}${pnl.toFixed(2)}
 				</span>
 			</div>
@@ -79,13 +79,13 @@ export const DayOfWeekPnlChart: React.FC<DayOfWeekPnlChartProps> = ({
 	}, [trades, t]);
 
 	return (
-		<div className="glass relative rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
-			<div className="flex items-center justify-between pb-3 mb-2 border-b border-white/5">
-				<div className="flex items-center gap-2 text-[13px] font-semibold text-white/90">
+		<div className="glass relative rounded-2xl border border-border/80 dark:border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
+			<div className="flex items-center justify-between pb-3 mb-2 border-b border-border/60 dark:border-white/5">
+				<div className="flex items-center gap-2 text-[13px] font-semibold text-foreground dark:text-white/90">
 					<Calendar className="w-4 h-4 text-cyan" />
 					{t("dailyPnl", "PnL by day")}
 				</div>
-				<div className="flex items-center gap-1.5 text-[9px] text-cyan/80 font-mono font-bold uppercase tracking-wider bg-cyan/10 px-2 py-0.5 rounded-md border border-cyan/20">
+				<div className="flex items-center gap-1.5 text-[9px] text-cyan-700 dark:text-cyan/80 font-mono font-bold uppercase tracking-wider bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">
 					<MousePointerClick className="w-3.5 h-3.5" />
 					<span>{t("excludeBadDays", "Exclude bad days")}</span>
 				</div>
@@ -93,7 +93,7 @@ export const DayOfWeekPnlChart: React.FC<DayOfWeekPnlChartProps> = ({
 			<div>
 				<div className="h-[250px]">
 					{!trades || trades.length === 0 ? (
-						<div className="h-full flex items-center justify-center text-white/40 font-mono text-xs">
+						<div className="h-full flex items-center justify-center text-muted-foreground dark:text-white/40 font-mono text-xs">
 							{t("noData", "No Data")}
 						</div>
 					) : (

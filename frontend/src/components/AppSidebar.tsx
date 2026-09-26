@@ -223,7 +223,7 @@ export function AppSidebar() {
 		<Sidebar
 			variant="sidebar"
 			collapsible="icon"
-			className="border-r border-white/5 bg-obsidian/75 backdrop-blur-xl transition-[width] duration-300 ease-[cubic-bezier(.22,1,.36,1)]"
+			className="border-r border-border/50 bg-obsidian/85 backdrop-blur-xl transition-[width] duration-300 ease-[cubic-bezier(.22,1,.36,1)]"
 		>
 			<TooltipProvider delayDuration={0}>
 				<div className="relative flex h-full w-full flex-col overflow-hidden">
@@ -233,7 +233,7 @@ export function AppSidebar() {
 					{/* Header / Brand */}
 					<SidebarHeader
 						className={cn(
-							"flex h-14 shrink-0 items-center border-b border-white/5 transition-all duration-300",
+							"flex h-14 shrink-0 items-center border-b border-border/50 transition-all duration-300",
 							isExpanded ? "justify-start px-3.5" : "justify-center px-0",
 						)}
 					>
@@ -271,8 +271,8 @@ export function AppSidebar() {
 													className={cn(
 														"group relative flex h-10 w-10 items-center justify-center rounded-lg transition-all mx-auto",
 														isActive
-															? "text-white bg-white/[0.08]"
-															: "text-white/50 hover:text-white/90 hover:bg-white/[0.04]",
+															? "text-foreground bg-black/[0.06] dark:bg-white/[0.08]"
+															: "text-muted-foreground hover:text-foreground hover:bg-black/[0.035] dark:hover:bg-white/[0.04]",
 													)}
 												>
 													{isActive && (
@@ -284,7 +284,7 @@ export function AppSidebar() {
 															"transition-colors",
 															isActive
 																? "text-cyan drop-shadow-[0_0_6px_rgba(0,212,255,0.8)]"
-																: "text-white/45 group-hover:text-white/80",
+																: "text-muted-foreground group-hover:text-foreground",
 														)}
 													/>
 													{item.key === "mining" && showPromoFire && (
@@ -296,7 +296,7 @@ export function AppSidebar() {
 											</TooltipTrigger>
 											<TooltipContent
 												side="right"
-												className="bg-obsidian border border-white/10 text-white font-medium text-xs px-2.5 py-1"
+												className="bg-popover border border-border text-popover-foreground font-medium text-xs px-2.5 py-1 shadow-md"
 											>
 												{item.title}
 											</TooltipContent>
@@ -311,8 +311,8 @@ export function AppSidebar() {
 										className={cn(
 											"group relative flex w-full items-center gap-3.5 rounded-lg px-2.5 h-[38px] text-sm font-medium transition-all",
 											isActive
-												? "text-white bg-white/[0.08]"
-												: "text-white/50 hover:text-white/90 hover:bg-white/[0.035]",
+												? "text-foreground bg-black/[0.06] dark:bg-white/[0.08]"
+												: "text-muted-foreground hover:text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.035]",
 										)}
 									>
 										{isActive && (
@@ -324,7 +324,7 @@ export function AppSidebar() {
 												"shrink-0 transition-colors",
 												isActive
 													? "text-cyan drop-shadow-[0_0_6px_rgba(0,212,255,0.8)]"
-													: "text-white/45 group-hover:text-white/80",
+													: "text-muted-foreground group-hover:text-foreground",
 											)}
 										/>
 										<span className="truncate flex-1 text-left">{item.title}</span>
@@ -353,7 +353,7 @@ export function AppSidebar() {
 					{miningStatus?.isGlobalMiningEnabled !== false && (
 						<div
 							className={cn(
-								"border-t border-white/5 transition-all duration-300",
+								"border-t border-border/50 transition-all duration-300",
 								isExpanded ? "py-2" : "py-2 flex justify-center",
 							)}
 						>
@@ -368,38 +368,38 @@ export function AppSidebar() {
 					{user?.role === "admin" && (
 						<div
 							className={cn(
-								"border-t border-white/5 transition-all duration-300",
+								"border-t border-border/50 transition-all duration-300",
 								isExpanded ? "p-3" : "p-2 flex justify-center",
 							)}
 						>
 							{isExpanded ? (
-								<div className="rounded-xl border border-white/5 bg-white/[0.02] p-3 shadow-inner">
-									<div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/35">
+								<div className="rounded-xl border border-border/60 bg-black/[0.02] dark:bg-white/[0.02] p-3 shadow-inner">
+									<div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
 										<span>Compute Grid</span>
-										<span className="flex items-center gap-1 text-emerald-400 font-semibold">
+										<span className="flex items-center gap-1 text-emerald-500 dark:text-emerald-400 font-semibold">
 											<CircleDot size={10} className="animate-pulse" />
 											online
 										</span>
 									</div>
 									<div className="mt-2.5 flex items-center gap-3">
 										<Radial value={cpuPercent / 100} size={44} stroke={4}>
-											<span className="font-mono text-[10px] text-white/80">
+											<span className="font-mono text-[10px] text-foreground/80 dark:text-white/80">
 												{Math.round(cpuPercent)}%
 											</span>
 										</Radial>
 										<div className="flex-1 space-y-1 font-mono">
 											<div className="flex justify-between text-[10px]">
-												<span className="text-white/40 font-sans">CPU</span>
-												<span className="text-white/70">{cpuCount} cores</span>
+												<span className="text-muted-foreground font-sans">CPU</span>
+												<span className="text-foreground/80 dark:text-white/70">{cpuCount} cores</span>
 											</div>
 											<div className="flex justify-between text-[10px]">
-												<span className="text-white/40 font-sans">RAM</span>
-												<span className="text-white/70">
+												<span className="text-muted-foreground font-sans">RAM</span>
+												<span className="text-foreground/80 dark:text-white/70">
 													{ramUsed}/{ramTotal}G
 												</span>
 											</div>
 											<div className="flex justify-between text-[10px]">
-												<span className="text-white/40 font-sans">Queue</span>
+												<span className="text-muted-foreground font-sans">Queue</span>
 												<span className="text-cyan font-semibold">
 													{queueRunning} run · {queuePending}q
 												</span>
@@ -418,7 +418,7 @@ export function AppSidebar() {
 									</TooltipTrigger>
 									<TooltipContent
 										side="right"
-										className="bg-obsidian border border-white/10 text-white text-xs p-2 space-y-0.5 font-mono"
+										className="bg-popover border border-border text-popover-foreground text-xs p-2 space-y-0.5 font-mono shadow-md"
 									>
 										<div className="font-semibold text-cyan">Compute Grid</div>
 										<div>CPU: {Math.round(cpuPercent)}% ({cpuCount} cores)</div>
@@ -431,7 +431,7 @@ export function AppSidebar() {
 					)}
 
 					{/* Sidebar Footer Controls */}
-					<SidebarFooter className="border-t border-white/5 p-2 shrink-0">
+					<SidebarFooter className="border-t border-border/50 p-2 shrink-0">
 						<div className="flex flex-col gap-2">
 							{/* Settings Link */}
 							{isExpanded ? (
@@ -472,12 +472,12 @@ export function AppSidebar() {
 												className={cn(
 													pathname.startsWith("/settings")
 														? "text-cyan"
-														: "text-white/45",
+														: "text-muted-foreground",
 												)}
 											/>
 										</Link>
 									</TooltipTrigger>
-									<TooltipContent side="right" className="bg-obsidian border border-white/10 text-white text-xs">
+									<TooltipContent side="right" className="bg-popover border border-border text-popover-foreground text-xs shadow-md">
 										{t("settings")}
 									</TooltipContent>
 								</Tooltip>
@@ -491,17 +491,17 @@ export function AppSidebar() {
 											<PopoverTrigger asChild>
 												<Badge
 													variant="outline"
-													className="cursor-pointer border-amber-500/30 bg-amber-500/10 font-mono text-[9px] text-amber-400 hover:bg-amber-500/20 animate-pulse px-2 py-0.5"
+													className="cursor-pointer border-amber-500/30 bg-amber-500/10 font-mono text-[9px] text-amber-500 dark:text-amber-400 hover:bg-amber-500/20 animate-pulse px-2 py-0.5"
 												>
 													v{localVersion} (Update)
 												</Badge>
 											</PopoverTrigger>
 											<PopoverContent
 												side="right"
-												className="flex flex-col gap-2 p-3 text-xs w-60 bg-obsidian border border-white/10 text-white shadow-2xl"
+												className="flex flex-col gap-2 p-3 text-xs w-60 bg-popover border border-border text-popover-foreground shadow-2xl"
 											>
 												<div className="flex flex-col gap-0.5">
-													<span className="font-semibold text-white">
+													<span className="font-semibold text-foreground">
 														{t("common:version", "Version")}: {localVersion}
 													</span>
 													{masterVersion && (
@@ -580,7 +580,7 @@ export function AppSidebar() {
 							{/* Switchers & Collapse Toggle */}
 							<div
 								className={cn(
-									"flex items-center pt-1 border-t border-white/5",
+									"flex items-center pt-1 border-t border-border/50",
 									isExpanded
 										? "justify-between px-1 gap-1"
 										: "flex-col gap-1.5 justify-center items-center py-1 w-full",
@@ -598,7 +598,7 @@ export function AppSidebar() {
 								</div>
 								<button
 									onClick={toggleSidebar}
-									className="flex h-8 w-8 items-center justify-center rounded-lg text-white/40 hover:bg-white/5 hover:text-white transition-colors"
+									className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground transition-colors"
 									title={isExpanded ? "Collapse sidebar (⌘B)" : "Expand sidebar (⌘B)"}
 								>
 									{isExpanded ? <ChevronsLeft size={16} /> : <ChevronsRight size={16} />}

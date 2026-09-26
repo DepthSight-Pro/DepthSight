@@ -75,12 +75,12 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 	};
 
 	return (
-		<div className="flex flex-wrap items-end gap-3 p-4 bg-[#07080b]/90 border border-white/10 rounded-2xl backdrop-blur-2xl shadow-xl">
+		<div className="flex flex-wrap items-end gap-3 p-4 bg-card/90 dark:bg-[#07080b]/90 border border-border dark:border-white/10 rounded-2xl backdrop-blur-2xl shadow-xl">
 			{/* Strategy Select */}
 			<div className="flex-1 min-w-[150px] max-w-[200px]">
 				<Label
 					htmlFor="strategy-select"
-					className="text-[11px] font-mono font-medium text-white/50 mb-1.5 block uppercase tracking-wider"
+					className="text-[11px] font-mono font-medium text-muted-foreground dark:text-white/50 mb-1.5 block uppercase tracking-wider"
 				>
 					{t("filterStrategyLabel")}
 				</Label>
@@ -90,10 +90,10 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 						setStrategyId(value === "all" ? undefined : value)
 					}
 				>
-					<SelectTrigger id="strategy-select" className="h-9 bg-white/[0.03] border-white/10 text-xs text-white hover:bg-white/[0.06] hover:border-white/20 transition-all rounded-xl">
+					<SelectTrigger id="strategy-select" className="h-9 bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-xs text-foreground dark:text-white hover:bg-muted/50 dark:hover:bg-white/[0.06] hover:border-border dark:hover:border-white/20 transition-all rounded-xl">
 						<SelectValue placeholder={t("filterStrategyAll")} />
 					</SelectTrigger>
-					<SelectContent className="bg-[#0c0d12] border-white/10 text-white shadow-2xl">
+					<SelectContent className="bg-popover border-border dark:border-white/10 text-popover-foreground shadow-2xl">
 						<SelectItem value="all">{t("filterStrategyAll")}</SelectItem>
 						{strategies.map((s) => (
 							<SelectItem key={s.id} value={s.id}>
@@ -109,7 +109,7 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 			<div className="flex-1 min-w-[120px] max-w-[150px]">
 				<Label
 					htmlFor="symbol-input"
-					className="text-[11px] font-mono font-medium text-white/50 mb-1.5 block uppercase tracking-wider"
+					className="text-[11px] font-mono font-medium text-muted-foreground dark:text-white/50 mb-1.5 block uppercase tracking-wider"
 				>
 					{t("filterSymbolLabel")}
 				</Label>
@@ -118,7 +118,7 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 					placeholder="BTCUSDT"
 					value={symbol}
 					onChange={(e) => setSymbol(e.target.value)}
-					className="h-9 bg-white/[0.03] border-white/10 text-xs text-white placeholder:text-white/30 hover:bg-white/[0.06] hover:border-white/20 transition-all rounded-xl uppercase font-mono"
+					className="h-9 bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-xs text-foreground dark:text-white placeholder:text-muted-foreground/50 hover:bg-muted/50 dark:hover:bg-white/[0.06] hover:border-border dark:hover:border-white/20 transition-all rounded-xl uppercase font-mono"
 				/>
 			</div>
 
@@ -126,7 +126,7 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 			<div className="flex-1 min-w-[200px] max-w-[280px]">
 				<Label
 					htmlFor="date-range-picker"
-					className="text-[11px] font-mono font-medium text-white/50 mb-1.5 block uppercase tracking-wider"
+					className="text-[11px] font-mono font-medium text-muted-foreground dark:text-white/50 mb-1.5 block uppercase tracking-wider"
 				>
 					{t("filterDateRangeLabel")}
 				</Label>
@@ -135,7 +135,7 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 						<Button
 							id="date-range-picker"
 							variant={"outline"}
-							className="w-full justify-start text-left font-mono font-normal h-9 text-xs bg-white/[0.03] border-white/10 text-white hover:bg-white/[0.06] hover:border-white/20 transition-all rounded-xl"
+							className="w-full justify-start text-left font-mono font-normal h-9 text-xs bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white hover:bg-muted/50 dark:hover:bg-white/[0.06] hover:border-border dark:hover:border-white/20 transition-all rounded-xl"
 						>
 							<CalendarIcon className="mr-2 h-3.5 w-3.5 text-cyan" />
 							{dateRange?.from ? (
@@ -148,11 +148,11 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 									format(dateRange.from, "dd.MM.yy")
 								)
 							) : (
-								<span className="text-white/40">{t("filterDateRangePlaceholder")}</span>
+								<span className="text-muted-foreground dark:text-white/40">{t("filterDateRangePlaceholder")}</span>
 							)}
 						</Button>
 					</PopoverTrigger>
-					<PopoverContent className="w-auto p-0 bg-[#0c0d12] border-white/10 text-white shadow-2xl rounded-2xl overflow-hidden" align="start">
+					<PopoverContent className="w-auto p-0 bg-popover border-border dark:border-white/10 text-popover-foreground shadow-2xl rounded-2xl overflow-hidden" align="start">
 						<Calendar
 							initialFocus
 							mode="range"
@@ -160,7 +160,7 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 							selected={dateRange}
 							onSelect={setDateRange}
 							numberOfMonths={2}
-							className="text-white"
+							className="text-popover-foreground"
 						/>
 					</PopoverContent>
 				</Popover>
@@ -172,7 +172,7 @@ export const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 					variant="ghost"
 					size="sm"
 					onClick={handleClear}
-					className="h-9 px-3 rounded-xl text-white/50 hover:text-white hover:bg-white/5 transition-all"
+					className="h-9 px-3 rounded-xl text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white hover:bg-muted/50 dark:hover:bg-white/5 transition-all"
 					title="Clear filters"
 				>
 					<FilterXIcon className="h-4 w-4" />

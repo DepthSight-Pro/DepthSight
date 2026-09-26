@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSimulationStore } from "./simulationStore";
+import { useChartTheme } from "@/lib/chartTheme";
 
 const getApiBase = () => {
 	return import.meta.env.VITE_PUBLIC_API_URL || "";
@@ -54,6 +55,7 @@ interface AssetDetailData {
 
 export const AssetDeepDiveView: React.FC = () => {
 	const { t } = useTranslation("simulation");
+	const { colors: chartColors } = useChartTheme();
 	const {
 		activeAsset,
 		setActiveAsset,
@@ -317,6 +319,23 @@ export const AssetDeepDiveView: React.FC = () => {
 		}
 	}, [data, isRulerActive, selectedTrade]);
 
+	// Synchronize chart options on theme change
+	useEffect(() => {
+		if (!chartRef.current) return;
+		chartRef.current.applyOptions({
+			layout: {
+				background: { type: ColorType.Solid, color: chartColors.background },
+				textColor: chartColors.textColor,
+			},
+			grid: {
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
+			},
+			timeScale: { borderColor: chartColors.borderColor },
+			rightPriceScale: { borderColor: chartColors.borderColor },
+		});
+	}, [chartColors]);
+
 	// Initialize chart
 	useEffect(() => {
 		if (!chartContainerRef.current || !data?.klines.length) return;
@@ -326,16 +345,16 @@ export const AssetDeepDiveView: React.FC = () => {
 			width: chartContainer.clientWidth,
 			height: 500,
 			layout: {
-				textColor: "#9ca3af",
-				background: { type: ColorType.Solid, color: "transparent" },
+				textColor: chartColors.textColor,
+				background: { type: ColorType.Solid, color: chartColors.background },
 			},
 			grid: {
-				vertLines: { color: "rgba(255,255,255,0.05)" },
-				horzLines: { color: "rgba(255,255,255,0.05)" },
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
 			},
 			crosshair: { mode: CrosshairMode.Normal },
-			timeScale: { borderColor: "#27272a", timeVisible: true },
-			rightPriceScale: { borderColor: "#27272a" },
+			timeScale: { borderColor: chartColors.borderColor, timeVisible: true },
+			rightPriceScale: { borderColor: chartColors.borderColor },
 		});
 
 		chartRef.current = chart;

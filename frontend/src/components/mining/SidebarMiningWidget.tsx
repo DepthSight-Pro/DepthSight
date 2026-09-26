@@ -247,19 +247,19 @@ export const SidebarMiningWidget: React.FC<SidebarMiningWidgetProps> = ({
 					<TooltipContent
 						side="right"
 						sideOffset={10}
-						className="z-[100] w-64 rounded-xl border border-cyan-500/30 bg-[#0B0D12]/95 p-3.5 text-white shadow-2xl backdrop-blur-xl"
+						className="z-[100] w-64 rounded-xl border border-border/80 dark:border-cyan-500/30 bg-popover/95 text-popover-foreground p-3.5 shadow-2xl backdrop-blur-xl"
 					>
 						{/* Tooltip Header */}
-						<div className="flex items-center justify-between border-b border-white/10 pb-2">
+						<div className="flex items-center justify-between border-b border-border/60 dark:border-white/10 pb-2">
 							<div className="flex items-center gap-1.5">
-								<div className="p-1 rounded bg-cyan-500/10 text-cyan-400">
+								<div className="p-1 rounded bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
 									<Pickaxe className="h-3.5 w-3.5" />
 								</div>
-								<span className="text-xs font-bold text-white tracking-tight">
+								<span className="text-xs font-bold text-foreground dark:text-white tracking-tight">
 									{t("sidebarMiningEpoch", "Epoch")} #{epochNumber}
 								</span>
 							</div>
-							<span className="font-mono text-[9px] font-bold text-cyan-300 bg-cyan-500/15 border border-cyan-500/25 px-1.5 py-0.5 rounded">
+							<span className="font-mono text-[9px] font-bold text-cyan-700 dark:text-cyan-300 bg-cyan-500/10 dark:bg-cyan-500/15 border border-cyan-500/25 px-1.5 py-0.5 rounded">
 								{progressPercent}% {t("sidebarMiningEpochProgress", "completed")}
 							</span>
 						</div>
@@ -267,32 +267,32 @@ export const SidebarMiningWidget: React.FC<SidebarMiningWidgetProps> = ({
 						{/* Tooltip Body with Cyan Numbers */}
 						<div className="mt-2.5 space-y-2 text-xs font-mono">
 							<div className="flex items-center justify-between">
-								<span className="text-white/40 text-[11px] font-sans">
+								<span className="text-muted-foreground dark:text-white/40 text-[11px] font-sans">
 									{t("sidebarMiningUntilSettlement", "Until settlement")}:
 								</span>
-								<span className="font-bold text-cyan-400">{countdown}</span>
+								<span className="font-bold text-cyan-700 dark:text-cyan-400">{countdown}</span>
 							</div>
 
 							<div className="flex items-center justify-between">
-								<span className="text-white/40 text-[11px] font-sans">
+								<span className="text-muted-foreground dark:text-white/40 text-[11px] font-sans">
 									{t("sidebarMiningEstReward", "Est. Reward")}:
 								</span>
-								<span className="font-bold text-cyan-400">
+								<span className="font-bold text-cyan-700 dark:text-cyan-400">
 									~{todayReward >= 1000 ? Math.round(todayReward).toLocaleString() : todayReward.toFixed(1)} $DEPTH
 								</span>
 							</div>
 
-							<div className="flex items-center justify-between border-t border-white/5 pt-1.5">
-								<span className="text-white/40 text-[11px] font-sans">
+							<div className="flex items-center justify-between border-t border-border/40 dark:border-white/5 pt-1.5">
+								<span className="text-muted-foreground dark:text-white/40 text-[11px] font-sans">
 									{t("sidebarMiningTotalBalance", "Total Balance")}:
 								</span>
-								<span className="font-black bg-gradient-to-r from-[#00F0FF] via-[#1DA2B4] to-blue-400 bg-clip-text text-transparent">
+								<span className="font-black bg-gradient-to-r from-cyan-600 to-blue-600 dark:from-[#00F0FF] dark:via-[#1DA2B4] dark:to-blue-400 bg-clip-text text-transparent">
 									{totalMined >= 1000 ? Math.round(totalMined).toLocaleString() : totalMined.toFixed(2)} $DEPTH
 								</span>
 							</div>
 						</div>
 
-						<div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-cyan-400/80 hover:text-cyan-300 transition-colors">
+						<div className="mt-2.5 pt-2 border-t border-border/40 dark:border-white/5 flex items-center justify-between text-[9px] text-cyan-700 dark:text-cyan-400/80 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors">
 							<span>{t("sidebarMiningClickHub", "Click to open Trade Mining Hub →")}</span>
 							<ChevronRight className="h-3 w-3" />
 						</div>
@@ -310,25 +310,25 @@ export const SidebarMiningWidget: React.FC<SidebarMiningWidgetProps> = ({
 				className={cn(
 					"group relative block cursor-pointer overflow-hidden rounded-xl border p-2.5 transition-all duration-300",
 					isActive
-						? "border-cyan-500/50 bg-gradient-to-b from-cyan-500/10 via-white/[0.03] to-transparent shadow-[0_0_20px_rgba(0,240,255,0.15)]"
-						: "border-white/10 bg-white/[0.02] hover:border-cyan-500/40 hover:bg-white/[0.04] hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)]",
+						? "border-cyan-500/50 bg-gradient-to-b from-cyan-500/10 via-black/[0.02] dark:via-white/[0.03] to-transparent shadow-[0_0_20px_rgba(0,240,255,0.15)]"
+						: "border-border/60 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] hover:border-cyan-500/40 hover:bg-black/[0.04] dark:hover:bg-white/[0.04] hover:shadow-[0_4px_16px_rgba(0,0,0,0.06)] dark:hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)]",
 				)}
 			>
 				{/* Top Header: Epoch & Countdown in cyan */}
 				<div className="flex items-center justify-between text-[10px] mb-1.5">
-					<div className="flex items-center gap-1.5 text-white/70 font-bold uppercase tracking-wider">
-						<Pickaxe className="h-3.5 w-3.5 text-cyan-400 group-hover:scale-105 transition-transform" />
+					<div className="flex items-center gap-1.5 text-foreground/80 dark:text-white/70 font-bold uppercase tracking-wider">
+						<Pickaxe className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400 group-hover:scale-105 transition-transform" />
 						<span>{t("sidebarMiningEpoch", "Epoch")} #{epochNumber}</span>
 					</div>
-					<span className="font-mono text-cyan-400 font-semibold text-[10px]">
+					<span className="font-mono text-cyan-700 dark:text-cyan-400 font-semibold text-[10px]">
 						{countdown} {t("sidebarMiningUntilSettlement", "until settlement")}
 					</span>
 				</div>
 
 				{/* 24-Hour Epoch Progress Bar */}
-				<div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mb-2">
+				<div className="w-full bg-black/10 dark:bg-white/10 h-1.5 rounded-full overflow-hidden mb-2">
 					<div
-						className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(0,240,255,0.5)] transition-all duration-1000"
+						className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 shadow-[0_0_8px_rgba(0,240,255,0.4)] transition-all duration-1000"
 						style={{ width: `${progressPercent}%` }}
 					/>
 				</div>
@@ -336,30 +336,30 @@ export const SidebarMiningWidget: React.FC<SidebarMiningWidgetProps> = ({
 				{/* Middle Stat Metrics: cyan numbers */}
 				<div className="flex items-center justify-between text-xs">
 					<div>
-						<div className="text-[9px] uppercase tracking-wider text-white/40 font-medium leading-none">
+						<div className="text-[9px] uppercase tracking-wider text-muted-foreground dark:text-white/40 font-medium leading-none">
 							{t("sidebarMiningEstReward", "Est. Reward")}
 						</div>
-						<div className="font-mono text-xs font-black text-cyan-400 mt-0.5 leading-tight">
+						<div className="font-mono text-xs font-black text-cyan-700 dark:text-cyan-400 mt-0.5 leading-tight">
 							~{todayReward >= 1000 ? Math.round(todayReward).toLocaleString() : todayReward.toFixed(1)}{" "}
-							<span className="text-[9.5px] text-cyan-300/80 font-bold">$DEPTH</span>
+							<span className="text-[9.5px] text-cyan-600 dark:text-cyan-300/80 font-bold">$DEPTH</span>
 						</div>
 					</div>
 
 					<div className="text-right">
-						<div className="text-[9px] uppercase tracking-wider text-white/40 font-medium leading-none">
+						<div className="text-[9px] uppercase tracking-wider text-muted-foreground dark:text-white/40 font-medium leading-none">
 							{t("sidebarMiningTotalBalance", "Total Balance")}
 						</div>
-						<div className="font-mono text-xs font-bold text-white mt-0.5 leading-tight">
-							<span className="bg-gradient-to-r from-[#00F0FF] via-[#1DA2B4] to-blue-400 bg-clip-text text-transparent font-black">
+						<div className="font-mono text-xs font-bold text-foreground dark:text-white mt-0.5 leading-tight">
+							<span className="bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 dark:from-[#00F0FF] dark:via-[#1DA2B4] dark:to-blue-400 bg-clip-text text-transparent font-black">
 								{formatCompact(totalMined)}
 							</span>{" "}
-							<span className="text-[9.5px] text-white/40 font-normal">$DEPTH</span>
+							<span className="text-[9.5px] text-muted-foreground dark:text-white/40 font-normal">$DEPTH</span>
 						</div>
 					</div>
 				</div>
 
 				{/* 14-Day Rate Bar Chart (matching /mining tab) */}
-				<div className="mt-2.5 pt-2 border-t border-white/5 space-y-1">
+				<div className="mt-2.5 pt-2 border-t border-border/50 dark:border-white/5 space-y-1">
 					<TooltipProvider delayDuration={80}>
 						<div className="flex items-end gap-1 h-7 px-0.5">
 							{displayData.map((item, idx) => {
@@ -379,7 +379,7 @@ export const SidebarMiningWidget: React.FC<SidebarMiningWidgetProps> = ({
 													isToday
 														? "bg-gradient-to-t from-cyan-600/50 via-cyan-400 to-cyan-200 border-t border-cyan-300 shadow-[0_0_8px_rgba(0,212,255,0.4)] hover:shadow-[0_0_12px_rgba(0,212,255,0.9)] hover:to-white"
 														: isZero
-															? "bg-white/10 hover:bg-white/20"
+															? "bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20"
 															: "bg-gradient-to-t from-blue-600/35 via-cyan-500/75 to-cyan-400 hover:from-cyan-400 hover:to-white hover:shadow-[0_0_10px_rgba(0,212,255,0.8)]",
 												)}
 												style={{
@@ -393,21 +393,21 @@ export const SidebarMiningWidget: React.FC<SidebarMiningWidgetProps> = ({
 											align={isToday ? "end" : "center"}
 											sideOffset={8}
 											collisionPadding={12}
-											className="bg-black/95 border-cyan-500/30 text-white font-mono text-[10px] p-2 backdrop-blur-md shadow-2xl z-[100] pointer-events-none"
+											className="bg-popover text-popover-foreground border-border/80 dark:border-cyan-500/30 font-mono text-[10px] p-2 backdrop-blur-md shadow-2xl z-[100] pointer-events-none"
 										>
-											<div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1 mb-1">
-												<span className="font-semibold text-white/80">
+											<div className="flex items-center justify-between gap-2 border-b border-border/60 dark:border-white/10 pb-1 mb-1">
+												<span className="font-semibold text-foreground/90 dark:text-white/80">
 													{isToday ? t("today", "Today") : formatShortDate(item.date)}
 												</span>
 												{isToday && (
-													<span className="text-[8px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300">
+													<span className="text-[8px] px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">
 														{t("inProgress", "In progress")}
 													</span>
 												)}
 											</div>
 											<div className="flex justify-between gap-2">
-												<span className="text-white/60">{t("sidebarMiningEstReward", "Reward")}:</span>
-												<span className="font-bold text-cyan-300">
+												<span className="text-muted-foreground dark:text-white/60">{t("sidebarMiningEstReward", "Reward")}:</span>
+												<span className="font-bold text-cyan-700 dark:text-cyan-300">
 													{(item.reward || 0) >= 1000
 														? Math.round(item.reward).toLocaleString()
 														: (item.reward || 0).toFixed(1)}{" "}

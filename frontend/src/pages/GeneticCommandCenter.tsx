@@ -512,22 +512,22 @@ const GeneticCommandCenter: React.FC = () => {
 
 					{/* Run Selector - always visible */}
 					<div className="flex items-center gap-2.5 w-full sm:w-auto">
-						<label className="text-xs font-mono text-white/50 whitespace-nowrap">
+						<label className="text-xs font-mono text-muted-foreground dark:text-white/50 whitespace-nowrap">
 							{t("discovery:hallOfFame.selectRun", "Select Run:")}
 						</label>
 						<select
-							className="flex h-9 w-full sm:w-64 rounded-xl border border-white/10 bg-[#0c0d12]/90 px-3 py-1 text-xs font-mono text-white shadow-sm focus:outline-none focus:border-cyan/50"
+							className="flex h-9 w-full sm:w-64 rounded-xl border border-border dark:border-white/10 bg-card dark:bg-[#0c0d12]/90 px-3 py-1 text-xs font-mono text-foreground dark:text-white shadow-sm focus:outline-none focus:border-cyan/50"
 							value={activeRunId || ""}
 							onChange={(e) => setActiveRunId(e.target.value || null)}
 						>
-							<option value="" className="bg-[#0c0d12] text-white">
+							<option value="" className="bg-popover text-popover-foreground">
 								{t(
 									"discovery:hallOfFame.selectRunPlaceholder",
 									"-- Select a run --",
 								)}
 							</option>
 							{geneticRuns?.map((run) => (
-								<option key={run.id} value={run.id} className="bg-[#0c0d12] text-white">
+								<option key={run.id} value={run.id} className="bg-popover text-popover-foreground">
 									{run.config_json?.name || "Unnamed"} (
 									{new Date(run.created_at).toLocaleDateString()}) -{" "}
 									{run.status}

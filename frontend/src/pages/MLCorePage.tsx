@@ -1098,31 +1098,31 @@ const MLCorePage: React.FC = () => {
 				className="h-full flex flex-col"
 			>
 				<div className="flex items-center overflow-x-auto pb-1 mb-6 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-					<TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-white/[0.04] border border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
+					<TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-black/[0.04] dark:bg-white/[0.04] border border-border/60 dark:border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
 						<TabsTrigger
 							value="dataset"
-							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white/80 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
 						>
 							<Database className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
 							<span>{t("launchForm.tabDataset", "Dataset")}</span>
 						</TabsTrigger>
 						<TabsTrigger
 							value="training"
-							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white/80 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
 						>
 							<FlaskConical className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
 							<span>{t("launchForm.tabTraining", "Training")}</span>
 						</TabsTrigger>
 						<TabsTrigger
 							value="models"
-							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white/80 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
 						>
 							<Activity className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
 							<span>{t("tasksTable.colType", "Models")}</span>
 						</TabsTrigger>
 						<TabsTrigger
 							value="details"
-							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap disabled:opacity-30 disabled:pointer-events-none"
+							className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white/80 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap disabled:opacity-30 disabled:pointer-events-none"
 							disabled={!selectedModelId}
 						>
 							<Layers className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />

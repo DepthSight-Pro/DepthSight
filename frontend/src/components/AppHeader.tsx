@@ -101,7 +101,7 @@ export const AppHeader = () => {
 	};
 
 	return (
-		<header className="relative z-20 flex h-12 sm:h-14 shrink-0 items-center justify-between gap-1.5 sm:gap-3 border-b border-white/5 bg-obsidian/75 px-2 sm:px-4 backdrop-blur-xl text-white">
+		<header className="relative z-20 flex h-12 sm:h-14 shrink-0 items-center justify-between gap-1.5 sm:gap-3 border-b border-border/50 bg-obsidian/80 px-2 sm:px-4 backdrop-blur-xl text-foreground transition-colors duration-200">
 			{mode === "live" && (
 				<div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-[1.5px] bg-gradient-to-r from-transparent via-rose-500/90 to-transparent shadow-[0_0_12px_rgba(244,63,94,0.9)]" />
 			)}
@@ -120,19 +120,19 @@ export const AppHeader = () => {
 							setSelectedMarketType(value);
 						}
 					}}
-					className="bg-white/[0.03] border border-white/5 rounded-lg p-0.5 h-7 sm:h-8 gap-0.5"
+					className="bg-black/[0.03] dark:bg-white/[0.03] border border-border/50 rounded-lg p-0.5 h-7 sm:h-8 gap-0.5"
 				>
 					<ToggleGroupItem
 						value="all"
 						aria-label="All markets"
-						className="h-6 sm:h-7 px-1.5 sm:px-2.5 text-[10px] sm:text-[11px] font-medium text-white/60 data-[state=on]:bg-white/[0.08] data-[state=on]:text-white rounded-md"
+						className="h-6 sm:h-7 px-1.5 sm:px-2.5 text-[10px] sm:text-[11px] font-medium text-muted-foreground data-[state=on]:bg-black/[0.06] dark:data-[state=on]:bg-white/[0.08] data-[state=on]:text-foreground rounded-md transition-colors"
 					>
 						All
 					</ToggleGroupItem>
 					<ToggleGroupItem
 						value="futures_usdtm"
 						aria-label="Futures market"
-						className="h-6 sm:h-7 px-1.5 sm:px-2.5 text-[10px] sm:text-[11px] font-medium text-white/60 data-[state=on]:bg-white/[0.08] data-[state=on]:text-white rounded-md"
+						className="h-6 sm:h-7 px-1.5 sm:px-2.5 text-[10px] sm:text-[11px] font-medium text-muted-foreground data-[state=on]:bg-black/[0.06] dark:data-[state=on]:bg-white/[0.08] data-[state=on]:text-foreground rounded-md transition-colors"
 					>
 						<span className="hidden sm:inline">Futures</span>
 						<span className="sm:hidden">Fut</span>
@@ -140,7 +140,7 @@ export const AppHeader = () => {
 					<ToggleGroupItem
 						value="spot"
 						aria-label="Spot market"
-						className="h-6 sm:h-7 px-1.5 sm:px-2.5 text-[10px] sm:text-[11px] font-medium text-white/60 data-[state=on]:bg-white/[0.08] data-[state=on]:text-white rounded-md"
+						className="h-6 sm:h-7 px-1.5 sm:px-2.5 text-[10px] sm:text-[11px] font-medium text-muted-foreground data-[state=on]:bg-black/[0.06] dark:data-[state=on]:bg-white/[0.08] data-[state=on]:text-foreground rounded-md transition-colors"
 					>
 						Spot
 					</ToggleGroupItem>
@@ -150,7 +150,7 @@ export const AppHeader = () => {
 			{/* Right section: mode toggle, account/key switcher, co-pilot, user */}
 			<div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
 				{/* Neon Sliding Live / Paper Mode Toggle */}
-				<div className="relative flex h-7 sm:h-8 items-center rounded-lg border border-white/8 bg-white/[0.03] p-0.5 shadow-inner">
+				<div className="relative flex h-7 sm:h-8 items-center rounded-lg border border-border/60 bg-black/[0.03] dark:bg-white/[0.03] p-0.5 shadow-inner">
 					<span
 						className={cn(
 							"absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] rounded-md transition-all duration-300",
@@ -166,7 +166,7 @@ export const AppHeader = () => {
 							"relative z-10 flex h-full w-[44px] sm:w-[64px] items-center justify-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider transition-colors",
 							mode === "live"
 								? "text-white"
-								: "text-white/40 hover:text-white/80",
+								: "text-muted-foreground hover:text-foreground",
 						)}
 					>
 						<Radio
@@ -185,7 +185,7 @@ export const AppHeader = () => {
 							"relative z-10 flex h-full w-[44px] sm:w-[64px] items-center justify-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider transition-colors",
 							mode === "paper"
 								? "text-white"
-								: "text-white/40 hover:text-white/80",
+								: "text-muted-foreground hover:text-foreground",
 						)}
 					>
 						<FlaskConical size={11} className="w-2.5 h-2.5 sm:w-3 sm:h-3" />

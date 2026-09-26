@@ -61,6 +61,7 @@ import type {
 	TradeData,
 	TradeExecution,
 } from "@/types/api";
+import { useChartTheme } from "@/lib/chartTheme";
 
 interface TradeAnalysisModalProps {
 	trade: TradeData;
@@ -507,6 +508,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 	strategyConfig,
 }) => {
 	const { t } = useTranslation("analytics");
+	const { colors: chartColors } = useChartTheme();
 
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const indicatorContainerRef = useRef<HTMLDivElement>(null);
@@ -3002,6 +3004,23 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 		loadPriceAction();
 	}, [loadPriceAction]);
 
+	// Synchronize charts when theme changes
+	useEffect(() => {
+		if (!chartRef.current) return;
+		chartRef.current.applyOptions({
+			layout: {
+				background: { type: ColorType.Solid, color: chartColors.background },
+				textColor: chartColors.textColor,
+			},
+			grid: {
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
+			},
+			timeScale: { borderColor: chartColors.borderColor },
+			rightPriceScale: { borderColor: chartColors.borderColor },
+		});
+	}, [chartColors]);
+
 	// Initialize charts (Main + Indicators)
 	useEffect(() => {
 		if (!chartContainerRef.current || klines.length === 0) return;
@@ -3017,23 +3036,23 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 			width: initialWidth,
 			height: initialHeight,
 			layout: {
-				textColor: "rgba(255, 255, 255, 0.45)",
-				background: { type: ColorType.Solid, color: "#07080b" },
+				textColor: chartColors.textColor,
+				background: { type: ColorType.Solid, color: chartColors.background },
 			},
 			grid: {
-				vertLines: { color: "rgba(255, 255, 255, 0.03)" },
-				horzLines: { color: "rgba(255, 255, 255, 0.03)" },
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
 			},
 			crosshair: { mode: CrosshairMode.Normal },
 			timeScale: {
-				borderColor: "rgba(255, 255, 255, 0.08)",
+				borderColor: chartColors.borderColor,
 				timeVisible: true,
 				secondsVisible: false,
 				rightOffset: 12,
 				shiftVisibleRangeOnNewBar: true,
 			},
 			rightPriceScale: {
-				borderColor: "rgba(255, 255, 255, 0.08)",
+				borderColor: chartColors.borderColor,
 				minimumWidth: 65, // Ensure alignment with bottom chart if present
 			},
 		});
@@ -3288,22 +3307,22 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					width: initialIndWidth,
 					height: initialIndHeight,
 					layout: {
-						textColor: "rgba(255, 255, 255, 0.45)",
-						background: { type: ColorType.Solid, color: "#07080b" },
+						textColor: chartColors.textColor,
+						background: { type: ColorType.Solid, color: chartColors.background },
 					},
 					grid: {
-						vertLines: { color: "rgba(255, 255, 255, 0.03)" },
-						horzLines: { color: "rgba(255, 255, 255, 0.03)" },
+						vertLines: { color: chartColors.gridColor },
+						horzLines: { color: chartColors.gridColor },
 					},
 					timeScale: {
 						visible: true,
 						timeVisible: true,
 						secondsVisible: false,
-						borderColor: "rgba(255, 255, 255, 0.08)",
+						borderColor: chartColors.borderColor,
 						rightOffset: 12,
 						shiftVisibleRangeOnNewBar: true,
 					},
-					rightPriceScale: { borderColor: "rgba(255, 255, 255, 0.08)", minimumWidth: 65 },
+					rightPriceScale: { borderColor: chartColors.borderColor, minimumWidth: 65 },
 				});
 
 				// Resize Observer for Indicator Chart
@@ -3572,26 +3591,26 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 
 	return createPortal(
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md"
+			className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/60 dark:bg-black/85 backdrop-blur-md"
 			onClick={onClose}
 		>
 			<div
 				ref={modalContentRef}
-				className="glass-strong relative border-0 sm:border border-white/10 w-full max-w-[1920px] rounded-none sm:rounded-3xl shadow-[0_0_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[100dvh] max-h-none sm:h-auto sm:max-h-[95vh] animate-fade-up"
+				className="glass-strong relative border-0 sm:border border-border/80 dark:border-white/10 w-full max-w-[1920px] rounded-none sm:rounded-3xl shadow-[0_0_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[100dvh] max-h-none sm:h-auto sm:max-h-[95vh] animate-fade-up bg-card/95 dark:bg-[#0b0e14]/95 text-card-foreground"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Top ambient glow */}
 				<div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-36 bg-cyan/10 blur-3xl rounded-full" />
 
 				{/* Header */}
-				<div className="relative p-3 sm:p-5 border-b border-white/[0.08] bg-white/[0.02] flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
+				<div className="relative p-3 sm:p-5 border-b border-border/60 dark:border-white/[0.08] bg-muted/20 dark:bg-white/[0.02] flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
 					<div className="flex items-center gap-3 sm:gap-4 min-w-0">
 						<div
 							className={cn(
 								"p-2 sm:p-2.5 rounded-xl border flex items-center justify-center shadow-sm shrink-0",
 								realizedPnl >= 0
-									? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400 shadow-[0_0_15px_-3px_rgba(16,224,160,0.3)]"
-									: "bg-rose-500/10 border-rose-500/25 text-rose-400 shadow-[0_0_15px_-3px_rgba(244,63,94,0.3)]",
+									? "bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-400 shadow-[0_0_15px_-3px_rgba(16,224,160,0.3)]"
+									: "bg-rose-500/10 border-rose-500/25 text-rose-600 dark:text-rose-400 shadow-[0_0_15px_-3px_rgba(244,63,94,0.3)]",
 							)}
 						>
 							{isLong ? (
@@ -3601,16 +3620,16 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 							)}
 						</div>
 						<div className="min-w-0">
-							<h2 className="text-base sm:text-xl font-bold font-mono tracking-tight text-white flex flex-wrap items-center gap-2">
+							<h2 className="text-base sm:text-xl font-bold font-mono tracking-tight text-foreground dark:text-white flex flex-wrap items-center gap-2">
 								{trade.symbol}
-								<span className="text-white/40 text-xs sm:text-sm font-sans font-normal">
+								<span className="text-muted-foreground dark:text-white/40 text-xs sm:text-sm font-sans font-normal">
 									{t("executionAnalysis", "Execution Analysis")}
 								</span>
 							</h2>
-							<p className="text-[11px] text-white/40 font-mono truncate">
+							<p className="text-[11px] text-muted-foreground dark:text-white/40 font-mono truncate">
 								{t("tradeId", "Trade ID")}:{" "}
-								<span className="text-white/60">{trade.trade_uuid?.substring(0, 8) || trade.id}</span>
-								<span className="ml-3 text-white/30 hidden sm:inline">
+								<span className="text-foreground/80 dark:text-white/60">{trade.trade_uuid?.substring(0, 8) || trade.id}</span>
+								<span className="ml-3 text-muted-foreground/60 dark:text-white/30 hidden sm:inline">
 									📏 Shift+Click for ruler
 								</span>
 							</p>
@@ -3618,7 +3637,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 					</div>
 					<div className="flex flex-wrap items-center justify-end gap-2">
 						{/* Timeframe strip: own scrollable row on phones, inline from lg up */}
-						<div className="mr-2 order-last w-full lg:order-none lg:w-auto inline-flex items-center rounded-lg bg-white/[0.04] border border-white/10 p-0.5 gap-0.5 overflow-x-auto no-scrollbar max-w-full">
+						<div className="mr-2 order-last w-full lg:order-none lg:w-auto inline-flex items-center rounded-lg bg-muted/50 dark:bg-white/[0.04] border border-border dark:border-white/10 p-0.5 gap-0.5 overflow-x-auto no-scrollbar max-w-full">
 							{KLINE_INTERVALS.map((tf) => (
 								<button
 									key={tf.value}
@@ -3627,8 +3646,8 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 									className={cn(
 										"shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-all",
 										effectiveInterval === tf.value
-											? "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] border border-white/15"
-											: "text-white/50 hover:text-white/80 hover:bg-white/[0.03]",
+											? "bg-card dark:bg-white/[0.12] text-foreground dark:text-white shadow-sm border border-border dark:border-white/15"
+											: "text-muted-foreground hover:text-foreground hover:bg-muted/40 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/[0.03]",
 									)}
 								>
 									{tf.label}
@@ -3644,7 +3663,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								"inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-all",
 								showIndicators
 									? "bg-cyan/15 text-cyan border-cyan/40 shadow-[0_0_14px_rgba(0,212,255,0.35)]"
-									: "border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07]",
+									: "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60 dark:hover:text-white dark:hover:bg-white/[0.07]",
 								foundationLoading && "opacity-80 cursor-wait",
 							)}
 							title={`${t("showIndicators", "Show Indicators")} (${usedFoundations.length})`}
@@ -3664,7 +3683,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 							onClick={handleScreenshot}
 							disabled={isCapturing}
 							className={cn(
-								"inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07] transition-all",
+								"inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60 dark:hover:text-white dark:hover:bg-white/[0.07] transition-all",
 								isCapturing && "opacity-50 cursor-not-allowed",
 							)}
 							title={t("shareScreenshot", "Share Screenshot")}
@@ -3674,7 +3693,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 						<button
 							type="button"
 							onClick={onClose}
-							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-transparent hover:border-white/10 text-white/40 hover:text-white hover:bg-white/[0.06] transition-all"
+							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-transparent hover:border-border text-muted-foreground hover:text-foreground hover:bg-muted dark:hover:border-white/10 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/[0.06] transition-all"
 						>
 							<X className="w-4 h-4" />
 						</button>
@@ -3691,7 +3710,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								value: realizedPnl != null && Number.isFinite(realizedPnl)
 									? `${realizedPnl >= 0 ? "+" : ""}$${realizedPnl.toFixed(2)}`
 									: "N/A",
-								color: realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400",
+								color: realizedPnl >= 0 ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 								glow: realizedPnl >= 0 ? "shadow-[0_0_15px_-3px_rgba(16,224,160,0.2)]" : "shadow-[0_0_15px_-3px_rgba(244,63,94,0.2)]",
 							},
 							{
@@ -3699,7 +3718,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								value: entryPrice != null && Number.isFinite(entryPrice)
 									? `$${entryPrice.toFixed(4)}`
 									: "N/A",
-								color: "text-white/90",
+								color: "text-foreground/90 dark:text-white/90",
 								glow: "",
 							},
 							{
@@ -3707,24 +3726,24 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								value: exitPrice != null && Number.isFinite(exitPrice)
 									? `$${exitPrice.toFixed(4)}`
 									: "N/A",
-								color: "text-amber-400",
+								color: "text-amber-500 dark:text-amber-400",
 								glow: "",
 							},
 							{
 								label: t("side", "Side"),
 								value: trade.direction,
-								color: isLong ? "text-emerald-400" : "text-rose-400",
+								color: isLong ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 								glow: "",
 							},
 						].map((stat, i) => (
 							<div
 								key={i}
 								className={cn(
-									"glass rounded-xl p-3 border border-white/5 flex flex-col justify-between",
+									"glass rounded-xl p-3 border border-border/60 dark:border-white/5 flex flex-col justify-between",
 									stat.glow,
 								)}
 							>
-								<span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-white/40 block mb-1">
+								<span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-muted-foreground dark:text-white/40 block mb-1">
 									{stat.label}
 								</span>
 								<span className={`text-base font-bold font-mono tabular ${stat.color}`}>
@@ -3839,7 +3858,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 									<div className="flex-1 flex flex-col min-w-0 min-h-0">
 										<div
 											className={cn(
-												"bg-[#07080b] border border-white/10 rounded-2xl overflow-hidden relative flex-1 flex flex-col min-h-[240px]",
+												"bg-card dark:bg-[#07080b] border border-border/80 dark:border-white/10 rounded-2xl overflow-hidden relative flex-1 flex flex-col min-h-[240px]",
 												isRulerActive ? "cursor-crosshair" : "",
 											)}
 											onMouseDown={handleMouseDown}
@@ -3850,17 +3869,17 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 											{loading ? (
 												<div className="h-full flex items-center justify-center flex-col gap-3">
 													<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan"></div>
-													<span className="text-white/50 text-xs font-mono animate-pulse">
+													<span className="text-muted-foreground dark:text-white/50 text-xs font-mono animate-pulse">
 														{t("fetchingData", "Fetching market data...")}
 													</span>
 												</div>
 											) : error || klines.length === 0 ? (
-												<div className="h-full flex items-center justify-center flex-col gap-2 text-white/50">
-													<AlertCircle className="w-10 h-10 mb-2 text-amber-400" />
-													<span className="font-bold text-white">
+												<div className="h-full flex items-center justify-center flex-col gap-2 text-muted-foreground dark:text-white/50">
+													<AlertCircle className="w-10 h-10 mb-2 text-amber-500 dark:text-amber-400" />
+													<span className="font-bold text-foreground dark:text-white">
 														{error || t("dataUnavailable", "Data Unavailable")}
 													</span>
-													<span className="text-xs font-mono text-white/40">
+													<span className="text-xs font-mono text-muted-foreground dark:text-white/40">
 														Symbol: {trade.symbol}, Period:{" "}
 														{new Date(entryTime * 1000).toLocaleString()} -{" "}
 														{new Date(exitTime * 1000).toLocaleString()}
@@ -3889,7 +3908,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 															foundationData.visualizations.subcharts || {},
 														).length > 0 && (
 															<div
-																className="w-full border-t border-white/10 bg-black/40 h-[140px] sm:h-[180px] shrink-0"
+																className="w-full border-t border-border dark:border-white/10 bg-muted/30 dark:bg-black/40 h-[140px] sm:h-[180px] shrink-0"
 																ref={indicatorContainerRef}
 															/>
 														)}
@@ -3904,7 +3923,7 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 						// Normal layout if no trace available (Fallback)
 						return (
 							<div
-								className={`bg-[#07080b] border border-white/10 rounded-2xl p-0 overflow-hidden relative flex-1 min-h-[240px] sm:min-h-[600px] ${isRulerActive ? "cursor-crosshair" : ""}`}
+								className={`bg-card dark:bg-[#07080b] border border-border/80 dark:border-white/10 rounded-2xl p-0 overflow-hidden relative flex-1 min-h-[240px] sm:min-h-[600px] ${isRulerActive ? "cursor-crosshair" : ""}`}
 								onMouseDown={handleMouseDown}
 								onMouseMove={handleMouseMove}
 								onMouseUp={handleMouseUp}
@@ -3914,17 +3933,17 @@ export const TradeAnalysisModal: React.FC<TradeAnalysisModalProps> = ({
 								{loading ? (
 									<div className="h-full flex items-center justify-center flex-col gap-3">
 										<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan"></div>
-										<span className="text-white/50 text-xs font-mono animate-pulse">
+										<span className="text-muted-foreground dark:text-white/50 text-xs font-mono animate-pulse">
 											{t("fetchingData", "Fetching market data...")}
 										</span>
 									</div>
 								) : error || klines.length === 0 ? (
-									<div className="h-full flex items-center justify-center flex-col gap-2 text-white/50">
-										<AlertCircle className="w-10 h-10 mb-2 text-amber-400" />
-										<span className="font-bold text-white">
+									<div className="h-full flex items-center justify-center flex-col gap-2 text-muted-foreground dark:text-white/50">
+										<AlertCircle className="w-10 h-10 mb-2 text-amber-500 dark:text-amber-400" />
+										<span className="font-bold text-foreground dark:text-white">
 											{error || t("dataUnavailable", "Data Unavailable")}
 										</span>
-										<span className="text-xs font-mono text-white/40">
+										<span className="text-xs font-mono text-muted-foreground dark:text-white/40">
 											Symbol: {trade.symbol}, Period:{" "}
 											{new Date(entryTime * 1000).toLocaleString()} -{" "}
 											{new Date(exitTime * 1000).toLocaleString()}

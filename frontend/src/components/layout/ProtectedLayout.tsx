@@ -9,11 +9,11 @@ import { AiCopilotWidget } from "@/components/common/AiCopilotWidget";
 export const ProtectedLayout: React.FC = () => {
 
 	return (
-		<div className="relative flex h-screen w-screen overflow-hidden bg-void text-white">
+		<div className="relative flex h-screen w-screen overflow-hidden bg-void text-foreground transition-colors duration-200">
 			{/* Ambient background glows */}
-			<div className="pointer-events-none absolute inset-0 grid-bg opacity-40" />
-			<div className="pointer-events-none absolute -top-40 left-1/3 h-[520px] w-[720px] rounded-full bg-azure/10 blur-[140px]" />
-			<div className="pointer-events-none absolute -bottom-40 right-0 h-[420px] w-[520px] rounded-full bg-cyan/8 blur-[140px]" />
+			<div className="pointer-events-none absolute inset-0 grid-bg opacity-40 dark:opacity-40" />
+			<div className="pointer-events-none absolute -top-40 left-1/3 h-[520px] w-[720px] rounded-full bg-azure/10 dark:bg-azure/10 blur-[140px] opacity-60 dark:opacity-100" />
+			<div className="pointer-events-none absolute -bottom-40 right-0 h-[420px] w-[520px] rounded-full bg-cyan/8 dark:bg-cyan/8 blur-[140px] opacity-60 dark:opacity-100" />
 
 			<AppSidebar />
 			<div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">

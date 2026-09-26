@@ -64,6 +64,7 @@ import { exchangeMeta, normalizeExchangeKey } from "@/lib/exchanges";
 import { resolveStrategyTimeframe } from "@/lib/strategyMeta";
 import { cn } from "@/lib/utils";
 import { useAccountStore } from "@/stores/accountStore";
+import { resolvePositionStrategyName } from "@/features/notifications/resolveStrategyName";
 import type { AccountBalance, ApiKey, LogEntry, MarketScope, PositionData, StrategyData } from "@/types/api";
 
 const normalizeMarketScope = (marketType?: string | null): MarketScope => {
@@ -497,6 +498,18 @@ const Index = () => {
 				normalizeExchangeKey(p.exchange ?? p.exchange_id) ??
 				normalizeExchangeKey(apiKeyEx);
 
+			const displayStrategy = resolvePositionStrategyName(
+				{
+					symbol: p.symbol,
+					api_key_id: apiKeyId,
+					config_id: p.config_id,
+					strategy: p.strategy,
+					strategy_name: p.strategy_name,
+				},
+				realStrategies,
+				nameByConfigId,
+			);
+
 			return {
 				...p,
 				id: p.id || `p-${idx}`,
@@ -512,8 +525,8 @@ const Index = () => {
 				pnl,
 				pnlPct,
 				pnl_percent: pnlPct,
-				strategy: p.strategy_name || p.strategy || "Quant Engine",
-				strategy_name: p.strategy_name || p.strategy || "Quant Engine",
+				strategy: displayStrategy,
+				strategy_name: displayStrategy,
 				exchange: exKey,
 				exchange_id: p.exchange ?? p.exchange_id ?? exKey ?? null,
 				entryTime: p.entry_time ?? p.entryTime ?? null,
@@ -523,7 +536,7 @@ const Index = () => {
 				meta: (exKey && exchangeMeta[exKey]) || null,
 			};
 		});
-	}, [livePositions, realPositions, config]);
+	}, [livePositions, realPositions, config, realStrategies, nameByConfigId]);
 
 	// Running strategies (real strategies only; equity sparkline is the
 	// cumulative realized PnL built from closed trades, like Analytics).
@@ -1116,7 +1129,7 @@ const Index = () => {
 												</div>
 											</Td>
 											<Td>
-												<span className="text-white/50 text-[11px]">
+												<span className="text-foreground/80 dark:text-white/60 text-[11px] font-medium truncate max-w-[150px] block" title={p.strategy}>
 													{p.strategy}
 												</span>
 											</Td>
@@ -1155,34 +1168,34 @@ const Index = () => {
 					>
 						<div className="max-h-[320px] overflow-y-auto font-mono text-[10.5px]">
 							{displayedEvents.length === 0 ? (
-								<div className="flex h-[120px] items-center justify-center px-4 text-center text-[11px] text-white/35">
+								<div className="flex h-[120px] items-center justify-center px-4 text-center text-[11px] text-muted-foreground/60 dark:text-white/35">
 									No events yet — engine logs will appear here.
 								</div>
 							) : (
 								displayedEvents.map((e, i) => (
 								<div
 									key={i}
-									className="flex flex-col sm:flex-row gap-1 sm:gap-2.5 border-b border-white/[0.03] px-3.5 sm:px-4 py-2 hover:bg-white/[0.02]"
+									className="flex flex-col sm:flex-row gap-1 sm:gap-2.5 border-b border-border/40 dark:border-white/[0.03] px-3.5 sm:px-4 py-2 hover:bg-muted/40 dark:hover:bg-white/[0.02] transition-colors"
 								>
 									<div className="flex items-center gap-2 shrink-0">
-										<span className="text-white/30 shrink-0 text-[10px] sm:text-[10.5px]">{e.t}</span>
+										<span className="text-muted-foreground/70 dark:text-white/30 shrink-0 text-[10px] sm:text-[10.5px]">{e.t}</span>
 										<span
 											className={cn(
 												"shrink-0 w-10 font-semibold",
 												e.level === "ERROR"
-													? "text-rose-400"
+													? "text-rose-500 dark:text-rose-400"
 													: e.level === "WARN"
-														? "text-amber-400"
-														: "text-cyan/80",
+														? "text-amber-500 dark:text-amber-400"
+														: "text-cyan-600 dark:text-cyan/80",
 											)}
 										>
 											{e.level}
 										</span>
-										<span className="text-white/35 shrink-0 whitespace-nowrap">
+										<span className="text-muted-foreground/80 dark:text-white/35 shrink-0 whitespace-nowrap">
 											[{e.src}]
 										</span>
 									</div>
-									<span className="text-white/75 flex-1 whitespace-pre-wrap break-words min-w-0 w-full sm:w-auto">
+									<span className="text-foreground/90 dark:text-white/80 flex-1 whitespace-pre-wrap break-words min-w-0 w-full sm:w-auto font-normal leading-relaxed">
 										{e.msg}
 									</span>
 								</div>

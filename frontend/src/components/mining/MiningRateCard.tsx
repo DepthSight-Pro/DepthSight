@@ -105,7 +105,7 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
   return (
     <div
       className={cn(
-        "glass relative rounded-2xl border border-white/10 shadow-xl overflow-hidden p-3.5 sm:p-4 flex flex-col justify-between animate-fade-up",
+        "glass relative rounded-2xl border border-border/80 dark:border-white/10 shadow-xl overflow-hidden p-3.5 sm:p-4 flex flex-col justify-between animate-fade-up",
         className,
       )}
     >
@@ -117,20 +117,20 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between mb-0.5">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+            <div className="p-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 dark:text-cyan-400">
               <Pickaxe className="h-4 w-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white tracking-wide leading-tight">
+              <h3 className="text-sm font-bold text-foreground dark:text-white tracking-wide leading-tight">
                 {t("miningRate", "Mining Rate")}
               </h3>
-              <p className="text-[10px] text-white/50 leading-none mt-0.5">
+              <p className="text-[10px] text-muted-foreground dark:text-white/50 leading-none mt-0.5">
                 {t("miningRateSubtitle", "DEPTH / day · last 14 days")}
               </p>
             </div>
           </div>
 
-          <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 font-mono text-[10px] rounded-md px-2 py-0.5 flex items-center gap-1.5 shadow-sm">
+          <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 font-mono text-[10px] rounded-md px-2 py-0.5 flex items-center gap-1.5 shadow-sm">
             <span className="relative flex h-1.5 w-1.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
@@ -160,7 +160,7 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
                           isToday
                             ? "bg-gradient-to-t from-cyan-600/50 via-cyan-400 to-cyan-200 border-t border-cyan-300 shadow-[0_0_8px_rgba(0,212,255,0.4)] hover:shadow-[0_0_12px_rgba(0,212,255,0.9)] hover:to-white"
                             : isZero
-                              ? "bg-white/10 hover:bg-white/20"
+                              ? "bg-black/10 dark:bg-white/10 hover:bg-black/20 dark:hover:bg-white/20"
                               : "bg-gradient-to-t from-blue-600/35 via-cyan-500/75 to-cyan-400 hover:from-cyan-400 hover:to-white hover:shadow-[0_0_10px_rgba(0,212,255,0.8)]",
                         )}
                         style={{
@@ -174,35 +174,35 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
                       align={isToday ? "end" : "center"}
                       sideOffset={8}
                       collisionPadding={12}
-                      className="z-[100] bg-black/95 border-cyan-500/30 text-white font-mono text-[11px] p-2 backdrop-blur-md shadow-2xl"
+                      className="bg-popover text-popover-foreground border-border/80 dark:border-cyan-500/30 font-mono text-[10px] p-2 backdrop-blur-md shadow-2xl z-[100] pointer-events-none"
                     >
-                      <div className="flex items-center justify-between gap-3 text-[10px] text-white/50 border-b border-white/10 pb-1 mb-1">
-                        <span className="font-semibold text-white/80">
+                      <div className="flex items-center justify-between gap-3 text-[10px] text-muted-foreground dark:text-white/50 border-b border-border/60 dark:border-white/10 pb-1 mb-1">
+                        <span className="font-semibold text-foreground/90 dark:text-white/80">
                           {isToday
                             ? t("today", "Today")
                             : formatShortDate(item.date)}
                         </span>
                         {isToday && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300">
+                          <span className="text-[8px] px-1 py-0.2 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 font-sans">
                             {t("inProgress", "In progress")}
                           </span>
                         )}
                       </div>
                       <div className="space-y-0.5 text-[10.5px]">
                         <div className="flex justify-between gap-3">
-                          <span className="text-white/60">
+                          <span className="text-muted-foreground dark:text-white/60">
                             {t("totalMined", "Reward")}:
                           </span>
-                          <span className="font-bold text-cyan-300">
+                          <span className="font-bold text-cyan-600 dark:text-cyan-300">
                             {item.reward.toFixed(1)} DEPTH
                           </span>
                         </div>
                         {item.rebates !== undefined && item.rebates > 0 && (
                           <div className="flex justify-between gap-3">
-                            <span className="text-white/60">
+                            <span className="text-muted-foreground dark:text-white/60">
                               {t("todayRebates", "Rebates")}:
                             </span>
-                            <span className="font-semibold text-white">
+                            <span className="font-semibold text-foreground dark:text-white">
                               ${item.rebates.toFixed(2)}
                             </span>
                           </div>
@@ -210,10 +210,10 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
                         {item.tradesCount !== undefined &&
                           item.tradesCount > 0 && (
                             <div className="flex justify-between gap-3">
-                              <span className="text-white/60">
+                              <span className="text-muted-foreground dark:text-white/60">
                                 {t("common:trades", "Trades")}:
                               </span>
-                              <span className="font-semibold text-white/80">
+                              <span className="font-semibold text-foreground/90 dark:text-white/80">
                                 {item.tradesCount}
                               </span>
                             </div>
@@ -227,7 +227,7 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
           </TooltipProvider>
 
           {/* Time axis labels */}
-          <div className="flex justify-between text-[8px] font-mono text-white/35 px-1 pt-0.5">
+          <div className="flex justify-between text-[8px] font-mono text-muted-foreground/60 dark:text-white/35 px-1 pt-0.5">
             <span>
               {displayData[0]?.date
                 ? formatShortDate(displayData[0].date)
@@ -238,43 +238,43 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
                 ? formatShortDate(displayData[6].date)
                 : t("daysAgo", { days: 7 })}
             </span>
-            <span className="text-cyan-400/80 font-medium">
+            <span className="text-cyan-600 dark:text-cyan-400 font-medium">
               {t("today", "Today")}
             </span>
           </div>
         </div>
 
         {/* Bottom Metrics Row */}
-        <div className="mt-auto grid grid-cols-4 gap-2 border-t border-white/5 pt-2.5">
+        <div className="mt-auto grid grid-cols-4 gap-2 border-t border-border/40 dark:border-white/5 pt-2.5">
           <div className="space-y-0.5 min-w-0">
-            <div className="text-[9px] uppercase tracking-wider text-white/40 font-medium truncate">
+            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/75 dark:text-white/40 font-medium truncate">
               {t("cumulativeRebate", "Cumulative rebate")}
             </div>
-            <div className="font-mono text-xs font-semibold text-white truncate">
+            <div className="font-mono text-xs font-semibold text-foreground dark:text-white truncate">
               ${userCumulativeRebate.toFixed(1)}
             </div>
           </div>
 
           <div className="space-y-0.5 min-w-0">
-            <div className="text-[9px] uppercase tracking-wider text-white/40 font-medium truncate">
+            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/75 dark:text-white/40 font-medium truncate">
               {t("distributed", "Distributed")}
             </div>
-            <div className="font-mono text-xs font-semibold text-white truncate">
+            <div className="font-mono text-xs font-semibold text-foreground dark:text-white truncate">
               {formatCompact(totalDistributed)} Ð
             </div>
           </div>
 
           <div className="space-y-0.5 min-w-0">
-            <div className="text-[9px] uppercase tracking-wider text-white/40 font-medium truncate">
+            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/75 dark:text-white/40 font-medium truncate">
               {t("welcomeBonus", "Welcome bonus")}
             </div>
             <div className="font-mono text-xs font-semibold truncate">
               {hasWelcomeBonus ? (
-                <span className="text-amber-300 font-bold">
+                <span className="text-amber-500 dark:text-amber-300 font-bold">
                   {t("claimed", "Claimed")}
                 </span>
               ) : (
-                <span className="text-white/70">
+                <span className="text-muted-foreground dark:text-white/70">
                   {Math.round(welcomeProgress)}%
                 </span>
               )}
@@ -282,10 +282,10 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
           </div>
 
           <div className="space-y-0.5 min-w-0">
-            <div className="text-[9px] uppercase tracking-wider text-white/40 font-medium truncate">
+            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/75 dark:text-white/40 font-medium truncate">
               {t("rewardShare", "Reward share")}
             </div>
-            <div className="font-mono text-xs font-semibold text-cyan-400 truncate">
+            <div className="font-mono text-xs font-semibold text-cyan-600 dark:text-cyan-400 truncate">
               {userRewardSharePercent}%
             </div>
           </div>

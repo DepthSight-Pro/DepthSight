@@ -2,11 +2,11 @@
 @config "../tailwind.config.js";
 
 @theme {
-	--color-void: #07080b;
-	--color-obsidian: #0b0d12;
-	--color-panel: #0e1117;
-	--color-cyan: #00d4ff;
-	--color-azure: #0066ff;
+	--color-void: var(--void);
+	--color-obsidian: var(--obsidian);
+	--color-panel: var(--panel);
+	--color-cyan: var(--cyan);
+	--color-azure: var(--azure);
 	--animate-scan: scan 6s linear infinite;
 	--animate-fade-up: fadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 	--animate-shimmer: shimmer 2.4s linear infinite;
@@ -113,6 +113,12 @@
 /* --- Dark Theme (Root) --- */
 @layer base {
 	:root {
+		--void: #07080b;
+		--obsidian: #0b0d12;
+		--panel: #0e1117;
+		--cyan: #00d4ff;
+		--azure: #0066ff;
+
 		--background: 220 13% 9%; /* #121518 */
 		--foreground: 220 9% 82%; /* #D1D5DB */
 
@@ -158,44 +164,50 @@
 		--sidebar-ring: var(--ring);
 	}
 
-	/* --- Light Theme ("Stone Gray") --- */
+	/* --- Cyber-Quant Light Theme ("Luminous Terminal") --- */
 	.light {
-		--background: 210 16% 95%; /* #F1F3F5 */
-		--foreground: 210 10% 23%; /* #343A40 */
+		--void: #f6f8fc;
+		--obsidian: #ffffff;
+		--panel: #ffffff;
+		--cyan: #0284c7;
+		--azure: #0066ff;
+
+		--background: 220 25% 97.5%; /* #F6F8FC */
+		--foreground: 222 47% 11%; /* #090D16 */
 
 		--logo-text-color: hsl(var(--foreground));
 
-		--card: 210 16% 98%; /* #F8F9FA */
+		--card: 0 0% 100%; /* #FFFFFF */
 		--card-foreground: var(--foreground);
 
-		--popover: var(--card);
+		--popover: 0 0% 100%;
 		--popover-foreground: var(--card-foreground);
 
-		--primary: 211 96% 52%; /* #0D6EFD */
-		--primary-foreground: 210 20% 98%;
+		--primary: 217 91% 56%; /* #2563EB */
+		--primary-foreground: 0 0% 100%;
 
-		--secondary: 210 16% 93%; /* #E9ECEF */
+		--secondary: 220 20% 94%; /* #EEF2F6 */
 		--secondary-foreground: var(--foreground);
 
-		--muted: 210 16% 95%; /* #F1F3F5 */
-		--muted-foreground: 210 8% 58%; /* #868E96 */
+		--muted: 220 20% 94%; /* #EEF2F6 */
+		--muted-foreground: 215 16% 47%; /* #64748B */
 
-		--accent: var(--secondary);
+		--accent: 220 20% 93%; /* #E8ECF2 */
 		--accent-foreground: var(--foreground);
 
-		--loss: 355 71% 52%; /* #DC3545 */
+		--loss: 350 89% 55%; /* #E11D48 */
 		--destructive: var(--loss);
 		--destructive-foreground: var(--primary-foreground);
 
-		--profit: 134 61% 41%; /* #28A745 */
-		--warning: 38 92% 50%; /* #F97316 */
+		--profit: 158 75% 38%; /* #059669 */
+		--warning: 38 92% 48%; /* #D97706 */
 
-		--border: 210 16% 87%; /* #DEE2E6 */
+		--border: 214 32% 91%; /* #E2E8F0 */
 		--input: var(--border);
 		--ring: var(--primary);
 		--radius: 0.5rem;
 
-		--sidebar-background: var(--background);
+		--sidebar-background: 0 0% 100%; /* #FFFFFF */
 		--sidebar-foreground: var(--foreground);
 		--sidebar-primary: var(--primary);
 		--sidebar-primary-foreground: var(--primary-foreground);
@@ -314,9 +326,9 @@
 
 	.light .recharts-default-tooltip {
 		background-color: #ffffff !important;
-		border: 1px solid rgba(0, 0, 0, 0.12) !important;
-		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12) !important;
-		color: #0f172a !important;
+		border: 1px solid rgba(15, 23, 42, 0.12) !important;
+		box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08) !important;
+		color: #090d16 !important;
 	}
 
 	.light .recharts-tooltip-label {
@@ -324,7 +336,139 @@
 	}
 
 	.light .recharts-tooltip-item {
-		color: #0f172a !important;
+		color: #090d16 !important;
+	}
+
+	/* --- Light Theme Cyber & Glass Texture Overrides --- */
+	.light .glass {
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.82) 100%);
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 1px 3px 0 rgba(15, 23, 42, 0.02);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+	}
+
+	.light .glass-strong {
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		box-shadow: 0 10px 30px -4px rgba(15, 23, 42, 0.07), 0 2px 6px 0 rgba(15, 23, 42, 0.03);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+	}
+
+	.light .grid-bg {
+		background-image:
+			linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+		background-size: 32px 32px;
+	}
+
+	.light .dot-bg {
+		background-image: radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+		background-size: 22px 22px;
+	}
+
+	.light .shimmer-text {
+		background: linear-gradient(90deg, rgba(15, 23, 42, 0.5) 0%, #090d16 50%, rgba(15, 23, 42, 0.5) 100%);
+		background-size: 200% 100%;
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		animation: shimmer 2.4s linear infinite;
+	}
+
+	.light .neon-border::before {
+		background: linear-gradient(135deg, rgba(2, 132, 199, 0.6), rgba(0, 102, 255, 0.15) 50%, rgba(2, 132, 199, 0.35));
 	}
 }
 
+/* --- High-Contrast Light Theme Overrides (Top-level to guarantee specificity over Tailwind utilities) --- */
+.light [class*="border-white/5"] {
+	border-color: rgba(15, 23, 42, 0.08) !important;
+}
+.light [class*="border-white/8"] {
+	border-color: rgba(15, 23, 42, 0.1) !important;
+}
+.light [class*="border-white/10"] {
+	border-color: rgba(15, 23, 42, 0.12) !important;
+}
+.light [class*="border-white/15"] {
+	border-color: rgba(15, 23, 42, 0.15) !important;
+}
+.light [class*="border-white/20"] {
+	border-color: rgba(15, 23, 42, 0.2) !important;
+}
+
+.light [class*="bg-white/[0.02]"] {
+	background-color: rgba(15, 23, 42, 0.02) !important;
+}
+.light [class*="bg-white/[0.03]"] {
+	background-color: rgba(15, 23, 42, 0.035) !important;
+}
+.light [class*="bg-white/[0.04]"] {
+	background-color: rgba(15, 23, 42, 0.045) !important;
+}
+.light [class*="bg-white/[0.08]"] {
+	background-color: rgba(15, 23, 42, 0.07) !important;
+}
+.light [class*="bg-white/5"] {
+	background-color: rgba(15, 23, 42, 0.045) !important;
+}
+.light [class*="bg-white/10"] {
+	background-color: rgba(15, 23, 42, 0.07) !important;
+}
+
+.light [class*="text-white/20"],
+.light [class*="text-white/25"] {
+	color: rgba(15, 23, 42, 0.4) !important;
+}
+.light [class*="text-white/30"],
+.light [class*="text-white/35"],
+.light [class*="text-white/40"],
+.light [class*="text-white/45"] {
+	color: #64748b !important;
+}
+.light [class*="text-white/50"],
+.light [class*="text-white/55"],
+.light [class*="text-white/60"] {
+	color: #475569 !important;
+}
+.light [class*="text-white/65"],
+.light [class*="text-white/70"],
+.light [class*="text-white/75"],
+.light [class*="text-white/80"],
+.light [class*="text-white/85"] {
+	color: #1e293b !important;
+}
+.light [class*="text-white/90"],
+.light [class*="text-white/95"] {
+	color: #090d16 !important;
+}
+
+/* In light mode, text-white on headings, cards, and text containers becomes deep dark slate,
+   while preserving white text on solid/gradient colored action buttons and badges */
+.light .text-white:not([class*="bg-primary"]):not([class*="bg-gradient"]):not([class*="bg-rose"]):not([class*="bg-emerald"]):not([class*="bg-amber"]):not([class*="bg-blue"]):not([class*="bg-cyan"]):not([class*="bg-azure"]):not([class*="bg-destructive"]):not([class*="bg-red"]):not([class*="bg-green"]):not([class*="btn-primary"]):not(button[class*="bg-"]) {
+	color: #090d16 !important;
+}
+
+.light [class*="hover:bg-white/5"]:hover,
+.light [class*="hover:bg-white/10"]:hover {
+	background-color: rgba(15, 23, 42, 0.06) !important;
+}
+.light [class*="hover:border-white/10"]:hover,
+.light [class*="hover:border-white/20"]:hover {
+	border-color: rgba(15, 23, 42, 0.2) !important;
+}
+.light :not([class*="bg-gradient"]):not([class*="bg-primary"]):not(button[class*="bg-"])[class*="hover:text-white"]:hover {
+	color: #090d16 !important;
+}
+
+.light .glass {
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(241, 245, 249, 0.8) 100%) !important;
+	border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+.light .glass-strong {
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%) !important;
+	border-color: rgba(15, 23, 42, 0.1) !important;
+}

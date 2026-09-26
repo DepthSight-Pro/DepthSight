@@ -32,11 +32,11 @@ import type { LogEntry } from "@/types/api";
 
 const getLevelBadge = (level: LogEntry["level"]) => {
 	const styles = {
-		INFO: "bg-cyan/15 text-cyan border-cyan/30",
-		SUCCESS: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-		WARNING: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-		ERROR: "bg-rose-500/15 text-rose-300 border-rose-500/30",
-		DEBUG: "bg-white/10 text-white/60 border-white/10",
+		INFO: "bg-cyan-500/15 text-cyan-700 dark:text-cyan border-cyan-500/30",
+		SUCCESS: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+		WARNING: "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/30",
+		ERROR: "bg-rose-500/15 text-rose-600 dark:text-rose-300 border-rose-500/30",
+		DEBUG: "bg-muted text-muted-foreground border-border dark:bg-white/10 dark:text-white/60 dark:border-white/10",
 	};
 	return (
 		<Badge variant="outline" className={`whitespace-nowrap ${styles[level]}`}>
@@ -169,12 +169,12 @@ export default function EventLog() {
 				size="sm"
 				onClick={() => setIsPaused(!isPaused)}
 				className={cn(
-					"border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer",
-					isPaused && "border-amber-500/40 bg-amber-500/10 text-amber-300",
+					"border-border dark:border-white/10 bg-card dark:bg-white/[0.04] text-foreground dark:text-white hover:bg-muted dark:hover:bg-white/[0.08] hover:text-foreground dark:hover:text-white transition-all cursor-pointer",
+					isPaused && "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
 				)}
 			>
 				{isPaused ? (
-					<Play className="w-4 h-4 mr-2 text-amber-400" />
+					<Play className="w-4 h-4 mr-2 text-amber-500 dark:text-amber-400" />
 				) : (
 					<Pause className="w-4 h-4 mr-2 text-cyan" />
 				)}
@@ -185,16 +185,16 @@ export default function EventLog() {
 				size="sm"
 				onClick={handleExport}
 				disabled={filteredLogs.length === 0}
-				className="border-white/10 bg-white/[0.04] text-white hover:bg-white/[0.08] hover:text-white transition-all cursor-pointer disabled:opacity-40"
+				className="border-border dark:border-white/10 bg-card dark:bg-white/[0.04] text-foreground dark:text-white hover:bg-muted dark:hover:bg-white/[0.08] hover:text-foreground dark:hover:text-white transition-all cursor-pointer disabled:opacity-40"
 			>
-				<Download className="w-4 h-4 mr-2 text-white/70" />
+				<Download className="w-4 h-4 mr-2 text-muted-foreground dark:text-white/70" />
 				{t("exportButton")}
 			</Button>
 			<Button
 				variant="destructive"
 				size="sm"
 				onClick={handleClearLogs}
-				className="border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-rose-200 transition-all cursor-pointer"
+				className="border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300 hover:bg-rose-500/20 hover:text-rose-700 dark:hover:text-rose-200 transition-all cursor-pointer"
 			>
 				<Trash2 className="w-4 h-4 mr-2" />
 				{t("clearButton")}
@@ -208,28 +208,28 @@ export default function EventLog() {
 			icon={Terminal}
 			headerActions={headerActions}
 		>
-			<div className="mb-6 rounded-2xl border border-white/10 glass shadow-xl p-4 flex flex-wrap items-center gap-4">
+			<div className="mb-6 rounded-2xl border border-border/80 dark:border-white/10 glass shadow-xl p-4 flex flex-wrap items-center gap-4">
 				<div className="relative flex-grow min-w-[280px]">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground dark:text-white/40" />
 					<Input
 						placeholder={t("searchPlaceholder")}
-						className="pl-10 bg-white/[0.03] border-white/10 text-white placeholder:text-white/40 focus-visible:ring-cyan/30 rounded-xl"
+						className="pl-10 bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white placeholder:text-muted-foreground dark:placeholder:text-white/40 focus-visible:ring-cyan/30 rounded-xl"
 						value={searchTerm}
 						onChange={(e) => setSearchTerm(e.target.value)}
 					/>
 				</div>
 				<div className="flex items-center gap-2">
-					<Filter className="h-4 w-4 text-white/40" />
+					<Filter className="h-4 w-4 text-muted-foreground dark:text-white/40" />
 					<Select
 						value={levelFilter}
 						onValueChange={(value) =>
 							setLevelFilter(value as LogEntry["level"] | "all")
 						}
 					>
-						<SelectTrigger className="w-[150px] bg-white/[0.03] border-white/10 text-white rounded-xl">
+						<SelectTrigger className="w-[150px] bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white rounded-xl">
 							<SelectValue placeholder={t("allLevels")} />
 						</SelectTrigger>
-						<SelectContent className="bg-[#0c0d12]/95 border-white/10 text-white backdrop-blur-xl">
+						<SelectContent className="bg-popover border-border dark:border-white/10 text-popover-foreground backdrop-blur-xl">
 							<SelectItem value="all">{t("allLevels")}</SelectItem>
 							<SelectItem value="ERROR">{t("levelError")}</SelectItem>
 							<SelectItem value="WARNING">{t("levelWarning")}</SelectItem>
@@ -241,10 +241,10 @@ export default function EventLog() {
 				</div>
 				<div className="flex items-center gap-2">
 					<Select value={sourceFilter} onValueChange={setSourceFilter}>
-						<SelectTrigger className="w-[180px] bg-white/[0.03] border-white/10 text-white rounded-xl">
+						<SelectTrigger className="w-[180px] bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white rounded-xl">
 							<SelectValue placeholder={t("allSources")} />
 						</SelectTrigger>
-						<SelectContent className="bg-[#0c0d12]/95 border-white/10 text-white backdrop-blur-xl">
+						<SelectContent className="bg-popover border-border dark:border-white/10 text-popover-foreground backdrop-blur-xl">
 							<SelectItem value="all">{t("allSources")}</SelectItem>
 							{sources.map((s) => (
 								<SelectItem key={s} value={s}>
@@ -258,15 +258,15 @@ export default function EventLog() {
 
 			<div
 				ref={logContainerRef}
-				className="h-[calc(100vh-250px)] overflow-y-auto rounded-2xl border border-white/10 glass shadow-xl p-4 font-mono text-xs"
+				className="h-[calc(100vh-250px)] overflow-y-auto rounded-2xl border border-border/80 dark:border-white/10 glass shadow-xl p-4 font-mono text-xs"
 			>
 				{isLoadingHistory ? (
-					<div className="flex flex-col items-center justify-center h-full gap-3 text-white/70">
+					<div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground dark:text-white/70">
 						<Loader2 className="w-8 h-8 animate-spin text-cyan" />
 						<span className="text-sm font-sans tracking-wide">{t("loadingHistory")}</span>
 					</div>
 				) : filteredLogs.length === 0 ? (
-					<div className="flex items-center justify-center h-full text-white/40">
+					<div className="flex items-center justify-center h-full text-muted-foreground dark:text-white/40">
 						{t("noLogs")}
 					</div>
 				) : (
@@ -274,10 +274,10 @@ export default function EventLog() {
 						{filteredLogs.map((log) => (
 							<div
 								key={log.id}
-								className="flex flex-col sm:flex-row items-start gap-1 sm:gap-3 px-2.5 sm:px-3 py-2 rounded-xl hover:bg-white/[0.04] border border-transparent hover:border-white/5 transition-colors min-w-0 w-full"
+								className="flex flex-col sm:flex-row items-start gap-1 sm:gap-3 px-2.5 sm:px-3 py-2 rounded-xl hover:bg-black/[0.03] dark:hover:bg-white/[0.04] border border-transparent hover:border-border/60 dark:hover:border-white/5 transition-colors min-w-0 w-full"
 							>
 								<div className="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap">
-									<span className="text-white/40 font-mono shrink-0 whitespace-nowrap text-[11px] sm:text-xs">
+									<span className="text-muted-foreground dark:text-white/40 font-mono shrink-0 whitespace-nowrap text-[11px] sm:text-xs">
 										{new Date(log.timestamp).toLocaleTimeString()}
 									</span>
 									<span className="shrink-0">{getLevelBadge(log.level)}</span>
@@ -285,7 +285,7 @@ export default function EventLog() {
 										[{log.component}]
 									</span>
 								</div>
-								<span className="text-white/90 flex-1 whitespace-pre-wrap break-words font-mono min-w-0 w-full sm:w-auto text-xs leading-relaxed">
+								<span className="text-foreground/90 dark:text-white/90 flex-1 whitespace-pre-wrap break-words font-mono min-w-0 w-full sm:w-auto text-xs leading-relaxed">
 									{log.message}
 								</span>
 							</div>

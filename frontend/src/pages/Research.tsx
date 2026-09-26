@@ -327,12 +327,12 @@ export default function Research() {
 				{activeTab === "tasks" && (
 					<div className="grid gap-6 lg:grid-cols-5 animate-fade-up w-full min-w-0">
 						<div className="lg:col-span-3 w-full min-w-0">
-							<div className="rounded-2xl border border-white/10 glass shadow-xl overflow-hidden w-full min-w-0">
-								<div className="p-4 sm:p-6 border-b border-white/5">
-									<h2 className="text-base font-bold text-white tracking-tight">
+							<div className="rounded-2xl border border-border/80 dark:border-white/10 glass shadow-xl overflow-hidden w-full min-w-0">
+								<div className="p-4 sm:p-6 border-b border-border/60 dark:border-white/5">
+									<h2 className="text-base font-bold text-foreground dark:text-white tracking-tight">
 										{t("taskHistory.title")}
 									</h2>
-									<p className="text-xs text-white/50 mt-1">
+									<p className="text-xs text-muted-foreground dark:text-white/50 mt-1">
 										{t("taskHistory.description")}
 									</p>
 								</div>
@@ -340,7 +340,7 @@ export default function Research() {
 									{isLoading && (
 										<div className="space-y-2 p-6">
 											{[...Array(5)].map((_, i) => (
-												<div key={i} className="h-12 w-full rounded-xl bg-white/[0.03] border border-white/5 animate-pulse" />
+												<div key={i} className="h-12 w-full rounded-xl bg-muted/40 dark:bg-white/[0.03] border border-border/40 dark:border-white/5 animate-pulse" />
 											))}
 										</div>
 									)}
@@ -360,21 +360,21 @@ export default function Research() {
 										</div>
 									)}
 									{!isLoading && !isError && allRuns.length === 0 && (
-										<div className="text-center text-white/40 py-12 text-sm font-mono">
+										<div className="text-center text-muted-foreground dark:text-white/40 py-12 text-sm font-mono">
 											{t("table.noTasks")}
 										</div>
 									)}
 									{!isLoading && !isError && allRuns.length > 0 && (
 										<Table className="min-w-[760px]">
-											<TableHeader className="bg-white/[0.02] border-b border-white/10">
-												<TableRow className="hover:bg-transparent border-b border-white/10">
-													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">{t("table.colName")}</TableHead>
-													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">{t("table.colType")}</TableHead>
-													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">{t("table.colSymbol")}</TableHead>
-													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">{t("table.colStatus")}</TableHead>
-													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">{t("table.colResult")}</TableHead>
-													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">{t("table.colSubmitted")}</TableHead>
-													<TableHead className="text-right font-mono text-[11px] uppercase tracking-wider text-white/50 whitespace-nowrap">
+											<TableHeader className="bg-muted/30 dark:bg-white/[0.02] border-b border-border dark:border-white/10">
+												<TableRow className="hover:bg-transparent border-b border-border dark:border-white/10">
+													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">{t("table.colName")}</TableHead>
+													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">{t("table.colType")}</TableHead>
+													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">{t("table.colSymbol")}</TableHead>
+													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">{t("table.colStatus")}</TableHead>
+													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">{t("table.colResult")}</TableHead>
+													<TableHead className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">{t("table.colSubmitted")}</TableHead>
+													<TableHead className="text-right font-mono text-[11px] uppercase tracking-wider text-muted-foreground dark:text-white/50 whitespace-nowrap">
 														{t("table.colActions")}
 													</TableHead>
 												</TableRow>
@@ -383,15 +383,15 @@ export default function Research() {
 												{allRuns.map((item) => (
 													<TableRow
 														key={item.id}
-														className="group border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+														className="group border-b border-border/40 dark:border-white/5 hover:bg-muted/30 dark:hover:bg-white/[0.03] transition-colors"
 													>
-														<TableCell className="font-medium text-white/90 text-sm whitespace-nowrap">
+														<TableCell className="font-medium text-foreground dark:text-white/90 text-sm whitespace-nowrap">
 															{item.name}
 														</TableCell>
 														<TableCell className="whitespace-nowrap">
 															<Badge
 																variant="outline"
-																className="bg-white/[0.04] border-white/10 text-white/70 font-mono text-[10px] uppercase whitespace-nowrap"
+																className="bg-muted/50 dark:bg-white/[0.04] border-border dark:border-white/10 text-foreground/80 dark:text-white/70 font-mono text-[10px] uppercase whitespace-nowrap"
 															>
 																{item.task_type_display}
 															</Badge>
@@ -434,7 +434,7 @@ export default function Research() {
 																			</Link>
 																		</Button>
 																	</TooltipTrigger>
-																	<TooltipContent className="bg-[#0c0d12] border-white/10 text-white text-xs">
+																	<TooltipContent className="bg-popover border-border dark:border-white/10 text-popover-foreground text-xs">
 																		{t("tooltips.viewDetails")}
 																	</TooltipContent>
 																</Tooltip>
@@ -444,7 +444,7 @@ export default function Research() {
 																			<Button
 																				variant="ghost"
 																				size="icon"
-																				className="h-8 w-8 text-white/40 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+																				className="h-8 w-8 text-muted-foreground dark:text-white/40 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
 																				onClick={() =>
 																					handleDeleteConfirmation(item)
 																				}
@@ -457,13 +457,13 @@ export default function Research() {
 																				{confirmModal.isLoading &&
 																				confirmModal.itemIdToActOn ===
 																					(item.run_id || item.id) ? (
-																					<Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+																					<Loader2 className="w-4 h-4 animate-spin text-rose-500 dark:text-rose-400" />
 																				) : (
 																					<Trash2 size={15} />
 																				)}
 																			</Button>
 																		</TooltipTrigger>
-																		<TooltipContent className="bg-[#0c0d12] border-white/10 text-white text-xs">
+																		<TooltipContent className="bg-popover border-border dark:border-white/10 text-popover-foreground text-xs">
 																			{t("tooltips.deleteRun")}
 																		</TooltipContent>
 																	</Tooltip>
@@ -477,21 +477,21 @@ export default function Research() {
 									)}
 								</div>
 								{data && data.total > 0 && (
-									<div className="flex flex-wrap items-center justify-between border-t border-white/5 bg-white/[0.01] px-4 py-3 sm:px-6 sm:py-4 gap-2">
-										<div className="text-xs text-white/40 font-mono">
+									<div className="flex flex-wrap items-center justify-between border-t border-border/60 dark:border-white/5 bg-muted/20 dark:bg-white/[0.01] px-4 py-3 sm:px-6 sm:py-4 gap-2">
+										<div className="text-xs text-muted-foreground dark:text-white/40 font-mono">
 											{t("common:pagination.totalItems", { count: data.total })}
 										</div>
 										<div className="flex items-center space-x-2">
 											<Button
 												variant="ghost"
 												size="sm"
-												className="h-8 px-2.5 border border-white/10 bg-white/[0.03] text-white/70 hover:text-white hover:bg-white/10 rounded-lg text-xs"
+												className="h-8 px-2.5 border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-foreground/80 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:bg-muted dark:hover:bg-white/10 rounded-lg text-xs"
 												onClick={() => setPage((p) => Math.max(1, p - 1))}
 												disabled={page <= 1}
 											>
 												<ChevronLeft className="h-4 w-4" />
 											</Button>
-											<span className="text-xs font-mono text-white/60 px-2">
+											<span className="text-xs font-mono text-muted-foreground dark:text-white/60 px-2">
 												{t("common:pagination.pageInfo", {
 													page: page,
 													totalPages:
@@ -503,7 +503,7 @@ export default function Research() {
 											<Button
 												variant="ghost"
 												size="sm"
-												className="h-8 px-2.5 border border-white/10 bg-white/[0.03] text-white/70 hover:text-white hover:bg-white/10 rounded-lg text-xs"
+												className="h-8 px-2.5 border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-foreground/80 dark:text-white/70 hover:text-foreground dark:hover:text-white hover:bg-muted dark:hover:bg-white/10 rounded-lg text-xs"
 												onClick={() => setPage((p) => p + 1)}
 												disabled={page >= Math.ceil(data.total / pageSize)}
 											>

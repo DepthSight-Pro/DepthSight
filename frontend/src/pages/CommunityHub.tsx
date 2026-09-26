@@ -1737,7 +1737,7 @@ const CommunityHub = () => {
 					<motion.h1
 						initial={{ y: 15, opacity: 0 }}
 						animate={{ y: 0, opacity: 1 }}
-						className="text-4xl md:text-5xl font-bold tracking-tight text-white"
+						className="text-4xl md:text-5xl font-bold tracking-tight text-foreground dark:text-white"
 					>
 						{t("community:title", "Discovery Hub")}
 					</motion.h1>
@@ -1745,7 +1745,7 @@ const CommunityHub = () => {
 						initial={{ y: 15, opacity: 0 }}
 						animate={{ y: 0, opacity: 1 }}
 						transition={{ delay: 0.1 }}
-						className="text-white/60 max-w-xl mx-auto text-sm md:text-base leading-relaxed"
+						className="text-muted-foreground dark:text-white/60 max-w-xl mx-auto text-sm md:text-base leading-relaxed"
 					>
 						{t("community:description")}
 					</motion.p>
@@ -1762,33 +1762,33 @@ const CommunityHub = () => {
 						onValueChange={setActiveTab}
 						className="w-full min-w-0"
 					>
-						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3 min-w-0 w-full">
+						<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 dark:border-white/10 pb-3 min-w-0 w-full">
 							<div className="w-full min-w-0 overflow-x-auto overflow-y-hidden touch-pan-x overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-								<TabsList className="inline-flex w-max bg-white/[0.04] border border-white/10 p-1 rounded-xl gap-1 h-auto">
+								<TabsList className="inline-flex w-max bg-black/[0.04] dark:bg-white/[0.04] border border-border/60 dark:border-white/10 p-1 rounded-xl gap-1 h-auto">
 									<TabsTrigger
 										value="verified"
-										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-card dark:data-[state=active]:bg-white/10 data-[state=active]:text-foreground dark:data-[state=active]:text-white text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white data-[state=active]:shadow-sm whitespace-nowrap shrink-0"
 									>
 										<Sparkles className="w-3.5 h-3.5 text-cyan" />
 										{t("community:tabs.verified", "Verified Templates")}
 									</TabsTrigger>
 									<TabsTrigger
 										value="community"
-										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-card dark:data-[state=active]:bg-white/10 data-[state=active]:text-foreground dark:data-[state=active]:text-white text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white data-[state=active]:shadow-sm whitespace-nowrap shrink-0"
 									>
 										<TrendingUp className="w-3.5 h-3.5 text-cyan" />
 										{t("community:tabs.community", "Trading Ideas")}
 									</TabsTrigger>
 									<TabsTrigger
 										value="discussion"
-										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-card dark:data-[state=active]:bg-white/10 data-[state=active]:text-foreground dark:data-[state=active]:text-white text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white data-[state=active]:shadow-sm whitespace-nowrap shrink-0"
 									>
 										<MessageSquare className="w-3.5 h-3.5 text-cyan" />
 										{t("community:tabs.discussion", "Discussions")}
 									</TabsTrigger>
 									<TabsTrigger
 										value="network"
-										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-white/10 data-[state=active]:text-white text-white/60 hover:text-white whitespace-nowrap shrink-0"
+										className="gap-2 text-xs md:text-sm rounded-lg data-[state=active]:bg-card dark:data-[state=active]:bg-white/10 data-[state=active]:text-foreground dark:data-[state=active]:text-white text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white data-[state=active]:shadow-sm whitespace-nowrap shrink-0"
 									>
 										<Network className="w-3.5 h-3.5 text-cyan" />
 										{t("community:tabs.network", "Network Status")}

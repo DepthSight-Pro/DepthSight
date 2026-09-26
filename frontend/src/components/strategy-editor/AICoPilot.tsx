@@ -45,8 +45,8 @@ export const AICoPilot: React.FC<AICoPilotProps> = ({
 				<div className="w-12 h-12 rounded-2xl bg-cyan/10 border border-cyan/30 flex items-center justify-center mx-auto mb-3 shadow-[0_0_20px_-4px_rgba(0,212,255,0.4)]">
 					<Sparkles className="w-6 h-6 text-cyan animate-pulse" />
 				</div>
-				<h2 className="text-xl font-bold text-white tracking-wide">{t("ai.title")}</h2>
-				<p className="text-xs text-white/60 mt-1 max-w-md mx-auto leading-relaxed">{t("ai.description")}</p>
+				<h2 className="text-xl font-bold text-foreground dark:text-white tracking-wide">{t("ai.title")}</h2>
+				<p className="text-xs text-muted-foreground dark:text-white/60 mt-1 max-w-md mx-auto leading-relaxed">{t("ai.description")}</p>
 			</div>
 
 			<div className="relative z-10">
@@ -54,7 +54,7 @@ export const AICoPilot: React.FC<AICoPilotProps> = ({
 					value={prompt}
 					onChange={(e) => setPrompt(e.target.value)}
 					placeholder={placeholder}
-					className="min-h-[110px] p-3.5 pr-44 bg-white/[0.03] border-white/10 text-white placeholder:text-white/30 text-xs rounded-xl focus-visible:ring-cyan/30 leading-relaxed resize-y"
+					className="min-h-[110px] p-3.5 pr-44 bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white placeholder:text-muted-foreground/60 text-xs rounded-xl focus-visible:ring-cyan/30 leading-relaxed resize-y"
 					disabled={isGenerating}
 					onKeyDown={(e) => {
 						if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -69,7 +69,7 @@ export const AICoPilot: React.FC<AICoPilotProps> = ({
 					className={cn(
 						"group relative flex h-8 items-center gap-1.5 overflow-hidden rounded-lg px-3.5 text-xs font-semibold text-white transition-all absolute bottom-3 right-3",
 						isGenerating || !prompt.trim()
-							? "opacity-40 cursor-not-allowed bg-white/10 text-white/40"
+							? "opacity-40 cursor-not-allowed bg-black/10 dark:bg-white/10 text-muted-foreground dark:text-white/40"
 							: "bg-gradient-to-r from-azure to-cyan shadow-[0_0_20px_-5px_rgba(0,212,255,0.85)] hover:shadow-[0_0_28px_-3px_rgba(0,212,255,1)] hover:brightness-110 cursor-pointer",
 					)}
 				>
@@ -85,10 +85,10 @@ export const AICoPilot: React.FC<AICoPilotProps> = ({
 				</button>
 			</div>
 
-			<p className="text-[11px] font-mono text-white/40 mt-2.5 text-center">
+			<p className="text-[11px] font-mono text-muted-foreground dark:text-white/40 mt-2.5 text-center">
 				{t("ai.shortcutHint")}
 			</p>
-			<p className="text-[10px] text-white/30 mt-2 text-center leading-tight max-w-lg mx-auto">
+			<p className="text-[10px] text-muted-foreground/75 dark:text-white/30 mt-2 text-center leading-tight max-w-lg mx-auto">
 				{t("ai.disclaimer")}
 			</p>
 		</div>

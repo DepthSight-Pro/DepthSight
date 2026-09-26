@@ -19,6 +19,7 @@ import {
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
 import { estimateTickSize } from "@/lib/utils";
+import { useChartTheme } from "@/lib/chartTheme";
 
 export interface KlineData {
 	time: number;
@@ -212,7 +213,25 @@ export const FoundationChart = ({
 	initialVisibleRange,
 	tickSize,
 }: FoundationChartProps) => {
+	const { colors: chartColors } = useChartTheme();
 	const chartContainerRef = useRef<HTMLDivElement>(null);
+	const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+
+	// Synchronize options when theme changes
+	useEffect(() => {
+		if (!chartRef.current) return;
+		chartRef.current.applyOptions({
+			layout: {
+				background: { type: ColorType.Solid, color: chartColors.background },
+				textColor: chartColors.textColor,
+			},
+			grid: {
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
+			},
+			timeScale: { borderColor: chartColors.borderColor },
+		});
+	}, [chartColors]);
 
 	useEffect(() => {
 		if (!chartContainerRef.current || !klines || klines.length === 0) return;
@@ -225,18 +244,19 @@ export const FoundationChart = ({
 			width: initialWidth,
 			height: initialHeight,
 			layout: {
-				background: { type: ColorType.Solid, color: "transparent" },
-				textColor: "#888888",
+				background: { type: ColorType.Solid, color: chartColors.background },
+				textColor: chartColors.textColor,
 			},
 			grid: {
-				vertLines: { color: "#333333" },
-				horzLines: { color: "#333333" },
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
 			},
 			timeScale: {
-				borderColor: "#333333",
+				borderColor: chartColors.borderColor,
 				timeVisible: true,
 			},
 		});
+		chartRef.current = chart;
 
 		const sortedKlines = [...klines].sort((a, b) => a.time - b.time);
 		const uniqueKlines = sortedKlines.filter(

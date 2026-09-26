@@ -64,12 +64,12 @@ const CustomEquityTooltip = ({
 	}
 
 	return (
-		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl">
-			<div className="text-[11px] font-medium text-white/60 mb-1">{formattedDate}</div>
+		<div className="rounded-xl border border-border dark:border-white/15 bg-card/95 dark:bg-[#0b0f17]/95 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl text-card-foreground">
+			<div className="text-[11px] font-medium text-muted-foreground dark:text-slate-300 mb-1">{formattedDate}</div>
 			<div className="flex items-center gap-2">
-				<span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
-				<span className="text-xs text-white/70">{tooltipLabelText}:</span>
-				<span className="text-sm font-semibold font-mono text-cyan-300">
+				<span className="w-2 h-2 rounded-full bg-cyan-500 dark:bg-cyan-400 shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
+				<span className="text-xs text-foreground/80 dark:text-slate-200">{tooltipLabelText}:</span>
+				<span className="text-sm font-semibold font-mono text-cyan-600 dark:text-cyan-300">
 					{equity.toLocaleString(currentLocale, {
 						style: "currency",
 						currency: "USD",

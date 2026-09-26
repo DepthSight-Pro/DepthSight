@@ -24,6 +24,10 @@
 	"loadedToEditor": "Configuration loaded into Strategy Editor.",
 	"plan": "Plan",
 	"logout": "Log out",
+	"theme": {
+		"switchToLight": "Switch to Light Mode",
+		"switchToDark": "Switch to Dark Mode"
+	},
 	"twoFactorMenu": {
 		"title": "2FA Security",
 		"active": "2FA Active",

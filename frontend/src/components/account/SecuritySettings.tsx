@@ -349,13 +349,13 @@ export const SecuritySettings: React.FC = () => {
 					{/* Body Content */}
 					{isTotpEnabled ? (
 						<div className="space-y-4 pt-1">
-							<div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between gap-4">
+							<div className="rounded-xl border border-border/80 dark:border-white/10 bg-muted/20 dark:bg-white/[0.02] p-4 flex items-center justify-between gap-4">
 								<div>
-									<div className="text-xs font-medium text-white/80">
+									<div className="text-xs font-medium text-foreground/90 dark:text-white/80">
 										{t("twoFactor.recoveryCodesCountLabel", "Available Backup Codes:")}
 									</div>
 									{remainingBackupCodes <= 2 && (
-										<p className="text-[11px] text-amber-400 flex items-center gap-1 mt-0.5">
+										<p className="text-[11px] text-amber-500 dark:text-amber-400 flex items-center gap-1 mt-0.5">
 											<AlertTriangle className="h-3 w-3" />
 											{t(
 												"twoFactor.lowCodesWarning",
@@ -369,8 +369,8 @@ export const SecuritySettings: React.FC = () => {
 										className={cn(
 											"font-mono text-sm font-bold px-2.5 py-0.5 rounded-lg border",
 											remainingBackupCodes > 2
-												? "border-white/10 bg-white/[0.04] text-white"
-												: "border-rose-500/30 bg-rose-500/10 text-rose-400",
+												? "border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.04] text-foreground dark:text-white"
+												: "border-rose-500/30 bg-rose-500/10 text-rose-500 dark:text-rose-400",
 										)}
 									>
 										{remainingBackupCodes} {t("twoFactor.remaining", "remaining")}
@@ -383,7 +383,7 @@ export const SecuritySettings: React.FC = () => {
 									type="button"
 									variant="outline"
 									onClick={() => setIsRegenerateOpen(true)}
-									className="rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white text-xs h-9 px-4 gap-2 transition-all"
+									className="rounded-xl border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] hover:bg-muted dark:hover:bg-white/[0.08] text-foreground dark:text-white text-xs h-9 px-4 gap-2 transition-all shadow-sm"
 								>
 									<RefreshCw className="h-3.5 w-3.5 text-cyan" />
 									{t("twoFactor.btnRegenerateCodes", "Regenerate Backup Codes")}
@@ -392,7 +392,7 @@ export const SecuritySettings: React.FC = () => {
 									type="button"
 									variant="destructive"
 									onClick={() => setIsDisableOpen(true)}
-									className="rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs h-9 px-4 transition-all"
+									className="rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 text-xs h-9 px-4 transition-all"
 								>
 									{t("twoFactor.btnDisable", "Disable 2FA")}
 								</Button>

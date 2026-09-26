@@ -375,12 +375,12 @@ export const LaunchTaskForm: React.FC = () => {
 	};
 
 	return (
-		<div className="rounded-2xl border border-white/10 glass shadow-xl overflow-hidden">
-			<div className="p-6 border-b border-white/5">
-				<h2 className="text-base font-bold text-white tracking-tight">
+		<div className="rounded-2xl border border-border/80 dark:border-white/10 glass shadow-xl overflow-hidden">
+			<div className="p-6 border-b border-border/60 dark:border-white/5">
+				<h2 className="text-base font-bold text-foreground dark:text-white tracking-tight">
 					{t("launchTask.title")}
 				</h2>
-				<p className="text-xs text-white/50 mt-1">
+				<p className="text-xs text-muted-foreground dark:text-white/50 mt-1">
 					{t("launchTask.description")}
 				</p>
 			</div>

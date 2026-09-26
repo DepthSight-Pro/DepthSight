@@ -260,10 +260,10 @@ export const StrategyCanvas = () => {
 						<Globe className="w-4 h-4 text-cyan" />
 					</div>
 					<div>
-						<h2 className="text-sm font-semibold tracking-wide text-white">
+						<h2 className="text-sm font-semibold tracking-wide text-foreground dark:text-white">
 							{t("canvas.stage1.title")}
 						</h2>
-						<p className="text-xs text-white/50">
+						<p className="text-xs text-muted-foreground dark:text-white/50">
 							{t("canvas.stage1.desc")}
 						</p>
 					</div>
@@ -274,7 +274,7 @@ export const StrategyCanvas = () => {
 						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isFiltersTarget
 							? "border-cyan/50 bg-cyan/10 shadow-lg shadow-cyan/10"
-							: "border-white/10 bg-white/[0.02]",
+							: "border-border/70 dark:border-white/10 bg-black/[0.015] dark:bg-white/[0.02]",
 						isOverFilters && isFiltersTarget && "ring-2 ring-cyan/50",
 					)}
 				>
@@ -290,7 +290,7 @@ export const StrategyCanvas = () => {
 							</AnimatedBlock>
 						))
 					) : (
-						<p className="text-center text-white/40 text-xs py-4 font-mono">
+						<p className="text-center text-muted-foreground dark:text-white/40 text-xs py-4 font-mono">
 							{t("canvas.dropZone.filters")}
 						</p>
 					)}
@@ -300,31 +300,31 @@ export const StrategyCanvas = () => {
 			<section>
 				<div className="flex items-center gap-3 mb-3">
 					<div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-						<LogIn className="w-4 h-4 text-amber-400" />
+						<LogIn className="w-4 h-4 text-amber-500 dark:text-amber-400" />
 					</div>
 					<div>
-						<h2 className="text-sm font-semibold tracking-wide text-white">
+						<h2 className="text-sm font-semibold tracking-wide text-foreground dark:text-white">
 							{t("canvas.stage2.title")}
 						</h2>
-						<p className="text-xs text-white/50">
+						<p className="text-xs text-muted-foreground dark:text-white/50">
 							{t("canvas.stage2.desc")}
 						</p>
 					</div>
 				</div>
-				<div className="rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-md p-4 mb-3">
+				<div className="rounded-xl border border-border/60 dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md p-4 mb-3">
 					<div className="grid grid-cols-2 gap-4">
 						<div>
-							<Label className="text-xs text-white/70">{t("canvas.triggerTypeLabel")}</Label>
+							<Label className="text-xs text-foreground/80 dark:text-white/70">{t("canvas.triggerTypeLabel")}</Label>
 							<Select
 								value={entryTrigger.type}
 								onValueChange={(
 									v: "on_candle_close" | "on_tick" | "on_condition_met",
 								) => setTrigger({ type: v })}
 							>
-								<SelectTrigger className="mt-1 bg-white/[0.03] border-white/10 text-xs">
+								<SelectTrigger className="mt-1 bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-xs">
 									<SelectValue />
 								</SelectTrigger>
-								<SelectContent className="bg-[#0c0d12] border-white/10 text-white">
+								<SelectContent className="bg-popover text-popover-foreground border-border">
 									<SelectItem value="on_candle_close">
 										{t("canvas.triggerTypeOnClose")}
 									</SelectItem>
@@ -341,7 +341,7 @@ export const StrategyCanvas = () => {
 							</Select>
 						</div>
 						<div>
-							<Label className="text-xs text-white/70">{t("canvas.timeframeLabel")}</Label>
+							<Label className="text-xs text-foreground/80 dark:text-white/70">{t("canvas.timeframeLabel")}</Label>
 							<Select
 								value={entryTrigger.timeframe}
 								onValueChange={(v) =>
@@ -350,10 +350,10 @@ export const StrategyCanvas = () => {
 									})
 								}
 							>
-								<SelectTrigger className="mt-1 bg-white/[0.03] border-white/10 text-xs">
+								<SelectTrigger className="mt-1 bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-xs">
 									<SelectValue />
 								</SelectTrigger>
-								<SelectContent className="bg-[#0c0d12] border-white/10 text-white">
+								<SelectContent className="bg-popover text-popover-foreground border-border">
 									<SelectItem value="1m">1m</SelectItem>
 									<SelectItem value="5m">5m</SelectItem>
 									<SelectItem value="15m">15m</SelectItem>
@@ -371,7 +371,7 @@ export const StrategyCanvas = () => {
 						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isEntryTarget
 							? "border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/10"
-							: "border-white/10 bg-white/[0.02]",
+							: "border-border/70 dark:border-white/10 bg-black/[0.015] dark:bg-white/[0.02]",
 						isOverEntry && isEntryTarget && "ring-2 ring-amber-500/50",
 					)}
 				>
@@ -393,7 +393,7 @@ export const StrategyCanvas = () => {
 							},
 						)
 					) : (
-						<p className="text-center text-white/40 text-xs py-4 font-mono">
+						<p className="text-center text-muted-foreground dark:text-white/40 text-xs py-4 font-mono">
 							{t("canvas.dropZone.conditions")}
 						</p>
 					)}
@@ -403,18 +403,18 @@ export const StrategyCanvas = () => {
 			<section>
 				<div className="flex items-center gap-3 mb-3">
 					<div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center">
-						<Rocket className="w-4 h-4 text-rose-400" />
+						<Rocket className="w-4 h-4 text-rose-500 dark:text-rose-400" />
 					</div>
 					<div>
-						<h2 className="text-sm font-semibold tracking-wide text-white">
+						<h2 className="text-sm font-semibold tracking-wide text-foreground dark:text-white">
 							{t("canvas.stage3.title")}
 						</h2>
-						<p className="text-xs text-white/50">
+						<p className="text-xs text-muted-foreground dark:text-white/50">
 							{t("canvas.stage3.desc")}
 						</p>
 					</div>
 				</div>
-				<div className="rounded-xl border border-white/10 bg-white/[0.02] backdrop-blur-md p-4">
+				<div className="rounded-xl border border-border/60 dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md p-4">
 					<InitializationEditor />
 				</div>
 			</section>
@@ -422,13 +422,13 @@ export const StrategyCanvas = () => {
 			<section>
 				<div className="flex items-center gap-3 mb-3">
 					<div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center">
-						<Shield className="w-4 h-4 text-purple-400" />
+						<Shield className="w-4 h-4 text-purple-500 dark:text-purple-400" />
 					</div>
 					<div>
-						<h2 className="text-sm font-semibold tracking-wide text-white">
+						<h2 className="text-sm font-semibold tracking-wide text-foreground dark:text-white">
 							{t("canvas.stage4.title")}
 						</h2>
-						<p className="text-xs text-white/50">
+						<p className="text-xs text-muted-foreground dark:text-white/50">
 							{t("canvas.stage4.desc")}
 						</p>
 					</div>
@@ -439,7 +439,7 @@ export const StrategyCanvas = () => {
 						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isManagementTarget
 							? "border-purple-500/50 bg-purple-500/10 shadow-lg shadow-purple-500/10"
-							: "border-white/10 bg-white/[0.02]",
+							: "border-border/70 dark:border-white/10 bg-black/[0.015] dark:bg-white/[0.02]",
 						isOverManagement && isManagementTarget && "ring-2 ring-purple-500/50",
 					)}
 				>

@@ -470,7 +470,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 			aria-label={t("ai_assistant.title")}
 			style={{ width: `min(${width}px, 100vw)`, maxWidth: "100vw" }}
 			className={cn(
-				"fixed right-0 top-12 bottom-0 sm:top-14 z-50 flex flex-col gap-0 border-l border-t border-white/10 bg-[#0b0e14]/85 backdrop-blur-xl shadow-2xl rounded-tl-2xl animate-in fade-in-0 slide-in-from-right duration-300",
+				"fixed right-0 top-12 bottom-0 sm:top-14 z-50 flex flex-col gap-0 border-l border-t border-border/70 dark:border-white/10 bg-card/95 dark:bg-[#0b0e14]/90 backdrop-blur-2xl shadow-2xl rounded-tl-2xl animate-in fade-in-0 slide-in-from-right duration-300",
 				isDraggingImage && "ring-2 ring-primary ring-inset",
 			)}
 				onPaste={handlePaste}
@@ -498,7 +498,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 					className="absolute top-0 left-0 h-full w-2 cursor-ew-resize hidden sm:block"
 					title={t("ai_assistant.resizeHandleTitle")}
 				/>
-				<div className="px-3 sm:px-4 py-2.5 border-b border-white/5 shrink-0">
+				<div className="px-3 sm:px-4 py-2.5 border-b border-border/50 dark:border-white/5 shrink-0">
 					<div className="flex items-center gap-1.5 sm:gap-2">
 						<span className="sr-only">{t("ai_assistant.title")}</span>
 						<Segmented<"chat" | "agent">
@@ -523,7 +523,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 							type="button"
 							onClick={openMcpSettings}
 							title={t("ai_assistant.mcpSettings", "MCP settings")}
-							className="flex h-7 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-[11px] font-medium text-white/60 transition-all hover:border-cyan/40 hover:text-cyan"
+							className="flex h-7 items-center gap-1.5 rounded-lg border border-border/60 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] px-2 text-[11px] font-medium text-muted-foreground dark:text-white/60 transition-all hover:border-cyan/40 hover:text-cyan"
 						>
 							<Blocks size={13} />
 							<span className="hidden sm:inline">
@@ -534,7 +534,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 							type="button"
 							onClick={onClose}
 							aria-label="Close"
-							className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white"
+							className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground dark:text-white/40 transition-colors hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground dark:hover:text-white"
 						>
 							<X size={15} />
 						</button>
@@ -600,7 +600,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 														"rounded-lg px-4 py-2 max-w-[90%] border",
 														msg.role === "user"
 															? "bg-primary text-primary-foreground border-transparent"
-															: "bg-white/[0.04] border-white/5",
+															: "bg-black/[0.03] dark:bg-white/[0.04] border-border/60 dark:border-white/5 text-foreground",
 													)}
 												>
 													{msg.image_base64 && (
@@ -659,12 +659,12 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 										{/* Show 'Open in Editor' button instead of JSON */}
 										{hasStrategyJson && (
 											<div className="flex justify-start">
-												<div className="rounded-lg px-4 py-2 bg-white/[0.04] border border-white/5">
-													<p className="text-sm mb-2">
+												<div className="rounded-lg px-4 py-2 bg-black/[0.03] dark:bg-white/[0.04] border border-border/60 dark:border-white/5">
+													<p className="text-sm mb-2 text-foreground">
 														{t(
 															"ai_assistant.strategyGenerated",
 															"Strategy configuration generated successfully!",
-												)	}
+														)}
 													</p>
 													<Button onClick={() => handleLoadStrategy(strategyJson)}>
 														<Rocket className="w-4 h-4 mr-2" />
@@ -681,15 +681,15 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 									<div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground font-bold text-sm translate-y-px">
 										DS
 									</div>
-									<div className="rounded-lg px-4 py-2 bg-white/[0.04] border border-white/5 flex items-center space-x-2">
-										<Loader2 className="h-5 w-5 animate-spin" />
+									<div className="rounded-lg px-4 py-2 bg-black/[0.03] dark:bg-white/[0.04] border border-border/60 dark:border-white/5 flex items-center space-x-2 text-foreground">
+										<Loader2 className="h-5 w-5 animate-spin text-cyan" />
 										<span>{t("ai_assistant.analyzing")}</span>
 									</div>
 								</div>
 							)}
 						</div>
 						{/* Bottom Chat Input Form */}
-						<div className="p-3 sm:p-4 border-t border-white/5 flex flex-col space-y-2 shrink-0">
+						<div className="p-3 sm:p-4 border-t border-border/50 dark:border-white/5 flex flex-col space-y-2 shrink-0">
 							{/* Image Preview (attached above textarea) */}
 							{selectedImage && (
 								<div className="flex items-center gap-2 border border-border rounded-xl p-2 bg-muted/40 max-w-fit animate-in fade-in">
@@ -720,7 +720,7 @@ const AiCopilotChatWindow: React.FC<AiCopilotChatWindowProps> = ({
 							)}
 
 							{/* Classic Multi-line Chat Textarea */}
-							<div className="relative rounded-2xl border border-white/10 bg-white/[0.03] focus-within:border-cyan/50 focus-within:ring-1 focus-within:ring-cyan/20 shadow-lg transition-all">
+							<div className="relative rounded-2xl border border-border/70 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] focus-within:border-cyan/50 focus-within:ring-1 focus-within:ring-cyan/20 shadow-lg transition-all">
 								<textarea
 									id="copilot-prompt-input"
 									value={input}

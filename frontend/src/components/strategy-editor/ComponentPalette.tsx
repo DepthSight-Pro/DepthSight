@@ -96,11 +96,11 @@ export const DraggablePaletteItem: React.FC<DraggablePaletteItemProps> = ({
 				: { ...listeners, ...attributes })}
 			data-tutorial-id={dataTutorialId}
 			className={cn(
-				"cursor-grab p-3 transition-all duration-200 relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-md",
-				"hover:border-white/20 hover:bg-white/[0.06] hover:shadow-lg hover:-translate-y-0.5",
+				"cursor-grab p-3 transition-all duration-200 relative overflow-hidden rounded-xl border border-border/70 dark:border-white/10 bg-card/75 dark:bg-white/[0.03] backdrop-blur-md",
+				"hover:border-border dark:hover:border-white/20 hover:bg-card dark:hover:bg-white/[0.06] hover:shadow-lg hover:-translate-y-0.5",
 				isDragging ? "opacity-50 cursor-grabbing border-cyan/40 bg-cyan/10" : "",
 				isLocked ? "opacity-75 cursor-not-allowed grayscale-[0.5]" : "",
-				isPro ? "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/40" : "",
+				isPro ? "border-amber-500/40 bg-amber-500/[0.05] dark:bg-amber-500/5 hover:border-amber-500/60" : "",
 			)}
 		>
 			{isPro && (
@@ -112,17 +112,17 @@ export const DraggablePaletteItem: React.FC<DraggablePaletteItemProps> = ({
 				<div
 					className={cn(
 						"mt-0.5 text-cyan",
-						isPro ? "text-amber-400" : "text-cyan",
+						isPro ? "text-amber-500 dark:text-amber-400" : "text-cyan",
 					)}
 				>
 					{icon}
 				</div>
 				<div className="flex-grow min-w-0">
 					<div className="flex items-center justify-between">
-						<h4 className="font-medium text-xs text-white/90 tracking-wide">{title}</h4>
-						<InfoTooltip blockType={type} className="-mr-2 -mt-2 text-white/40 hover:text-white/80" />
+						<h4 className="font-medium text-xs text-foreground/90 dark:text-white/90 tracking-wide">{title}</h4>
+						<InfoTooltip blockType={type} className="-mr-2 -mt-2 text-muted-foreground dark:text-white/40 hover:text-foreground dark:hover:text-white/80" />
 					</div>
-					<p className="text-[11px] text-white/40 line-clamp-2 mt-0.5 leading-relaxed">
+					<p className="text-[11px] text-muted-foreground dark:text-white/40 line-clamp-2 mt-0.5 leading-relaxed">
 						{description}
 					</p>
 				</div>

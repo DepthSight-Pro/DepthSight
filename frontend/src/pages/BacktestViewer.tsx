@@ -373,7 +373,7 @@ const BacktestViewerPage = () => {
 										</span>
 									</button>
 								</TooltipTrigger>
-								<TooltipContent className="bg-[#0b0f17] border-white/10 text-white/80 text-xs">
+								<TooltipContent className="bg-popover dark:bg-[#0b0f17] border-border dark:border-white/10 text-popover-foreground dark:text-white/80 text-xs">
 									<p>
 										{t(
 											"backtestViewer.analyzeWithAITooltip",

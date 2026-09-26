@@ -59,6 +59,7 @@ import { fetchExchangeKlinesWithFallback } from "@/services/exchangeKlineService
 import { exchangeLabels, normalizeExchangeKey } from "@/lib/exchanges";
 import type { PositionData } from "@/types/api";
 import { useConfig } from "@/lib/api";
+import { useChartTheme } from "@/lib/chartTheme";
 
 interface PositionWithExchange extends PositionData {
 	exchange_id?: string | null;
@@ -550,6 +551,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 }) => {
 	const position = rawPosition as PositionWithExchange;
 	const { t } = useTranslation(["positions", "common", "analytics"]);
+	const { colors: chartColors } = useChartTheme();
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const indicatorContainerRef = useRef<HTMLDivElement>(null);
 	const chartRef = useRef<IChartApi | null>(null);
@@ -2499,6 +2501,23 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 		syncOverlayRef.current = syncOverlay;
 	}, [syncOverlay]);
 
+	// Synchronize chart layout options when theme changes
+	useEffect(() => {
+		if (!chartRef.current) return;
+		chartRef.current.applyOptions({
+			layout: {
+				background: { type: ColorType.Solid, color: chartColors.background },
+				textColor: chartColors.textColor,
+			},
+			grid: {
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
+			},
+			timeScale: { borderColor: chartColors.borderColor },
+			rightPriceScale: { borderColor: chartColors.borderColor },
+		});
+	}, [chartColors]);
+
 	// Initial Chart Setup
 	useEffect(() => {
 		if (!chartContainerRef.current || !isOpen) return;
@@ -2511,23 +2530,23 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 			width: initialWidth,
 			height: initialHeight,
 			layout: {
-				textColor: "rgba(255, 255, 255, 0.45)",
-				background: { type: ColorType.Solid, color: "#07080b" },
+				textColor: chartColors.textColor,
+				background: { type: ColorType.Solid, color: chartColors.background },
 			},
 			grid: {
-				vertLines: { color: "rgba(255, 255, 255, 0.03)" },
-				horzLines: { color: "rgba(255, 255, 255, 0.03)" },
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
 			},
 			crosshair: { mode: CrosshairMode.Normal },
 			timeScale: {
-				borderColor: "rgba(255, 255, 255, 0.08)",
+				borderColor: chartColors.borderColor,
 				timeVisible: true,
 				secondsVisible: false,
 				rightOffset: 12,
 				shiftVisibleRangeOnNewBar: true,
 			},
 			rightPriceScale: {
-				borderColor: "rgba(255, 255, 255, 0.08)",
+				borderColor: chartColors.borderColor,
 				minimumWidth: 65,
 			},
 			handleScroll: {
@@ -2763,22 +2782,22 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 					width: initialIndWidth,
 					height: initialIndHeight,
 					layout: {
-						textColor: "rgba(255, 255, 255, 0.45)",
-						background: { type: ColorType.Solid, color: "#07080b" },
+						textColor: chartColors.textColor,
+						background: { type: ColorType.Solid, color: chartColors.background },
 					},
 					grid: {
-						vertLines: { color: "rgba(255, 255, 255, 0.03)" },
-						horzLines: { color: "rgba(255, 255, 255, 0.03)" },
+						vertLines: { color: chartColors.gridColor },
+						horzLines: { color: chartColors.gridColor },
 					},
 					timeScale: {
 						visible: true,
 						timeVisible: true,
 						secondsVisible: false,
-						borderColor: "rgba(255, 255, 255, 0.08)",
+						borderColor: chartColors.borderColor,
 						rightOffset: 12,
 						shiftVisibleRangeOnNewBar: true,
 					},
-					rightPriceScale: { borderColor: "rgba(255, 255, 255, 0.08)", minimumWidth: 65 },
+					rightPriceScale: { borderColor: chartColors.borderColor, minimumWidth: 65 },
 				});
 
 				resizeObserverInd = new ResizeObserver((entries) => {
@@ -3108,43 +3127,43 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	if (!isOpen) return null;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-0 sm:p-4">
-			<div className="glass-strong relative w-full max-w-7xl rounded-none sm:rounded-3xl border-0 sm:border border-white/10 shadow-[0_0_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[100dvh] max-h-none sm:h-[85vh] sm:max-h-[960px] animate-fade-up">
+		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/85 backdrop-blur-md p-0 sm:p-4">
+			<div className="glass-strong relative w-full max-w-7xl rounded-none sm:rounded-3xl border-0 sm:border border-border/80 dark:border-white/10 shadow-[0_0_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col h-[100dvh] max-h-none sm:h-[85vh] sm:max-h-[960px] animate-fade-up bg-card/95 dark:bg-zinc-950/95 text-card-foreground">
 				{/* Top ambient glow */}
 				<div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[500px] h-32 bg-cyan/10 blur-3xl rounded-full" />
 
 				{/* Header */}
-				<div className="relative flex flex-wrap items-center justify-between gap-y-2 px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-white/[0.08] bg-white/[0.02]">
+				<div className="relative flex flex-wrap items-center justify-between gap-y-2 px-3 sm:px-6 py-2.5 sm:py-3.5 border-b border-border/60 dark:border-white/[0.08] bg-muted/20 dark:bg-white/[0.02]">
 					<div className="flex items-center gap-2 sm:gap-4 flex-wrap min-w-0">
 						<div className="flex items-center gap-2 min-w-0">
-							<h2 className="text-base sm:text-xl font-bold font-mono tracking-tight text-white flex items-center gap-2 truncate">
+							<h2 className="text-base sm:text-xl font-bold font-mono tracking-tight text-foreground dark:text-white flex items-center gap-2 truncate">
 								{position.symbol}
 							</h2>
 							<span
 								className={cn(
 									"text-xs px-2.5 py-0.5 rounded-full font-semibold border shadow-sm",
 									position.direction === "LONG"
-										? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shadow-[0_0_12px_rgba(16,224,160,0.25)]"
-										: "bg-rose-500/15 text-rose-400 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.25)]",
+										? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 shadow-[0_0_12px_rgba(16,224,160,0.25)]"
+										: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.25)]",
 								)}
 							>
 								{position.direction}
 							</span>
 							<span
-								className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md bg-white/[0.04] text-white/70 border border-white/10 font-mono"
+								className="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md bg-muted/60 dark:bg-white/[0.04] text-muted-foreground dark:text-white/70 border border-border dark:border-white/10 font-mono"
 								title={`Klines source: ${klineSource}${klineSource !== exchange ? ` (requested ${exchange}, fallback)` : ""}`}
 							>
 								<ExchangeBadge exchange={displayExchange ?? venueRaw} size="xs" />
 								{displayLabel}
 								{klineSource !== exchange ? (
-									<span className="text-amber-400/80" title={`Klines source: ${klineSource} (requested ${exchange}, fallback)`}>
+									<span className="text-amber-500 dark:text-amber-400/80" title={`Klines source: ${klineSource} (requested ${exchange}, fallback)`}>
 										· fallback
 									</span>
 								) : null}
 							</span>
 							{normalizedExecutions.length <= 1 && (
 								<span
-									className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-amber-400/10 text-amber-400 border border-amber-400/25 font-mono"
+									className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25 font-mono"
 									title="Showing position entry point and SL/TP rails"
 								>
 									SL/TP active
@@ -3153,7 +3172,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 						</div>
 
 						{/* Timeframe Switcher — its own scrollable row on phones */}
-						<div className="order-last w-full sm:order-none sm:w-auto inline-flex items-center rounded-lg bg-white/[0.04] border border-white/10 p-0.5 gap-0.5 overflow-x-auto no-scrollbar max-w-full">
+						<div className="order-last w-full sm:order-none sm:w-auto inline-flex items-center rounded-lg bg-muted/50 dark:bg-white/[0.04] border border-border dark:border-white/10 p-0.5 gap-0.5 overflow-x-auto no-scrollbar max-w-full">
 							{KLINE_INTERVALS.map((tf) => (
 								<button
 									key={tf.value}
@@ -3162,8 +3181,8 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 									className={cn(
 										"shrink-0 px-2.5 py-1 text-xs font-medium rounded-md transition-all",
 										selectedInterval === tf.value
-											? "bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] border border-white/15"
-											: "text-white/50 hover:text-white/80 hover:bg-white/[0.03]",
+											? "bg-card dark:bg-white/[0.12] text-foreground dark:text-white shadow-sm border border-border dark:border-white/15"
+											: "text-muted-foreground hover:text-foreground hover:bg-muted/40 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/[0.03]",
 									)}
 								>
 									{tf.label}
@@ -3172,7 +3191,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 						</div>
 
 						{hasChanges && (
-							<span className="text-xs text-amber-400 flex items-center gap-1.5 animate-pulse bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-md font-mono">
+							<span className="text-xs text-amber-500 dark:text-amber-400 flex items-center gap-1.5 animate-pulse bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md font-mono">
 								<AlertTriangle size={12} />
 								Unsaved Changes
 							</span>
@@ -3188,7 +3207,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 								"inline-flex items-center justify-center h-8 w-8 rounded-lg border transition-all",
 								showIndicators
 									? "bg-cyan/15 text-cyan border-cyan/40 shadow-[0_0_14px_rgba(0,212,255,0.35)]"
-									: "border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07]",
+									: "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60 dark:hover:text-white dark:hover:bg-white/[0.07]",
 								foundationLoading && "opacity-80 cursor-wait",
 							)}
 							title={`${t("analytics:showIndicators", "Show Indicators")} (${usedFoundations.length})`}
@@ -3202,7 +3221,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 						<button
 							type="button"
 							onClick={() => loadData()}
-							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/10 bg-white/[0.03] text-white/60 hover:text-white hover:bg-white/[0.07] transition-all"
+							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60 dark:hover:text-white dark:hover:bg-white/[0.07] transition-all"
 							title="Refresh Data"
 						>
 							<RefreshCw
@@ -3217,7 +3236,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 								"inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium transition-all active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none",
 								hasChanges
 									? "bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_20px_-4px_rgba(0,212,255,0.7)] hover:brightness-110"
-									: "border border-white/10 bg-white/[0.03] text-white/40",
+									: "border border-border bg-card text-muted-foreground dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40",
 							)}
 						>
 							{isSaving ? (
@@ -3230,7 +3249,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 						<button
 							type="button"
 							onClick={onClose}
-							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-transparent hover:border-white/10 text-white/40 hover:text-white hover:bg-white/[0.06] transition-all ml-1"
+							className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-transparent hover:border-border text-muted-foreground hover:text-foreground hover:bg-muted dark:hover:border-white/10 dark:text-white/40 dark:hover:text-white dark:hover:bg-white/[0.06] transition-all ml-1"
 							aria-label="Close"
 						>
 							<X className="w-4 h-4" />
@@ -3352,7 +3371,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 							{/* Right Column: Chart */}
 							<div
 								className={cn(
-									"flex-1 min-w-0 min-h-0 relative bg-zinc-950 flex flex-col overflow-hidden",
+									"flex-1 min-w-0 min-h-0 relative bg-background dark:bg-zinc-950 flex flex-col overflow-hidden",
 									isRulerActive ? "cursor-crosshair" : "",
 								)}
 								onMouseDown={handleMouseDown}
@@ -3361,7 +3380,7 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 								onMouseLeave={handleMouseUp}
 							>
 								{loading && (
-									<div className="absolute inset-0 flex items-center justify-center z-20 bg-black/50">
+									<div className="absolute inset-0 flex items-center justify-center z-20 bg-background/50 dark:bg-black/50">
 										<RefreshCw className="w-8 h-8 animate-spin text-primary" />
 									</div>
 								)}
@@ -3386,15 +3405,15 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 									Object.keys(foundationData.visualizations.subcharts || {}).length > 0 && (
 										<div
 											ref={indicatorContainerRef}
-											className="w-full border-t border-border bg-black/20 h-[140px] sm:h-[180px] shrink-0"
+											className="w-full border-t border-border bg-muted/30 dark:bg-black/20 h-[140px] sm:h-[180px] shrink-0"
 										/>
 									)}
 
 								{/* Instructions Overlay (pointer devices only) */}
-								<div className="hidden sm:flex absolute bottom-4 left-4 z-10 glass-strong p-3 rounded-xl border border-white/10 text-xs text-white/70 pointer-events-none flex-col gap-1.5 shadow-2xl backdrop-blur-xl">
+								<div className="hidden sm:flex absolute bottom-4 left-4 z-10 glass-strong p-3 rounded-xl border border-border dark:border-white/10 text-xs text-muted-foreground dark:text-white/70 pointer-events-none flex-col gap-1.5 shadow-2xl backdrop-blur-xl">
 									<div className="flex items-center gap-2">
-										<div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
-										<span className="text-white font-medium font-mono text-[11px]">
+										<div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
+										<span className="text-foreground dark:text-white font-medium font-mono text-[11px]">
 											Live · Update:{" "}
 											{klines.length > 0
 												? format(
@@ -3404,14 +3423,14 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 												: "--:--:--"}
 										</span>
 									</div>
-									<div className="h-px bg-white/10 my-0.5" />
-									<span className="text-[11px] text-white/60">
+									<div className="h-px bg-border dark:bg-white/10 my-0.5" />
+									<span className="text-[11px] text-muted-foreground dark:text-white/60">
 										Drag the{" "}
-										<span className="text-emerald-400 font-semibold">Green (TP)</span>{" "}
-										and <span className="text-rose-400 font-semibold">Red (SL)</span>{" "}
+										<span className="text-emerald-500 dark:text-emerald-400 font-semibold">Green (TP)</span>{" "}
+										and <span className="text-rose-500 dark:text-rose-400 font-semibold">Red (SL)</span>{" "}
 										lines to adjust.
 									</span>
-									<span className="text-[10px] text-white/40 font-mono">
+									<span className="text-[10px] text-muted-foreground/80 dark:text-white/40 font-mono">
 										📏 Shift+Click (or Middle Click) for ruler
 									</span>
 								</div>
@@ -3421,56 +3440,56 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 				})()}
 
 				{/* Footer / Current Details */}
-				<div className="relative p-2.5 sm:p-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:pb-4 border-t border-white/[0.08] bg-white/[0.015] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 text-xs">
-					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
-						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">
+				<div className="relative p-2.5 sm:p-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:pb-4 border-t border-border/60 dark:border-white/[0.08] bg-muted/20 dark:bg-white/[0.015] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 text-xs">
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-border/60 dark:border-white/5 flex flex-col justify-between">
+						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground dark:text-white/40">
 							Entry Price
 						</span>
-						<span className="font-mono text-sm sm:text-base font-semibold text-white/90 tabular mt-1">
+						<span className="font-mono text-sm sm:text-base font-semibold text-foreground/90 dark:text-white/90 tabular mt-1">
 							${position.entry_price ? position.entry_price.toLocaleString("en-US", { minimumFractionDigits: position.entry_price < 1 ? 4 : 2 }) : "—"}
 						</span>
 					</div>
-					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
-						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan/70 flex items-center gap-1.5">
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-border/60 dark:border-white/5 flex flex-col justify-between">
+						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-600 dark:text-cyan/70 flex items-center gap-1.5">
 							Current Price
 							{isLive && (
-								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live price" />
+								<span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" title="Live price" />
 							)}
 						</span>
-						<span className="font-mono text-sm sm:text-base font-semibold text-cyan tabular mt-1">
+						<span className="font-mono text-sm sm:text-base font-semibold text-cyan-600 dark:text-cyan tabular mt-1">
 							${effectiveMark ? effectiveMark.toLocaleString("en-US", { minimumFractionDigits: effectiveMark < 1 ? 4 : 2 }) : "—"}
 						</span>
 					</div>
-					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
-						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40 flex items-center gap-1.5">
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-border/60 dark:border-white/5 flex flex-col justify-between">
+						<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground dark:text-white/40 flex items-center gap-1.5">
 							P&amp;L
 							{isLive && (
-								<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live PnL" />
+								<span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" title="Live PnL" />
 							)}
 						</span>
 						<span
 							className={cn(
 								"font-mono text-sm sm:text-base font-semibold tabular mt-1",
-								livePnl >= 0 ? "text-emerald-400" : "text-rose-400",
+								livePnl >= 0 ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 							)}
 						>
 							{`${livePnl >= 0 ? "+" : ""}$${livePnl.toFixed(2)}`}
 						</span>
 					</div>
-					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-border/60 dark:border-white/5 flex flex-col justify-between">
 						<div className="flex items-center justify-between">
-							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-400/80">
+							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-500 dark:text-rose-400/80">
 								Stop Loss
 							</span>
 							{slPrice !== position.stop_loss && (
-								<span className="text-[9px] text-amber-400 font-mono font-medium">EDITED</span>
+								<span className="text-[9px] text-amber-500 dark:text-amber-400 font-mono font-medium">EDITED</span>
 							)}
 						</div>
 						<span
 							className={cn(
 								"font-mono text-sm sm:text-base font-semibold tabular mt-1",
-								slPrice ? "text-rose-400" : "text-white/30",
-								slPrice !== position.stop_loss && "text-amber-400",
+								slPrice ? "text-rose-500 dark:text-rose-400" : "text-muted-foreground/40 dark:text-white/30",
+								slPrice !== position.stop_loss && "text-amber-500 dark:text-amber-400",
 							)}
 						>
 							{slPrice
@@ -3478,20 +3497,20 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 								: "None"}
 						</span>
 					</div>
-					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-white/5 flex flex-col justify-between">
+					<div className="glass rounded-xl p-2.5 sm:px-3.5 sm:py-2.5 border border-border/60 dark:border-white/5 flex flex-col justify-between">
 						<div className="flex items-center justify-between">
-							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-400/80">
+							<span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-500 dark:text-emerald-400/80">
 								Take Profit
 							</span>
 							{tpPrice !== position.take_profit && (
-								<span className="text-[9px] text-amber-400 font-mono font-medium">EDITED</span>
+								<span className="text-[9px] text-amber-500 dark:text-amber-400 font-mono font-medium">EDITED</span>
 							)}
 						</div>
 						<span
 							className={cn(
 								"font-mono text-sm sm:text-base font-semibold tabular mt-1",
-								tpPrice ? "text-emerald-400" : "text-white/30",
-								tpPrice !== position.take_profit && "text-amber-400",
+								tpPrice ? "text-emerald-500 dark:text-emerald-400" : "text-muted-foreground/40 dark:text-white/30",
+								tpPrice !== position.take_profit && "text-amber-500 dark:text-amber-400",
 							)}
 						>
 							{tpPrice

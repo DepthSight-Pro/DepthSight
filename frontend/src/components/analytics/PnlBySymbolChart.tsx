@@ -30,11 +30,11 @@ const CustomSymbolTooltip = ({ active, payload }: CustomSymbolTooltipProps) => {
 	const isProfit = netPnl >= 0;
 
 	return (
-		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
-			<div className="text-[11px] font-semibold text-white/70 mb-1">{data.symbol}</div>
+		<div className="rounded-xl border border-border dark:border-white/15 bg-card/95 dark:bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono text-popover-foreground">
+			<div className="text-[11px] font-semibold text-muted-foreground dark:text-white/70 mb-1">{data.symbol}</div>
 			<div className="flex items-center gap-2 text-xs">
-				<span className="text-white/50">Net PnL:</span>
-				<span className={`font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+				<span className="text-muted-foreground dark:text-white/50">Net PnL:</span>
+				<span className={`font-bold ${isProfit ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400"}`}>
 					{isProfit ? "+" : ""}${netPnl.toFixed(2)}
 				</span>
 			</div>

@@ -20,6 +20,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1104,9 +1105,9 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+						<Card className="rounded-xl border border-border dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md">
 							<CardHeader className="p-4 pb-2">
-								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-foreground/90 dark:text-white/90 font-mono">
 									{t("configPanel.deployTitle", "Deployment")}
 								</CardTitle>
 							</CardHeader>
@@ -1118,7 +1119,7 @@ export const ConfigAndLaunchPanel = memo(
 										}
 										onValueChange={(v) => setSelectedApiKeyId(Number(v))}
 									>
-										<SelectTrigger className="bg-white/[0.03] border-white/10 text-xs">
+										<SelectTrigger className="bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white text-xs">
 											<SelectValue
 												placeholder={t(
 													"configPanel.selectAccountPlaceholder",
@@ -1126,10 +1127,13 @@ export const ConfigAndLaunchPanel = memo(
 												)}
 											/>
 										</SelectTrigger>
-										<SelectContent className="bg-[#0c0d12] border-white/10 text-white">
+										<SelectContent className="bg-popover dark:bg-[#0c0d12] border-border dark:border-white/10 text-popover-foreground dark:text-white">
 											{activeApiKeys.map((k) => (
-												<SelectItem key={k.id} value={String(k.id) as string}>
-													{k.name}
+												<SelectItem key={k.id} value={String(k.id) as string} className="text-xs">
+													<span className="flex items-center gap-2">
+														<ExchangeBadge exchange={k.exchange} size="xs" />
+														<span>{k.name}</span>
+													</span>
 												</SelectItem>
 											))}
 										</SelectContent>

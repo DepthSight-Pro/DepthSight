@@ -33,11 +33,11 @@ const CustomAssetTooltip = ({ active, payload }: CustomAssetTooltipProps) => {
 	const isProfit = pnl >= 0;
 
 	return (
-		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
-			<div className="text-[11px] font-semibold text-white/70 mb-1">{data.ticker}</div>
+		<div className="rounded-xl border border-border dark:border-white/15 bg-card/95 dark:bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono text-popover-foreground">
+			<div className="text-[11px] font-semibold text-muted-foreground dark:text-white/70 mb-1">{data.ticker}</div>
 			<div className="flex items-center gap-2 text-xs">
-				<span className="text-white/50">PnL:</span>
-				<span className={`font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+				<span className="text-muted-foreground dark:text-white/50">PnL:</span>
+				<span className={`font-bold ${isProfit ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400"}`}>
 					{isProfit ? "+" : ""}${pnl.toFixed(2)}
 				</span>
 			</div>
@@ -89,12 +89,12 @@ export const InteractiveAssetChart: React.FC<InteractiveAssetChartProps> = ({
 
 	return (
 		<div className="glass relative rounded-2xl border border-white/10 p-5 shadow-2xl backdrop-blur-xl animate-fade-up">
-			<div className="flex items-center justify-between pb-3 mb-2 border-b border-white/5">
-				<div className="flex items-center gap-2 text-[13px] font-semibold text-white/90">
+			<div className="flex items-center justify-between pb-3 mb-2 border-b border-border/50 dark:border-white/5">
+				<div className="flex items-center gap-2 text-[13px] font-semibold text-foreground dark:text-white/90">
 					<BarChart3 className="w-4 h-4 text-cyan" />
 					{t("assetPerformance", "PnL by assets")}
 				</div>
-				<div className="flex items-center gap-1 text-[9px] text-cyan/80 font-mono font-bold uppercase tracking-wider bg-cyan/10 px-2 py-0.5 rounded-md border border-cyan/20">
+				<div className="flex items-center gap-1 text-[9px] text-cyan-700 dark:text-cyan/80 font-mono font-bold uppercase tracking-wider bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">
 					<MousePointerClick className="w-3 h-3" />
 					<span>{t("toggleCoins", "Toggle Coins")}</span>
 				</div>

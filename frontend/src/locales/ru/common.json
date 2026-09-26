@@ -24,6 +24,10 @@
 	"loadedToEditor": "Конфигурация загружена в редактор стратегий.",
 	"plan": "Тариф",
 	"logout": "Выйти",
+	"theme": {
+		"switchToLight": "Переключить на светлую тему",
+		"switchToDark": "Переключить на тёмную тему"
+	},
 	"twoFactorMenu": {
 		"title": "2FA Защита",
 		"active": "2FA включена",

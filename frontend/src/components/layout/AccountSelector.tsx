@@ -199,35 +199,35 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 						<Wallet size={11} />
 					</div>
 					<div className="hidden sm:block leading-none pr-0.5">
-						<div className="text-[11.5px] font-semibold text-white">
+						<div className="text-[11.5px] font-semibold text-foreground">
 							{t("common:selectAccount", "Connect Exchange")}
 						</div>
-						<div className="mt-0.5 text-[9.5px] text-white/40 font-mono">
+						<div className="mt-0.5 text-[9.5px] text-muted-foreground font-mono">
 							0 connected
 						</div>
 					</div>
 					<ChevronDown
 						size={13}
 						className={cn(
-							"text-white/40 transition-transform duration-200 shrink-0",
-							isOpen && "rotate-180 text-white/80",
+							"text-muted-foreground transition-transform duration-200 shrink-0",
+							isOpen && "rotate-180 text-foreground",
 						)}
 					/>
 				</button>
 
 				{isOpen && (
-					<div className="absolute right-0 top-10 z-50 w-[300px] rounded-xl border border-white/10 bg-obsidian/95 p-3 shadow-2xl backdrop-blur-2xl animate-fade-up">
-						<div className="flex items-center gap-2 pb-2 border-b border-white/5 text-[10px] uppercase font-semibold tracking-[0.16em] text-white/35">
+					<div className="absolute right-0 top-10 z-50 w-[300px] rounded-xl border border-border bg-popover/95 p-3 shadow-2xl backdrop-blur-2xl animate-fade-up text-popover-foreground">
+						<div className="flex items-center gap-2 pb-2 border-b border-border/50 text-[10px] uppercase font-semibold tracking-[0.16em] text-muted-foreground">
 							<span>Exchange Accounts</span>
 						</div>
 						<div className="py-4 text-center space-y-2">
-							<div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] border border-white/10 text-white/50">
+							<div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-black/[0.04] dark:bg-white/[0.04] border border-border text-muted-foreground">
 								<Wallet size={16} />
 							</div>
-							<div className="text-xs font-medium text-white/90">
+							<div className="text-xs font-medium text-foreground">
 								No exchange accounts connected
 							</div>
-							<p className="text-[11px] text-white/40 leading-relaxed max-w-[240px] mx-auto">
+							<p className="text-[11px] text-muted-foreground leading-relaxed max-w-[240px] mx-auto">
 								Connect your Binance, Bybit, OKX, or Bitget API keys to trade and view live balances.
 							</p>
 						</div>
@@ -255,8 +255,8 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 				className={cn(
 					"flex h-7 sm:h-8 items-center gap-1 sm:gap-2 rounded-lg border px-1.5 sm:px-2.5 transition-all text-left select-none shrink-0",
 					isOpen
-						? "border-cyan/40 bg-white/[0.08] shadow-[0_0_15px_-4px_rgba(0,212,255,0.45)]"
-						: "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]",
+						? "border-cyan/40 bg-black/[0.06] dark:bg-white/[0.08] shadow-[0_0_15px_-4px_rgba(0,212,255,0.45)]"
+						: "border-border/60 bg-black/[0.02] dark:bg-white/[0.03] hover:border-border hover:bg-black/[0.04] dark:hover:bg-white/[0.06]",
 				)}
 			>
 				{/* Real Exchange Logos: single badge or compact overlapping badges when multiple are selected */}
@@ -264,7 +264,7 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 					<ExchangeBadge
 						exchange={activeExchanges[0].exchange}
 						size="sm"
-						className="border-obsidian/80 shadow-sm"
+						className="border-border/60 dark:border-obsidian/80 shadow-sm"
 					/>
 				) : (
 					<div className="flex shrink-0 items-center pl-0.5">
@@ -277,7 +277,7 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 								exchange={item.exchange}
 								size="sm"
 								className={cn(
-									"ring-2 ring-[#0b0d12] relative shadow-sm transition-transform duration-150 hover:scale-110 hover:z-30",
+									"ring-2 ring-card dark:ring-[#0b0d12] relative shadow-sm transition-transform duration-150 hover:scale-110 hover:z-30",
 									index > 0 && "-ml-2.5",
 								)}
 								style={{
@@ -288,7 +288,7 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 						))}
 						{activeExchanges.length > 4 && (
 							<span
-								className="-ml-2.5 relative inline-flex items-center justify-center rounded-full bg-white/[0.08] text-white/80 font-mono text-[9px] font-semibold h-5 w-5 min-w-5 min-h-5 ring-2 ring-[#0b0d12] border border-white/10 shrink-0"
+								className="-ml-2.5 relative inline-flex items-center justify-center rounded-full bg-muted/80 text-foreground font-mono text-[9px] font-semibold h-5 w-5 min-w-5 min-h-5 ring-2 ring-card dark:ring-[#0b0d12] border border-border shrink-0"
 								style={{ zIndex: 0, marginLeft: "-10px" }}
 								title={`+${activeExchanges.length - 3} more exchanges`}
 							>
@@ -300,19 +300,19 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 
 				{/* Account Info */}
 				<div className="hidden sm:block leading-none pr-0.5">
-					<div className="text-[11.5px] font-semibold text-white truncate max-w-[120px]">
+					<div className="text-[11.5px] font-semibold text-foreground truncate max-w-[120px]">
 						{selected ? selected.name : t("common:allAccounts", "All Accounts")}
 					</div>
 					{showBalances && (
 						<div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px]">
-							<span className="text-white/70">
+							<span className="text-foreground/75">
 								{currentHasBalance ? formatUsd(currentEquity) : "—"}
 							</span>
 							{currentHasBalance && currentPnl !== 0 && (
 								<span
 									className={cn(
 										"font-medium",
-										currentPnl >= 0 ? "text-emerald-400" : "text-rose-400",
+										currentPnl >= 0 ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 									)}
 								>
 									{formatPnl(currentPnl)}
@@ -325,16 +325,16 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 				<ChevronDown
 					size={13}
 					className={cn(
-						"text-white/40 transition-transform duration-200 shrink-0",
-						isOpen && "rotate-180 text-white/80",
+						"text-muted-foreground transition-transform duration-200 shrink-0",
+						isOpen && "rotate-180 text-foreground",
 					)}
 				/>
 			</button>
 
 			{/* Cyber-Quant Glass Dropdown */}
 			{isOpen && (
-				<div className="absolute right-0 top-10 z-50 w-[320px] rounded-xl border border-white/10 bg-obsidian/95 p-1.5 shadow-2xl backdrop-blur-2xl animate-fade-up">
-					<div className="px-2.5 pt-1.5 pb-2 text-[10px] uppercase font-semibold tracking-[0.16em] text-white/35 flex items-center justify-between">
+				<div className="absolute right-0 top-10 z-50 w-[320px] rounded-xl border border-border bg-popover/95 p-1.5 shadow-2xl backdrop-blur-2xl animate-fade-up text-popover-foreground">
+					<div className="px-2.5 pt-1.5 pb-2 text-[10px] uppercase font-semibold tracking-[0.16em] text-muted-foreground flex items-center justify-between border-b border-border/40">
 						<span>Exchange Accounts</span>
 						<span className="font-mono text-[9px] text-cyan/70">
 							{displayAccounts.length} Connected
@@ -349,8 +349,8 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 							setIsOpen(false);
 						}}
 						className={cn(
-							"flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-all hover:bg-white/5",
-							selectedAccountId === "all" && "bg-white/[0.06] border border-cyan/30",
+							"flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-all hover:bg-muted/80 dark:hover:bg-white/5",
+							selectedAccountId === "all" && "bg-muted dark:bg-white/[0.06] border border-cyan/30",
 						)}
 					>
 						<div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan/20 to-azure/20 text-cyan shrink-0 border border-cyan/30">
@@ -358,7 +358,7 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 						</div>
 						<div className="flex-1 min-w-0">
 							<div className="flex items-center gap-1.5">
-								<span className="text-[12px] font-semibold text-white">
+								<span className="text-[12px] font-semibold text-foreground dark:text-white">
 									{t("common:allAccounts", "Aggregate View")}
 								</span>
 								{activeExchanges.length > 1 && (
@@ -368,27 +368,27 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 												key={item.id}
 												exchange={item.exchange}
 												size="xs"
-												className={cn("ring-1 ring-[#0b0d12]", idx > 0 && "-ml-2")}
+												className={cn("ring-1 ring-card dark:ring-[#0b0d12]", idx > 0 && "-ml-2")}
 												style={{ zIndex: 3 - idx, marginLeft: idx > 0 ? "-8px" : undefined }}
 											/>
 										))}
 									</div>
 								)}
 							</div>
-							<div className="text-[10px] text-white/40 truncate">
+							<div className="text-[10px] text-muted-foreground dark:text-white/40 truncate">
 								{displayAccounts.length} accounts · multi-exchange
 							</div>
 						</div>
 						{showBalances && (
 							<div className="text-right font-mono shrink-0">
-								<div className="text-[12px] font-medium text-white">
+								<div className="text-[12px] font-medium text-foreground dark:text-white">
 									{hasAnyBalances ? formatUsd(totalEquity) : "—"}
 								</div>
 								{hasAnyBalances && totalPnl !== 0 && (
 									<div
 										className={cn(
 											"text-[10px] font-semibold",
-											totalPnl >= 0 ? "text-emerald-400" : "text-rose-400",
+											totalPnl >= 0 ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 										)}
 									>
 										{formatPnl(totalPnl)}
@@ -401,7 +401,7 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 						)}
 					</button>
 
-					<div className="my-1.5 h-px bg-white/5" />
+					<div className="my-1.5 h-px bg-border/40 dark:bg-white/5" />
 
 					{/* List of Connected API Keys */}
 					<div className="max-h-[260px] overflow-y-auto space-y-0.5 pr-0.5">
@@ -421,8 +421,8 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 										setIsOpen(false);
 									}}
 									className={cn(
-										"flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-all hover:bg-white/5",
-										isSel && "bg-white/[0.06] border border-cyan/30",
+										"flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-all hover:bg-muted/80 dark:hover:bg-white/5",
+										isSel && "bg-muted dark:bg-white/[0.06] border border-cyan/30",
 									)}
 								>
 									<ExchangeBadge
@@ -431,13 +431,13 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 										className="rounded-lg"
 									/>
 									<div className="flex-1 min-w-0">
-										<div className="flex items-center gap-1.5 text-[12px] font-medium text-white truncate">
+										<div className="flex items-center gap-1.5 text-[12px] font-medium text-foreground dark:text-white truncate">
 											<span className="truncate">{a.name}</span>
-											<span className="text-[8.5px] uppercase px-1 py-0.2 rounded bg-white/5 text-white/40 font-mono">
+											<span className="text-[8.5px] uppercase px-1 py-0.2 rounded bg-muted text-muted-foreground font-mono">
 												{a.marketType}
 											</span>
 										</div>
-										<div className="flex items-center gap-1.5 text-[10px] text-white/40">
+										<div className="flex items-center gap-1.5 text-[10px] text-muted-foreground dark:text-white/40">
 											<span>{label}</span>
 											<span
 												className={cn(
@@ -452,14 +452,14 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 									</div>
 									{showBalances && (
 										<div className="text-right font-mono shrink-0">
-											<div className="text-[12px] font-medium text-white">
+											<div className="text-[12px] font-medium text-foreground dark:text-white">
 												{a.hasBalance ? formatUsd(a.equity) : "—"}
 											</div>
 											{a.hasBalance && a.pnl !== 0 && (
 												<div
 													className={cn(
 														"text-[10px] font-semibold",
-														a.pnl >= 0 ? "text-emerald-400" : "text-rose-400",
+														a.pnl >= 0 ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 													)}
 												>
 													{formatPnl(a.pnl)}

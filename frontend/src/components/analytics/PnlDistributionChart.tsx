@@ -37,18 +37,18 @@ const CustomDistTooltip = ({
 	const negative = Number(payload.find((p) => p.dataKey === "negative")?.value || 0);
 
 	return (
-		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
-			<div className="text-[11px] font-semibold text-white/70 mb-1.5">
+		<div className="rounded-xl border border-border dark:border-white/15 bg-card/95 dark:bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono text-popover-foreground">
+			<div className="text-[11px] font-semibold text-muted-foreground dark:text-white/70 mb-1.5">
 				Range: ${label}
 			</div>
 			<div className="space-y-1 text-xs">
 				<div className="flex items-center justify-between gap-4">
-					<span className="text-emerald-400 font-medium">{profitableText}:</span>
-					<span className="font-bold text-white">{positive}</span>
+					<span className="text-emerald-500 dark:text-emerald-400 font-medium">{profitableText}:</span>
+					<span className="font-bold text-foreground dark:text-white">{positive}</span>
 				</div>
 				<div className="flex items-center justify-between gap-4">
-					<span className="text-rose-400 font-medium">{losingText}:</span>
-					<span className="font-bold text-white">{negative}</span>
+					<span className="text-rose-500 dark:text-rose-400 font-medium">{losingText}:</span>
+					<span className="font-bold text-foreground dark:text-white">{negative}</span>
 				</div>
 			</div>
 		</div>

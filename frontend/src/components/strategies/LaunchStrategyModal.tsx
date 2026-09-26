@@ -33,6 +33,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/context/AuthContext";
 import { useConfig, useMultiAccountBalances } from "@/lib/api";
+import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { cn } from "@/lib/utils";
 import type { CombinedStrategy } from "@/types/api";
 
@@ -349,7 +350,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 										onValueChange={(v) => field.onChange(parseInt(v, 10))}
 										value={field.value?.toString()}
 									>
-										<SelectTrigger className="h-9 rounded-xl border border-white/10 bg-white/[0.03] text-xs text-white focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30">
+										<SelectTrigger className="h-9 rounded-xl border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-xs text-foreground dark:text-white focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30">
 											<SelectValue
 												placeholder={t(
 													"launchModal.selectAccountPlaceholder",
@@ -357,7 +358,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 												)}
 											/>
 										</SelectTrigger>
-										<SelectContent className="border border-white/10 bg-obsidian/95 text-white backdrop-blur-xl">
+										<SelectContent className="border border-border dark:border-white/10 bg-popover/95 dark:bg-obsidian/95 text-popover-foreground dark:text-white backdrop-blur-xl">
 											{activeApiKeys.map((key) => {
 												const keyBalance = balances?.accounts?.find(
 													(a) => a.apiKeyId === key.id,
@@ -366,11 +367,11 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 													<SelectItem
 														key={key.id}
 														value={String(key.id)}
-														className="text-xs hover:bg-white/5 focus:bg-white/10"
+														className="text-xs hover:bg-muted dark:hover:bg-white/5 focus:bg-accent dark:focus:bg-white/10 text-popover-foreground dark:text-white"
 													>
 														<div className="flex items-center justify-between w-full gap-4">
 															<div className="flex items-center gap-2">
-																<Wallet className="h-3.5 w-3.5 text-white/40" />
+																<ExchangeBadge exchange={key.exchange} size="xs" />
 																<span>{key.name}</span>
 															</div>
 															{keyBalance && (

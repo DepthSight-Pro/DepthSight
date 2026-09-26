@@ -216,98 +216,96 @@ export function FoundationVisualizerPage() {
 			<div className="flex flex-col lg:flex-row h-full gap-4 sm:gap-6 min-h-0">
 				{/* Left panel - parameters */}
 				<div className="w-full lg:w-80 lg:max-w-xs flex-shrink-0">
-					<Card className="flex flex-col lg:max-h-[calc(100vh-120px)] shadow-xl">
-						<CardHeader className="flex-shrink-0 p-4 sm:p-6 pb-2 sm:pb-4">
-							<CardTitle>{t("parametersCard.title")}</CardTitle>
+					<Card className="flex flex-col h-[650px] lg:h-[calc(100vh-210px)] min-h-[520px] shadow-xl overflow-hidden rounded-2xl border border-border">
+						<CardHeader className="flex-shrink-0 p-4 sm:p-5 border-b border-border/60">
+							<CardTitle className="text-base">{t("parametersCard.title")}</CardTitle>
 						</CardHeader>
-						<CardContent className="flex-grow min-h-0 p-4 sm:p-6 pt-0">
-							<ScrollArea className="h-full pr-2 sm:pr-4 max-h-[400px] lg:max-h-none">
-								<div className="space-y-4">
-									<div>
-										<Label htmlFor="symbol">{t("form.symbol")}</Label>
-										<Input
-											id="symbol"
-											value={symbol}
-											onChange={(e) => setSymbol(e.target.value)}
-										/>
-									</div>
-									<div>
-										<Label htmlFor="end-date">{t("form.endDate")}</Label>
-										<Input
-											id="end-date"
-											type="datetime-local"
-											value={endDate}
-											onChange={(e) => setEndDate(e.target.value)}
-										/>
-										<p className="text-xs text-muted-foreground mt-1">
-											{t("form.endDateDesc")}
-										</p>
-									</div>
-									<div>
-										<Label htmlFor="timeframe">{t("form.timeframe")}</Label>
-										<Select value={timeframe} onValueChange={setTimeframe}>
-											<SelectTrigger>
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="1m">1m</SelectItem>
-												<SelectItem value="5m">5m</SelectItem>
-												<SelectItem value="1h">1h</SelectItem>
-												<SelectItem value="4h">4h</SelectItem>
-												<SelectItem value="1d">1d</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
-									<div>
-										<Label>{t("form.foundationTypes")}</Label>
-										<div className="space-y-2 mt-2 p-2 border rounded-md max-h-[250px] overflow-y-auto">
-											{foundationOptions.map((option) => (
-												<div
-													key={option.id}
-													className="flex items-center space-x-2"
-												>
-													<Checkbox
-														id={option.id}
-														checked={selectedFoundations.includes(option.id)}
-														onCheckedChange={(checked) =>
-															setSelectedFoundations((prev) =>
-																checked
-																	? [...prev, option.id]
-																	: prev.filter((id) => id !== option.id),
-															)
-														}
-													/>
-													<div
-														style={{
-															width: "12px",
-															height: "12px",
-															borderRadius: "50%",
-															backgroundColor: option.color,
-															marginRight: "8px",
-														}}
-													></div>
-													<Label
-														htmlFor={option.id}
-														className="font-normal cursor-pointer text-sm"
-													>
-														{option.label}
-													</Label>
-												</div>
-											))}
-										</div>
-									</div>
-									<FoundationParamsForm
-										foundationTypes={selectedFoundations}
-										onParamsChange={setParams}
+						<ScrollArea className="flex-1 min-h-0">
+							<div className="space-y-4 p-4 sm:p-5">
+								<div>
+									<Label htmlFor="symbol">{t("form.symbol")}</Label>
+									<Input
+										id="symbol"
+										value={symbol}
+										onChange={(e) => setSymbol(e.target.value)}
 									/>
 								</div>
-							</ScrollArea>
-						</CardContent>
-						<div className="p-4 sm:p-6 pt-0 flex-shrink-0">
+								<div>
+									<Label htmlFor="end-date">{t("form.endDate")}</Label>
+									<Input
+										id="end-date"
+										type="datetime-local"
+										value={endDate}
+										onChange={(e) => setEndDate(e.target.value)}
+									/>
+									<p className="text-xs text-muted-foreground mt-1">
+										{t("form.endDateDesc")}
+									</p>
+								</div>
+								<div>
+									<Label htmlFor="timeframe">{t("form.timeframe")}</Label>
+									<Select value={timeframe} onValueChange={setTimeframe}>
+										<SelectTrigger>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="1m">1m</SelectItem>
+											<SelectItem value="5m">5m</SelectItem>
+											<SelectItem value="1h">1h</SelectItem>
+											<SelectItem value="4h">4h</SelectItem>
+											<SelectItem value="1d">1d</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								<div>
+									<Label>{t("form.foundationTypes")}</Label>
+									<div className="space-y-2 mt-2 p-2.5 border border-border/80 rounded-lg max-h-[220px] overflow-y-auto bg-muted/20">
+										{foundationOptions.map((option) => (
+											<div
+												key={option.id}
+												className="flex items-center space-x-2"
+											>
+												<Checkbox
+													id={option.id}
+													checked={selectedFoundations.includes(option.id)}
+													onCheckedChange={(checked) =>
+														setSelectedFoundations((prev) =>
+															checked
+																? [...prev, option.id]
+																: prev.filter((id) => id !== option.id),
+														)
+													}
+												/>
+												<div
+													style={{
+														width: "12px",
+														height: "12px",
+														borderRadius: "50%",
+														backgroundColor: option.color,
+														marginRight: "8px",
+													}}
+												></div>
+												<Label
+													htmlFor={option.id}
+													className="font-normal cursor-pointer text-sm"
+												>
+													{option.label}
+												</Label>
+											</div>
+										))}
+									</div>
+								</div>
+								<FoundationParamsForm
+									foundationTypes={selectedFoundations}
+									onParamsChange={setParams}
+								/>
+							</div>
+						</ScrollArea>
+						<div className="p-4 sm:p-5 border-t border-border/60 bg-card/95 backdrop-blur-sm flex-shrink-0">
 							<Button
 								onClick={handleVisualize}
 								disabled={isLoading || !symbol || !endDate}
-								className="w-full"
+								className="w-full font-medium"
 							>
 								{isLoading
 									? t("form.loadingButton")
@@ -319,11 +317,11 @@ export function FoundationVisualizerPage() {
 
 				{/* Right panel with chart */}
 				<div className="flex-grow min-w-0 w-full min-h-[480px] lg:min-h-0">
-					<Card className="h-full flex flex-col min-h-[480px] lg:max-h-[calc(100vh-120px)] shadow-xl">
-						<CardHeader className="flex-shrink-0 p-4 sm:p-6 pb-2 sm:pb-4">
-							<CardTitle>{t("chartCard.title")}</CardTitle>
+					<Card className="h-[650px] lg:h-[calc(100vh-210px)] min-h-[480px] flex flex-col shadow-xl overflow-hidden rounded-2xl border border-border">
+						<CardHeader className="flex-shrink-0 p-4 sm:p-5 border-b border-border/60">
+							<CardTitle className="text-base">{t("chartCard.title")}</CardTitle>
 						</CardHeader>
-						<CardContent className="flex-grow min-h-[400px] lg:min-h-0 p-2 sm:p-6 pt-0">
+						<CardContent className="flex-grow min-h-0 p-2 sm:p-4 overflow-hidden">
 							{isLoading ? (
 								<div className="h-full min-h-[400px] flex items-center justify-center text-muted-foreground">
 									<p>{t("chartCard.loading")}</p>

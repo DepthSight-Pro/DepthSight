@@ -27,7 +27,7 @@ export const fmt = {
 export const toneOf = (n: number) =>
 	n > 0 ? "profit" : n < 0 ? "loss" : "neutral";
 export const toneText = (n: number) =>
-	n > 0 ? "text-emerald-400" : n < 0 ? "text-rose-400" : "text-white/60";
+	n > 0 ? "text-emerald-500 dark:text-emerald-400" : n < 0 ? "text-rose-500 dark:text-rose-400" : "text-muted-foreground dark:text-white/60";
 export const toneHex = (n: number) =>
 	n > 0 ? "#10e0a0" : n < 0 ? "#ff3b5c" : "#8b93a7";
 
@@ -46,7 +46,7 @@ export const Radial: React.FC<{
 	size = 64,
 	stroke = 5,
 	color = "#00d4ff",
-	track = "rgba(255,255,255,0.06)",
+	track = "currentColor",
 	children,
 	glow = true,
 	className,
@@ -61,7 +61,7 @@ export const Radial: React.FC<{
 	const v = Math.max(0, Math.min(1, value));
 	return (
 		<div
-			className={cn("relative inline-flex items-center justify-center", className)}
+			className={cn("relative inline-flex items-center justify-center text-black/[0.08] dark:text-white/[0.06]", className)}
 			style={{ width: size, height: size }}
 		>
 			<svg width={size} height={size} className="-rotate-90 overflow-visible">
@@ -280,7 +280,8 @@ export const AreaChart: React.FC<{
 							x2={W}
 							y1={pad.t + g * (H - pad.t - pad.b)}
 							y2={pad.t + g * (H - pad.t - pad.b)}
-							stroke="rgba(255,255,255,0.05)"
+							stroke="currentColor"
+							className="text-black/[0.06] dark:text-white/[0.05]"
 							strokeDasharray="3 6"
 							vectorEffect="non-scaling-stroke"
 						/>
@@ -325,7 +326,8 @@ export const AreaChart: React.FC<{
 							x2={hp[0]}
 							y1={pad.t}
 							y2={H - pad.b}
-							stroke="rgba(255,255,255,0.25)"
+							stroke="currentColor"
+							className="text-black/20 dark:text-white/25"
 							strokeDasharray="3 3"
 							vectorEffect="non-scaling-stroke"
 						/>
@@ -333,7 +335,7 @@ export const AreaChart: React.FC<{
 							cx={hp[0]}
 							cy={hp[1]}
 							r={5}
-							fill="#07080b"
+							fill="var(--void)"
 							stroke={color}
 							strokeWidth={2}
 							vectorEffect="non-scaling-stroke"
@@ -341,7 +343,7 @@ export const AreaChart: React.FC<{
 					</>
 				)}
 			</svg>
-			<div className="pointer-events-none absolute inset-y-0 right-2 flex flex-col justify-between py-2 text-[10px] font-mono text-white/30">
+			<div className="pointer-events-none absolute inset-y-0 right-2 flex flex-col justify-between py-2 text-[10px] font-mono text-muted-foreground dark:text-white/30">
 				<span>{formatter(max)}</span>
 				<span>{formatter((max + min) / 2)}</span>
 				<span>{formatter(min)}</span>
@@ -351,7 +353,7 @@ export const AreaChart: React.FC<{
 				return (
 				<div
 					className={cn(
-						"pointer-events-none absolute -translate-x-1/2 glass-strong rounded-lg px-2.5 py-1.5 text-[11px] font-mono shadow-xl z-50 whitespace-nowrap",
+						"pointer-events-none absolute -translate-x-1/2 glass-strong text-foreground rounded-lg px-2.5 py-1.5 text-[11px] font-mono shadow-xl z-50 whitespace-nowrap",
 						isNearTop ? "translate-y-[10px]" : "-translate-y-full",
 					)}
 					style={{
@@ -363,12 +365,12 @@ export const AreaChart: React.FC<{
 					<div
 						className={cn(
 							"font-semibold",
-							up ? "text-emerald-400" : "text-rose-400",
+							up ? "text-emerald-500 dark:text-emerald-400" : "text-rose-500 dark:text-rose-400",
 						)}
 					>
 						{fmt.usd(data[hover], 2)}
 					</div>
-					<div className="text-white/40">t-{data.length - 1 - hover}</div>
+					<div className="text-muted-foreground dark:text-white/40">t-{data.length - 1 - hover}</div>
 				</div>
 				);
 			})()}
@@ -391,7 +393,7 @@ export const Bar: React.FC<{
 	striped,
 }) => (
 	<div
-		className={cn("w-full rounded-full bg-white/5 overflow-hidden", className)}
+		className={cn("w-full rounded-full bg-black/[0.06] dark:bg-white/5 overflow-hidden", className)}
 		style={{ height }}
 	>
 		<div
@@ -433,20 +435,20 @@ export const Panel: React.FC<{
 	<section
 		className={cn(
 			"glass relative rounded-2xl overflow-hidden animate-fade-up",
-			glow && "shadow-[0_0_60px_-20px_rgba(0,212,255,0.35)]",
+			glow && "shadow-[0_0_60px_-20px_rgba(0,212,255,0.35)] dark:shadow-[0_0_60px_-20px_rgba(0,212,255,0.35)]",
 			className,
 		)}
 	>
 		{(title || actions) && (
-			<header className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2.5 border-b border-white/5">
+			<header className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-2.5 border-b border-border/50 dark:border-white/5">
 				<div className="min-w-0">
 					{title && (
-						<h3 className="text-[13px] font-semibold tracking-tight text-white/90 truncate">
+						<h3 className="text-[13px] font-semibold tracking-tight text-foreground dark:text-white/90 truncate">
 							{title}
 						</h3>
 					)}
 					{subtitle && (
-						<p className="text-[11px] text-white/40 mt-0.5 truncate">
+						<p className="text-[11px] text-muted-foreground dark:text-white/40 mt-0.5 truncate">
 							{subtitle}
 						</p>
 					)}
@@ -464,12 +466,12 @@ export const Panel: React.FC<{
 type Tone = "cyan" | "azure" | "profit" | "loss" | "amber" | "neutral" | "violet";
 const toneCls: Record<Tone, string> = {
 	cyan: "bg-cyan/10 text-cyan border-cyan/20",
-	azure: "bg-azure/15 text-[#6aa6ff] border-azure/30",
-	profit: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-	loss: "bg-rose-500/10 text-rose-400 border-rose-500/20",
-	amber: "bg-amber/10 text-amber border-amber/20",
-	neutral: "bg-white/5 text-white/60 border-white/10",
-	violet: "bg-violet-500/10 text-violet-300 border-violet-500/20",
+	azure: "bg-azure/15 text-[#0066ff] dark:text-[#6aa6ff] border-azure/30",
+	profit: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+	loss: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+	amber: "bg-amber-500/10 text-amber-600 dark:text-amber border-amber-500/20",
+	neutral: "bg-black/[0.04] dark:bg-white/5 text-foreground/80 dark:text-white/60 border-border/60 dark:border-white/10",
+	violet: "bg-violet-500/10 text-violet-600 dark:text-violet-300 border-violet-500/20",
 };
 
 export const Badge: React.FC<{
@@ -522,7 +524,7 @@ export const Stat: React.FC<{
 }) => (
 	<div
 		className={cn(
-			"glass relative rounded-2xl p-4 overflow-hidden group hover:border-white/10 transition-colors animate-fade-up",
+			"glass relative rounded-2xl p-4 overflow-hidden group hover:border-border/80 dark:hover:border-white/10 transition-colors animate-fade-up",
 			className,
 		)}
 	>
@@ -533,16 +535,16 @@ export const Stat: React.FC<{
 			/>
 		)}
 		<div className="flex items-start justify-between">
-			<span className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
+			<span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground dark:text-white/40">
 				{label}
 			</span>
-			{icon && <span className="text-white/30">{icon}</span>}
+			{icon && <span className="text-muted-foreground/60 dark:text-white/30">{icon}</span>}
 		</div>
 		<div className="mt-2 flex items-end justify-between gap-3">
 			<div>
 				<div
 					className={cn(
-						"text-[22px] leading-none font-semibold text-white tabular",
+						"text-[22px] leading-none font-semibold text-foreground dark:text-white tabular",
 						mono && "font-mono tracking-tight",
 					)}
 				>
@@ -556,7 +558,7 @@ export const Stat: React.FC<{
 						)}
 					>
 						{fmt.pct(delta)}{" "}
-						<span className="text-white/30 font-sans">{deltaLabel}</span>
+						<span className="text-muted-foreground/70 dark:text-white/30 font-sans">{deltaLabel}</span>
 					</div>
 				)}
 			</div>
@@ -584,7 +586,7 @@ export const ExDot: React.FC<{
 
 /* ----------------------------------- Kbd ------------------------------------ */
 export const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-	<kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-white/10 bg-white/5 px-1 font-mono text-[10px] text-white/50">
+	<kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-border/60 dark:border-white/10 bg-black/[0.03] dark:bg-white/5 px-1 font-mono text-[10px] text-muted-foreground dark:text-white/50">
 		{children}
 	</kbd>
 );
@@ -611,7 +613,7 @@ export function Segmented<T extends string>({
 	return (
 		<div
 			className={cn(
-				"inline-flex items-center rounded-lg bg-white/[0.04] border border-white/5 p-0.5 gap-0.5",
+				"inline-flex items-center rounded-lg bg-black/[0.04] dark:bg-white/[0.04] border border-border/50 dark:border-white/5 p-0.5 gap-0.5",
 				size === "md" &&
 					"rounded-xl p-1 gap-1 shadow-inner backdrop-blur-md",
 				className,
@@ -632,10 +634,10 @@ export function Segmented<T extends string>({
 							size === "md" &&
 								"gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm",
 							isActive
-								? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-white/10"
+								? "bg-white dark:bg-white/[0.08] text-foreground dark:text-white shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-border/80 dark:border-white/10"
 								: o.disabled
-									? "text-white/20 cursor-not-allowed opacity-40 border border-transparent"
-									: "text-white/50 hover:text-white/80 hover:bg-white/[0.03] border border-transparent",
+									? "text-muted-foreground/40 dark:text-white/20 cursor-not-allowed opacity-40 border border-transparent"
+									: "text-muted-foreground dark:text-white/50 hover:text-foreground dark:hover:text-white/80 hover:bg-black/[0.03] dark:hover:bg-white/[0.03] border border-transparent",
 						)}
 					>
 						{o.icon && (
@@ -684,12 +686,12 @@ export const Btn: React.FC<
 			variant === "primary" &&
 				"bg-gradient-to-r from-azure to-cyan text-white shadow-[0_0_24px_-6px_rgba(0,212,255,0.8)] hover:shadow-[0_0_32px_-4px_rgba(0,212,255,0.9)] hover:brightness-110",
 			variant === "outline" &&
-				"border border-white/10 bg-white/[0.03] text-white/80 hover:bg-white/[0.07] hover:border-white/20 hover:text-white",
-			variant === "ghost" && "text-white/60 hover:text-white hover:bg-white/5",
+				"border border-border/80 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-foreground/85 dark:text-white/80 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] hover:border-border dark:hover:border-white/20 hover:text-foreground dark:hover:text-white",
+			variant === "ghost" && "text-muted-foreground dark:text-white/60 hover:text-foreground dark:hover:text-white hover:bg-black/[0.04] dark:hover:bg-white/5",
 			variant === "subtle" &&
 				"bg-cyan/10 text-cyan border border-cyan/20 hover:bg-cyan/15",
 			variant === "danger" &&
-				"border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20",
+				"border border-rose-500/30 bg-rose-500/10 text-rose-500 dark:text-rose-400 hover:bg-rose-500/20",
 			className,
 		)}
 	>
@@ -718,7 +720,7 @@ export const Heatmap: React.FC<{
 			>
 				{rows.map((r, ri) => (
 					<React.Fragment key={r.symbol}>
-						<div className="text-[10px] font-mono text-white/40 flex items-center">
+						<div className="text-[10px] font-mono text-muted-foreground dark:text-white/40 flex items-center">
 							{r.symbol}
 						</div>
 						{r.cells.map((v, ci) => {
@@ -735,7 +737,7 @@ export const Heatmap: React.FC<{
 									onMouseLeave={() => setHov(null)}
 									className={cn(
 										"aspect-square rounded-[3px] transition-transform duration-150 cursor-pointer",
-										active && "scale-125 ring-1 ring-white/60 z-10",
+										active && "scale-125 ring-1 ring-foreground/40 dark:ring-white/60 z-10",
 									)}
 									style={{ background: bg }}
 									title={`${r.symbol} ${ci}:00 · ${fmt.pct(v)}`}
@@ -748,14 +750,14 @@ export const Heatmap: React.FC<{
 				{rows[0]?.cells?.map((_, i) => (
 					<div
 						key={i}
-						className="text-[9px] font-mono text-white/25 text-center"
+						className="text-[9px] font-mono text-muted-foreground/50 dark:text-white/25 text-center"
 					>
 						{i % 4 === 0 ? `${i}h` : ""}
 					</div>
 				))}
 			</div>
 			{hov && rows[hov.r] && (
-				<div className="absolute top-0 right-0 glass-strong rounded-md px-2 py-1 text-[10px] font-mono shadow-lg border border-white/10">
+				<div className="absolute top-0 right-0 glass-strong rounded-md px-2 py-1 text-[10px] font-mono shadow-lg border border-border dark:border-white/10 text-foreground">
 					{rows[hov.r].symbol} · {hov.c}:00 →{" "}
 					<span className={toneText(rows[hov.r].cells[hov.c])}>
 						{fmt.pct(rows[hov.r].cells[hov.c])}
@@ -774,7 +776,7 @@ export const Th: React.FC<{
 }> = ({ children, className, right }) => (
 	<th
 		className={cn(
-			"px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35 whitespace-nowrap",
+			"px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground dark:text-white/35 whitespace-nowrap",
 			right ? "text-right" : "text-left",
 			className,
 		)}
@@ -791,7 +793,7 @@ export const Td: React.FC<{
 }> = ({ children, className, right, mono }) => (
 	<td
 		className={cn(
-			"px-3 py-2.5 text-[12px] text-white/80 whitespace-nowrap",
+			"px-3 py-2.5 text-[12px] text-foreground/90 dark:text-white/80 whitespace-nowrap",
 			right && "text-right",
 			mono && "font-mono tabular",
 			className,
@@ -808,7 +810,7 @@ export const SectionLabel: React.FC<{
 }> = ({ children, className }) => (
 	<div
 		className={cn(
-			"text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30",
+			"text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70 dark:text-white/30",
 			className,
 		)}
 	>
@@ -831,7 +833,7 @@ export const Toggle: React.FC<{
 				? danger
 					? "bg-rose-500/30 border-rose-500/50 shadow-[0_0_14px_-2px_rgba(244,63,94,0.6)]"
 					: "bg-cyan/25 border-cyan/50 shadow-[0_0_14px_-2px_rgba(0,212,255,0.7)]"
-				: "bg-white/5 border-white/10",
+				: "bg-black/10 dark:bg-white/5 border-border/60 dark:border-white/10",
 		)}
 	>
 		<span
@@ -841,7 +843,7 @@ export const Toggle: React.FC<{
 					? danger
 						? "left-[18px] bg-rose-500"
 						: "left-[18px] bg-cyan"
-					: "left-0.5 bg-white/40",
+					: "left-0.5 bg-muted-foreground/60 dark:bg-white/40",
 			)}
 		/>
 	</button>

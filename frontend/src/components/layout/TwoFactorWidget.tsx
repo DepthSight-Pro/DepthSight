@@ -254,17 +254,17 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
           side={isExpanded ? "top" : "right"}
           align={isExpanded ? "start" : "end"}
           sideOffset={8}
-          className="w-72 sm:w-80 p-0 bg-[#0d1117]/95 border border-white/10 text-white shadow-2xl backdrop-blur-2xl rounded-2xl overflow-hidden animate-fade-up z-50"
+          className="w-72 sm:w-80 p-0 bg-popover/95 border border-border text-popover-foreground shadow-2xl backdrop-blur-2xl rounded-2xl overflow-hidden animate-fade-up z-50"
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-3.5 border-b border-white/5 bg-white/[0.02]">
+          <div className="flex items-center justify-between p-3.5 border-b border-border/50 bg-muted/30">
             <div className="flex items-center gap-2.5">
               <div
                 className={cn(
                   "p-2 rounded-xl border flex items-center justify-center shrink-0",
                   isTotpEnabled
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                    : "bg-rose-500/10 border-rose-500/20 text-rose-400",
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                    : "bg-rose-500/10 border-rose-500/20 text-rose-600 dark:text-rose-400",
                 )}
               >
                 {isTotpEnabled ? (
@@ -274,10 +274,10 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
                 )}
               </div>
               <div className="min-w-0">
-                <h4 className="text-[13px] font-bold text-white leading-tight truncate">
+                <h4 className="text-[13px] font-bold text-foreground leading-tight truncate">
                   {t("twoFactorMenu.title", "2FA Security")}
                 </h4>
-                <p className="text-[10.5px] text-white/50 mt-0.5 truncate">
+                <p className="text-[10.5px] text-muted-foreground mt-0.5 truncate">
                   {isTotpEnabled
                     ? t("twoFactorMenu.protected", "Account Protected")
                     : t("twoFactorMenu.notProtected", "Not Protected")}
@@ -289,8 +289,8 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
               className={cn(
                 "font-mono text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0",
                 isTotpEnabled
-                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                  : "bg-rose-500/15 text-rose-400 border border-rose-500/30",
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                  : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30",
               )}
             >
               {isTotpEnabled ? "ON" : "OFF"}
@@ -301,16 +301,16 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
           <div className="p-3.5 space-y-3">
             {isTotpEnabled ? (
               <>
-                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5 flex items-center justify-between">
-                  <span className="text-xs text-white/70">
+                <div className="rounded-xl border border-border/70 bg-muted/30 p-2.5 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
                     {t("account:twoFactor.recoveryCodesCountLabel", "Backup Codes:")}
                   </span>
                   <span
                     className={cn(
                       "font-mono text-xs font-bold px-2 py-0.5 rounded-md border",
                       remainingCodes > 2
-                        ? "border-white/10 bg-white/5 text-white"
-                        : "border-rose-500/30 bg-rose-500/10 text-rose-400",
+                        ? "border-border/70 bg-card text-foreground"
+                        : "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
                     )}
                   >
                     {remainingCodes} {t("account:twoFactor.remaining", "remaining")}
@@ -325,13 +325,13 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
                       setIsPopoverOpen(false);
                       navigate("/account?tab=security");
                     }}
-                    className="w-full h-8 text-xs font-semibold rounded-xl border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-white justify-between"
+                    className="w-full h-8 text-xs font-semibold rounded-xl border border-border bg-card hover:bg-muted text-foreground justify-between shadow-sm"
                   >
                     <span className="flex items-center gap-1.5">
                       <SettingsIcon className="h-3.5 w-3.5 text-cyan" />
                       {t("twoFactorMenu.manageInProfile", "Security Settings")}
                     </span>
-                    <ExternalLink className="h-3 w-3 text-white/40" />
+                    <ExternalLink className="h-3 w-3 text-muted-foreground" />
                   </Button>
 
                   <Button
@@ -341,7 +341,7 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
                       setIsPopoverOpen(false);
                       setIsDisableOpen(true);
                     }}
-                    className="w-full h-8 text-xs font-semibold rounded-xl border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400"
+                    className="w-full h-8 text-xs font-semibold rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400"
                   >
                     {t("twoFactorMenu.disable", "Disable 2FA")}
                   </Button>
@@ -349,10 +349,10 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
               </>
             ) : (
               <>
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-3 text-[11px] text-white/70 leading-relaxed flex items-start gap-2.5">
-                  <ShieldAlert className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-3 text-[11px] text-muted-foreground leading-relaxed flex items-start gap-2.5">
+                  <ShieldAlert className="h-4 w-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-semibold text-white block mb-0.5">
+                    <span className="font-semibold text-foreground block mb-0.5">
                       {t("account:twoFactor.recommendationTitle", "Highly Recommended")}
                     </span>
                     {t(
@@ -384,7 +384,7 @@ export const TwoFactorWidget: React.FC<TwoFactorWidgetProps> = ({ isExpanded = t
                       setIsPopoverOpen(false);
                       navigate("/account?tab=security");
                     }}
-                    className="w-full h-8 text-xs text-white/50 hover:text-white"
+                    className="w-full h-8 text-xs text-muted-foreground hover:text-foreground"
                   >
                     {t("twoFactorMenu.learnMore", "Learn More")}
                   </Button>

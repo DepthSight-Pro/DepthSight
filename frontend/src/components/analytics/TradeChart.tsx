@@ -20,6 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useKlines } from "@/lib/api";
 import type { TradeData, TradeExecution } from "@/types/api";
 import { estimateTickSize } from "@/lib/utils";
+import { useChartTheme } from "@/lib/chartTheme";
 
 interface TradeChartProps {
 	trades: TradeData[];
@@ -133,6 +134,7 @@ export const TradeChart = ({
 	selectedTrade,
 	tickSize,
 }: TradeChartProps) => {
+	const { colors: chartColors } = useChartTheme();
 	const { t } = useTranslation("analytics");
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const chartRef = useRef<IChartApi | null>(null);
@@ -195,6 +197,21 @@ export const TradeChart = ({
 	);
 
 	useEffect(() => {
+		if (!chartRef.current) return;
+		chartRef.current.applyOptions({
+			layout: {
+				background: { type: ColorType.Solid, color: chartColors.background },
+				textColor: chartColors.textColor,
+			},
+			grid: {
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
+			},
+			timeScale: { borderColor: chartColors.borderColor },
+		});
+	}, [chartColors]);
+
+	useEffect(() => {
 		if (!chartContainerRef.current || !klines || klines.length === 0) return;
 
 		const container = chartContainerRef.current;
@@ -211,19 +228,19 @@ export const TradeChart = ({
 				textColor: chartColors.textColor,
 			},
 			grid: {
-				vertLines: { color: chartColors.borderColor },
-				horzLines: { color: chartColors.borderColor },
+				vertLines: { color: chartColors.gridColor },
+				horzLines: { color: chartColors.gridColor },
 			},
 			timeScale: { borderColor: chartColors.borderColor, timeVisible: true },
 		});
 		chartRef.current = chart;
 
 		const candleSeries = chart.addSeries(CandlestickSeries, {
-			upColor: chartColors.entryColor,
-			downColor: chartColors.exitColor,
+			upColor: chartColors.upColor,
+			downColor: chartColors.downColor,
 			borderVisible: false,
-			wickUpColor: chartColors.entryColor,
-			wickDownColor: chartColors.exitColor,
+			wickUpColor: chartColors.upColor,
+			wickDownColor: chartColors.downColor,
 			priceFormat,
 		});
 
