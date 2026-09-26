@@ -23,7 +23,7 @@ import {
 	useUpdateCommunityMemorySharing,
 	useShareAgentMemory,
 } from "@/lib/api";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";

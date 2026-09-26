@@ -2928,6 +2928,18 @@ class TelemetryInsightItem(BaseModel):
 
 
 # --- Trade Mining Schemas ---
+class MiningDailyHistoryItem(BaseModel):
+    date: str
+    reward: float = 0.0
+    rebates: float = 0.0
+    trades_count: int = 0
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
 class MiningStatusResponse(BaseModel):
     is_mining_enabled: bool
     eligible_exchanges: List[str]
@@ -2953,6 +2965,9 @@ class MiningStatusResponse(BaseModel):
     your_volume_share: float = 0.0
     total_distributed: float = 0.0
     server_total_mined: float = 0.0
+    daily_history: List[MiningDailyHistoryItem] = Field(default_factory=list)
+    epoch_number: int = 1
+    launch_date: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -2984,6 +2999,7 @@ class MiningConfigPublic(BaseModel):
     daily_emission_base: float = 547945.21
     rebate_rates: Dict[str, float] = Field(default_factory=dict)
     exchange_multipliers: Dict[str, float] = Field(default_factory=dict)
+    launch_date: Optional[date] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -3040,6 +3056,9 @@ class LocalMiningStatusResponse(BaseModel):
     user_daily_volume: float = 0.0
     user_estimated_rebate: float = 0.0
     user_cumulative_rebate: float = 0.0
+    daily_history: List[MiningDailyHistoryItem] = Field(default_factory=list)
+    epoch_number: int = 1
+    launch_date: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,

@@ -24,6 +24,20 @@
 	"loadedToEditor": "Configuration loaded into Strategy Editor.",
 	"plan": "Plan",
 	"logout": "Log out",
+	"twoFactorMenu": {
+		"title": "2FA Security",
+		"active": "2FA Active",
+		"disabled": "2FA Disabled",
+		"tooltipActive": "2FA: Active (click for menu)",
+		"tooltipDisabled": "2FA: Disabled (click for menu)",
+		"protected": "Account securely protected",
+		"notProtected": "Recommended to enable for protection",
+		"backupCodesLeft": "Backup codes remaining: {{count}}",
+		"manageInProfile": "Security Settings",
+		"setupNow": "Set Up 2FA",
+		"disable": "Disable 2FA",
+		"learnMore": "Learn More"
+	},
 	"copied": "Copied!",
 	"copiedToClipboard": "copied to clipboard.",
 	"errors": {

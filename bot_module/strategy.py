@@ -2134,6 +2134,10 @@ class BaseStrategy:
         self.max_possible_expensive_weight: float = 0.0
         self._required_data_types_cache: Optional[Set[str]] = None
         self._required_indicators_cache: Optional[Set[str]] = None
+        # Memoized TF-aware indicator values: (symbol, tf, KEY, closed_ts, shift).
+        # A value is a pure function of closed history, so it is recomputed at
+        # most once per closed HTF candle instead of on every tick/evaluation.
+        self._tf_indicator_cache: Dict[Tuple[str, str, str, str, int], float] = {}
         self._compiled_fast_config_id: Optional[int] = None
         self._compiled_fast_filters_root: Optional[CompiledConditionNode] = None
         self._compiled_fast_entry_root: Optional[CompiledConditionNode] = None
@@ -2435,17 +2439,37 @@ class BaseStrategy:
 
         if source == "candle":
             shift = int(param_value.get("shift", 0))
+            main_tf = pair_info.get("candle_timeframe", "1m")
+            no_cached = bool(pair_info.get("_no_cached_values"))
+            timeframe = param_value.get("timeframe", main_tf)
+
+            # Higher timeframes use the uniform last-closed rule (same as the
+            # indicator resolver and the vector backtester broadcast): the
+            # possibly-forming last row is skipped in every context. Callers
+            # must pass sliced market_data (up to the evaluated candle).
+            # NOTE: the main-TF path below is intentionally legacy behavior.
+            if timeframe != main_tf:
+                htf_val = self._resolve_htf_candle_value(
+                    pair_info, market_data, timeframe, key, shift
+                )
+                if htf_val is not None:
+                    return htf_val
+                logger.warning(
+                    f"[_resolve_value] Failed to resolve CANDLE value. Key: {key}, "
+                    f"Shift: {shift}, Timeframe: {timeframe}."
+                )
+                return None
+
             # For shift 0, first try to quickly get from pair_info
-            if shift == 0 and key in pair_info:
+            # (skipped for previous-bar evaluation: the copy carries current
+            # values, see _resolve_operand_previous_value).
+            if shift == 0 and key in pair_info and not no_cached:
                 try:
                     return float(pair_info[key])
                 except (ValueError, TypeError):
                     pass  # If it didn't work, try via the DataFrame below
 
             # For any shift (or if not found in pair_info), use the DataFrame
-            timeframe = param_value.get(
-                "timeframe", pair_info.get("candle_timeframe", "1m")
-            )
             kline_key = f"kline_{timeframe}"
             candles_df = market_data.get(kline_key)
             current_index = pair_info.get("current_candle_index")
@@ -2479,17 +2503,24 @@ class BaseStrategy:
 
         elif source == "indicator":
             if key:
-                # First try uppercase (pandas_ta standard)
-                val = pair_info.get(key.upper())
-                # If not found, try the lower one (as DataConsumer saves it)
-                if val is None:
-                    val = pair_info.get(key.lower())
-
+                # Timeframe/shift-aware resolution (matches the backtester:
+                # per-TF series, shift applied). Falls back to None so the
+                # caller fails closed with a visible error.
+                val = self._resolve_indicator_value(
+                    pair_info,
+                    market_data,
+                    key,
+                    timeframe=param_value.get("timeframe"),
+                    shift=param_value.get("shift", 0),
+                )
                 if val is not None:
                     return val
 
                 logger.warning(
-                    f"[_resolve_value] Failed to resolve INDICATOR. Key: {key} (checked upper/lower). Available keys in pair_info: {list(pair_info.keys())[:10]}..."
+                    f"[_resolve_value] Failed to resolve INDICATOR. Key: {key} "
+                    f"(timeframe={param_value.get('timeframe')}, "
+                    f"shift={param_value.get('shift', 0)}). "
+                    f"Available keys in pair_info: {list(pair_info.keys())[:10]}..."
                 )
                 return None
             return None
@@ -2497,6 +2528,17 @@ class BaseStrategy:
         elif source == "block_result":
             block_id = param_value.get("block_id")
             resolved_key = key or "result"
+            try:
+                block_shift = int(param_value.get("shift", 0) or 0)
+            except (TypeError, ValueError):
+                block_shift = 0
+            if block_shift != 0:
+                logger.warning(
+                    f"[_resolve_value] Shifted block_result (shift={block_shift}) "
+                    f"for block_id '{block_id}' is unavailable in live mode: "
+                    f"no block history is kept."
+                )
+                return None
             trace = context.get("trace")
             if trace:
                 block_trace = None
@@ -7908,6 +7950,332 @@ class BaseStrategy:
                 return float(val)
         return None
 
+    @staticmethod
+    def _parse_indicator_key(key: str) -> Optional[Dict[str, Any]]:
+        """Parses an indicator key into a computation spec.
+
+        Mirrors DataConsumer._parse_indicator_string naming so both sides
+        address the same columns. Supported: SMA_p, EMA_p, RSI_p, ADX_p,
+        ATR_p, NATR_p, MACD_f_s_g (+MACDs_/MACDh_ variants),
+        STOCHk_/STOCHd_k_d_s, BBL_/BBU_/BBB_p_std.
+        """
+        if not key or not isinstance(key, str):
+            return None
+        parts = key.upper().split("_")
+        kind = parts[0]
+        try:
+            if kind in ("SMA", "EMA", "RSI", "ADX", "ATR", "NATR"):
+                if len(parts) == 2 and parts[1].isdigit():
+                    return {"kind": kind.lower(), "length": int(parts[1])}
+                return None
+            if kind in ("MACD", "MACDS", "MACDH"):
+                nums = [int(p) for p in parts[1:] if p.isdigit()]
+                if len(nums) >= 3:
+                    return {
+                        "kind": "macd",
+                        "prefix": kind,
+                        "fast": nums[0],
+                        "slow": nums[1],
+                        "signal": nums[2],
+                    }
+                return None
+            if kind in ("STOCHK", "STOCHD"):
+                if len(parts) >= 4 and all(p.isdigit() for p in parts[1:4]):
+                    return {
+                        "kind": "stoch",
+                        "prefix": kind,
+                        "k": int(parts[1]),
+                        "d": int(parts[2]),
+                        "smooth": int(parts[3]),
+                    }
+                return None
+            if kind in ("BBL", "BBU", "BBB"):
+                if len(parts) >= 3 and parts[1].isdigit():
+                    return {
+                        "kind": "bbands",
+                        "prefix": kind,
+                        "length": int(parts[1]),
+                        "std": float(parts[2]),
+                    }
+                return None
+        except (ValueError, IndexError):
+            return None
+        return None
+
+    def _indicator_series_for_key(
+        self, df: "pd.DataFrame", key: str
+    ) -> Optional["pd.Series"]:
+        """Computes the indicator series for a key on a kline DataFrame.
+
+        Uses the same formulas as the live consumer (pandas_ta where it does),
+        so resolved values match pair_info values produced in production.
+        Returns None for unknown keys or missing columns.
+        """
+        import pandas_ta as ta
+
+        from .utils import calculate_scalper_natr
+
+        if df is None or df.empty or "close" not in df.columns:
+            return None
+        spec = self._parse_indicator_key(key)
+        if spec is None:
+            return None
+        close = df["close"].astype(float)
+        kind = spec["kind"]
+        try:
+            if kind == "sma":
+                return close.rolling(spec["length"]).mean()
+            if kind == "ema":
+                return close.ewm(span=spec["length"], adjust=False).mean()
+            if kind == "rsi":
+                result = ta.rsi(close=close, length=spec["length"])
+                return result
+            if kind == "adx":
+                result = ta.adx(
+                    high=df["high"], low=df["low"], close=close, length=spec["length"]
+                )
+                if result is None or result.empty:
+                    return None
+                col = next((c for c in result.columns if c.startswith("ADX_")), None)
+                return result[col] if col else None
+            if kind == "atr":
+                return ta.atr(
+                    high=df["high"], low=df["low"], close=close, length=spec["length"]
+                )
+            if kind == "natr":
+                tmp = calculate_scalper_natr(df.copy(), period=spec["length"])
+                return tmp["natr"] if "natr" in tmp.columns else None
+            if kind == "macd":
+                result = ta.macd(
+                    close=close,
+                    fast=spec["fast"],
+                    slow=spec["slow"],
+                    signal=spec["signal"],
+                )
+                if result is None or result.empty:
+                    return None
+                prefix = spec["prefix"]
+                col = next(
+                    (c for c in result.columns if c.startswith(f"{prefix}_")), None
+                )
+                return result[col] if col else None
+            if kind == "stoch":
+                result = ta.stoch(
+                    high=df["high"],
+                    low=df["low"],
+                    close=close,
+                    k=spec["k"],
+                    d=spec["d"],
+                    smooth_k=spec["smooth"],
+                )
+                if result is None or result.empty:
+                    return None
+                col = next(
+                    (c for c in result.columns if c.startswith(f"{spec['prefix']}_")),
+                    None,
+                )
+                return result[col] if col else None
+            if kind == "bbands":
+                result = ta.bbands(close=close, length=spec["length"], std=spec["std"])
+                if result is None or result.empty:
+                    return None
+                col = next(
+                    (c for c in result.columns if c.startswith(f"{spec['prefix']}_")),
+                    None,
+                )
+                return result[col] if col else None
+        except Exception as e:
+            logger.warning(f"[IndicatorResolve] Failed computing '{key}': {e}")
+            return None
+        return None
+
+    def _main_position(
+        self, pair_info: Dict, market_data: Dict
+    ) -> Tuple[Optional["pd.DataFrame"], Optional[int], Any]:
+        """Returns (main_df, main_pos, main_ts) for HTF bar mapping.
+
+        main_pos is current_candle_index (fallback: last row). Vector parity:
+        every HTF value is addressed through the main-timeline position.
+        """
+        if not isinstance(pair_info, dict) or not isinstance(market_data, dict):
+            return None, None, None
+        main_tf = pair_info.get("candle_timeframe", "1m")
+        df = market_data.get(f"kline_{main_tf}")
+        if df is None or df.empty:
+            return None, None, None
+        idx = pair_info.get("current_candle_index")
+        if idx is None:
+            idx = len(df) - 1
+        try:
+            pos = max(0, min(int(idx), len(df) - 1))
+        except (TypeError, ValueError):
+            return None, None, None
+        try:
+            ts = df.index[pos]
+        except (IndexError, KeyError):
+            return None, None, None
+        return df, pos, ts
+
+    @staticmethod
+    def _htf_bar_pos(htf_df: "pd.DataFrame", ts: Any) -> int:
+        """Position of the HTF bar containing ts (ffill). -1 when unknown."""
+        try:
+            pos = htf_df.index.get_indexer([pd.Timestamp(ts)], method="ffill")[0]
+            return int(pos)
+        except Exception:
+            return -1
+
+    def _resolve_htf_candle_value(
+        self,
+        pair_info: Dict,
+        market_data: Dict,
+        timeframe: str,
+        key: str,
+        shift: int = 0,
+    ) -> Optional[float]:
+        """Resolves an OHLCV value on a higher timeframe.
+
+        Vector parity rule: value = HTF_series[B(i) - shift - 1], where B(i)
+        is the HTF bar containing main-timeline position i (i.e. the vector
+        backtester broadcast, which shifts HTF series by one bar before
+        forward-filling). Falls back to slice-end mapping when the main
+        position is unknown.
+        """
+        if not isinstance(market_data, dict) or not key:
+            return None
+        try:
+            shift_i = int(shift or 0)
+        except (TypeError, ValueError):
+            return None
+        if shift_i < 0:
+            return None
+        df = market_data.get(f"kline_{timeframe}")
+        if df is None or df.empty or key not in df.columns:
+            return None
+        main_df, main_pos, main_ts = self._main_position(pair_info, market_data)
+        if main_df is None or main_pos is None or main_ts is None:
+            return None
+        bar = self._htf_bar_pos(df, main_ts)
+        if bar < 0:
+            return None
+        target_pos = bar - shift_i - 1
+        if target_pos < 0:
+            return None
+        try:
+            val = df.iloc[target_pos][key]
+        except (IndexError, KeyError):
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_indicator_value(
+        self,
+        pair_info: Dict,
+        market_data: Dict,
+        key: str,
+        timeframe: Optional[str] = None,
+        shift: int = 0,
+    ) -> Optional[float]:
+        """Timeframe/shift-aware indicator resolution with memoization.
+
+        Vector parity rule: value = series[B(i) - shift - 1] for HTF (B(i) is
+        the HTF bar containing main-timeline position i — the vector
+        backtester broadcast shifts HTF series by one bar before
+        forward-filling), and series[i - shift] on the main timeframe.
+        - timeframe == main TF and shift == 0: legacy pair_info fast path.
+        - otherwise computed from the requested TF DataFrame.
+        Memoized per (symbol, tf, key, main_ts, shift): recomputation happens
+        at most once per evaluated candle instead of on every tick.
+        Returns None when data is missing (callers fail closed).
+        """
+        if not key or not isinstance(pair_info, dict):
+            return None
+        main_tf = pair_info.get("candle_timeframe", "1m")
+        tf = timeframe or main_tf
+        try:
+            shift_i = int(shift or 0)
+        except (TypeError, ValueError):
+            shift_i = 0
+        if shift_i < 0:
+            shift_i = 0
+        key_s = str(key)
+
+        if tf == main_tf and shift_i == 0 and not pair_info.get("_no_cached_values"):
+            for variant in (key_s, key_s.upper(), key_s.lower()):
+                val = pair_info.get(variant)
+                if val is not None:
+                    try:
+                        return float(val)
+                    except (TypeError, ValueError):
+                        return None
+
+        if not isinstance(market_data, dict):
+            return None
+        df = market_data.get(f"kline_{tf}")
+        if df is None or df.empty:
+            return None
+        main_df, main_pos, main_ts = self._main_position(pair_info, market_data)
+        if tf == main_tf:
+            if main_df is None or main_pos is None or main_ts is None:
+                return None
+            target_pos = main_pos - shift_i
+            series_df = main_df
+            anchor_ts = main_ts
+        else:
+            if main_df is None or main_pos is None or main_ts is None:
+                # Fallback without main position: slice-end mapping.
+                bar = len(df) - 1
+                anchor_ts = df.index[bar]
+            else:
+                bar = self._htf_bar_pos(df, main_ts)
+                anchor_ts = main_ts
+            if bar < 0:
+                return None
+            target_pos = bar - shift_i - 1
+            series_df = df
+        if target_pos < 0:
+            return None
+        try:
+            anchor_str = str(anchor_ts)
+        except Exception:
+            return None
+
+        cache = getattr(self, "_tf_indicator_cache", None)
+        if cache is None:
+            cache = {}
+            self._tf_indicator_cache = cache
+        cache_key = (
+            str(pair_info.get("symbol", "?")),
+            str(tf),
+            key_s.upper(),
+            anchor_str,
+            int(shift_i),
+        )
+        if cache_key in cache:
+            return cache[cache_key]
+        if len(cache) > 3000:
+            cache.clear()
+
+        series = self._indicator_series_for_key(series_df, key_s)
+        if series is None or target_pos >= len(series):
+            return None
+        try:
+            val = series.iloc[target_pos]
+        except (IndexError, KeyError):
+            return None
+        if val is None:
+            return None
+        try:
+            if pd.isna(val):
+                return None
+        except (TypeError, ValueError):
+            return None
+        result = float(val)
+        cache[cache_key] = result
+        return result
+
     # AI_CONTEXT_END
 
     # AI_CONTEXT_START: _check_condition_macd
@@ -8253,11 +8621,55 @@ class BaseStrategy:
     # AI_CONTEXT_END
 
     # AI_CONTEXT_START: _check_condition_price_comparison
+    def _resolve_operand_previous_value(
+        self, operand_cfg: Any, context: Dict[str, Any]
+    ) -> Tuple[Any, Optional[str]]:
+        """Resolves the previous-bar value of an operand for cross operators.
+
+        Vector parity: previous value = the same operand evaluated at main
+        position i-1 (the backtester shifts the whole comparison by one row
+        on the main timeline). block_result operands have no history in live
+        mode and always produce an explicit error (fail-closed, never silent).
+        """
+        if not isinstance(operand_cfg, dict) or "source" not in operand_cfg:
+            # Static value: shift-invariant (same as a constant series).
+            return operand_cfg, None
+        if operand_cfg.get("source") == "block_result":
+            return None, (
+                "cross_above/cross_below over block_result needs block history, "
+                "which is unavailable in live mode; split into two comparisons "
+                "(prev vs level with lt + curr vs level with gt)"
+            )
+        pair_info = context.get("pair_info", {})
+        market_data = context.get("market_data", {})
+        main_df, main_pos, _ = self._main_position(pair_info, market_data)
+        if main_df is None or main_pos is None or main_pos <= 0:
+            return None, "no previous candle available for cross evaluation"
+        prev_info = dict(pair_info) if isinstance(pair_info, dict) else {}
+        prev_info["current_candle_index"] = main_pos - 1
+        # The copy still carries CURRENT candle OHLCV/indicator values, which
+        # the pair_info fast paths would return instead of previous ones.
+        # This internal flag forces DataFrame-based resolution.
+        prev_info["_no_cached_values"] = True
+        try:
+            prev_info["timestamp_dt"] = main_df.index[main_pos - 1]
+        except (IndexError, KeyError):
+            pass
+        prev_context = dict(context) if isinstance(context, dict) else {}
+        prev_context["pair_info"] = prev_info
+        return self._resolve_value(operand_cfg, prev_context), None
+
     def _check_condition_value_comparison(
         self, pair_info: Dict, market_data: Dict, params: Dict, context: Dict
     ) -> Tuple[bool, Dict[str, Any]]:
         """
         Compares two dynamic or static values with enhanced logging.
+
+        Supports cross_above/cross_below with the same semantics as the
+        vector backtester: (curr_L > curr_R) and (prev_L <= prev_R).
+        Previous values come from shift+1 (candles), previous indicator
+        values, or the operand itself (constants). block_result operands
+        have no history in live mode and fail closed with an explicit error.
         """
         left_operand_cfg = (
             params.get("leftOperand")
@@ -8288,6 +8700,43 @@ class BaseStrategy:
             try:
                 # 3. Try to convert them to numbers for comparison
                 left_float, right_float = float(left_value), float(right_value)
+
+                if operator in ("cross_above", "cross_below"):
+                    left_prev, left_prev_err = self._resolve_operand_previous_value(
+                        left_operand_cfg, context
+                    )
+                    right_prev, right_prev_err = self._resolve_operand_previous_value(
+                        right_operand_cfg, context
+                    )
+                    details["left_prev_resolved"] = left_prev
+                    details["right_prev_resolved"] = right_prev
+                    prev_err = left_prev_err or right_prev_err
+                    if prev_err is not None:
+                        details["error"] = prev_err
+                        logger.warning(
+                            f"[VBS|value_comparison] FAILED cross {operator}: {prev_err}"
+                        )
+                    elif left_prev is None or right_prev is None:
+                        details["error"] = (
+                            "One or both previous values could not be resolved "
+                            f"for cross {operator}."
+                        )
+                        logger.warning(
+                            f"[VBS|value_comparison] FAILED because a previous value was None. "
+                            f"Left prev: {left_prev}, Right prev: {right_prev}"
+                        )
+                    else:
+                        left_p, right_p = float(left_prev), float(right_prev)
+                        if operator == "cross_above":
+                            result = (left_float > right_float) and (left_p <= right_p)
+                        else:
+                            result = (left_float < right_float) and (left_p >= right_p)
+                        logger.info(
+                            f"[VBS|value_comparison] "
+                            f"Check: {left_float:.4f} {operator} {right_float:.4f} "
+                            f"(prev {left_p:.4f}/{right_p:.4f}) -> {'PASSED' if result else 'FAILED'}"
+                        )
+                    return result, details
 
                 # Support for both symbolic and text operators
                 op_map = {

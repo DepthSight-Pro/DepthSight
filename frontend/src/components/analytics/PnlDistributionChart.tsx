@@ -17,6 +17,44 @@ interface PnlDistributionChartProps {
 	tradeData: TradeData[];
 }
 
+interface CustomDistTooltipProps {
+	active?: boolean;
+	payload?: Array<{ dataKey?: string; value?: unknown }>;
+	label?: string;
+	profitableText: string;
+	losingText: string;
+}
+
+const CustomDistTooltip = ({
+	active,
+	payload,
+	label,
+	profitableText,
+	losingText,
+}: CustomDistTooltipProps) => {
+	if (!active || !payload?.length) return null;
+	const positive = Number(payload.find((p) => p.dataKey === "positive")?.value || 0);
+	const negative = Number(payload.find((p) => p.dataKey === "negative")?.value || 0);
+
+	return (
+		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
+			<div className="text-[11px] font-semibold text-white/70 mb-1.5">
+				Range: ${label}
+			</div>
+			<div className="space-y-1 text-xs">
+				<div className="flex items-center justify-between gap-4">
+					<span className="text-emerald-400 font-medium">{profitableText}:</span>
+					<span className="font-bold text-white">{positive}</span>
+				</div>
+				<div className="flex items-center justify-between gap-4">
+					<span className="text-rose-400 font-medium">{losingText}:</span>
+					<span className="font-bold text-white">{negative}</span>
+				</div>
+			</div>
+		</div>
+	);
+};
+
 export const PnlDistributionChart = ({
 	tradeData,
 }: PnlDistributionChartProps) => {
@@ -80,11 +118,13 @@ export const PnlDistributionChart = ({
 				/>
 				<YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
 				<Tooltip
-					cursor={{ fill: "hsl(var(--accent))" }}
-					contentStyle={{
-						background: "hsl(var(--card))",
-						borderColor: "hsl(var(--border))",
-					}}
+					cursor={{ fill: "rgba(255, 255, 255, 0.05)" }}
+					content={
+						<CustomDistTooltip
+							profitableText={t("profitableTrades")}
+							losingText={t("losingTrades")}
+						/>
+					}
 				/>
 				<Bar
 					dataKey="positive"

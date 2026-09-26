@@ -4,7 +4,7 @@ import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSwipeable } from "react-swipeable";
-import { toast } from "sonner";
+import { toast } from "react-hot-toast";
 import { Logo } from "../components/ui/logo";
 import { useAIChat } from "../contexts/AIChatContext";
 import { api } from "../services/api";

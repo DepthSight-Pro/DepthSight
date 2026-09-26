@@ -1,8 +1,10 @@
 # api/push_sender.py
-import os
 import json
-from pywebpush import webpush, WebPushException
 import logging
+import os
+from typing import Optional
+
+from pywebpush import WebPushException, webpush
 
 logger = logging.getLogger(__name__)
 
@@ -17,19 +19,36 @@ VAPID_CLAIMS = {
     "sub": "mailto:admin@depthsight.com"  # Should be a valid mailto: or https: URL
 }
 
+# Delivery statuses returned by send_push_notification (never raises).
+PUSH_SENT = "sent"
+PUSH_EXPIRED = "expired"  # 404/410 from the push service: drop the subscription
+PUSH_FAILED = "failed"
+PUSH_NOT_CONFIGURED = "not_configured"
+
+# Deep-link opened when the user taps a trading push (PWA Alerts tab).
+DEFAULT_PUSH_URL = os.getenv("PWA_NOTIFICATIONS_URL", "/pwa/?screen=notifications")
+
 
 def send_push_notification(
-    subscription_info: dict, title: str, body: str, tag: str = "depthsight-notification"
-):
+    subscription_info: dict,
+    title: str,
+    body: str,
+    tag: str = "depthsight-notification",
+    url: Optional[str] = None,
+) -> str:
     """
     Sends a push notification to a single subscriber.
+
+    Returns one of PUSH_SENT / PUSH_EXPIRED / PUSH_FAILED / PUSH_NOT_CONFIGURED.
     """
     if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
         logger.error("VAPID keys are not configured. Cannot send push notification.")
-        return
+        return PUSH_NOT_CONFIGURED
 
     try:
         payload = {"title": title, "body": body, "tag": tag}
+        if url:
+            payload["url"] = url
 
         webpush(
             subscription_info=subscription_info,
@@ -40,21 +59,26 @@ def send_push_notification(
         logger.info(
             f"Push notification sent successfully to endpoint: {subscription_info.get('endpoint')}"
         )
+        return PUSH_SENT
 
     except WebPushException as ex:
-        logger.error(f"WebPushException: {ex}")
-        # Mozilla returns 410 Gone for expired subscriptions
-        if ex.response and ex.response.status_code == 410:
+        status_code = None
+        try:
+            if ex.response is not None:
+                status_code = ex.response.status_code
+        except Exception:
+            status_code = None
+        if status_code in (404, 410):
             logger.info(
-                f"Subscription has expired or is no longer valid: {ex.response.text}"
+                f"Push subscription is gone (status {status_code}), "
+                f"endpoint: {subscription_info.get('endpoint')}"
             )
-            # Here you might want to trigger a process to remove the subscription from the DB
-        else:
-            logger.error(
-                f"Failed to send push notification: {ex.response.text if ex.response else 'No response'}"
-            )
+            return PUSH_EXPIRED
+        logger.error(f"WebPushException: {ex}")
+        return PUSH_FAILED
     except Exception as e:
         logger.error(
             f"An unexpected error occurred in send_push_notification: {e}",
             exc_info=True,
         )
+        return PUSH_FAILED

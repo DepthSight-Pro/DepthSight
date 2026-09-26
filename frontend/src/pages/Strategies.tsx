@@ -40,6 +40,7 @@ import {
 	fmt,
 	Panel,
 	Segmented,
+	Sparkline,
 	Stat,
 	toneText,
 } from "@/components/ui/quant-ui";
@@ -51,7 +52,9 @@ import {
 	useStopStrategy,
 	useStrategies,
 	useStrategyConfigsList,
+	useTradeHistory,
 } from "@/lib/api";
+import { cumulativePnlByStrategy } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { useAccountStore } from "@/stores/accountStore";
 import type { PositionData, StrategyConfig, StrategyData } from "@/types/api";
@@ -64,6 +67,48 @@ const calculateRuntime = (startTime: string | undefined): string => {
 	} catch {
 		return "—";
 	}
+};
+
+// Helper to resolve equity series for strategy card
+const resolveStrategyEquity = (
+	s: CombinedStrategy,
+	primary?: StrategyData,
+	equityMap?: Map<string, number[]>,
+): number[] => {
+	if (!equityMap) return [];
+	const candidateKeys: (string | undefined | null)[] = [
+		s.id ? String(s.id) : undefined,
+		primary?.config_id ? String(primary.config_id) : undefined,
+		s.name,
+		primary?.name,
+		s.config_data?.strategy_name,
+		primary?.strategy_name,
+		primary?.id ? String(primary.id) : undefined,
+	];
+
+	if (s.instances && s.instances.length > 0) {
+		for (const inst of s.instances) {
+			candidateKeys.push(
+				inst.config_id ? String(inst.config_id) : undefined,
+				inst.name,
+				inst.strategy_name,
+				inst.id ? String(inst.id) : undefined,
+			);
+		}
+	}
+
+	let bestMatch: number[] = [];
+	for (const key of candidateKeys) {
+		if (!key) continue;
+		const eq = equityMap.get(key);
+		if (eq && eq.length >= 2) {
+			return eq;
+		}
+		if (eq && eq.length > bestMatch.length) {
+			bestMatch = eq;
+		}
+	}
+	return bestMatch;
 };
 
 export type CombinedStrategy = StrategyConfig &
@@ -105,6 +150,42 @@ export default function Strategies() {
 		isLoading: isLoadingConfigs,
 		refetch: refetchConfigs,
 	} = useStrategyConfigsList();
+
+	// 30d stats trade history to compute equity curves for strategy cards
+	const [now] = useState(() => new Date());
+	const statsStart = useMemo(
+		() => new Date(now.getTime() - 30 * 86400 * 1000),
+		[now],
+	);
+	const scopedApiKeyId =
+		selectedApiKeyId !== "all" ? selectedApiKeyId : undefined;
+
+	const { data: liveTradesData, refetch: refetchLiveTrades } = useTradeHistory({
+		mode: "live",
+		startDate: statsStart.toISOString(),
+		endDate: now.toISOString(),
+		limit: 10000,
+		apiKeyId: scopedApiKeyId,
+	});
+
+	const { data: paperTradesData, refetch: refetchPaperTrades } =
+		useTradeHistory({
+			mode: "paper",
+			startDate: statsStart.toISOString(),
+			endDate: now.toISOString(),
+			limit: 10000,
+		});
+
+	const allTrades = useMemo(() => {
+		const live = liveTradesData?.trades || [];
+		const paper = paperTradesData?.trades || [];
+		return [...live, ...paper];
+	}, [liveTradesData, paperTradesData]);
+
+	const strategyEquity = useMemo(
+		() => cumulativePnlByStrategy(allTrades),
+		[allTrades],
+	);
 
 	const isInitialLoading =
 		isLoadingLive || isLoadingPaper || isLoadingConfigs;
@@ -339,6 +420,8 @@ export default function Strategies() {
 		refetchLive();
 		refetchPaper();
 		refetchConfigs();
+		refetchLiveTrades();
+		refetchPaperTrades();
 	};
 
 	// Start strategy -> open LaunchStrategyModal
@@ -778,6 +861,7 @@ export default function Strategies() {
 						const isActionPending =
 							pendingActionId === s.id ||
 							(primary && pendingActionId === primary.id);
+						const equity = resolveStrategyEquity(s, primary, strategyEquity);
 
 							return (
 								<div
@@ -914,22 +998,36 @@ export default function Strategies() {
 											)}
 										</div>
 
-									{/* Total P&L (live-ticked when running) */}
-									<div className="mt-3.5 flex items-end justify-end">
+									{/* Total P&L (live-ticked) & Strategy Equity Sparkline */}
+									<div className="mt-3.5 flex items-center justify-between gap-3">
+										<div className="flex items-center min-w-[76px]">
+											{equity.length >= 2 ? (
+												<Sparkline
+													data={equity.slice(-30)}
+													width={76}
+													height={24}
+												/>
+											) : (
+												<span className="w-[76px] text-center font-mono text-[11px] text-white/25">
+													—
+												</span>
+											)}
+										</div>
+
 										<div className="text-right font-mono">
-												<div
-													className={cn(
-														"text-[16px] font-semibold leading-tight",
-														toneText(pnl),
-													)}
-												>
-													{fmt.signed(pnl, 2)} USDT
-												</div>
-												<div className="text-[10px] text-white/35">
-													{t("colTotalPnl", "Total P&L")}
-												</div>
+											<div
+												className={cn(
+													"text-[16px] font-semibold leading-tight",
+													toneText(pnl),
+												)}
+											>
+												{fmt.signed(pnl, 2)} USDT
+											</div>
+											<div className="text-[10px] text-white/35">
+												{t("colTotalPnl", "Total P&L")}
 											</div>
 										</div>
+									</div>
 
 										{/* Mini Metric Rail */}
 										<div className="mt-3 grid grid-cols-3 gap-1.5 rounded-xl border border-white/5 bg-white/[0.02] p-2 text-center">

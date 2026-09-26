@@ -28,12 +28,16 @@ const toastVariants = cva(
 	{
 		variants: {
 			variant: {
-				// Translucent glass look, consistent with the platform cards
 				default:
-					"bg-background/80 bg-gradient-to-b from-white/[0.05] to-white/[0.015] text-foreground",
-				// Destructive keeps a red accent but stays translucent
+					"bg-background/80 bg-gradient-to-b from-white/[0.05] to-white/[0.015] text-foreground border-white/10",
+				success:
+					"success group border-emerald-500/35 bg-background/85 bg-gradient-to-b from-emerald-500/10 to-transparent text-foreground shadow-[0_0_25px_-5px_rgba(16,185,129,0.25)]",
 				destructive:
-					"destructive group border-red-500/30 bg-red-500/10 text-foreground [&>svg]:text-red-400",
+					"destructive group border-red-500/35 bg-background/85 bg-gradient-to-b from-red-500/10 to-transparent text-foreground shadow-[0_0_25px_-5px_rgba(239,68,68,0.25)] [&>svg]:text-red-400",
+				warning:
+					"warning group border-amber-500/35 bg-background/85 bg-gradient-to-b from-amber-500/10 to-transparent text-foreground shadow-[0_0_25px_-5px_rgba(245,158,11,0.25)]",
+				info:
+					"info group border-cyan-500/35 bg-background/85 bg-gradient-to-b from-cyan-500/10 to-transparent text-foreground shadow-[0_0_25px_-5px_rgba(6,182,212,0.25)]",
 			},
 		},
 		defaultVariants: {

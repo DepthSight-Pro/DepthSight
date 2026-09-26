@@ -16,7 +16,7 @@ import {
   Calendar,
   Search,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import { apiClient } from "@/lib/apiClient";
 import {
   Card,

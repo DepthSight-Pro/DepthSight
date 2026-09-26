@@ -1,0 +1,12 @@
+{
+	"title": "Notifications",
+	"bellLabel": "Notifications",
+	"markAllAsRead": "Mark all as read",
+	"clearAll": "Clear all",
+	"emptyTitle": "No notifications yet",
+	"emptyDescription": "Trading events — positions, partial TPs, stop-loss moves and risk alerts — will appear here.",
+	"justNow": "just now",
+	"minutesAgo": "{{count}}m ago",
+	"hoursAgo": "{{count}}h ago",
+	"daysAgo": "{{count}}d ago"
+}

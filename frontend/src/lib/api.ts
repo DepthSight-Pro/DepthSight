@@ -2854,7 +2854,17 @@ export interface LocalMiningStats {
 		tradeVolume: number;
 		estimatedRebate: number;
 	}>;
+	dailyHistory?: MiningDailyHistoryItem[];
+	daily_history?: MiningDailyHistoryItem[];
 	[key: string]: unknown;
+}
+
+export interface MiningDailyHistoryItem {
+	date: string;
+	reward: number;
+	rebates?: number;
+	tradesCount?: number;
+	trades_count?: number;
 }
 
 export interface LocalMiningStatusResponse {
@@ -2880,6 +2890,12 @@ export interface LocalMiningStatusResponse {
 	userCumulativeRebate?: number;
 	exchangeMultipliers?: Record<string, number>;
 	exchange_multipliers?: Record<string, number>;
+	dailyHistory?: MiningDailyHistoryItem[];
+	daily_history?: MiningDailyHistoryItem[];
+	epochNumber?: number;
+	epoch_number?: number;
+	launchDate?: string;
+	launch_date?: string;
 }
 
 export interface MiningActivatePayload {

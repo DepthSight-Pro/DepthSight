@@ -323,11 +323,13 @@ const AnalyticsScreen: React.FC = () => {
 							<XAxis dataKey="timestamp" hide />
 							<YAxis hide domain={["auto", "auto"]} />
 							<Tooltip
+								wrapperStyle={{ outline: "none", border: "none" }}
 								contentStyle={{
 									backgroundColor: "hsl(var(--card))",
 									borderColor: "hsl(var(--border))",
 									fontSize: "12px",
 									borderRadius: "8px",
+									outline: "none",
 								}}
 								labelStyle={{ display: "none" }}
 								formatter={(value: number) => [`$${value.toFixed(2)}`, "PnL"]}
@@ -370,11 +372,13 @@ const AnalyticsScreen: React.FC = () => {
 							/>
 							<YAxis hide />
 							<Tooltip
+								wrapperStyle={{ outline: "none", border: "none" }}
 								contentStyle={{
 									backgroundColor: "hsl(var(--card))",
 									borderColor: "hsl(var(--border))",
 									fontSize: "10px",
 									borderRadius: "8px",
+									outline: "none",
 								}}
 								formatter={(value: number) => [`$${value.toFixed(2)}`, "PnL"]}
 							/>

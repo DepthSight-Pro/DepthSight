@@ -19,6 +19,7 @@ import loginEn from "./locales/en/login.json";
 import modelLabEn from "./locales/en/modelLab.json";
 import navigationEn from "./locales/en/navigation.json";
 import notFoundEn from "./locales/en/notFound.json";
+import notificationsEn from "./locales/en/notifications.json";
 import positionsEn from "./locales/en/positions.json";
 import registerEn from "./locales/en/register.json";
 import researchEn from "./locales/en/research.json";
@@ -46,6 +47,7 @@ import loginRu from "./locales/ru/login.json";
 import modelLabRu from "./locales/ru/modelLab.json";
 import navigationRu from "./locales/ru/navigation.json";
 import notFoundRu from "./locales/ru/notFound.json";
+import notificationsRu from "./locales/ru/notifications.json";
 import positionsRu from "./locales/ru/positions.json";
 import registerRu from "./locales/ru/register.json";
 import researchRu from "./locales/ru/research.json";
@@ -86,6 +88,7 @@ const resources = {
 		community: communityEn,
 		mining: miningEn,
 		admin: adminEn,
+		notifications: notificationsEn,
 	},
 	ru: {
 		common: commonRu,
@@ -115,6 +118,7 @@ const resources = {
 		community: communityRu,
 		mining: miningRu,
 		admin: adminRu,
+		notifications: notificationsRu,
 	},
 };
 

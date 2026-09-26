@@ -400,7 +400,6 @@ async def grant_achievement(db: AsyncSession, user_id: int, achievement_id: str)
                 }
             )
             await redis.publish(f"user:{user_id}:notifications", event_payload)
-            await redis.publish("achievement_unlocked", event_payload)
             await redis.close()
         except Exception as ws_err:
             logger.debug(f"Failed to publish achievement event to Redis: {ws_err}")

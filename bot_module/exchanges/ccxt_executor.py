@@ -63,6 +63,9 @@ class CcxtExecutor:
             else:
                 exchange_options["defaultSubType"] = "swap"
                 exchange_options["fetchMarkets"] = ["swap"]
+        elif "spot" in self.market_type:
+            exchange_options["defaultType"] = "spot"
+            # exchange_options['fetchMarkets'] = ['spot'] # Can cause KeyErrors in some sandbox environments
 
         # Inject Bybit Broker ID if configured
         if self.exchange_id == "bybit":
@@ -94,11 +97,8 @@ class CcxtExecutor:
             broker_id = getattr(config, "BITGET_BROKER_ID", None)
             if broker_id:
                 exchange_options["brokerId"] = broker_id
+                exchange_options["broker"] = broker_id
                 logger.info(f"CcxtExecutor: Using Bitget Broker ID: {broker_id}")
-
-        elif "spot" in self.market_type:
-            exchange_options["defaultType"] = "spot"
-            # exchange_options['fetchMarkets'] = ['spot'] # Can cause KeyErrors in some sandbox environments
 
         # Unpack packed secret and passphrase if it's JSON
         import json

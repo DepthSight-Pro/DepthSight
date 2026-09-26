@@ -420,10 +420,18 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 						const cachedRow = cachedByIdentity.get(rowIdentity(row));
 						return cachedRow ? { ...cachedRow, ...row } : row;
 					});
-					if (apiKey === null) return merged;
-					const rest = oldRows.filter(
-						(o) => Number(o.api_key_id) !== apiKey,
-					);
+					if (apiKey === null)
+						// Unknown controller scope: never wipe on empty snapshots.
+						return incoming.length === 0 ? oldRows : merged;
+					// Drop only this controller's rows IN THE SAME MODE bucket:
+					// a paper-controller push must not wipe live rows of the
+					// same account (and vice versa).
+					const rest = oldRows.filter((o) => {
+						if (Number(o.api_key_id) !== apiKey) return true;
+						const om = (o as Record<string, unknown>).mode;
+						if (om === null || om === undefined || !qMode) return false;
+						return normMode(om) !== normMode(qMode);
+					});
 					return [...rest, ...merged];
 				});
 			}

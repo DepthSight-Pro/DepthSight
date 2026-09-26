@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type React from "react";
 import { createContext, type ReactNode, useContext } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { toast } from "react-hot-toast";
 import { api } from "../services/api";
 import type { SymbolSelectionConfig } from "../types";
 

@@ -14,7 +14,6 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { ProtectedLayout } from "@/components/layout/ProtectedLayout";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
@@ -22,6 +21,7 @@ import { PortfolioModeProvider } from "@/context/PortfolioModeContext";
 import { SymbolSelectionSettingsProvider } from "@/context/SymbolSelectionSettingsContext";
 import { ThemeProvider } from "@/context/ThemeProvider";
 import { WebSocketProvider } from "@/context/WebSocketProvider";
+import { NotificationProvider } from "@/features/notifications/NotificationProvider";
 import AdminRoute from "./components/auth/AdminRoute";
 import { GeneDiscoveryNotification } from "./components/genome/GeneDiscoveryNotification";
 import OnboardingTutorial from "./components/OnboardingTutorial";
@@ -121,7 +121,8 @@ function App() {
 					<BrowserRouter>
 						<AuthProvider>
 							<WebSocketProvider>
-								<TooltipProvider>
+								<NotificationProvider>
+									<TooltipProvider>
 									<ReferralTracker />
 									<SymbolSelectionSettingsProvider>
 										<PortfolioModeProvider>
@@ -286,11 +287,11 @@ function App() {
 
 											{/* Components for notifications */}
 											<Toaster />
-											<Sonner />
 										</PortfolioModeProvider>
 									</SymbolSelectionSettingsProvider>
 								</TooltipProvider>
-							</WebSocketProvider>
+							</NotificationProvider>
+						</WebSocketProvider>
 						</AuthProvider>
 					</BrowserRouter>
 				</QueryClientProvider>

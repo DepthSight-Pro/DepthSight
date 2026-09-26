@@ -215,6 +215,8 @@ async def test_sl_replace_failure_retries_and_alerts(controller, mock_deps):
     controller.close_position.assert_called_once_with(
         symbol, reason="EMERGENCY_SL_REPLACE_FAILED", market_type="futures_usdtm"
     )
+    # Telegram alert is scheduled via loop.create_task: let pending tasks run.
+    await asyncio.sleep(0.05)
     # Telegram alert sent
     assert mock_deps["telegram_notifier"].bot_error.called
     assert (
@@ -353,3 +355,33 @@ async def test_build_adopted_position_unique_client_id(controller, mock_deps):
     assert adopted.remaining_quantity == 0.006
     assert adopted.entry_client_order_id.startswith("x-entry-39a86f32cc7444_orphan_")
     assert adopted.entry_client_order_id != "x-entry-39a86f32cc7444"
+
+
+@pytest.mark.asyncio
+async def test_scale_in_fill_sends_notification(controller, mock_deps):
+    """Verify that a grid/DCA scale-in fill emits entry notifications."""
+    symbol = "ETHUSDT"
+    pos = LivePosition(
+        symbol=symbol,
+        direction=SignalDirection.LONG,
+        entry_price=2500.0,
+        initial_quantity=0.02,
+        remaining_quantity=0.02,
+        entry_time=123.0,
+        strategy="Grid",
+        status="OPEN",
+        mode="live",
+        market_type="futures_usdtm",
+    )
+    controller._active_positions[symbol] = pos
+
+    await controller._handle_scale_in_fill(
+        symbol, 2480.0, 0.01, "x-grid-abc123", market_type="futures_usdtm"
+    )
+    await asyncio.sleep(0.1)
+
+    # Averaging math applied.
+    assert pos.remaining_quantity == pytest.approx(0.03)
+    assert pos.entry_price == pytest.approx((0.02 * 2500.0 + 0.01 * 2480.0) / 0.03)
+    # Notification scheduled (forwarded through the UI mirror proxy).
+    assert mock_deps["telegram_notifier"].scale_in_filled.called

@@ -1276,6 +1276,36 @@ async def test_weex_password_resolution(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_bybit_broker_id_injection(monkeypatch):
+    from bot_module import config
+
+    monkeypatch.setattr(config, "BYBIT_BROKER_ID", "bb_broker_777")
+
+    executor = CcxtExecutor(
+        "bybit",
+        "key-value",
+        "secret-value",
+        market_type="futures_usdtm",
+        sandbox=False,
+    )
+    try:
+        # 1. Verify broker ID is injected into options and headers
+        assert executor._exchange.options["brokerId"] == "bb_broker_777"
+        assert executor._exchange.headers["X-Referer"] == "bb_broker_777"
+
+        # 2. Verify POST sign request includes Referer
+        signed_req = executor._exchange.sign(
+            "v5/order/create",
+            api="private",
+            method="POST",
+            params={"category": "linear"},
+        )
+        assert signed_req["headers"].get("Referer") == "bb_broker_777"
+    finally:
+        await executor.close()
+
+
+@pytest.mark.asyncio
 async def test_okx_broker_id_injection(monkeypatch):
     from bot_module import config
 
@@ -1345,8 +1375,18 @@ async def test_bitget_broker_id_injection(monkeypatch):
         sandbox=False,
     )
     try:
-        # 1. Verify broker ID is injected into options
+        # 1. Verify broker ID is injected into options (both brokerId and broker for CCXT sign headers)
         assert executor._exchange.options["brokerId"] == "bg_broker_123"
+        assert executor._exchange.options["broker"] == "bg_broker_123"
+
+        # Verify X-CHANNEL-API-CODE is included in signed request headers
+        signed_req = executor._exchange.sign(
+            "v2/mix/order/place-order",
+            api=["private", "mix"],
+            method="POST",
+            params={},
+        )
+        assert signed_req["headers"].get("X-CHANNEL-API-CODE") == "bg_broker_123"
 
         # 2. Verify placing order includes the brokerId in params passed to CCXT
         executor._exchange.create_order = AsyncMock(return_value={"id": "order-123"})

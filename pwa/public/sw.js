@@ -93,6 +93,7 @@ self.addEventListener("push", (event) => {
 	const title = data.title || "DepthSight Notification";
 	const body = data.body || "You have a new notification from DepthSight.";
 	const tag = data.tag || "depthsight-notification"; // Group notifications
+	const url = data.url || "/pwa/?screen=notifications";
 
 	event.waitUntil(
 		self.registration.showNotification(title, {
@@ -101,6 +102,7 @@ self.addEventListener("push", (event) => {
 			vibrate: [200, 100, 200],
 			tag: tag,
 			renotify: true,
+			data: { url },
 		}),
 	);
 });
@@ -108,11 +110,24 @@ self.addEventListener("push", (event) => {
 // Notification click event: handle user interaction with notifications
 self.addEventListener("notificationclick", (event) => {
 	event.notification.close();
+	const targetUrl = (event.notification.data && event.notification.data.url) || "/pwa/?screen=notifications";
 
 	event.waitUntil(
 		clients
 			.matchAll({ type: "window", includeUncontrolled: true })
 			.then((clientList) => {
+				// Prefer an already-open PWA window: focus it and route to Alerts.
+				const pwaClient = clientList.find((c) =>
+					c.url.includes("/pwa"),
+				);
+				if (pwaClient) {
+					try {
+						pwaClient.postMessage({ type: "OPEN_NOTIFICATIONS" });
+					} catch (e) {
+						console.warn("[SW] postMessage failed:", e);
+					}
+					return pwaClient.focus();
+				}
 				if (clientList.length > 0) {
 					let client = clientList[0];
 					for (let i = 0; i < clientList.length; i++) {
@@ -122,7 +137,7 @@ self.addEventListener("notificationclick", (event) => {
 					}
 					return client.focus();
 				}
-				return clients.openWindow("/");
+				return clients.openWindow(targetUrl);
 			}),
 	);
 });

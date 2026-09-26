@@ -29,7 +29,7 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import type {
 	FoundationChartProps,
 	KlineData,

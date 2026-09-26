@@ -32,6 +32,7 @@ from bot_module.paper_executor import PaperTradingExecutor
 from bot_module.risk_manager import RiskManager
 from bot_module.trade_logger import TradeLogger
 from bot_module.telegram_notifier import TelegramNotifier
+from bot_module import ui_notifier as ui_notifier_module
 from bot_module.strategy import SignalDirection
 from bot_module.runtime_dependencies import (
     crud,
@@ -567,6 +568,23 @@ class TradingController:
             self.redis_client = None
             self._state_seq = 0
 
+        # In-app / Web Push mirror of Telegram notifications (bot_module/ui_notifier).
+        # Wraps the notifier once so all existing call sites are mirrored without edits.
+        # Refreshed from app_config.notifications in start()/reload_user_app_config().
+        self._notif_settings: Dict[str, Any] = {}
+        self.telegram_notifier = ui_notifier_module.wrap_telegram_notifier(
+            self.telegram_notifier,
+            get_user_id=lambda: self.user_id,
+            get_api_key_id=lambda: self.api_key_id,
+            get_api_key_name=lambda: self.api_key_name,
+            get_redis=lambda: self.redis_client,
+            get_loop=lambda: self.loop,
+            get_settings=lambda: self._notif_settings,
+            resolve_push_subscription=self._get_push_subscription_for_ui,
+        )
+        if self.rm:
+            self.rm.telegram_notifier = self.telegram_notifier
+
         self._running = False
         self._main_task: Optional[asyncio.Task] = None
         self._config_reload_task: Optional[asyncio.Task] = None
@@ -991,6 +1009,27 @@ class TradingController:
                 return {}
         return {}
 
+    async def _get_push_subscription_for_ui(self) -> Optional[Dict[str, Any]]:
+        """Resolves the user's Web Push subscription for background delivery.
+
+        Used by the in-app notification mirror (bot_module/ui_notifier).
+        Returns None when unavailable; never raises.
+        """
+        try:
+            async for db in self.get_db_session():
+                user = await crud.admin_get_user_details(db, self.user_id)
+                if user and getattr(user, "push_subscription", None):
+                    subscription = user.push_subscription
+                    return (
+                        dict(subscription) if isinstance(subscription, dict) else None
+                    )
+                return None
+        except Exception as exc:
+            logger.debug(
+                "Push subscription lookup failed for user %s: %s", self.user_id, exc
+            )
+            return None
+
     async def start(self):
         if self._running:
             logger.warning("TradingController is already running.")
@@ -1018,6 +1057,10 @@ class TradingController:
                     }
                     self.rm.apply_user_settings(runtime_settings)
                     self.user_telegram_chat_id = self.rm.user_telegram_chat_id
+                    # Fresh notification toggles also drive the in-app mirror.
+                    self._notif_settings = self._config_section_to_dict(
+                        app_config.notifications
+                    )
                     logger.info(
                         f"RiskManager configured for user {self.user_id}: Max Concurrent Trades = {self.rm.max_concurrent_trades}"
                     )
@@ -1376,8 +1419,10 @@ class TradingController:
                     token = user_id_context.set(self.user_id)
                     try:
                         command_data = json.loads(message["data"])
-                        command_type = command_data.get("command")
-                        payload = command_data.get("payload")
+                        command_type = command_data.get("command") or command_data.get(
+                            "type"
+                        )
+                        payload = command_data.get("payload") or {}
 
                         logger.info(f"Received command '{command_type}' via Redis.")
 
@@ -1529,10 +1574,22 @@ class TradingController:
                             user_id = payload.get("user_id")
                             if str(user_id) != str(self.user_id):
                                 continue
-                            logger.info(
-                                f"Handling EMERGENCY_STOP for user_id: {user_id}"
+
+                            cmd_api_key_id = payload.get("api_key_id")
+                            if (
+                                cmd_api_key_id is not None
+                                and self.api_key_id is not None
+                                and int(cmd_api_key_id) != self.api_key_id
+                            ):
+                                continue
+
+                            logger.warning(
+                                f"Handling EMERGENCY_STOP for user_id: {user_id} (api_key_id={self.api_key_id}). Initiating emergency liquidation!"
                             )
-                            # await self.executor.close_all_user_positions(user_id=user_id)
+                            self.loop.create_task(
+                                self._handle_emergency_stop(),
+                                name=f"EmergencyStop_{user_id}",
+                            )
 
                         # NOTE: TEST_NOTIFICATION is handled centrally by the bot
                         # runner command listener (shard 0), so it works even
@@ -1951,6 +2008,29 @@ class TradingController:
             )
             config_data["min_total_foundation_weight_threshold"] = config_data.pop(
                 "min_foundation_weight_threshold"
+            )
+
+        # Harmonize foundation_weights like the backtesters do (same healer):
+        # binds lone weight entries to entry group ids (w_ prefix tolerant),
+        # rewires block_result operands and adapts volatility filters.
+        # Without this, live accrues 0 weight while backtests trade.
+        try:
+            from bot_module.strategy_healer import heal_strategy_config
+
+            weights_before = dict(config_data.get("foundation_weights") or {})
+            heal_strategy_config(config_data, symbol=config_data.get("symbol"))
+            weights_after = config_data.get("foundation_weights") or {}
+            added_keys = [k for k in weights_after if k not in weights_before]
+            if added_keys:
+                logger.warning(
+                    f"[StartCmd:{config_id}] strategy_healer bound weights "
+                    f"{added_keys} (before={weights_before}, "
+                    f"after={weights_after})"
+                )
+        except Exception as e_heal:
+            logger.warning(
+                f"[StartCmd:{config_id}] strategy_healer failed, "
+                f"continuing with raw config: {e_heal}"
             )
 
         if logger.isEnabledFor(logging.DEBUG):
@@ -2436,6 +2516,109 @@ class TradingController:
             self._publish_state_to_redis(),
             name=f"PublishState_StopStrategy_{config_id[:8]}",
         )
+
+    async def _handle_emergency_stop(self):
+        """
+        Emergency Stop procedure:
+        Liquidates all active positions for this controller's user,
+        cancels open orders, and handles both tracked and untracked positions.
+        """
+        log_prefix = f"[EmergencyStop:User_{self.user_id}]"
+        logger.warning(f"{log_prefix} === START OF EMERGENCY STOP PROCEDURE ===")
+
+        positions_to_close: List[Tuple[str, Optional[str]]] = []
+        async with self._positions_dict_lock:
+            for pos in list(self._active_positions.values()):
+                if str(getattr(pos, "user_id", self.user_id)) == str(self.user_id):
+                    sym = getattr(pos, "symbol", None)
+                    m_type = self._market_type_for_position(pos)
+                    if sym and (sym, m_type) not in positions_to_close:
+                        positions_to_close.append((sym, m_type))
+
+        # Check all active executors for open positions on exchange that might not be in _active_positions
+        all_executors = [self.executors.get("live"), *self.market_executors.values()]
+        seen_executors = set()
+        untracked_positions: List[Tuple[Any, str, float, Optional[str]]] = []
+        for executor in all_executors:
+            if not executor or id(executor) in seen_executors:
+                continue
+            seen_executors.add(id(executor))
+            if not getattr(executor, "supports_positions", False):
+                continue
+            try:
+                exchange_positions = await executor.get_open_positions()
+                if exchange_positions:
+                    for p in exchange_positions:
+                        amt = float(p.get("positionAmt", 0))
+                        sym = p.get("symbol")
+                        if amt != 0 and sym:
+                            sym_upper = sym.upper()
+                            if not any(
+                                s.upper() == sym_upper for s, _ in positions_to_close
+                            ):
+                                m_type = (
+                                    getattr(executor, "market_type", None)
+                                    or "futures_usdtm"
+                                )
+                                untracked_positions.append((executor, sym, amt, m_type))
+            except Exception as e:
+                logger.error(
+                    f"{log_prefix} Error querying exchange positions on executor: {e}",
+                    exc_info=True,
+                )
+
+        logger.info(
+            f"{log_prefix} Found {len(positions_to_close)} tracked and {len(untracked_positions)} untracked position(s) to close."
+        )
+
+        # 1. Close all tracked positions via standard close_position procedure
+        close_tasks = []
+        for symbol, m_type in positions_to_close:
+            close_tasks.append(
+                self.close_position(
+                    symbol,
+                    reason="EMERGENCY_STOP",
+                    market_type=m_type,
+                )
+            )
+
+        if close_tasks:
+            results = await asyncio.gather(*close_tasks, return_exceptions=True)
+            for (symbol, _), res in zip(positions_to_close, results):
+                if isinstance(res, Exception):
+                    logger.error(
+                        f"{log_prefix} Error emergency-closing tracked {symbol}: {res}",
+                        exc_info=res,
+                    )
+                else:
+                    logger.info(f"{log_prefix} Tracked position {symbol} closed.")
+
+        # 2. Close any untracked positions directly on exchange
+        for executor, sym, amt, _m_type in untracked_positions:
+            try:
+                logger.warning(
+                    f"{log_prefix} Liquidating untracked exchange position {sym} (amt={amt})..."
+                )
+                await executor.cancel_all_open_orders(sym)
+                side = "sell" if amt > 0 else "buy"
+                await executor.create_market_order(
+                    sym, side, abs(amt), reduce_only=True
+                )
+                logger.info(
+                    f"{log_prefix} Untracked exchange position {sym} liquidated."
+                )
+            except Exception as e:
+                logger.error(
+                    f"{log_prefix} Error liquidating untracked exchange position {sym}: {e}",
+                    exc_info=True,
+                )
+
+        # 3. Publish updated state to Redis
+        self.loop.create_task(
+            self._publish_state_to_redis(),
+            name="PublishState_EmergencyStop",
+        )
+        logger.warning(f"{log_prefix} === EMERGENCY STOP PROCEDURE COMPLETED ===")
 
     async def _check_scale_in_conditions(
         self, position: LivePosition, pair_info: Dict[str, Any]
@@ -4778,6 +4961,8 @@ class TradingController:
                     notif_settings = self._config_section_to_dict(
                         app_config.notifications
                     )
+                    # Fresh notification toggles also drive the in-app mirror.
+                    self._notif_settings = dict(notif_settings)
                     if self.rm:
                         runtime_settings = {
                             "risk_management": self._config_section_to_dict(
@@ -6026,6 +6211,29 @@ class TradingController:
                 ),
                 name=f"UpdateTP_{symbol}_AfterDCA",
             )
+
+            # Notify about the scale-in fill (entry top-up), same as other fills.
+            if self.telegram_notifier:
+                base_asset_si = position.symbol.upper().replace("USDT", "")
+                if "BUSD" in base_asset_si:
+                    base_asset_si = base_asset_si.replace("BUSD", "")
+                self.loop.create_task(
+                    self.telegram_notifier.scale_in_filled(
+                        symbol=symbol,
+                        fill_price=fill_price,
+                        filled_quantity=filled_qty,
+                        new_average_entry=new_avg_entry,
+                        new_total_quantity=new_total_qty,
+                        entry_client_order_id=position.entry_client_order_id,
+                        direction=position.direction,
+                        base_asset=base_asset_si,
+                        chat_id=self.user_telegram_chat_id,
+                        market_type=self._market_type_for_position(position),
+                        leverage=self._leverage_for_position(position),
+                        api_key_name=self.api_key_name,
+                    ),
+                    name=f"TelegramNotify_ScaleIn_{symbol}",
+                )
 
     async def _update_tp_after_scale_in(
         self, symbol: str, market_type: Optional[str] = None
@@ -11592,11 +11800,14 @@ class TradingController:
                     },
                 )
                 if self.telegram_notifier:
-                    self.telegram_notifier.bot_error(
-                        f"🚨 <b>CRITICAL: SL PLACEMENT FAILED ({symbol})</b>\n"
-                        f"Failed to place new SL at {new_sl_price:.4f} after 3 retries!\n"
-                        f"Position is UNPROTECTED. Emergency closing position at market!",
-                        chat_id=self.user_telegram_chat_id,
+                    self.loop.create_task(
+                        self.telegram_notifier.bot_error(
+                            f"🚨 <b>CRITICAL: SL PLACEMENT FAILED ({symbol})</b>\n"
+                            f"Failed to place new SL at {new_sl_price:.4f} after 3 retries!\n"
+                            f"Position is UNPROTECTED. Emergency closing position at market!",
+                            chat_id=self.user_telegram_chat_id,
+                        ),
+                        name=f"TelegramNotify_SLReplaceFailed_{symbol}",
                     )
                 self.loop.create_task(
                     self.close_position(
@@ -12128,6 +12339,11 @@ class TradingController:
                     and filled_before_or_at_this_tp == 1
                 )
                 position_for_new_sl = LivePosition(**vars(position))
+                # Snapshot for the partial-TP notification below (lock is released).
+                vtp_entry_cid = position.entry_client_order_id
+                vtp_remaining = position.remaining_quantity
+                vtp_fraction = getattr(tp, "orig_fraction", 0.0)
+                vtp_base_asset = symbol.upper().replace("USDT", "").replace("BUSD", "")
 
         if position_closed:
             await self._handle_final_exit(
@@ -12143,6 +12359,28 @@ class TradingController:
                 market_type=self._market_type_for_position(position),
             )
             return
+
+        # Virtual TP closed only part of the position: notify like a classic partial TP.
+        if self.telegram_notifier:
+            self.loop.create_task(
+                self.telegram_notifier.partial_tp_filled(
+                    symbol=symbol,
+                    tp_index=tp_index,
+                    fill_price=fill_price,
+                    closed_quantity=actual_closed_qty,
+                    fraction_of_initial=vtp_fraction,
+                    base_asset=vtp_base_asset,
+                    remaining_quantity=vtp_remaining,
+                    entry_client_order_id=vtp_entry_cid,
+                    tp_order_id=str(order_id_resp) if order_id_resp else None,
+                    tick_size=None,
+                    chat_id=self.user_telegram_chat_id,
+                    market_type="spot",
+                    leverage=None,
+                    api_key_name=self.api_key_name,
+                ),
+                name=f"TelegramNotify_VirtualTP_{symbol}_{tp_index}",
+            )
 
         if move_sl_to_be:
             self.loop.create_task(
@@ -14450,11 +14688,14 @@ class TradingController:
                             )
 
                             if self.telegram_notifier:
-                                self.telegram_notifier.bot_error(
-                                    f"🚨 <b>PARTIAL SL DETECTED ({symbol})</b>\n"
-                                    f"SL filled {sl_filled_qty:.6f}, remaining pos was {position.remaining_quantity + sl_filled_qty:.6f}.\n"
-                                    f"Emergency closing remainder {unfilled_remainder:.6f} at market!",
-                                    chat_id=self.user_telegram_chat_id,
+                                self.loop.create_task(
+                                    self.telegram_notifier.bot_error(
+                                        f"🚨 <b>PARTIAL SL DETECTED ({symbol})</b>\n"
+                                        f"SL filled {sl_filled_qty:.6f}, remaining pos was {position.remaining_quantity + sl_filled_qty:.6f}.\n"
+                                        f"Emergency closing remainder {unfilled_remainder:.6f} at market!",
+                                        chat_id=self.user_telegram_chat_id,
+                                    ),
+                                    name=f"TelegramNotify_PartialSL_{symbol}_{order_id}",
                                 )
 
                             self.loop.create_task(

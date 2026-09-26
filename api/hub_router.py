@@ -2000,9 +2000,15 @@ async def get_mining_status(
     today = dt.datetime.now(timezone.utc).date()
 
     # 1. Emission calculation with halving support
-    days_since_launch = 0
-    if cfg.launch_date:
-        days_since_launch = max((today - cfg.launch_date).days, 0)
+    launch_date = cfg.launch_date
+    if not launch_date:
+        earliest_epoch = await db.scalar(
+            select(func.min(models.MiningEpoch.epoch_date))
+        )
+        launch_date = earliest_epoch or today
+
+    days_since_launch = max((today - launch_date).days, 0)
+    current_epoch_number = days_since_launch + 1
     halvings = days_since_launch // cfg.halving_interval_days
     daily_emission = cfg.daily_emission_base / (2**halvings)
 
@@ -2134,6 +2140,43 @@ async def get_mining_status(
         )
         ref_ref_code = r_node_res.scalar()
 
+    # 6. Daily history (past 14 days from MiningLedger + today's in-progress epoch)
+    start_history_date = today - dt.timedelta(days=13)
+    stmt_history = (
+        select(models.MiningLedger)
+        .where(
+            models.MiningLedger.node_uuid == node.node_uuid,
+            models.MiningLedger.epoch_date >= start_history_date,
+        )
+        .order_by(models.MiningLedger.epoch_date.asc())
+    )
+    res_history = await db.execute(stmt_history)
+    ledger_history_map = {row.epoch_date: row for row in res_history.scalars().all()}
+
+    today_node_trades = len([r for r in today_reports if r.node_uuid == node.node_uuid])
+    daily_history = []
+    for i in range(14):
+        cur_date = start_history_date + dt.timedelta(days=i)
+        if cur_date == today:
+            daily_history.append(
+                schemas.MiningDailyHistoryItem(
+                    date=cur_date.isoformat(),
+                    reward=round(your_epoch_reward, 2),
+                    rebates=round(your_epoch_rebates, 2),
+                    trades_count=today_node_trades,
+                )
+            )
+        else:
+            lh = ledger_history_map.get(cur_date)
+            daily_history.append(
+                schemas.MiningDailyHistoryItem(
+                    date=cur_date.isoformat(),
+                    reward=round(float(lh.total_reward), 2) if lh else 0.0,
+                    rebates=round(float(lh.total_rebate_usdt), 2) if lh else 0.0,
+                    trades_count=int(lh.verified_trades_count) if lh else 0,
+                )
+            )
+
     return schemas.MiningStatusResponse(
         is_mining_enabled=cfg.is_mining_enabled,
         eligible_exchanges=cfg.eligible_exchanges,
@@ -2159,6 +2202,9 @@ async def get_mining_status(
         your_volume_share=your_volume_share,
         total_distributed=total_distributed,
         server_total_mined=total_distributed,
+        daily_history=daily_history,
+        epoch_number=current_epoch_number,
+        launch_date=launch_date.isoformat() if launch_date else None,
     )
 
 

@@ -595,9 +595,16 @@ export const api = {
 		apiFetch<StrategyConfigDB[]>("/strategies/config"),
 	getStrategyConfig: (configId: string): Promise<StrategyConfigDB> =>
 		apiFetch<StrategyConfigDB>(`/strategies/config/${configId}`),
-	getRunningStrategies: (): Promise<RunningStrategy[]> => {
-		const q = getApiKeyQuery("live");
-		return apiFetch<RunningStrategy[]>(`/strategies${q ? `?${q.substring(1)}` : ""}`);
+	getRunningStrategies: (
+		mode: "live" | "paper" = "live",
+	): Promise<RunningStrategy[]> => {
+		const params = new URLSearchParams({ mode });
+		const keyQuery = getApiKeyQuery(mode);
+		if (keyQuery) {
+			const id = keyQuery.split("=")[1];
+			if (id) params.append("api_key_id", id);
+		}
+		return apiFetch<RunningStrategy[]>(`/strategies?${params.toString()}`);
 	},
 	startStrategy: (
 		config_id: string,

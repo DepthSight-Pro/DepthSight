@@ -285,7 +285,10 @@ async def test_pulling_the_plug_achievement(
     mock_redis_instance.publish = AsyncMock()
 
     await emergency_stop(
-        redis_client=mock_redis_instance, current_user=test_user, db=db_session
+        api_key_id=None,
+        redis_client=mock_redis_instance,
+        current_user=test_user,
+        db=db_session,
     )
 
     # The achievement is granted inside the endpoint

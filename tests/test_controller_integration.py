@@ -145,3 +145,60 @@ async def test_all_redis_commands_are_processed(
         assert mock_target_method.await_count >= 1, (
             f"Expected {command_info['target_path']} to have been awaited."
         )
+
+
+@pytest.mark.asyncio
+async def test_emergency_stop_closes_all_active_positions(controller_with_fake_redis):
+    controller, fake_redis_client = controller_with_fake_redis
+    await controller.start()
+    await asyncio.sleep(0.1)
+
+    from bot_module.strategy import SignalDirection
+    from bot_module.controller import LivePosition as Position
+
+    fake_pos_1 = Position(
+        symbol="BTCUSDT",
+        direction=SignalDirection.LONG,
+        entry_price=50000,
+        initial_quantity=0.1,
+        remaining_quantity=0.1,
+        entry_time=0,
+        strategy="Test",
+        initial_stop_loss=49000,
+        current_sl_price=49000,
+        initial_take_profit=51000,
+        user_id=1,
+        status="OPEN",
+    )
+    fake_pos_2 = Position(
+        symbol="ETHUSDT",
+        direction=SignalDirection.SHORT,
+        entry_price=3000,
+        initial_quantity=1.0,
+        remaining_quantity=1.0,
+        entry_time=0,
+        strategy="Test",
+        initial_stop_loss=3100,
+        current_sl_price=3100,
+        initial_take_profit=2900,
+        user_id=1,
+        status="OPEN",
+    )
+    controller._active_positions["BTCUSDT"] = fake_pos_1
+    controller._active_positions["ETHUSDT"] = fake_pos_2
+
+    with patch.object(controller, "close_position", new_callable=AsyncMock) as mock_close:
+        command = {
+            "command": "EMERGENCY_STOP",
+            "type": "EMERGENCY_STOP",
+            "payload": {"user_id": 1},
+        }
+        await fake_redis_client.publish(
+            bot_config.REDIS_COMMAND_CHANNEL, json.dumps(command)
+        )
+        await asyncio.sleep(0.5)
+
+        assert mock_close.call_count == 2
+        closed_symbols = {call.args[0] for call in mock_close.call_args_list}
+        assert closed_symbols == {"BTCUSDT", "ETHUSDT"}
+

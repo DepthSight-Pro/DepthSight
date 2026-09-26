@@ -1,12 +1,16 @@
 // pwa/screens/NotificationsScreen.tsx
 
+import { Send } from "lucide-react";
 import type { TFunction } from "i18next";
 import type React from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "react-hot-toast";
 import {
 	type AppNotification,
 	useNotifications,
 } from "../contexts/NotificationContext";
+import { sendTestPush } from "../services/notificationService";
 import { Screen } from "../types";
 
 // Translatable function for displaying time
@@ -32,6 +36,13 @@ interface NotificationItemProps {
 	onMarkAsRead: (id: string) => void;
 	onNavigate?: (screen: Screen, params?: Record<string, unknown>) => void;
 }
+
+const SEVERITY_STRIP: Record<string, string> = {
+	info: "bg-cyan-400",
+	success: "bg-emerald-400",
+	warning: "bg-amber-400",
+	error: "bg-rose-500",
+};
 
 // Restored NotificationItem component
 const NotificationItem: React.FC<NotificationItemProps> = ({
@@ -60,7 +71,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
 
 	return (
 		<div
-			className={`bg-[hsl(var(--card))] rounded-xl p-4 mb-3 shadow-sm transition hover:shadow-md active:scale-[0.98] ${
+			className={`relative overflow-hidden bg-[hsl(var(--card))] rounded-xl p-4 mb-3 shadow-sm transition hover:shadow-md active:scale-[0.98] ${
 				hasNavigation ? "cursor-pointer" : "cursor-default"
 			} ${
 				!notification.read
@@ -69,6 +80,13 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
 			}`}
 			onClick={handleClick}
 		>
+			{notification.severity && (
+				<div
+					className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${
+						SEVERITY_STRIP[notification.severity] ?? "bg-cyan-400"
+					}`}
+				/>
+			)}
 			<div className="flex gap-3">
 				<div
 					className={`w-10 h-10 ${notification.bgColor || "bg-[hsl(var(--secondary))]"} rounded-full flex items-center justify-center text-white text-lg flex-shrink-0`}
@@ -128,9 +146,47 @@ const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
 		unreadCount,
 	} = useNotifications();
 	const { t } = useTranslation("pwa-common");
+	const [isTestingPush, setIsTestingPush] = useState(false);
+
+	const handleTestPush = async () => {
+		setIsTestingPush(true);
+		try {
+			const status = await sendTestPush();
+			if (status === "sent") {
+				toast.success(t("notifications.testPushSent"));
+			} else if (status === "expired") {
+				toast.error(t("notifications.testPushExpired"));
+			} else if (status === "no_subscription") {
+				toast.error(t("notifications.testPushNoSubscription"));
+			} else if (status === "not_configured") {
+				toast.error(t("notifications.testPushNotConfigured"));
+			} else {
+				toast.error(t("notifications.testPushFailed"));
+			}
+		} catch (err) {
+			if (err instanceof Error && err.message === "push_test_not_supported") {
+				toast.error(t("notifications.testPushNotSupported"));
+			} else {
+				toast.error(t("notifications.testPushFailed"));
+			}
+		} finally {
+			setIsTestingPush(false);
+		}
+	};
 
 	return (
 		<div className="p-4 animate-fadeIn">
+			<div className="flex gap-3 mb-4">
+				<button
+					onClick={handleTestPush}
+					disabled={isTestingPush}
+					title={t("notifications.testPush")}
+					className="flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] text-sm font-medium transition hover:opacity-90 disabled:opacity-50"
+				>
+					<Send className="w-4 h-4" />
+					{t("notifications.testPush")}
+				</button>
+			</div>
 			{notifications.length > 0 ? (
 				<>
 					<div className="flex gap-3 mb-4">

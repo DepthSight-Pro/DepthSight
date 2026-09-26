@@ -198,10 +198,20 @@ export const EquityChart: React.FC = () => {
 							/>
 							<Tooltip
 								contentStyle={{
-									backgroundColor: "#09090b",
-									borderColor: "#27272a",
+									backgroundColor: "#0b0f17",
+									borderColor: "rgba(255, 255, 255, 0.15)",
 									borderRadius: "0.5rem",
 									fontSize: "12px",
+									boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
+								}}
+								labelStyle={{
+									color: "rgba(255, 255, 255, 0.7)",
+									fontWeight: 600,
+									marginBottom: "4px",
+								}}
+								itemStyle={{
+									color: "#38bdf8",
+									fontWeight: 600,
 								}}
 								labelFormatter={(label) => format(new Date(label), "HH:mm:ss")}
 								formatter={(value: unknown) => {

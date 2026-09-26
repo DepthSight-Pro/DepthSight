@@ -101,6 +101,38 @@ body {
 }
 
 @layer base {
+	*,
+	*::before,
+	*::after {
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	*:focus:not(:focus-visible) {
+		outline: none !important;
+	}
+
+	button:focus,
+	button:focus-visible,
+	[role="button"]:focus,
+	[role="button"]:focus-visible,
+	[tabindex]:focus,
+	[tabindex]:focus-visible {
+		outline: none;
+	}
+
+	/* Recharts focus and tooltip container outlines on touch/tap */
+	.recharts-wrapper,
+	.recharts-surface,
+	.recharts-tooltip-wrapper,
+	.recharts-tooltip-wrapper:focus,
+	.recharts-tooltip-wrapper:focus-visible,
+	.recharts-surface:focus,
+	.recharts-surface:focus-visible {
+		outline: none !important;
+		border: none !important;
+		box-shadow: none !important;
+	}
+
 	* {
 		@apply border-border;
 	}

@@ -1,14 +1,8 @@
 // pwa/services/notificationService.ts
 
-const getAuthToken = (): string | null => {
-	try {
-		const tokenData = localStorage.getItem("authToken");
-		return tokenData ? JSON.parse(tokenData).access_token : null;
-	} catch (e) {
-		console.error("Could not parse auth token", e);
-		return null;
-	}
-};
+import { readAccessToken } from "./api";
+
+const getAuthToken = (): string | null => readAccessToken();
 
 export const getVapidPublicKey = async (): Promise<string> => {
 	const token = getAuthToken();
@@ -62,32 +56,99 @@ export const subscribeUserToPush =
 			applicationServerKey: convertedVapidKey,
 		});
 
-		// Send subscription to your backend
-		const token = getAuthToken();
-		const headers: HeadersInit = {
-			"Content-Type": "application/json",
-		};
-		if (token) {
-			headers.Authorization = `Bearer ${token}`;
-		}
-
-		console.log("Sending push subscription to backend...");
-		const subscribeResponse = await fetch(`/api/v1/users/subscribe_push`, {
-			method: "POST",
-			headers,
-			body: JSON.stringify(pushSubscription),
-		});
-		console.log("Subscribe push response status:", subscribeResponse.status);
-		if (!subscribeResponse.ok) {
-			const errorBody = await subscribeResponse.json().catch(() => ({}));
-			console.error("Failed to send push subscription to backend:", errorBody);
-			throw new Error(
-				`Failed to send push subscription to backend: ${subscribeResponse.status} ${JSON.stringify(errorBody)}`,
-			);
-		}
+		await postSubscriptionToBackend(pushSubscription.toJSON());
 
 		return pushSubscription;
 	};
+
+const postSubscriptionToBackend = async (
+	subscription: PushSubscriptionJSON | PushSubscription,
+): Promise<void> => {
+	// Send subscription to your backend (upsert: heals server-side deletes).
+	const token = getAuthToken();
+	const headers: HeadersInit = {
+		"Content-Type": "application/json",
+	};
+	if (token) {
+		headers.Authorization = `Bearer ${token}`;
+	}
+
+	console.log("Sending push subscription to backend...");
+	const subscribeResponse = await fetch(`/api/v1/users/subscribe_push`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(subscription),
+	});
+	console.log("Subscribe push response status:", subscribeResponse.status);
+	if (!subscribeResponse.ok) {
+		const errorBody = await subscribeResponse.json().catch(() => ({}));
+		console.error("Failed to send push subscription to backend:", errorBody);
+		throw new Error(
+			`Failed to send push subscription to backend: ${subscribeResponse.status} ${JSON.stringify(errorBody)}`,
+		);
+	}
+};
+
+export type EnsurePushResult = "active" | "resubscribed" | "unavailable";
+
+/**
+ * Self-heal on app launch: re-affirms a live subscription on the backend
+ * (heals server-side deletes/overwrites) or recreates a missing one when
+ * the user previously enabled notifications. Never prompts out of nowhere:
+ * recreation happens only with an already-granted permission.
+ */
+export const ensurePushSubscription = async (): Promise<EnsurePushResult> => {
+	if (
+		!("serviceWorker" in navigator) ||
+		!("PushManager" in window) ||
+		!("Notification" in window)
+	) {
+		return "unavailable";
+	}
+	try {
+		const registration = await navigator.serviceWorker.ready;
+		const existing = await registration.pushManager.getSubscription();
+		if (existing) {
+			await postSubscriptionToBackend(existing.toJSON());
+			return "active";
+		}
+		if (localStorage.getItem("notificationsEnabled") !== "true") {
+			return "unavailable";
+		}
+		if (Notification.permission !== "granted") {
+			if (Notification.permission === "denied") {
+				localStorage.setItem("notificationsEnabled", "false");
+			}
+			return "unavailable";
+		}
+		await subscribeUserToPush();
+		return "resubscribed";
+	} catch (err) {
+		console.warn("Push self-heal failed:", err);
+		return "unavailable";
+	}
+};
+
+export const sendTestPush = async (): Promise<string> => {
+	const token = getAuthToken();
+	const headers: HeadersInit = {};
+	if (token) {
+		headers.Authorization = `Bearer ${token}`;
+	}
+	const response = await fetch(`/api/v1/notifications/push-test`, {
+		method: "POST",
+		headers,
+	});
+	if (response.status === 404) {
+		// Backend predates the push-test endpoint: not deployed yet.
+		throw new Error("push_test_not_supported");
+	}
+	if (!response.ok) {
+		throw new Error(`Push test failed: ${response.status}`);
+	}
+	const data = (await response.json()) as { status?: string };
+	return data.status ?? "failed";
+};
 
 export const unsubscribeUserFromPush = async (): Promise<boolean> => {
 	if (!("serviceWorker" in navigator) || !("PushManager" in window)) {

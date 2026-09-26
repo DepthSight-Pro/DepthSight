@@ -10,26 +10,44 @@ import {
 } from "react";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { readJson, writeJson } from "../lib/safeStorage";
 import {
 	requestNotificationPermission,
 	subscribeUserToPush,
 	unsubscribeUserFromPush,
+	ensurePushSubscription,
 } from "../services/notificationService";
+
+export type AppNotificationType =
+	| "achievement"
+	| "backtest"
+	| "position_opened"
+	| "position_closed"
+	| "partial_tp"
+	| "scale_in"
+	| "sl_moved"
+	| "risk_alert"
+	| "order_error"
+	| "blacklist"
+	| "bot_error"
+	| "hft_signal"
+	| "hft_trade"
+	| "hft_closed"
+	| "hft_info"
+	| "info";
+
+export type AppNotificationSeverity = "info" | "success" | "warning" | "error";
 
 export interface AppNotification {
 	id: string;
-	type:
-		| "achievement"
-		| "backtest"
-		| "position_opened"
-		| "position_closed"
-		| "info";
+	type: AppNotificationType;
 	title: string;
 	subtitle: string;
 	timestamp: number;
 	read: boolean;
 	icon?: string;
 	bgColor?: string;
+	severity?: AppNotificationSeverity;
 	// Navigation data
 	navigationData?: {
 		screen?: string;
@@ -48,6 +66,7 @@ interface NotificationContextType {
 	clearNotifications: () => void;
 	addNotification: (
 		notification: Omit<AppNotification, "id" | "timestamp" | "read">,
+		opts?: { id?: string; timestampMs?: number },
 	) => void;
 }
 
@@ -66,10 +85,9 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 		},
 	);
 	const [isSubscribing, setIsSubscribing] = useState<boolean>(false);
-	const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-		const saved = localStorage.getItem("appNotifications");
-		return saved ? JSON.parse(saved) : [];
-	});
+	const [notifications, setNotifications] = useState<AppNotification[]>(() =>
+		readJson<AppNotification[]>("appNotifications", []),
+	);
 
 	const unreadCount = notifications.filter((n) => !n.read).length;
 	const { t } = useTranslation("pwa-common");
@@ -79,7 +97,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 	}, [notificationsEnabled]);
 
 	useEffect(() => {
-		localStorage.setItem("appNotifications", JSON.stringify(notifications));
+		writeJson("appNotifications", notifications);
 	}, [notifications]);
 
 	// Check Service Worker support on mount
@@ -93,15 +111,30 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 		}
 	}, []);
 
+	// Self-heal on launch: re-affirm or recreate the push subscription
+	// (heals expired server-side subscriptions and multi-device overwrites).
+	useEffect(() => {
+		ensurePushSubscription().catch(() => {});
+	}, []);
+
 	const addNotification = useCallback(
-		(notification: Omit<AppNotification, "id" | "timestamp" | "read">) => {
+		(
+			notification: Omit<AppNotification, "id" | "timestamp" | "read">,
+			opts?: { id?: string; timestampMs?: number },
+		) => {
 			const newNotification: AppNotification = {
 				...notification,
-				id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-				timestamp: Date.now(),
+				id:
+					opts?.id ??
+					`notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+				timestamp: opts?.timestampMs ?? Date.now(),
 				read: false,
 			};
-			setNotifications((prev) => [newNotification, ...prev]);
+			setNotifications((prev) =>
+				prev.some((n) => n.id === newNotification.id)
+					? prev
+					: [newNotification, ...prev].slice(0, 100),
+			);
 		},
 		[],
 	);

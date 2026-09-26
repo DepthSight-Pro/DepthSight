@@ -1941,6 +1941,32 @@ async def format_mining_status_response(
         hub_data["user_cumulative_rebate"] = user_cum_rebate
         hub_data["userCumulativeRebate"] = user_cum_rebate
 
+        raw_history = (
+            hub_data.get("dailyHistory") or hub_data.get("daily_history") or []
+        )
+        daily_history_objs = [
+            h
+            if isinstance(h, schemas.MiningDailyHistoryItem)
+            else schemas.MiningDailyHistoryItem(
+                date=str(h.get("date", "")),
+                reward=float(h.get("reward", 0.0)),
+                rebates=float(h.get("rebates", 0.0)),
+                trades_count=int(h.get("tradesCount") or h.get("trades_count") or 0),
+            )
+            for h in raw_history
+        ]
+
+        epoch_number_val = (
+            int(hub_data.get("epochNumber") or hub_data.get("epoch_number") or 1)
+            if hub_data
+            else 1
+        )
+        launch_date_val = (
+            str(hub_data.get("launchDate") or hub_data.get("launch_date"))
+            if hub_data and (hub_data.get("launchDate") or hub_data.get("launch_date"))
+            else None
+        )
+
         return {
             "data": schemas.LocalMiningStatusResponse(
                 is_mining_enabled=is_mining_active,
@@ -1960,6 +1986,9 @@ async def format_mining_status_response(
                 user_trade_volume=user_vol,
                 user_estimated_rebate=user_rebate * share_pct,
                 user_cumulative_rebate=user_cum_rebate,
+                daily_history=daily_history_objs,
+                epoch_number=epoch_number_val,
+                launch_date=launch_date_val,
             )
         }
     else:
@@ -2003,6 +2032,38 @@ async def format_mining_status_response(
         user_stats["serverTotalMined"] = server_total_mined
         user_stats["totalDistributed"] = server_total_mined
 
+        raw_history = (
+            hub_data.get("dailyHistory") or hub_data.get("daily_history") or []
+            if hub_data
+            else []
+        )
+        daily_history_objs = [
+            h
+            if isinstance(h, schemas.MiningDailyHistoryItem)
+            else schemas.MiningDailyHistoryItem(
+                date=str(h.get("date", "")),
+                reward=float(h.get("reward", 0.0)),
+                rebates=float(h.get("rebates", 0.0)),
+                trades_count=int(h.get("tradesCount") or h.get("trades_count") or 0),
+            )
+            for h in raw_history
+        ]
+        if raw_history:
+            user_stats["dailyHistory"] = raw_history
+            user_stats["daily_history"] = raw_history
+
+        epoch_number_val = (
+            int(user_stats.get("epochNumber") or user_stats.get("epoch_number") or 1)
+            if user_stats
+            else 1
+        )
+        launch_date_val = (
+            str(user_stats.get("launchDate") or user_stats.get("launch_date"))
+            if user_stats
+            and (user_stats.get("launchDate") or user_stats.get("launch_date"))
+            else None
+        )
+
         return {
             "data": schemas.LocalMiningStatusResponse(
                 is_mining_enabled=is_mining_active,
@@ -2022,6 +2083,9 @@ async def format_mining_status_response(
                 user_trade_volume=user_vol,
                 user_estimated_rebate=user_rebate * share_pct,
                 user_cumulative_rebate=user_cum_rebate,
+                daily_history=daily_history_objs,
+                epoch_number=epoch_number_val,
+                launch_date=launch_date_val,
             )
         }
 
@@ -2204,9 +2268,21 @@ async def get_local_mining_status(
 
         today = dt.datetime.now(timezone.utc).date()
 
-        days_since_launch = 0
-        if cfg.launch_date:
-            days_since_launch = max((today - cfg.launch_date).days, 0)
+        launch_date = cfg.launch_date
+        if not launch_date:
+            earliest_epoch = await db.scalar(
+                select(func.min(models.MiningEpoch.epoch_date))
+            )
+            if earliest_epoch:
+                launch_date = earliest_epoch
+            else:
+                earliest_ledger = await db.scalar(
+                    select(func.min(models.MiningLedger.epoch_date))
+                )
+                launch_date = earliest_ledger or today
+
+        days_since_launch = max((today - launch_date).days, 0)
+        current_epoch_number = days_since_launch + 1
         halvings = days_since_launch // cfg.halving_interval_days
         daily_emission = cfg.daily_emission_base / (2**halvings)
 
@@ -2311,12 +2387,74 @@ async def get_local_mining_status(
             db, cfg, daily_emission, node_uuid, today_reports
         )
 
+        target_history_uuids = locals().get("aggregated_uuids") or [node_uuid]
+        start_history_date = today - dt.timedelta(days=13)
+        stmt_history = (
+            select(models.MiningLedger)
+            .where(
+                models.MiningLedger.node_uuid.in_(target_history_uuids),
+                models.MiningLedger.epoch_date >= start_history_date,
+            )
+            .order_by(models.MiningLedger.epoch_date.asc())
+        )
+        res_history = await db.execute(stmt_history)
+        history_rows = res_history.scalars().all()
+        ledger_history_map = {}
+        for row in history_rows:
+            if row.epoch_date not in ledger_history_map:
+                ledger_history_map[row.epoch_date] = {
+                    "total_reward": 0.0,
+                    "total_rebate_usdt": 0.0,
+                    "verified_trades_count": 0,
+                }
+            ledger_history_map[row.epoch_date]["total_reward"] += float(
+                row.total_reward or 0.0
+            )
+            ledger_history_map[row.epoch_date]["total_rebate_usdt"] += float(
+                row.total_rebate_usdt or 0.0
+            )
+            ledger_history_map[row.epoch_date]["verified_trades_count"] += int(
+                row.verified_trades_count or 0
+            )
+
+        today_node_trades = len(
+            [r for r in today_reports if r.node_uuid in target_history_uuids]
+        )
+        daily_history_items = []
+        for i in range(14):
+            cur_date = start_history_date + dt.timedelta(days=i)
+            if cur_date == today:
+                daily_history_items.append(
+                    {
+                        "date": cur_date.isoformat(),
+                        "reward": round(your_epoch_reward, 2),
+                        "rebates": round(epoch_total_rebates, 2),
+                        "tradesCount": today_node_trades,
+                        "trades_count": today_node_trades,
+                    }
+                )
+            else:
+                lh = ledger_history_map.get(cur_date)
+                daily_history_items.append(
+                    {
+                        "date": cur_date.isoformat(),
+                        "reward": round(lh["total_reward"], 2) if lh else 0.0,
+                        "rebates": round(lh["total_rebate_usdt"], 2) if lh else 0.0,
+                        "tradesCount": lh["verified_trades_count"] if lh else 0,
+                        "trades_count": lh["verified_trades_count"] if lh else 0,
+                    }
+                )
+
         hub_data = {
             "isMiningEnabled": cfg.is_mining_enabled,
             "eligibleExchanges": cfg.eligible_exchanges,
             "rebateRates": cfg.rebate_rates or {},
             "exchangeMultipliers": getattr(cfg, "exchange_multipliers", {}) or {},
             "currentEpochDate": today.isoformat(),
+            "launchDate": launch_date.isoformat() if launch_date else None,
+            "launch_date": launch_date.isoformat() if launch_date else None,
+            "epochNumber": current_epoch_number,
+            "epoch_number": current_epoch_number,
             "dailyEmission": daily_emission,
             "yourTotalMined": your_total_mined,
             "yourEpochReward": your_epoch_reward,
@@ -2325,6 +2463,8 @@ async def get_local_mining_status(
             "nodeReferralCode": db_node.node_referral_code,
             "referrerNodeUuid": db_node.referrer_node_uuid,
             "hasWelcomeBonus": db_node.has_welcome_bonus,
+            "dailyHistory": daily_history_items,
+            "daily_history": daily_history_items,
         }
 
         return await format_mining_status_response(

@@ -36,7 +36,7 @@ import {
 	Zap,
 } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/context/AuthContext";
 import { useWebSocket } from "@/context/WebSocketProvider";
@@ -179,10 +179,20 @@ export const SteamAchievementNotification: React.FC = () => {
 		queue: UnlockedAchievementData[];
 	}>({ current: null, queue: [] });
 
+	const [isHovered, setIsHovered] = useState(false);
+	const seenAchievementsRef = useRef<Set<string>>(new Set());
+
 	const enqueue = useCallback((item: UnlockedAchievementData) => {
+		// Session deduplication: each achievement should only trigger a popup once per session
+		if (seenAchievementsRef.current.has(item.id)) {
+			return;
+		}
+		seenAchievementsRef.current.add(item.id);
+
 		setState((prev) => {
-			// If nothing is currently displayed, show this item immediately.
-			// Otherwise, add it to the queue for sequential display.
+			if (prev.current?.id === item.id || prev.queue.some((q) => q.id === item.id)) {
+				return prev;
+			}
 			if (!prev.current) {
 				return { current: item, queue: prev.queue };
 			}
@@ -191,35 +201,36 @@ export const SteamAchievementNotification: React.FC = () => {
 	}, []);
 
 	const dismiss = useCallback(() => {
+		setIsHovered(false);
 		setState((prev) => {
-			// If another item is queued, show it immediately.
-			// Otherwise, clear the current item.
 			if (prev.queue.length > 0) {
 				return { current: prev.queue[0], queue: prev.queue.slice(1) };
 			}
-			return { current: null, queue: prev.queue };
+			return { current: null, queue: [] };
 		});
 	}, []);
 
-	// Destructure for clean effect dependency tracking
 	const { current } = state;
 
-	// Effect manages only the auto-dismiss timer.
-	// All state transitions live in enqueue/dismiss callbacks, so no
-	// setState is called synchronously within the effect body.
+	// Sound chime only when a new achievement is displayed
 	useEffect(() => {
 		if (!current) return;
-
 		playAchievementChime();
+	}, [current?.id]);
+
+	// Auto-dismiss timer (5 seconds), paused on hover
+	useEffect(() => {
+		if (!current || isHovered) return;
 
 		const timer = setTimeout(() => {
 			dismiss();
-		}, 6500);
+		}, 5000);
 
 		return () => clearTimeout(timer);
-	}, [current, dismiss]);
+	}, [current, isHovered, dismiss]);
 
-	// WebSocket listener for achievement events
+	// WebSocket listener: subscribe only to user channel if logged in, or fallback to achievement_unlocked.
+	// Never subscribe to both at the same time to prevent duplicate deliveries.
 	useEffect(() => {
 		const handlePayload = (payload: unknown) => {
 			if (!payload) return;
@@ -233,9 +244,8 @@ export const SteamAchievementNotification: React.FC = () => {
 				rarity?: string;
 			};
 
-			// Handle either payload.achievement or direct achievement object
-			const ach = p.achievement || (p.id ? (p as UnlockedAchievementData) : null);
-			if (ach && ach.name) {
+			const ach = p.achievement || (p.id && p.name ? (p as UnlockedAchievementData) : null);
+			if (ach && ach.id && ach.name) {
 				enqueue({
 					id: ach.id,
 					name: ach.name,
@@ -247,111 +257,109 @@ export const SteamAchievementNotification: React.FC = () => {
 			}
 		};
 
-		// Subscribe to global channel & user-specific notifications channel
-		subscribe("achievement_unlocked", handlePayload);
-		if (user?.id) {
-			subscribe(`user:${user.id}:notifications`, handlePayload);
-		}
+		const channel = user?.id ? `user:${user.id}:notifications` : "achievement_unlocked";
+		subscribe(channel, handlePayload);
 
 		return () => {
-			unsubscribe("achievement_unlocked", handlePayload);
-			if (user?.id) {
-				unsubscribe(`user:${user.id}:notifications`, handlePayload);
-			}
+			unsubscribe(channel, handlePayload);
 		};
 	}, [subscribe, unsubscribe, user?.id, enqueue]);
 
-	if (!current) return null;
+	const styles = current ? getRarityStyles(current.rarity) : null;
+	const IconComponent = current ? (iconMap[current.id] || Trophy) : Trophy;
 
-	const styles = getRarityStyles(current.rarity);
-	const IconComponent = iconMap[current.id] || Trophy;
-
-	// Localized name & description fallback
-	const localizedName = t(`account:${current.id}.name`, {
-		defaultValue: current.name,
-	});
-	const localizedDesc = t(`account:${current.id}.description`, {
-		defaultValue: current.description,
-	});
+	const localizedName = current
+		? t(`account:${current.id}.name`, { defaultValue: current.name })
+		: "";
+	const localizedDesc = current
+		? t(`account:${current.id}.description`, { defaultValue: current.description })
+		: "";
 
 	return (
-		<div className="fixed bottom-6 right-6 z-[9999] pointer-events-auto max-w-sm w-full select-none">
-			<AnimatePresence>
-				<motion.div
-					key={current.id}
-					initial={{ opacity: 0, y: 40, scale: 0.92 }}
-					animate={{ opacity: 1, y: 0, scale: 1 }}
-					exit={{ opacity: 0, y: 20, scale: 0.95 }}
-					transition={{ type: "spring", stiffness: 450, damping: 30 }}
-					className={`relative overflow-hidden rounded-xl border bg-gradient-to-r ${styles.bgGlow} ${styles.border} backdrop-blur-xl p-4 shadow-2xl`}
-				>
-					{/* Animated Metallic Sheen / Sweep Effect */}
-					<div className="pointer-events-none absolute -inset-full animate-[spin_8s_linear_infinite] opacity-10 bg-[conic-gradient(from_0deg,transparent_0_340deg,white_360deg)]" />
+		<div className="fixed bottom-6 right-6 z-[9999] pointer-events-none max-w-sm w-full select-none">
+			<AnimatePresence mode="wait">
+				{current && styles && (
+					<motion.div
+						key={current.id}
+						initial={{ opacity: 0, y: 40, scale: 0.92 }}
+						animate={{ opacity: 1, y: 0, scale: 1 }}
+						exit={{ opacity: 0, y: 20, scale: 0.95 }}
+						transition={{ type: "spring", stiffness: 450, damping: 30 }}
+						onMouseEnter={() => setIsHovered(true)}
+						onMouseLeave={() => setIsHovered(false)}
+						className={`pointer-events-auto relative overflow-hidden rounded-xl border bg-gradient-to-r ${styles.bgGlow} ${styles.border} backdrop-blur-xl p-4 shadow-2xl`}
+					>
+						{/* Animated Metallic Sheen / Sweep Effect */}
+						<div className="pointer-events-none absolute -inset-full animate-[spin_8s_linear_infinite] opacity-10 bg-[conic-gradient(from_0deg,transparent_0_340deg,white_360deg)]" />
 
-					{/* Header Banner (Steam / Xbox style) */}
-					<div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-white/10">
-						<div className="flex items-center gap-1.5">
-							<Trophy className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-							<span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400/90 font-mono">
-								{t("common:achievementUnlockedTitle", "ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО")}
-							</span>
-						</div>
-						<button
-							type="button"
-							onClick={dismiss}
-							className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5 rounded"
-						>
-							<X className="w-3.5 h-3.5" />
-						</button>
-					</div>
-
-					{/* Main Body */}
-					<div className="flex items-center gap-3.5">
-						{/* Glowing Achievement Icon Box */}
-						<div
-							className={`relative flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border ${styles.border} bg-black/60 shadow-inner`}
-						>
-							<IconComponent className={`h-7 w-7 ${styles.iconGlow}`} />
-						</div>
-
-						{/* Content */}
-						<div className="flex-1 min-w-0">
-							<div className="flex items-center gap-2">
-								<h4 className="text-sm font-bold text-white truncate drop-shadow-sm">
-									{localizedName}
-								</h4>
-								<span
-									className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${styles.badge}`}
-								>
-									{current.rarity}
+						{/* Header Banner (Steam / Xbox style) */}
+						<div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-white/10">
+							<div className="flex items-center gap-1.5">
+								<Trophy className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+								<span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-400/90 font-mono">
+									{t("common:achievementUnlockedTitle", "ДОСТИЖЕНИЕ РАЗБЛОКИРОВАНО")}
 								</span>
 							</div>
+							<button
+								type="button"
+								onClick={dismiss}
+								className="text-zinc-500 hover:text-zinc-300 transition-colors p-0.5 rounded cursor-pointer"
+							>
+								<X className="w-3.5 h-3.5" />
+							</button>
+						</div>
 
-							<p className="text-xs text-zinc-400 line-clamp-2 mt-0.5 leading-snug">
-								{localizedDesc}
-							</p>
+						{/* Main Body */}
+						<div className="flex items-center gap-3.5">
+							{/* Glowing Achievement Icon Box */}
+							<div
+								className={`relative flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border ${styles.border} bg-black/60 shadow-inner`}
+							>
+								<IconComponent className={`h-7 w-7 ${styles.iconGlow}`} />
+							</div>
 
-							{/* Rewards Footer */}
-							<div className="flex items-center gap-2 mt-2">
-								<div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded text-[11px] font-semibold">
-									<Sparkles className="w-3 h-3 text-amber-400" />
-									<span>+{current.xp_reward} XP</span>
+							{/* Content */}
+							<div className="flex-1 min-w-0">
+								<div className="flex items-center gap-2">
+									<h4 className="text-sm font-bold text-white truncate drop-shadow-sm">
+										{localizedName}
+									</h4>
+									<span
+										className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border ${styles.badge}`}
+									>
+										{current.rarity}
+									</span>
+								</div>
+
+								<p className="text-xs text-zinc-400 line-clamp-2 mt-0.5 leading-snug">
+									{localizedDesc}
+								</p>
+
+								{/* Rewards Footer */}
+								<div className="flex items-center gap-2 mt-2">
+									<div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded text-[11px] font-semibold">
+										<Sparkles className="w-3 h-3 text-amber-400" />
+										<span>+{current.xp_reward} XP</span>
+									</div>
 								</div>
 							</div>
 						</div>
-					</div>
 
-					{/* Auto-dismiss progress bar */}
-					<motion.div
-						initial={{ width: "100%" }}
-						animate={{ width: "0%" }}
-						transition={{ duration: 6.5, ease: "linear" }}
-						className={`absolute bottom-0 left-0 h-1 bg-gradient-to-r ${styles.bar}`}
-					/>
-				</motion.div>
+						{/* Auto-dismiss progress bar */}
+						<motion.div
+							key={`progress-${current.id}`}
+							initial={{ width: "100%" }}
+							animate={{ width: isHovered ? undefined : "0%" }}
+							transition={{ duration: 5.0, ease: "linear" }}
+							className={`absolute bottom-0 left-0 h-1 bg-gradient-to-r ${styles.bar}`}
+						/>
+					</motion.div>
+				)}
 			</AnimatePresence>
 		</div>
 	);
 };
+
+export default SteamAchievementNotification;
 
 

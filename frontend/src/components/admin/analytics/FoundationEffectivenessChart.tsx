@@ -126,11 +126,13 @@ const FoundationEffectivenessChart: React.FC<Props> = ({
 						/>
 						<Tooltip
 							contentStyle={{
-								backgroundColor: "#1f2937",
-								border: "1px solid #374151",
+								backgroundColor: "#0b0f17",
+								border: "1px solid rgba(255, 255, 255, 0.15)",
 								borderRadius: "8px",
+								boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
 							}}
-							labelStyle={{ color: "#f3f4f6" }}
+							labelStyle={{ color: "#f3f4f6", fontWeight: 600, marginBottom: "4px" }}
+							itemStyle={{ color: "#f8fafc" }}
 							formatter={(value: unknown, name: unknown) => [
 								name === "winRate"
 									? `${Number(value ?? 0)}%`

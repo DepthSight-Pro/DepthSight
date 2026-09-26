@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import {
 	Accordion,
 	AccordionContent,

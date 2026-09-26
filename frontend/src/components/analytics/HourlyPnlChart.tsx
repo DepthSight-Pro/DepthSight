@@ -22,6 +22,30 @@ interface HourlyPnlChartProps {
 	onToggleHour: (hour: number) => void;
 }
 
+interface CustomHourlyTooltipProps {
+	active?: boolean;
+	payload?: Array<{ payload?: { name: string; pnl: number; hourIndex: number } }>;
+}
+
+const CustomHourlyTooltip = ({ active, payload }: CustomHourlyTooltipProps) => {
+	if (!active || !payload?.length || !payload[0]?.payload) return null;
+	const data = payload[0].payload;
+	const pnl = Number(data.pnl || 0);
+	const isProfit = pnl >= 0;
+
+	return (
+		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
+			<div className="text-[11px] font-semibold text-white/70 mb-1">{data.name}</div>
+			<div className="flex items-center gap-2 text-xs">
+				<span className="text-white/50">PnL:</span>
+				<span className={`font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+					{isProfit ? "+" : ""}${pnl.toFixed(2)}
+				</span>
+			</div>
+		</div>
+	);
+};
+
 export const HourlyPnlChart: React.FC<HourlyPnlChartProps> = ({
 	trades,
 	activeHours,
@@ -87,18 +111,7 @@ export const HourlyPnlChart: React.FC<HourlyPnlChartProps> = ({
 								/>
 								<Tooltip
 									cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
-									contentStyle={{
-										backgroundColor: "rgba(7, 8, 11, 0.95)",
-										border: "1px solid rgba(255, 255, 255, 0.15)",
-										borderRadius: "12px",
-										color: "#fff",
-										fontFamily: "monospace",
-										boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
-									}}
-									formatter={(value: unknown) => [
-										`$${(Number(value) || 0).toFixed(2)}`,
-										"PnL",
-									]}
+									content={<CustomHourlyTooltip />}
 								/>
 								<Bar
 									dataKey="pnl"

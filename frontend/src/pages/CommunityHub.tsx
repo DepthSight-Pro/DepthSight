@@ -33,7 +33,7 @@ import {
 	AreaChart as MiniAreaChart,
 	ResponsiveContainer as MiniResponsiveContainer,
 } from "recharts";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import { EquityCurveChart } from "@/components/research/EquityCurveChart";
 import { NodeLeaderboard } from "@/components/community/NodeLeaderboard";
 import { Badge } from "@/components/ui/badge";

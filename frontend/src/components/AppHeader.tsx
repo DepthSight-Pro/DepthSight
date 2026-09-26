@@ -3,9 +3,10 @@
 import { FlaskConical, Radio, Sparkles } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import { AccountSelector } from "@/components/layout/AccountSelector";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 import { usePortfolioMode } from "@/context/PortfolioModeContext";
 import {
 	useConfig,
@@ -218,6 +219,9 @@ export const AppHeader = () => {
 					<Sparkles size={12} className="animate-pulse" />
 					<span className="hidden md:inline">Co-Pilot</span>
 				</button>
+
+				{/* Notifications */}
+				<NotificationBell />
 
 				{/* User Nav with Account Dropdown */}
 				<UserNav />

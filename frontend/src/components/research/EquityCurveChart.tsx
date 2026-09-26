@@ -32,6 +32,54 @@ interface EquityCurveChartProps {
 	isSingleDay?: boolean; // If true, hours are displayed on the X axis instead of dates
 }
 
+interface CustomEquityTooltipProps {
+	active?: boolean;
+	payload?: Array<{ value?: unknown; payload?: { time: number; equity: number } }>;
+	label?: string | number;
+	tooltipLabelText: string;
+	dateFnsLocale: typeof ru | typeof enUS;
+	currentLocale: string;
+	isSingleDay?: boolean;
+}
+
+const CustomEquityTooltip = ({
+	active,
+	payload,
+	label,
+	tooltipLabelText,
+	dateFnsLocale,
+	currentLocale,
+	isSingleDay,
+}: CustomEquityTooltipProps) => {
+	if (!active || !payload?.length) return null;
+	const equity = Number(payload[0].value ?? 0);
+	let formattedDate = "";
+	try {
+		const d = new Date(label as number);
+		formattedDate = format(d, isSingleDay ? "PPP HH:mm" : "PPP", {
+			locale: dateFnsLocale,
+		});
+	} catch {
+		formattedDate = String(label);
+	}
+
+	return (
+		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3.5 py-2.5 shadow-2xl backdrop-blur-xl">
+			<div className="text-[11px] font-medium text-white/60 mb-1">{formattedDate}</div>
+			<div className="flex items-center gap-2">
+				<span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
+				<span className="text-xs text-white/70">{tooltipLabelText}:</span>
+				<span className="text-sm font-semibold font-mono text-cyan-300">
+					{equity.toLocaleString(currentLocale, {
+						style: "currency",
+						currency: "USD",
+					})}
+				</span>
+			</div>
+		</div>
+	);
+};
+
 export const EquityCurveChart: React.FC<EquityCurveChartProps> = ({
 	run,
 	isPortfolio,
@@ -142,27 +190,14 @@ export const EquityCurveChart: React.FC<EquityCurveChartProps> = ({
 							domain={["auto", "auto"]}
 						/>
 						<Tooltip
-							contentStyle={{
-								background: "hsl(var(--card))",
-								borderColor: "hsl(var(--border))",
-								borderRadius: "var(--radius)",
-							}}
-							labelFormatter={(label) => {
-								try {
-									return format(new Date(label), "PPP", {
-										locale: dateFnsLocale,
-									});
-								} catch {
-									return "";
-								}
-							}}
-							formatter={(value: unknown) => [
-								Number(value ?? 0).toLocaleString(currentLocale, {
-									style: "currency",
-									currency: "USD",
-								}),
-								t("equityCurve.tooltipLabel"),
-							]}
+							content={
+								<CustomEquityTooltip
+									tooltipLabelText={t("equityCurve.tooltipLabel")}
+									dateFnsLocale={dateFnsLocale}
+									currentLocale={currentLocale}
+									isSingleDay={isSingleDay}
+								/>
+							}
 						/>
 						<Area
 							type="monotone"

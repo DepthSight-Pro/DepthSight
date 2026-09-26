@@ -11,7 +11,7 @@
   <a href="#-one-click-deploy"><img src="https://img.shields.io/badge/deploy-one--click-00C853.svg?logo=gnubash&logoColor=white" alt="One-Click Deploy"></a>
   <a href="https://depthsight.pro"><img src="https://img.shields.io/badge/website-depthsight.pro-lightgrey.svg" alt="Website"></a>
   <a href="https://depthsight.pro/docs/overview"><img src="https://img.shields.io/badge/docs-depthsight.pro-00b0aa?style=flat&logo=googledocs&logoColor=white" alt="Documentation"></a>
-  <a href="https://github.com/DepthSight-Pro/DepthSight/actions"><img src="https://img.shields.io/badge/tests-1800%2B%20passed-brightgreen" alt="Tests"></a>
+  <a href="https://github.com/DepthSight-Pro/DepthSight/actions"><img src="https://img.shields.io/badge/tests-2300%2B%20passed-brightgreen" alt="Tests"></a>
 </p>
 
 <p align="center">

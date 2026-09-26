@@ -24,9 +24,11 @@ import {
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { TwoFactorWidget } from "@/components/layout/TwoFactorWidget";
+import { SidebarMiningWidget } from "@/components/mining/SidebarMiningWidget";
 import { Badge } from "@/components/ui/badge";
 import { Logo } from "@/components/ui/logo";
 import {
@@ -347,6 +349,21 @@ export function AppSidebar() {
 						</nav>
 					</SidebarContent>
 
+					{/* Trade Mining Widget (Variant 2: Epoch & Radial Progress) */}
+					{miningStatus?.isGlobalMiningEnabled !== false && (
+						<div
+							className={cn(
+								"border-t border-white/5 transition-all duration-300",
+								isExpanded ? "py-2" : "py-2 flex justify-center",
+							)}
+						>
+							<SidebarMiningWidget
+								isExpanded={isExpanded}
+								miningStatus={miningStatus}
+							/>
+						</div>
+					)}
+
 					{/* Admin-only Compute Grid Widget */}
 					{user?.role === "admin" && (
 						<div
@@ -577,6 +594,7 @@ export function AppSidebar() {
 								>
 									<ThemeSwitcher />
 									<LanguageSwitcher />
+									<TwoFactorWidget isExpanded={isExpanded} />
 								</div>
 								<button
 									onClick={toggleSidebar}

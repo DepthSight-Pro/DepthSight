@@ -24,6 +24,20 @@
 	"loadedToEditor": "Конфигурация загружена в редактор стратегий.",
 	"plan": "Тариф",
 	"logout": "Выйти",
+	"twoFactorMenu": {
+		"title": "2FA Защита",
+		"active": "2FA включена",
+		"disabled": "2FA выключена",
+		"tooltipActive": "2FA: Включена (нажмите для меню)",
+		"tooltipDisabled": "2FA: Выключена (нажмите для меню)",
+		"protected": "Аккаунт надёжно защищён",
+		"notProtected": "Рекомендуется включить для защиты",
+		"backupCodesLeft": "Резервных кодов: {{count}}",
+		"manageInProfile": "Настройки безопасности",
+		"setupNow": "Настроить 2FA",
+		"disable": "Отключить 2FA",
+		"learnMore": "Подробнее в настройках"
+	},
 	"copied": "Скопировано!",
 	"copiedToClipboard": "скопировано в буфер обмена.",
 	"errors": {

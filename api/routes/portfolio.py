@@ -439,6 +439,9 @@ async def get_portfolio_status(
     summary="Emergency Stop! Close all positions.",
 )
 async def emergency_stop(
+    api_key_id: Optional[int] = Query(
+        None, description="Optional API key ID to restrict emergency stop to a specific subaccount"
+    ),
     redis_client: redis.Redis = Depends(get_redis_client),
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -447,11 +450,14 @@ async def emergency_stop(
         f"User '{current_user.username}' (ID: {current_user.id}) initiated EMERGENCY STOP."
     )
     # --- Cast user_id to string for consistency ---
+    safe_api_key_id = api_key_id if isinstance(api_key_id, int) else None
     command = {
+        "command": "EMERGENCY_STOP",
         "type": "EMERGENCY_STOP",
         "payload": {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             "user_id": str(current_user.id),  # Add user_id to payload as a string
+            "api_key_id": safe_api_key_id,
         },
     }
     try:
@@ -684,12 +690,13 @@ async def close_position(
         f"User '{current_user.username}' requested to close position for {symbol} (api_key_id={api_key_id})."
     )
 
+    safe_api_key_id = api_key_id if isinstance(api_key_id, int) else None
     command = {
         "command": "CLOSE_POSITION",
         "payload": {
             "symbol": symbol.upper(),
             "user_id": str(current_user.id),
-            "api_key_id": api_key_id,
+            "api_key_id": safe_api_key_id,
         },
     }
 

@@ -24,7 +24,7 @@ import {
   Copy,
   Check,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/hooks/use-toast";
 
 // Minimal EIP-1193 surface used by this modal (MetaMask / injected Web3 wallets).
 interface Eip1193Provider {

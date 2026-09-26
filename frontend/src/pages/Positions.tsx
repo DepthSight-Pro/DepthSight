@@ -16,7 +16,6 @@ import {
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
 import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PositionChartModal } from "@/components/positions/PositionChartModal";
@@ -292,7 +291,6 @@ export default function Positions() {
 			{ symbol, apiKeyId },
 			{
 				onSuccess: () => {
-					toast.success(`Position ${symbol} closed successfully`);
 					refetch();
 				},
 			},
@@ -312,7 +310,6 @@ export default function Positions() {
 			},
 			{
 				onSuccess: () => {
-					toast.success(`Updated risk levels for ${sel.symbol}`);
 					refetch();
 				},
 			},
@@ -323,7 +320,6 @@ export default function Positions() {
 		emergencyStop(undefined, {
 			onSuccess: () => {
 				setConfirmStop(false);
-				toast.success("Emergency stop triggered. All positions liquidated.");
 				refetch();
 			},
 			onError: () => {
@@ -1025,9 +1021,6 @@ export default function Positions() {
 						},
 						{
 							onSuccess: () => {
-								toast.success(
-									`SL/TP updated for ${chartModalPos.symbol}`,
-								);
 								refetch();
 								setIsChartModalOpen(false);
 							},

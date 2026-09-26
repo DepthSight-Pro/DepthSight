@@ -5,10 +5,10 @@ import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
-const TOAST_LIMIT = 1;
+const TOAST_LIMIT = 3;
 const TOAST_REMOVE_DELAY = 1000000;
 
-type ToasterToast = ToastProps & {
+type ToasterToast = Omit<ToastProps, "title"> & {
 	id: string;
 	title?: React.ReactNode;
 	description?: React.ReactNode;
@@ -130,7 +130,31 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
-function toast({ ...props }: Toast) {
+function toast(
+	propsOrTitle: Toast | React.ReactNode,
+	options?: ToastOptions & { variant?: Toast["variant"] },
+) {
+	let props: Toast;
+	if (
+		typeof propsOrTitle === "string" ||
+		React.isValidElement(propsOrTitle) ||
+		(propsOrTitle != null && typeof propsOrTitle !== "object") ||
+		(typeof propsOrTitle === "object" &&
+			!("title" in (propsOrTitle as object)) &&
+			!("description" in (propsOrTitle as object)) &&
+			!("variant" in (propsOrTitle as object)))
+	) {
+		props = {
+			title: propsOrTitle as React.ReactNode,
+			description: options?.description,
+			action: options?.action,
+			variant: options?.variant,
+			duration: options?.duration,
+		};
+	} else {
+		props = propsOrTitle as Toast;
+	}
+
 	const id = genId();
 
 	const update = (props: ToasterToast) =>
@@ -158,6 +182,103 @@ function toast({ ...props }: Toast) {
 		update,
 	};
 }
+
+export interface ToastOptions {
+	description?: React.ReactNode;
+	action?: ToastActionElement;
+	duration?: number;
+}
+
+toast.success = (title: React.ReactNode, options?: ToastOptions) =>
+	toast({
+		title,
+		description: options?.description,
+		action: options?.action,
+		variant: "success",
+		duration: options?.duration ?? 4000,
+	});
+
+toast.error = (title: React.ReactNode, options?: ToastOptions) =>
+	toast({
+		title,
+		description: options?.description,
+		action: options?.action,
+		variant: "destructive",
+		duration: options?.duration ?? 6000,
+	});
+
+toast.warning = (title: React.ReactNode, options?: ToastOptions) =>
+	toast({
+		title,
+		description: options?.description,
+		action: options?.action,
+		variant: "warning",
+		duration: options?.duration ?? 5000,
+	});
+
+toast.info = (title: React.ReactNode, options?: ToastOptions) =>
+	toast({
+		title,
+		description: options?.description,
+		action: options?.action,
+		variant: "info",
+		duration: options?.duration ?? 4000,
+	});
+
+toast.message = (title: React.ReactNode, options?: ToastOptions) =>
+	toast(title, options);
+
+toast.custom = (jsx: React.ReactNode, options?: ToastOptions) =>
+	toast(jsx, options);
+
+toast.dismiss = (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId });
+
+toast.promise = async <T>(
+	promise: Promise<T>,
+	messages: {
+		loading: React.ReactNode;
+		success: React.ReactNode | ((data: T) => React.ReactNode);
+		error: React.ReactNode | ((err: unknown) => React.ReactNode);
+	},
+) => {
+	const id = toast({
+		title: messages.loading,
+		variant: "info",
+	}).id;
+
+	try {
+		const result = await promise;
+		const successMsg =
+			typeof messages.success === "function"
+				? messages.success(result)
+				: messages.success;
+		dispatch({
+			type: "UPDATE_TOAST",
+			toast: {
+				id,
+				title: successMsg,
+				variant: "success",
+				open: true,
+			},
+		});
+		return result;
+	} catch (err) {
+		const errorMsg =
+			typeof messages.error === "function"
+				? messages.error(err)
+				: messages.error;
+		dispatch({
+			type: "UPDATE_TOAST",
+			toast: {
+				id,
+				title: errorMsg,
+				variant: "destructive",
+				open: true,
+			},
+		});
+		throw err;
+	}
+};
 
 function useToast() {
 	const [state, setState] = React.useState<State>(memoryState);

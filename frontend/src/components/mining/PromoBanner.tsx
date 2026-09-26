@@ -30,8 +30,6 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 	const claimedSlots = promoStatus.quests?.reduce((acc, q) => acc + (q.claimedSlots || 0), 0) || 0;
 	const slotsLeft = Math.max(0, totalSlots - claimedSlots);
 
-	const distributedM = ((promoStatus.distributed || 0) / 1_000_000).toFixed(1);
-
 	return (
 		<div
 			onClick={onOpenQuests}
@@ -71,23 +69,40 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 					</div>
 				</div>
 
-				{/* Right: Metrics & Arrow */}
-				<div className="flex items-center justify-between sm:justify-end gap-6 sm:border-l sm:border-white/10 sm:pl-6 shrink-0">
+				{/* Right: Metrics & Arrow (Variant 2: Slots · Pool · Claimed) */}
+				<div className="flex items-center justify-between sm:justify-end gap-5 sm:gap-6 sm:border-l sm:border-white/10 sm:pl-6 shrink-0">
+					{/* Slots Left */}
 					<div className="text-left sm:text-center">
-						<div className="text-base sm:text-lg font-black text-white font-mono">{slotsLeft.toLocaleString()}</div>
+						<div className="text-base sm:text-lg font-black text-white font-mono">
+							{slotsLeft.toLocaleString()}
+						</div>
 						<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
 							{t("promoSlotsLeft", "Slots left")}
 						</div>
 					</div>
 
+					{/* Airdrop Pool */}
 					<div className="text-left sm:text-center">
-						<div className="text-base sm:text-lg font-black text-[#00F0FF] font-mono">{distributedM}M</div>
-						<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-							{t("promoClaimed", "$DEPTH claimed")}
+						<div className="text-base sm:text-lg font-black font-mono bg-gradient-to-r from-[#00F0FF] via-[#1DA2B4] to-blue-400 bg-clip-text text-transparent">
+							{((promoStatus.totalPool as number) || 10_000_000).toLocaleString()}
+						</div>
+						<div className="text-[10px] uppercase tracking-wider text-cyan-300/80 font-medium">
+							{t("promoAirdropPool", "Airdrop pool")}
 						</div>
 					</div>
 
-					<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-muted-foreground transition-all duration-300 group-hover:translate-x-1 group-hover:bg-[#1DA2B4]/20 group-hover:text-[#00F0FF]">
+					{/* Claimed */}
+					<div className="text-left sm:text-center">
+						<div className="text-base sm:text-lg font-black text-white/90 font-mono">
+							{(promoStatus.distributed || 0).toLocaleString()}
+						</div>
+						<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+							{t("promoClaimedShort", "Claimed")}
+						</div>
+					</div>
+
+					{/* Action Arrow */}
+					<div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-muted-foreground transition-all duration-300 group-hover:translate-x-1 group-hover:bg-[#1DA2B4]/20 group-hover:border-[#00F0FF]/40 group-hover:text-[#00F0FF]">
 						<ArrowRight className="h-4 w-4" />
 					</div>
 				</div>

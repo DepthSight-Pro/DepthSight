@@ -4,6 +4,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider } from "./contexts/AuthContext";
 import { toast } from "react-hot-toast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -47,13 +48,15 @@ const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const root = ReactDOM.createRoot(rootElement);
 root.render(
 	<React.StrictMode>
-		<QueryClientProvider client={queryClient}>
-			<GoogleOAuthProvider clientId={googleClientId}>
-				<AuthProvider>
-					<App />
-				</AuthProvider>
-			</GoogleOAuthProvider>
-		</QueryClientProvider>
+		<ErrorBoundary>
+			<QueryClientProvider client={queryClient}>
+				<GoogleOAuthProvider clientId={googleClientId}>
+					<AuthProvider>
+						<App />
+					</AuthProvider>
+				</GoogleOAuthProvider>
+			</QueryClientProvider>
+		</ErrorBoundary>
 	</React.StrictMode>,
 );
 

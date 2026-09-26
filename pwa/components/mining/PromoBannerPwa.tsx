@@ -14,6 +14,8 @@ interface PromoBannerStatus {
 	hasActiveCampaign?: boolean;
 	quests?: PromoQuestSlots[];
 	distributed?: number;
+	totalPool?: number;
+	remainingPool?: number;
 	campaignName?: string;
 	description?: string;
 	isAdminPreview?: boolean;
@@ -46,8 +48,6 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 			0,
 		) ?? 0;
 	const slotsLeft = Math.max(0, totalSlots - claimedSlots);
-
-	const distributedM = ((promoStatus.distributed || 0) / 1_000_000).toFixed(1);
 
 	return (
 		<div
@@ -93,29 +93,38 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 				</div>
 			</div>
 
-			{/* Bottom Metrics Bar */}
+			{/* Bottom Metrics Bar (Variant 2: Slots · Pool · Claimed) */}
 			<div className="mt-3.5 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
-				<div className="flex items-center gap-4">
+				<div className="flex items-center gap-3 sm:gap-4">
 					<div>
-						<div className="text-sm font-black text-white font-mono">
+						<div className="text-xs sm:text-sm font-black text-white font-mono leading-none">
 							{slotsLeft.toLocaleString()}
 						</div>
-						<div className="text-[9px] uppercase tracking-wider text-muted-foreground">
+						<div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-1">
 							{t("mining.promoSlotsLeft", "Slots left")}
 						</div>
 					</div>
 
-					<div className="border-l border-white/10 pl-4">
-						<div className="text-sm font-black text-[#00F0FF] font-mono">
-							{distributedM}M
+					<div className="border-l border-white/10 pl-2.5 sm:pl-3">
+						<div className="text-xs sm:text-sm font-black font-mono bg-gradient-to-r from-[#00F0FF] via-[#1DA2B4] to-blue-400 bg-clip-text text-transparent leading-none">
+							{((promoStatus?.totalPool as number) || 10_000_000).toLocaleString()}
 						</div>
-						<div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-							{t("mining.promoClaimed", "$DEPTH claimed")}
+						<div className="text-[9px] uppercase tracking-wider text-cyan-300/80 font-medium mt-1">
+							{t("mining.promoAirdropPool", "Airdrop pool")}
+						</div>
+					</div>
+
+					<div className="border-l border-white/10 pl-2.5 sm:pl-3">
+						<div className="text-xs sm:text-sm font-black text-white/90 font-mono leading-none">
+							{(promoStatus?.distributed || 0).toLocaleString()}
+						</div>
+						<div className="text-[9px] uppercase tracking-wider text-muted-foreground mt-1">
+							{t("mining.promoClaimedShort", "Claimed")}
 						</div>
 					</div>
 				</div>
 
-				<div className="flex items-center gap-1.5 text-xs font-bold text-[#00F0FF] bg-[#1DA2B4]/20 border border-[#00F0FF]/30 rounded-xl px-2.5 py-1.5 transition-all group-hover:bg-[#00F0FF] group-hover:text-black">
+				<div className="flex items-center gap-1.5 text-xs font-bold text-[#00F0FF] bg-[#1DA2B4]/20 border border-[#00F0FF]/30 rounded-xl px-2.5 py-1.5 transition-all group-hover:bg-[#00F0FF] group-hover:text-black shrink-0">
 					<span>{t("mining.subtabQuests", "Quests")}</span>
 					<ArrowRight className="h-3.5 w-3.5" />
 				</div>

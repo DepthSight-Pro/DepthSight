@@ -213,7 +213,7 @@ const Index = () => {
 		refetchInterval: wsLive ? false : 5000,
 	});
 	const { data: logHistory } = useLogHistory();
-	// Saved configs (cached) to resolve real timeframes for Active Bots.
+	// Saved configs (cached) to resolve real timeframes and user-defined names for Active Bots.
 	const { data: savedConfigs } = useStrategyConfigsList();
 	const timeframeByConfigId = useMemo(() => {
 		const m = new Map<string, string>();
@@ -222,6 +222,16 @@ const Index = () => {
 				(c as unknown as Record<string, unknown>).config_data,
 			);
 			if (tf) m.set(String(c.id), tf);
+		}
+		return m;
+	}, [savedConfigs]);
+
+	const nameByConfigId = useMemo(() => {
+		const m = new Map<string, string>();
+		for (const c of savedConfigs ?? []) {
+			if (c.id && c.name) {
+				m.set(String(c.id), c.name);
+			}
 		}
 		return m;
 	}, [savedConfigs]);
@@ -538,7 +548,16 @@ const Index = () => {
 		const base = sorted.map((s: StrategyData, idx: number): VisibleStrategy => {
 			const winRateRaw = s.win_rate;
 			const id = s.id || `s-${idx}`;
-			const name = s.name || s.strategy_name || `Strategy #${idx + 1}`;
+			const userCustomName =
+				(s.config_id && nameByConfigId.get(String(s.config_id))) ||
+				(s.id && nameByConfigId.get(String(s.id))) ||
+				(s.name &&
+				s.name !== "VisualBuilderStrategy" &&
+				s.name !== "VisualBuilder" &&
+				s.name !== s.strategy_name
+					? s.name
+					: undefined);
+			const name = userCustomName || s.name || s.strategy_name || `Strategy #${idx + 1}`;
 			const st = String(s.status || "RUNNING").toUpperCase();
 			const status =
 				st === "IN_POSITION" || st === "IN-POSITION"
@@ -580,7 +599,11 @@ const Index = () => {
 							? Number(s.pnl)
 							: null,
 				equity:
-					strategyEquity.get(name) ?? strategyEquity.get(id) ?? [],
+					(s.config_id ? strategyEquity.get(String(s.config_id)) : undefined) ??
+					strategyEquity.get(name) ??
+					strategyEquity.get(s.strategy_name) ??
+					strategyEquity.get(id) ??
+					[],
 			};
 		});
 		// Live overlay: rebase snapshot PnL by tick delta of its positions,
@@ -596,6 +619,7 @@ const Index = () => {
 		realPositions,
 		livePositions,
 		timeframeByConfigId,
+		nameByConfigId,
 		runStatsByInstanceId,
 	]);
 
@@ -1210,7 +1234,14 @@ const Index = () => {
 										</span>
 										<ExchangeBadge exchange={s.exchange} size="xs" />
 										<div className="flex-1 min-w-0">
-											<div className="truncate text-[12px] font-medium text-white">
+											<div
+												className="truncate text-[12px] font-medium text-white"
+												title={
+													s.strategy_name && s.strategy_name !== s.name
+														? `${s.name} (${s.strategy_name})`
+														: s.name
+												}
+											>
 												{s.name}{" "}
 												<span className="text-[9px] uppercase text-emerald-400/80">
 													{s.status === "IN_POSITION" ? "IN POSITION" : "RUNNING"}
@@ -1219,16 +1250,15 @@ const Index = () => {
 														: ""}
 												</span>
 											</div>
-										<div className="text-[10px] text-white/40">
-											{s.timeframe} ·{" "}
-{s.trades > 0
-	? `${s.trades} trades · WR ${
-			s.winRate !== null ? `${s.winRate}%` : "—"
-		}`
-	: "no closed trades yet"}
-											{s.winRate !== null ? `${s.winRate}%` : "—"}
+											<div className="text-[10px] text-white/40">
+												{s.timeframe} ·{" "}
+												{s.trades > 0
+													? `${s.trades} trades · WR ${
+															s.winRate !== null ? `${s.winRate}%` : "—"
+														}`
+													: "no closed trades yet"}
+											</div>
 										</div>
-									</div>
 									{s.equity.length >= 2 ? (
 										<Sparkline
 											data={s.equity.slice(-30)}

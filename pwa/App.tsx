@@ -41,6 +41,10 @@ import { useAuth } from "./contexts/AuthContext";
 import { useAIChat } from "./contexts/AIChatContext";
 import { api, readAccessToken } from "./services/api";
 import { useRealtimeStore, type PushEnvelope } from "./stores/realtimeStore";
+import {
+	isUiNotificationPayload,
+	mapUiNotification,
+} from "./lib/uiNotifications";
 
 import DashboardScreen from "./screens/DashboardScreen";
 import StrategiesScreen from "./screens/StrategiesScreen";
@@ -147,11 +151,13 @@ const EquityChart: React.FC<{ data: { name: string; equity: number }[] }> = ({
 					tickFormatter={(value) => `$${Number(value).toLocaleString()}`}
 				/>
 				<Tooltip
+					wrapperStyle={{ outline: "none", border: "none" }}
 					contentStyle={{
 						backgroundColor: "hsl(var(--popover))",
 						borderColor: "hsl(var(--border))",
 						color: "hsl(var(--popover-foreground))",
 						borderRadius: "var(--radius)",
+						outline: "none",
 					}}
 					cursor={{
 						stroke: primaryColor,
@@ -429,7 +435,19 @@ const BacktestResultScreen: React.FC<BacktestResultScreenProps> = ({
 const MainAppLayout = () => {
 	const { t } = useTranslation("pwa-common");
 	const [theme, setTheme] = useState<"light" | "dark">("dark");
-	const [activeScreen, setActiveScreen] = useState<Screen>(Screen.Dashboard);
+	const [activeScreen, setActiveScreen] = useState<Screen>(() => {
+		// Cold-start deep-link (e.g. tap on a push notification).
+		try {
+			const params = new URLSearchParams(window.location.search);
+			if (params.get("screen") === "notifications") {
+				window.history.replaceState({}, "", window.location.pathname);
+				return Screen.Notifications;
+			}
+		} catch {
+			// Non-browser environment: fall through to default.
+		}
+		return Screen.Dashboard;
+	});
 	const [previousScreen, setPreviousScreen] = useState<Screen | null>(null);
 	const { user } = useAuth();
 	const { addNotification } = useNotifications();
@@ -470,9 +488,21 @@ const MainAppLayout = () => {
 				sub(`depthsight:events:strategies:${user.id}`);
 				sub(`depthsight:events:portfolio:${user.id}`);
 				sub(`depthsight:events:trades:${user.id}`);
+				// Structured trading notifications (mirror of Telegram events).
+				sub(`user:${user.id}:notifications`);
 			};
 			websocket.onmessage = (event) => {
-				const message = JSON.parse(event.data);
+				let message: {
+					topic?: unknown;
+					payload?: unknown;
+					event_type?: unknown;
+					data?: unknown;
+				};
+				try {
+					message = JSON.parse(event.data);
+				} catch {
+					return; // ignore non-JSON frames (e.g. server pings)
+				}
 				const topic = message.topic as string | undefined;
 				const payload = message.payload as Record<string, unknown> | undefined;
 				if (typeof topic === "string") {
@@ -494,9 +524,35 @@ const MainAppLayout = () => {
 						rt.bumpTrades();
 						return;
 					}
+					if (topic.startsWith("user:")) {
+						// Structured trading notification (or foreign event: ignore).
+						const raw = payload as unknown;
+						if (isUiNotificationPayload(raw)) {
+							const mapped = mapUiNotification(raw);
+							if (mapped.severity === "success") {
+								toast.success(mapped.title);
+							} else if (mapped.severity === "error") {
+								toast.error(mapped.title);
+							} else {
+								toast(mapped.title, { icon: mapped.icon });
+							}
+							addNotification(mapped, {
+								id: raw.id,
+								timestampMs: raw.ts_ms,
+							});
+							return;
+						}
+					}
 				}
-				const eventType = message.payload?.event_type || message.event_type;
-				const eventData = message.payload?.data || message.data;
+				const payloadObj =
+					(message.payload ?? {}) as Record<string, unknown>;
+				const eventType = payloadObj.event_type ?? payloadObj.type ?? message.event_type;
+				const eventData = (payloadObj.achievement ?? payloadObj.data ?? message.data ?? {}) as {
+					id?: unknown;
+					name?: unknown;
+					strategy_name?: unknown;
+					run_id?: unknown;
+				};
 				if (eventType === "achievement_unlocked") {
 					const localizedName = t(`achievements.list.${eventData.id}.name`, {
 						defaultValue: eventData.name,
@@ -568,6 +624,23 @@ const MainAppLayout = () => {
 	useEffect(() => {
 		document.documentElement.className = theme;
 	}, [theme]);
+
+	// Warm deep-link: Service Worker forwards push taps on the open app.
+	useEffect(() => {
+		if (!("serviceWorker" in navigator)) return;
+		const target = navigator.serviceWorker as unknown as EventTarget;
+		const onMessage = (event: Event) => {
+			const data = (event as MessageEvent).data as
+				| { type?: string }
+				| undefined;
+			if (data?.type === "OPEN_NOTIFICATIONS") {
+				setActiveScreen(Screen.Notifications);
+			}
+		};
+		target.addEventListener("message", onMessage as EventListener);
+		return () =>
+			target.removeEventListener("message", onMessage as EventListener);
+	}, []);
 
 	const handleBack = useCallback(() => {
 		const fromScreen = activeScreen;

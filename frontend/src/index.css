@@ -272,4 +272,59 @@
 			flex: 1 1 min(24rem, 100%);
 		}
 	}
+
+	/* Recharts tooltip styling - ensure high contrast and readable text across all charts */
+	.recharts-default-tooltip {
+		background-color: #0b0f17 !important;
+		border: 1px solid rgba(255, 255, 255, 0.15) !important;
+		border-radius: 10px !important;
+		box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+		backdrop-filter: blur(12px) !important;
+		-webkit-backdrop-filter: blur(12px) !important;
+		padding: 8px 12px !important;
+		color: #ffffff !important;
+	}
+
+	.recharts-tooltip-label {
+		color: rgba(255, 255, 255, 0.75) !important;
+		font-size: 11px !important;
+		font-weight: 600 !important;
+		margin-bottom: 4px !important;
+	}
+
+	.recharts-tooltip-item-list {
+		padding: 0 !important;
+		margin: 0 !important;
+		list-style: none !important;
+	}
+
+	.recharts-tooltip-item {
+		font-size: 12px !important;
+		font-weight: 500 !important;
+		padding: 2px 0 !important;
+		color: #f8fafc !important;
+	}
+
+	.recharts-tooltip-item-name,
+	.recharts-tooltip-item-separator,
+	.recharts-tooltip-item-value,
+	.recharts-tooltip-item-unit {
+		color: inherit !important;
+	}
+
+	.light .recharts-default-tooltip {
+		background-color: #ffffff !important;
+		border: 1px solid rgba(0, 0, 0, 0.12) !important;
+		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12) !important;
+		color: #0f172a !important;
+	}
+
+	.light .recharts-tooltip-label {
+		color: #64748b !important;
+	}
+
+	.light .recharts-tooltip-item {
+		color: #0f172a !important;
+	}
 }
+

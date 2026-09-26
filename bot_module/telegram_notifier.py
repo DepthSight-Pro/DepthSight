@@ -447,6 +447,7 @@ class TelegramNotifier:
             "POSITION_CLOSED": "notifyPositionClosed",
             "PARTIAL_TP_FILLED": "notifyPartialTp",
             "PARTIAL_TP": "notifyPartialTp",
+            "SCALE_IN_FILLED": "notifyNewPosition",
             "SL_MOVED_TO_BE": "notifySlMovedToBe",
             "RISK_MANAGER_ALERT": "notifyRiskAlerts",
             "RISK_ALERTS": "notifyRiskAlerts",
@@ -691,6 +692,53 @@ class TelegramNotifier:
             f"🔑 *API key:* `{_escape_markdown_v2(data.get('api_key_name', 'N/A'))}`",
             f"🆔 *Entry Client Order ID:* `{entry_client_order_id}`",
             f"🆔 *TP Order ID:* `{tp_order_id}`",
+            f"⏰ *Time:* `{timestamp}`",
+        ]
+        return "\n".join(parts)
+
+    def _format_scale_in_filled_message(self, data: Dict[str, Any]) -> str:
+        symbol = _escape_markdown_v2(data.get("symbol"))
+        market_label, market_label_escaped = _format_market_label(data)
+        direction_raw = data.get("direction")
+        direction = (
+            direction_raw.name
+            if hasattr(direction_raw, "name")
+            else str(direction_raw or "")
+        ).upper()
+        _, direction_escaped = _format_market_action(
+            {"direction": direction, "market_type": data.get("market_type")},
+        )
+
+        fill_price_fmt = _format_price(
+            data.get("fill_price"), data.get("tick_size", config.DEFAULT_TICK_SIZE)
+        )
+        avg_entry_fmt = _format_price(
+            data.get("new_average_entry"),
+            data.get("tick_size", config.DEFAULT_TICK_SIZE),
+        )
+        base_asset = _escape_markdown_v2(
+            data.get("base_asset", symbol.replace("USDT", "").replace("BUSD", ""))
+        )
+        filled_qty_fmt = _format_quantity(data.get("filled_quantity"), base_asset)
+        total_qty_fmt = _format_quantity(data.get("new_total_quantity"), base_asset)
+
+        entry_client_order_id = _escape_markdown_v2(data.get("entry_client_order_id"))
+        timestamp = _escape_markdown_v2(
+            datetime.fromtimestamp(
+                data.get("timestamp", time.time()), timezone.utc
+            ).strftime("%d.%m.%Y %H:%M:%S UTC")
+        )
+
+        parts = [
+            f"➕ *Scale\\-in filled: {market_label_escaped} {direction_escaped} {symbol}*",
+            f"🏷️ *Market:* `{_escape_markdown_v2(market_label)}`",
+            f"📈 *Asset:* `{symbol}`",
+            f"🎯 *Fill price:* `{fill_price_fmt}`",
+            f"⚖️ *Added volume:* `{filled_qty_fmt} {base_asset}`",
+            f"📊 *Average entry:* `{avg_entry_fmt}`",
+            f"📦 *Total in position:* `{total_qty_fmt} {base_asset}`",
+            f"🔑 *API key:* `{_escape_markdown_v2(data.get('api_key_name', 'N/A'))}`",
+            f"🆔 *Entry Client Order ID:* `{entry_client_order_id}`",
             f"⏰ *Time:* `{timestamp}`",
         ]
         return "\n".join(parts)
@@ -1145,6 +1193,48 @@ class TelegramNotifier:
         }
         await self._add_to_queue(
             "PARTIAL_TP_FILLED",
+            data,
+            target_chat_id=chat_id,
+            user_notification_settings=notification_settings,
+        )
+
+    async def scale_in_filled(
+        self,
+        symbol: str,
+        fill_price: float,
+        filled_quantity: float,
+        new_average_entry: float,
+        new_total_quantity: float,
+        entry_client_order_id: str,
+        direction: Optional[Any] = None,
+        base_asset: Optional[str] = None,
+        chat_id: Optional[str] = None,
+        notification_settings: Optional[Dict[str, Any]] = None,
+        market_type: Optional[str] = None,
+        leverage: Optional[Any] = None,
+        api_key_name: Optional[str] = None,
+    ):
+        """Sends a notification about a scale-in (DCA/grid top-up) fill.
+
+        Args:
+            notification_settings: User notification settings from the DB (optional).
+        """
+        data = {
+            "symbol": symbol,
+            "fill_price": fill_price,
+            "filled_quantity": filled_quantity,
+            "new_average_entry": new_average_entry,
+            "new_total_quantity": new_total_quantity,
+            "entry_client_order_id": entry_client_order_id,
+            "direction": direction,
+            "base_asset": base_asset,
+            "timestamp": time.time(),
+            "market_type": market_type,
+            "leverage": leverage,
+            "api_key_name": api_key_name,
+        }
+        await self._add_to_queue(
+            "SCALE_IN_FILLED",
             data,
             target_chat_id=chat_id,
             user_notification_settings=notification_settings,

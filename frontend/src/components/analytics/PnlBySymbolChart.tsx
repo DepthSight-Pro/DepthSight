@@ -18,6 +18,30 @@ interface PnlBySymbolChartProps {
 	tradeData: TradeData[];
 }
 
+interface CustomSymbolTooltipProps {
+	active?: boolean;
+	payload?: Array<{ payload?: { symbol: string; netPnl: number } }>;
+}
+
+const CustomSymbolTooltip = ({ active, payload }: CustomSymbolTooltipProps) => {
+	if (!active || !payload?.length || !payload[0]?.payload) return null;
+	const data = payload[0].payload;
+	const netPnl = Number(data.netPnl || 0);
+	const isProfit = netPnl >= 0;
+
+	return (
+		<div className="rounded-xl border border-white/15 bg-[#0b0f17]/95 px-3 py-2 shadow-2xl backdrop-blur-xl font-mono">
+			<div className="text-[11px] font-semibold text-white/70 mb-1">{data.symbol}</div>
+			<div className="flex items-center gap-2 text-xs">
+				<span className="text-white/50">Net PnL:</span>
+				<span className={`font-bold ${isProfit ? "text-emerald-400" : "text-rose-400"}`}>
+					{isProfit ? "+" : ""}${netPnl.toFixed(2)}
+				</span>
+			</div>
+		</div>
+	);
+};
+
 export const PnlBySymbolChart = ({ tradeData }: PnlBySymbolChartProps) => {
 	const { t } = useTranslation("analytics");
 	const chartData = useMemo(() => {
@@ -61,12 +85,8 @@ export const PnlBySymbolChart = ({ tradeData }: PnlBySymbolChartProps) => {
 					width={80}
 				/>
 				<Tooltip
-					cursor={{ fill: "hsl(var(--accent))" }}
-					contentStyle={{
-						background: "hsl(var(--card))",
-						borderColor: "hsl(var(--border))",
-					}}
-					formatter={(value: unknown) => `$${Number(value ?? 0).toFixed(2)}`}
+					cursor={{ fill: "rgba(255, 255, 255, 0.05)" }}
+					content={<CustomSymbolTooltip />}
 				/>
 				<Bar dataKey="netPnl" name="Net PnL">
 					{chartData.map((entry, index) => (

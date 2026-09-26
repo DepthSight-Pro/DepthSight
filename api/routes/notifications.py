@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -5,9 +6,16 @@ import secrets
 
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import models, schemas
+from .. import crud, models, schemas
 from ..auth import get_current_user
+from ..database import get_db
+from ..push_sender import (
+    DEFAULT_PUSH_URL,
+    PUSH_EXPIRED,
+    send_push_notification,
+)
 from ..redis_client import get_redis_client
 
 try:
@@ -95,3 +103,34 @@ async def get_telegram_binding_url(
 
     url = f"https://t.me/{bot_username}?start={token}"
     return {"url": url}
+
+
+@notifications_router.post("/push-test")
+async def send_test_push_notification(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sends a test Web Push to the caller's stored subscription.
+
+    Returns {"status": sent|expired|failed|not_configured|no_subscription}.
+    Expired subscriptions are removed so the client resubscribes on next launch.
+    """
+    subscription = current_user.push_subscription
+    if not subscription or not isinstance(subscription, dict):
+        return {"status": "no_subscription"}
+
+    status = await asyncio.to_thread(
+        send_push_notification,
+        dict(subscription),
+        "DepthSight test",
+        "Push notifications are working. Trading events will arrive here.",
+        "depthsight-push-test",
+        DEFAULT_PUSH_URL,
+    )
+    if status == PUSH_EXPIRED:
+        try:
+            await crud.delete_user_push_subscription(db, user_id=current_user.id)
+            await db.commit()
+        except Exception as e:
+            logger.error("Failed to clear expired push subscription: %s", e)
+    return {"status": status}
