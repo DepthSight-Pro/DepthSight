@@ -93,21 +93,21 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 						</span>
 					)}
 				</div>
-				<div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-white/[0.03] border-white/10 text-white">
-					<Search className="w-3.5 h-3.5 text-white/40" />
+				<div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white">
+					<Search className="w-3.5 h-3.5 text-muted-foreground dark:text-white/40" />
 					<input
 						type="text"
 						placeholder={t("tradeHistory.searchPlaceholder", "Search symbol...")}
-						className="bg-transparent border-none text-xs font-mono text-white focus:ring-0 w-32 outline-none placeholder:text-white/30"
+						className="bg-transparent border-none text-xs font-mono text-foreground dark:text-white focus:ring-0 w-32 outline-none placeholder:text-muted-foreground dark:placeholder:text-white/30"
 						value={searchSymbol}
 						onChange={(e) => setSearchSymbol(e.target.value)}
 					/>
 					{searchSymbol && (
 						<button
 							onClick={() => setSearchSymbol("")}
-							className="hover:bg-white/10 rounded p-0.5 transition-colors"
+							className="hover:bg-muted dark:hover:bg-white/10 rounded p-0.5 transition-colors"
 						>
-							<X className="w-3.5 h-3.5 text-white/40" />
+							<X className="w-3.5 h-3.5 text-muted-foreground dark:text-white/40" />
 						</button>
 					)}
 				</div>

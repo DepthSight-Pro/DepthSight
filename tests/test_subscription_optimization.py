@@ -10,6 +10,7 @@ Tests to verify data subscription optimization:
 import pytest
 import asyncio
 import json
+import time
 from collections import defaultdict
 from websockets.protocol import State
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -1146,6 +1147,9 @@ class TestGlobalWebSocketRegistry:
         self, mock_executor, reset_global_registry, monkeypatch
     ):
         stream_key = "binance:futures_usdtm:btcusdt@kline_1m"
+        # Snapshot rows must be recent: the freshness gate rejects ancient
+        # snapshots instead of clobbering the local cache with them.
+        now_ms = int(time.time() * 1000)
         snapshot = {
             "type": "market_snapshot",
             "stream_key": stream_key,
@@ -1153,7 +1157,7 @@ class TestGlobalWebSocketRegistry:
             "symbol": "BTCUSDT",
             "market_type": "futures_usdtm",
             "exchange_id": "binance",
-            "rows": [[1700000000000, 100, 101, 99, 100.5, 10]],
+            "rows": [[now_ms, 100, 101, 99, 100.5, 10]],
             "pair_state": {"rsi_14": 61.0, "atr": 2.5},
         }
         consumer = DataConsumer(
@@ -1225,6 +1229,7 @@ class TestGlobalWebSocketRegistry:
         assert payload["rows"][-1][4] == 101.5
         assert payload["pair_state"]["rsi_14"] == 58.0
         assert payload["pair_state"]["atr"] == 1.25
+        assert payload["last_candle_ms"] == payload["rows"][-1][0]
 
     @pytest.mark.asyncio
     async def test_redis_command_service_snapshot_worker_load_flow(
@@ -1245,12 +1250,13 @@ class TestGlobalWebSocketRegistry:
         service.consumers["binance"] = consumer_for_service
 
         cache_key = "binance:futures_usdtm:BTCUSDT:1m"
+        now_ms = int(time.time() * 1000)
         async with _global_cache_lock:
             _global_kline_cache[cache_key].clear()
             _global_kline_cache[cache_key].extend(
                 [
-                    (1700000000000, 100.0, 101.0, 99.0, 100.5, 10.0),
-                    (1700000060000, 100.5, 102.0, 100.0, 101.5, 12.0),
+                    (now_ms - 60000, 100.0, 101.0, 99.0, 100.5, 10.0),
+                    (now_ms, 100.5, 102.0, 100.0, 101.5, 12.0),
                 ]
             )
         async with _global_pairs_lock:

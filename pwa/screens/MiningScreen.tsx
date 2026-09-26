@@ -13,12 +13,15 @@ import {
   Share2,
   Globe,
   Wallet,
+  Info,
+  X,
 } from "lucide-react";
 import { api } from "../services/api";
 import { Logo } from "../components/ui/logo";
 import { NodeWalletBottomSheet } from "../components/NodeWalletBottomSheet";
 import { PromoBannerPwa } from "../components/mining/PromoBannerPwa";
 import { PromoCampaignModal } from "../components/mining/PromoCampaignModal";
+import { ExchangeBadge } from "../components/ExchangeBadge";
 
 
 interface MiningStatus {
@@ -88,6 +91,16 @@ const MiningScreen: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isPromoModalOpen, setIsPromoModalOpen] = useState(false);
+  const [selectedExchangeDetail, setSelectedExchangeDetail] = useState<{
+    baseKey: string;
+    label: string;
+    spotRate?: number;
+    futuresRate?: number;
+    generalRate?: number;
+    maxRate: number;
+    multiplier: number;
+    isBoosted: boolean;
+  } | null>(null);
 
   const fetchStatus = () => {
     setLoading(true);
@@ -535,51 +548,38 @@ const MiningScreen: React.FC = () => {
                     {t("mining.supportedExchanges", "Supported Exchanges & Rebates")}
                   </h3>
                 </div>
-                <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 mb-2.5 leading-snug">
+                <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-1 mb-3 leading-snug">
                   {t("mining.supportedExchangesDesc", "Trade mining rewards are calculated for live trades executed on the following exchanges:")}
                 </p>
 
-                <div className="space-y-2">
-                  {groupedExchanges.map((exItem) => {
-                    const isBitget = exItem.baseKey === "bitget";
-                    const isOkx = exItem.baseKey === "okx";
-                    const isBybit = exItem.baseKey === "bybit";
-                    return (
-                      <div key={exItem.baseKey} className={`flex flex-col gap-1.5 bg-[hsl(var(--background))] border ${exItem.isBoosted ? "border-amber-500/40 bg-amber-500/5" : "border-[hsl(var(--border))]"} p-2.5 rounded-xl text-xs transition-colors`}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold uppercase tracking-wide">{exItem.label}</span>
-                            {exItem.isBoosted && (
-                              <span className="text-[9px] font-mono font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded-full animate-pulse">
-                                🔥 {exItem.multiplier}x BOOST
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-[hsl(var(--primary))]">
-                            <span className="bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 px-1.5 py-0.5 rounded" title={t("mining.futuresRebate", "Futures Rebate")}>
-                              {t("mining.futuresRebate", "Futures")}: {((exItem.futuresRate ?? exItem.maxRate) * 100).toFixed(0)}%
-                            </span>
-                            <span className="bg-[hsl(var(--primary))]/10 border border-[hsl(var(--primary))]/20 px-1.5 py-0.5 rounded" title={t("mining.spotRebate", "Spot Rebate")}>
-                              {t("mining.spotRebate", "Spot")}: {((exItem.spotRate ?? exItem.maxRate) * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        </div>
-                        {(isOkx || isBybit || isBitget) && (
-                          <p className="text-[10px] text-[hsl(var(--muted-foreground))] leading-tight pt-0.5">
-                            {isBitget
-                              ? t("mining.bitgetRebateTip", "Base rate (35%) + 2.0x Mining Multiplier! Stacks under our affiliate link for 2x $DEPTH token yield.")
-                              : isOkx
-                              ? t("mining.okxRebateTip", "Base rate (30%). Stacks with affiliate link (+7.5%) up to 5x rewards.")
-                              : t("mining.bybitRebateTip", "Base rate (40%). Stacks with affiliate link for maximum mining yield.")}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {groupedExchanges.map((exItem) => (
+                    <button
+                      key={exItem.baseKey}
+                      type="button"
+                      onClick={() => setSelectedExchangeDetail(exItem)}
+                      className={`group flex items-center gap-2 border px-3 py-2 rounded-xl text-xs transition-all active:scale-95 text-left cursor-pointer ${
+                        exItem.isBoosted
+                          ? "border-amber-500/50 bg-amber-500/10 hover:border-amber-500/70 shadow-sm"
+                          : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:border-[hsl(var(--primary))]/40"
+                      }`}
+                    >
+                      <ExchangeBadge exchange={exItem.baseKey} size="xs" />
+                      <span className="font-mono font-bold uppercase tracking-wide text-[hsl(var(--foreground))] text-xs">
+                        {exItem.label}
+                      </span>
+                      {exItem.isBoosted && (
+                        <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono font-extrabold flex items-center gap-1 rounded-md px-1.5 py-0.5 animate-pulse">
+                          🔥 {exItem.multiplier}x
+                        </span>
+                      )}
+                      <Info className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-0.5 group-hover:text-[hsl(var(--primary))] transition-colors" />
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2 text-[11px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--background))]/50 p-2 rounded-xl">
+              <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2 text-[11px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--background))]/50 p-2.5 rounded-xl">
                 <ShieldCheck className="w-3.5 h-3.5 text-[hsl(var(--primary))] shrink-0 mt-0.5" />
                 <p className="leading-snug">
                   {t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.")}
@@ -732,6 +732,84 @@ const MiningScreen: React.FC = () => {
         onRefresh={fetchStatus}
         nodeUuid={miningStatus?.nodeUuid || miningStatus?.node_uuid}
       />
+
+      {/* Exchange Rebate Detail Modal */}
+      {selectedExchangeDetail && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setSelectedExchangeDetail(null)}
+        >
+          <div 
+            className="w-full max-w-sm rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))] p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[hsl(var(--border))]">
+              <div className="flex items-center gap-2.5">
+                <ExchangeBadge exchange={selectedExchangeDetail.baseKey} size="sm" />
+                <span className="font-mono font-bold uppercase text-base tracking-wide">
+                  {selectedExchangeDetail.label}
+                </span>
+                {selectedExchangeDetail.isBoosted && (
+                  <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono font-extrabold rounded-md px-1.5 py-0.5">
+                    🔥 {selectedExchangeDetail.multiplier}x BOOST
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedExchangeDetail(null)}
+                className="p-1 rounded-full text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--secondary))] transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Rebates rates */}
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
+                <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
+                  {t("mining.futuresRebate", "Futures Rebate")}
+                </div>
+                <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
+                  {((selectedExchangeDetail.futuresRate ?? selectedExchangeDetail.maxRate) * 100).toFixed(0)}%
+                </div>
+              </div>
+              <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
+                <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
+                  {t("mining.spotRebate", "Spot Rebate")}
+                </div>
+                <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
+                  {((selectedExchangeDetail.spotRate ?? selectedExchangeDetail.maxRate) * 100).toFixed(0)}%
+                </div>
+              </div>
+            </div>
+
+            {/* Detail tooltip / description text */}
+            <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
+              {selectedExchangeDetail.baseKey === "bitget"
+                ? t("mining.bitgetRebateTip", "Base rate (35%) + 2.0x Mining Multiplier! Stacks under our affiliate link for 2x $DEPTH token yield.")
+                : selectedExchangeDetail.baseKey === "okx"
+                ? t("mining.okxRebateTip", "Base rate (30%). Stacks with affiliate link (+7.5%) up to 5x rewards.")
+                : selectedExchangeDetail.baseKey === "bybit"
+                ? t("mining.bybitRebateTip", "Base rate (50%), under third-party referral only 10%. Stacks under our link (+10%) for maximum yield.")
+                : selectedExchangeDetail.isBoosted
+                ? `${selectedExchangeDetail.multiplier}x Trade Mining Reward Multiplier active for ${selectedExchangeDetail.label}.`
+                : t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly.")}
+            </div>
+
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setSelectedExchangeDetail(null)}
+              className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-[hsl(var(--secondary))] hover:bg-[hsl(var(--secondary))]/80 text-[hsl(var(--foreground))] transition-colors"
+            >
+              {t("common.close", "Закрыть")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

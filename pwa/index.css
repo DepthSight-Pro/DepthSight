@@ -66,7 +66,7 @@ body {
 		--background: 210 16% 95%; /* #F1F3F5 */
 		--foreground: 210 10% 23%; /* #343A40 */
 
-		--logo-text-color: hsl(var(--foreground));
+		--logo-text-color: #090D16;
 
 		--card: 210 16% 98%; /* #F8F9FA */
 		--card-foreground: var(--foreground);
@@ -97,6 +97,19 @@ body {
 		--input: var(--border);
 		--ring: var(--primary);
 		--radius: 0.5rem;
+	}
+
+	.light .logo-text-depth,
+	html.light .logo-text-depth {
+		fill: #090D16 !important;
+	}
+
+	.light input::placeholder,
+	.light textarea::placeholder,
+	html.light input::placeholder,
+	html.light textarea::placeholder {
+		color: #868E96 !important;
+		opacity: 1 !important;
 	}
 }
 

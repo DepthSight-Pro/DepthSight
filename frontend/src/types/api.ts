@@ -74,6 +74,10 @@ export interface StrategyData {
 	timeframe?: string;
 	exchange_id?: string | null;
 	apiKeyId?: number;
+	// --- Hedge (mirror) attribution for per-leg cards ---
+	hedge_group_id?: string | null;
+	hedge_leg?: "A" | "B" | string | null;
+	hedge_exit_policy?: string | null;
 }
 
 // We import types from the editor to ensure their full consistency

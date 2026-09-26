@@ -1080,6 +1080,79 @@ class PortfolioStatus(BaseModel):
     market_breakdown: List[MarketBalanceSummary] = Field(default_factory=list)
 
 
+class HedgeLaunchConfig(BaseModel):
+    """Hedge (mirror) launch options: one strategy on two exchanges.
+
+    The backend fans a hedge launch out into two START_STRATEGY commands
+    (leg A trades as-is, leg B inverts signals). Each leg stays an
+    independent trade with its own volume/rebate; ``exit_policy`` only
+    controls whether a final exit of one leg market-closes the sibling.
+    """
+
+    enabled: bool = False
+    leg_b_api_key_id: Optional[int] = Field(
+        None, description="API key (account) for the mirror leg B"
+    )
+    side_mode: str = Field(
+        "OPPOSITE", description="Only OPPOSITE (LONG+SHORT) is supported"
+    )
+    exit_policy: str = Field(
+        "INDEPENDENT",
+        description="INDEPENDENT (each leg to its own TP/SL), "
+        "RACE_FINAL_MARKET (first final exit market-closes the sibling), "
+        "MOVE_SL_TO_BE (reserved, currently behaves as INDEPENDENT)",
+    )
+    size_mode: str = Field(
+        "FIXED_NOTIONAL",
+        description="FIXED_NOTIONAL (both legs open the same USD notional) "
+        "or INDEPENDENT (each leg sizes by its own risk %)",
+    )
+    notional_usd: Optional[float] = Field(
+        None,
+        description="Target USD notional per leg when size_mode=FIXED_NOTIONAL",
+    )
+
+    @field_validator("exit_policy")
+    @classmethod
+    def _normalize_exit_policy(cls, v: Any) -> str:
+        allowed = {"INDEPENDENT", "RACE_FINAL_MARKET", "MOVE_SL_TO_BE"}
+        normalized = str(v or "INDEPENDENT").strip().upper()
+        if normalized not in allowed:
+            raise ValueError(
+                f"Invalid hedge exit_policy '{v}'. Allowed: {sorted(allowed)}."
+            )
+        return normalized
+
+    @field_validator("side_mode")
+    @classmethod
+    def _normalize_side_mode(cls, v: Any) -> str:
+        normalized = str(v or "OPPOSITE").strip().upper()
+        if normalized != "OPPOSITE":
+            raise ValueError("Only hedge side_mode 'OPPOSITE' is supported.")
+        return normalized
+
+    @field_validator("size_mode")
+    @classmethod
+    def _normalize_size_mode(cls, v: Any) -> str:
+        allowed = {"FIXED_NOTIONAL", "INDEPENDENT"}
+        normalized = str(v or "FIXED_NOTIONAL").strip().upper()
+        if normalized not in allowed:
+            raise ValueError(
+                f"Invalid hedge size_mode '{v}'. Allowed: {sorted(allowed)}."
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_notional(self) -> "HedgeLaunchConfig":
+        if self.enabled and self.size_mode == "FIXED_NOTIONAL":
+            if self.notional_usd is None or float(self.notional_usd) <= 0:
+                raise ValueError(
+                    "hedge.notional_usd must be a positive USD amount "
+                    "when size_mode='FIXED_NOTIONAL'."
+                )
+        return self
+
+
 class StrategyStartRequest(BaseModel):
     """
     Schema for launching a saved strategy configuration request.
@@ -1092,6 +1165,9 @@ class StrategyStartRequest(BaseModel):
     symbols: Optional[List[str]] = None
     params: Optional[Dict[str, Any]] = None  # For dynamic configuration overrides
     api_key_id: Optional[int] = None  # Subaccount ID (API key) for multi-accounts
+    hedge: Optional[HedgeLaunchConfig] = Field(
+        None, description="Hedge (mirror) launch on two exchanges at once"
+    )
 
 
 # --- Position Schemas ---
@@ -1161,6 +1237,15 @@ class StrategyInfo(StrategyRunRequest):  # For response
     )
     name: Optional[str] = Field(
         None, description="User-defined name for the strategy instance"
+    )
+    hedge_group_id: Optional[str] = Field(
+        None, description="Hedge (mirror) group id shared by both legs"
+    )
+    hedge_leg: Optional[str] = Field(
+        None, description="Hedge leg role: 'A' (as-is) or 'B' (mirrored)"
+    )
+    hedge_exit_policy: Optional[str] = Field(
+        None, description="Hedge exit coupling policy for this instance"
     )
 
     model_config = ConfigDict(from_attributes=True)

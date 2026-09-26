@@ -237,8 +237,8 @@ const SideMenu: React.FC<SideMenuProps> = ({
 				className={`menu-content fixed top-0 left-0 h-full w-4/5 max-w-[300px] bg-[hsl(var(--background))] shadow-lg z-50 p-4 flex flex-col transform ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
 			>
 				<div>
-					<div className="flex justify-between items-center mb-6">
-						<Logo size="lg" className="mb-8 animate-pulse" />
+					<div className="flex justify-between items-center mb-4">
+						<Logo size="md" className="shrink-0" />
 						<button
 							onClick={onClose}
 							className="w-10 h-10 flex items-center justify-center rounded-full transition hover:bg-[hsl(var(--secondary))]"

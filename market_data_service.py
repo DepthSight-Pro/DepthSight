@@ -339,6 +339,10 @@ class MarketDataService:
                 rows = list(_global_kline_cache.get(cache_key) or [])
             if not rows:
                 return False
+            try:
+                last_candle_ms = int(rows[-1][0])
+            except (TypeError, ValueError, IndexError):
+                last_candle_ms = None
             snapshot = {
                 "type": "market_snapshot",
                 "stream_key": stream_key,
@@ -349,6 +353,10 @@ class MarketDataService:
                 "rows": rows,
                 "pair_state": pair_state,
                 "created_at_ms": int(time.time() * 1000),
+                # Lets subscribers reject ancient snapshots instead of
+                # clobbering live caches with stale rows (e.g. 4-day-old HTF
+                # history served as current data right after resubscribe).
+                "last_candle_ms": last_candle_ms,
             }
         elif data_type_key == "aggTrade":
             trade_key = _trade_cache_key(symbol, exchange_id, market_type)

@@ -4,6 +4,7 @@ import { format } from "date-fns";
 // Icons
 import {
 	AlertTriangle,
+	ArrowLeftRight,
 	CalendarIcon,
 	Copy,
 	Cpu,
@@ -11,6 +12,7 @@ import {
 	Loader2,
 	Play,
 	Rocket,
+	Scale,
 	Sparkles,
 	Zap,
 } from "lucide-react";
@@ -24,6 +26,7 @@ import { ExchangeBadge } from "@/components/layout/AccountSelector";
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +57,7 @@ import {
 	fetchSymbolSelectionSettings,
 	updateSymbolSelectionSettings as updateSymbolSelectionSettingsApi,
 	useConfig,
+	useMultiAccountBalances,
 	useRunBacktest,
 	useSaveStrategyConfig,
 	useSendTradingViewTestSignal,
@@ -141,9 +145,32 @@ export const ConfigAndLaunchPanel = memo(
 		const { mutate: updateStrategy, isPending: isUpdating } =
 			useUpdateStrategyConfig();
 		const { data: config } = useConfig();
+		const { data: balances } = useMultiAccountBalances();
 		const [selectedApiKeyId, setSelectedApiKeyId] = useState<number | null>(
 			null,
 		);
+
+		const balanceForKey = (keyId: number | null) => {
+			if (keyId === null) return null;
+			const found = balances?.accounts?.find((a) => a.apiKeyId === keyId);
+			return typeof found?.balance === "number" ? found.balance : null;
+		};
+		const formatBalance = (value: number | null) =>
+			value === null
+				? null
+				: `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+
+		// Hedge (mirror) launch state: one strategy on two exchanges at once.
+		// Launch-time only — never persisted into the saved strategy config.
+		const [hedgeEnabled, setHedgeEnabled] = useState(false);
+		const [hedgeLegBId, setHedgeLegBId] = useState<number | null>(null);
+		const [hedgeExitPolicy, setHedgeExitPolicy] = useState<
+			"INDEPENDENT" | "RACE_FINAL_MARKET"
+		>("INDEPENDENT");
+		const [hedgeSizeMode, setHedgeSizeMode] = useState<
+			"FIXED_NOTIONAL" | "INDEPENDENT"
+		>("FIXED_NOTIONAL");
+		const [hedgeNotional, setHedgeNotional] = useState<string>("100");
 
 		const activeApiKeys: ApiKey[] = useMemo(() => {
 			if (!config?.apiKeys) return [];
@@ -151,6 +178,55 @@ export const ConfigAndLaunchPanel = memo(
 				(key) => key.isActive && key.status !== "invalid",
 			);
 		}, [config]);
+
+		const normalizeBaseExchange = (exchange?: string | null) =>
+			(exchange || "").trim().toLowerCase().replace(/_testnet$/, "");
+
+		const legAKey = useMemo(
+			() => activeApiKeys.find((k) => k.id === selectedApiKeyId) ?? null,
+			[activeApiKeys, selectedApiKeyId],
+		);
+
+		// Leg B candidates: different account AND different exchange.
+		const eligibleLegBKeys = useMemo(() => {
+			if (!legAKey) return activeApiKeys;
+			const baseA = normalizeBaseExchange(legAKey.exchange);
+			return activeApiKeys.filter(
+				(k) =>
+					k.id !== legAKey.id &&
+					normalizeBaseExchange(k.exchange) !== baseA,
+			);
+		}, [activeApiKeys, legAKey]);
+
+		// The stored leg B id may become invalid when leg A changes.
+		const effectiveLegBId =
+			hedgeLegBId !== null &&
+			hedgeLegBId !== selectedApiKeyId &&
+			activeApiKeys.some((k) => k.id === hedgeLegBId) &&
+			(!legAKey || eligibleLegBKeys.some((k) => k.id === hedgeLegBId))
+				? hedgeLegBId
+				: null;
+
+		const canEnableHedge = activeApiKeys.length >= 2;
+		const hedgeSpotBlocked =
+			hedgeEnabled && (marketType || "FUTURES") !== "FUTURES";
+		const parsedHedgeNotional = Number.parseFloat(hedgeNotional);
+		const hedgeNotionalValid =
+			hedgeSizeMode !== "FIXED_NOTIONAL" ||
+			(Number.isFinite(parsedHedgeNotional) && parsedHedgeNotional > 0);
+		const hedgeReady =
+			!hedgeEnabled ||
+			(canEnableHedge &&
+				effectiveLegBId !== null &&
+				!hedgeSpotBlocked &&
+				hedgeNotionalValid);
+
+		const handleHedgeToggle = (checked: boolean) => {
+			setHedgeEnabled(checked);
+			if (checked && hedgeLegBId === null && eligibleLegBKeys.length === 1) {
+				setHedgeLegBId(eligibleLegBKeys[0].id);
+			}
+		};
 
 		// Render-phase sync of selectedApiKeyId
 		const [prevActiveApiKeys, setPrevActiveApiKeys] = useState<ApiKey[]>([]);
@@ -418,6 +494,20 @@ export const ConfigAndLaunchPanel = memo(
 						symbol_selection_mode: getPaymode(),
 						symbols: getPaymode() === "STATIC" ? [symbol] : [],
 						apiKeyId: selectedApiKeyId ?? undefined,
+						hedge:
+							hedgeEnabled && effectiveLegBId !== null
+								? {
+										enabled: true,
+										leg_b_api_key_id: effectiveLegBId,
+										side_mode: "OPPOSITE",
+										exit_policy: hedgeExitPolicy,
+										size_mode: hedgeSizeMode,
+										notional_usd:
+											hedgeSizeMode === "FIXED_NOTIONAL"
+												? parsedHedgeNotional
+												: undefined,
+									}
+								: undefined,
 					},
 					{
 						onSuccess: () =>
@@ -813,9 +903,9 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+						<Card className="rounded-xl border-border dark:border-white/10 bg-card dark:bg-white/[0.02] backdrop-blur-md">
 							<CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">
+								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-foreground/90 dark:text-white/90 font-mono">
 									{t("configPanel.foundationWeightsSectionTitle")}
 								</CardTitle>
 								<Tooltip>
@@ -830,22 +920,38 @@ export const ConfigAndLaunchPanel = memo(
 									</TooltipContent>
 								</Tooltip>
 							</CardHeader>
-							<CardContent className="space-y-4">
-								<div className="flex items-center space-x-2">
-									<Checkbox
+							<CardContent className="space-y-4 p-4 pt-2">
+								<div className="flex items-center justify-between gap-2">
+									<div className="flex items-center gap-2 min-w-0">
+										<div
+											className={cn(
+												"flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+												useFoundationWeights
+													? "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400"
+													: "bg-muted/50 dark:bg-white/[0.04] text-muted-foreground",
+											)}
+										>
+											<Scale className="h-3.5 w-3.5" />
+										</div>
+										<Label
+											htmlFor="use-weights"
+											className="text-xs font-medium cursor-pointer"
+										>
+											{t("configPanel.activateWeightsLabel")}
+										</Label>
+									</div>
+									<Switch
 										id="use-weights"
 										checked={useFoundationWeights}
 										onCheckedChange={(c) => setUseFoundationWeights(!!c)}
+										className="data-[state=checked]:bg-[#0066FF] data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-[#0066FF] data-[state=checked]:to-[#00D4FF]"
 									/>
-									<Label htmlFor="use-weights">
-										{t("configPanel.activateWeightsLabel")}
-									</Label>
 								</div>
 								{useFoundationWeights && (
-									<div className="space-y-2">
+									<div className="space-y-3 pt-2 border-t border-border dark:border-white/[0.06]">
 										<div className="flex justify-between text-xs">
 											<Label>Threshold</Label>
-											<span>
+											<span className="font-mono text-muted-foreground dark:text-white/60">
 												{min_foundation_weight_threshold} /{" "}
 												{totalFoundationWeight}
 											</span>
@@ -863,7 +969,7 @@ export const ConfigAndLaunchPanel = memo(
 										/>
 										<Button
 											variant="outline"
-											className="w-full"
+											className="w-full text-xs"
 											onClick={() => setIsWeightsModalOpen(true)}
 										>
 											{t("configPanel.foundationWeightsButton")}
@@ -1133,24 +1239,214 @@ export const ConfigAndLaunchPanel = memo(
 													<span className="flex items-center gap-2">
 														<ExchangeBadge exchange={k.exchange} size="xs" />
 														<span>{k.name}</span>
+														{hedgeEnabled && (
+															<span className="text-[10px] text-white/40">
+																· {t("configPanel.hedgeLegALabel", "Leg A (as-is)")}
+															</span>
+														)}
+														{formatBalance(balanceForKey(k.id)) && (
+															<span className="ml-auto text-[11px] font-mono text-white/40">
+																{formatBalance(balanceForKey(k.id))}
+															</span>
+														)}
 													</span>
 												</SelectItem>
 											))}
 										</SelectContent>
 									</Select>
 								)}
+								{/* ── Hedge mode ── */}
+								<div className="rounded-xl border border-border dark:border-white/[0.06] p-3 space-y-3">
+									<div className="flex items-center justify-between gap-2">
+										<div className="flex items-center gap-2 min-w-0">
+											<div className={cn(
+												"flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors",
+												hedgeEnabled
+													? "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400"
+													: "bg-muted/50 dark:bg-white/[0.04] text-muted-foreground",
+											)}>
+												<ArrowLeftRight className="h-3.5 w-3.5" />
+											</div>
+											<div className="min-w-0">
+												<Label htmlFor="hedge-enabled" className={cn(
+													"text-xs font-medium cursor-pointer",
+													!canEnableHedge && "opacity-60",
+												)}>
+													{t("configPanel.hedgeToggleLabel", "Hedge ×2 (two exchanges)")}
+												</Label>
+											</div>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<HelpCircle className="h-3 w-3 shrink-0 text-muted-foreground cursor-help" />
+												</TooltipTrigger>
+												<TooltipContent
+													side="top"
+													className="max-w-[280px] text-[10px] leading-tight"
+												>
+													{t("configPanel.hedgeToggleTooltip")}
+												</TooltipContent>
+											</Tooltip>
+										</div>
+										<Switch
+											id="hedge-enabled"
+											checked={hedgeEnabled}
+											onCheckedChange={(c) => handleHedgeToggle(!!c)}
+											disabled={isAnythingLoading || !canEnableHedge}
+											className="data-[state=checked]:bg-[#0066FF] data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-[#0066FF] data-[state=checked]:to-[#00D4FF]"
+										/>
+									</div>
+									{hedgeEnabled && (
+										<div className="space-y-3 pt-1 border-t border-border dark:border-white/[0.06]">
+											{!canEnableHedge && (
+												<div className="text-[11px] text-amber-500 dark:text-amber-200/80 leading-tight mt-2">
+													{t("configPanel.hedgeNeedTwoKeys")}
+												</div>
+											)}
+											{canEnableHedge && (
+												<>
+													{/* Leg B account selector */}
+													<div className="space-y-1.5 mt-2">
+														<Label className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground dark:text-white/60">
+															{t("configPanel.hedgeLegBLabel", "Leg B (mirrored)")}
+														</Label>
+														<Select
+															value={effectiveLegBId !== null ? String(effectiveLegBId) : ""}
+															onValueChange={(v) => setHedgeLegBId(Number(v))}
+														>
+															<SelectTrigger className="bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white text-xs">
+																<SelectValue
+																	placeholder={t(
+																		"configPanel.hedgeLegBPlaceholder",
+																		"Select mirror account",
+																	)}
+																/>
+															</SelectTrigger>
+															<SelectContent className="bg-popover dark:bg-[#0c0d12] border-border dark:border-white/10 text-popover-foreground dark:text-white">
+																{eligibleLegBKeys.map((k) => (
+																	<SelectItem key={k.id} value={String(k.id) as string} className="text-xs">
+																		<span className="flex items-center gap-2">
+																			<ExchangeBadge exchange={k.exchange} size="xs" />
+																			<span>{k.name}</span>
+																			{formatBalance(balanceForKey(k.id)) && (
+																				<span className="ml-auto text-[11px] font-mono text-muted-foreground dark:text-white/40">
+																					{formatBalance(balanceForKey(k.id))}
+																				</span>
+																			)}
+																		</span>
+																	</SelectItem>
+																))}
+															</SelectContent>
+														</Select>
+													</div>
+
+													{/* Exit policy — segmented radio cards */}
+													<div className="space-y-1.5">
+														<Label className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground dark:text-white/60">
+															{t("configPanel.hedgeExitPolicyLabel", "When one leg exits")}
+														</Label>
+														<div className="grid grid-cols-2 gap-1.5">
+															{([
+																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeExitIndependent", "Leave the other leg running"), desc: t("configPanel.hedgeExitIndependentDesc") },
+																{ value: "RACE_FINAL_MARKET" as const, label: t("configPanel.hedgeExitRace", "Close the other leg at market"), desc: t("configPanel.hedgeExitRaceDesc") },
+															] as const).map((opt) => (
+																<button
+																	key={opt.value}
+																	type="button"
+																	onClick={() => setHedgeExitPolicy(opt.value)}
+																	className={cn(
+																		"rounded-lg border px-2.5 py-2 text-left transition-all",
+																		hedgeExitPolicy === opt.value
+																			? "border-cyan-500/40 bg-cyan-500/[0.06] ring-1 ring-cyan-500/20"
+																			: "border-border dark:border-white/[0.06] bg-transparent hover:bg-muted/30 dark:hover:bg-white/[0.02]",
+																	)}
+																>
+																	<div className="text-[11px] font-medium text-foreground dark:text-white">{opt.label}</div>
+																	<div className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight mt-0.5">{opt.desc}</div>
+																</button>
+															))}
+														</div>
+													</div>
+
+													{/* Size mode — segmented radio cards */}
+													<div className="space-y-1.5">
+														<Label className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground dark:text-white/60">
+															{t("configPanel.hedgeSizeLabel", "Leg volume")}
+														</Label>
+														<div className="grid grid-cols-2 gap-1.5">
+															{([
+																{ value: "FIXED_NOTIONAL" as const, label: t("configPanel.hedgeSizeFixed", "Same volume ($)") },
+																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeSizeIndependent", "Independent (risk %)") },
+															] as const).map((opt) => (
+																<button
+																	key={opt.value}
+																	type="button"
+																	onClick={() => setHedgeSizeMode(opt.value)}
+																	className={cn(
+																		"rounded-lg border px-2.5 py-2 text-left transition-all text-[11px] font-medium",
+																		hedgeSizeMode === opt.value
+																			? "border-cyan-500/40 bg-cyan-500/[0.06] ring-1 ring-cyan-500/20 text-foreground dark:text-white"
+																			: "border-border dark:border-white/[0.06] bg-transparent hover:bg-muted/30 dark:hover:bg-white/[0.02] text-muted-foreground dark:text-white/60",
+																	)}
+																>
+																	{opt.label}
+																</button>
+															))}
+														</div>
+														{hedgeSizeMode === "FIXED_NOTIONAL" ? (
+															<>
+																<div className="flex items-center gap-2">
+																	<Input
+																		type="number"
+																		min="0"
+																		step="1"
+																		value={hedgeNotional}
+																		onChange={(e) => setHedgeNotional(e.target.value)}
+																		className="h-8 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-xs text-foreground dark:text-white"
+																	/>
+																	<span className="text-[11px] text-muted-foreground dark:text-white/50 font-mono">USD</span>
+																</div>
+																<p className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight">
+																	{hedgeNotionalValid
+																		? t("configPanel.hedgeSizeFixedDesc")
+																		: t("configPanel.hedgeNotionalInvalid")}
+																</p>
+															</>
+														) : (
+															<p className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight">
+																{t("configPanel.hedgeSizeIndependentDesc")}
+															</p>
+														)}
+													</div>
+
+													{/* Info / errors */}
+													{hedgeSpotBlocked ? (
+														<div className="text-[11px] text-rose-500 dark:text-rose-400 leading-tight">
+															{t("configPanel.hedgeSpotError")}
+														</div>
+													) : (
+														<div className="rounded-lg bg-muted/40 dark:bg-white/[0.02] px-2.5 py-2 text-[10px] text-muted-foreground dark:text-white/50 leading-relaxed">
+															{t("configPanel.hedgeInfo")}
+														</div>
+													)}
+												</>
+											)}
+										</div>
+									)}
+								</div>
 								<Button
 									className="w-full bg-rose-500 hover:bg-rose-600 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/20"
 									variant="destructive"
 									onClick={handleDeploy}
-									disabled={isAnythingLoading || activeApiKeys.length === 0}
+									disabled={isAnythingLoading || activeApiKeys.length === 0 || !hedgeReady}
 								>
 									{isStarting ? (
 										<Loader2 className="animate-spin mr-2 w-4 h-4" />
 									) : (
 										<Rocket className="mr-2 w-4 h-4" />
 									)}
-									{t("configPanel.deployButton", "Deploy Strategy")}
+									{hedgeEnabled
+										? t("configPanel.deployHedgeButton", "Deploy Hedge Pair")
+										: t("configPanel.deployButton", "Deploy Strategy")}
 								</Button>
 							</CardContent>
 						</Card>

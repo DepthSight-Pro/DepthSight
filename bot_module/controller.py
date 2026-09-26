@@ -26,7 +26,7 @@ from bot_module import config
 from bot_module.feature_extractor import FeatureExtractor
 from bot_module.model_pipeline import ModelPipeline
 from bot_module.realtime_ml_logger import RealtimeMLLogger
-from bot_module.data_consumer import DataConsumer
+from bot_module.data_consumer import DataConsumer, is_kline_fresh
 from bot_module.executor import BinanceExecutor
 from bot_module.paper_executor import PaperTradingExecutor
 from bot_module.risk_manager import RiskManager
@@ -1479,13 +1479,16 @@ class TradingController:
                                     continue
 
                             # If all checks pass, initiate closure
+                            # Hedge race closes pass their own reason (HEDGE_RACE:*)
+                            # so the receiving leg does not re-broadcast.
+                            close_reason = payload.get("reason") or "MANUAL_CLOSE_API"
                             logger.info(
-                                f"Processing CLOSE_POSITION command for {symbol_to_close} from user {user_id_from_cmd}."
+                                f"Processing CLOSE_POSITION command for {symbol_to_close} from user {user_id_from_cmd} (reason={close_reason})."
                             )
                             self.loop.create_task(
                                 self.close_position(
                                     symbol_to_close,
-                                    reason="MANUAL_CLOSE_API",
+                                    reason=close_reason,
                                     market_type=market_type_to_close,
                                 ),
                                 name=f"ManualCloseAPI_{symbol_to_close}",
@@ -4789,6 +4792,12 @@ class TradingController:
                 ),
                 "mode": config_dict.get("mode", "live"),
             }
+            # Hedge (mirror) attribution for per-leg UI cards.
+            hedge_block = (config_dict.get("config_data", {}) or {}).get("hedge")
+            if isinstance(hedge_block, dict) and hedge_block.get("enabled"):
+                strat_data["hedge_group_id"] = hedge_block.get("group_id")
+                strat_data["hedge_leg"] = hedge_block.get("leg")
+                strat_data["hedge_exit_policy"] = hedge_block.get("exit_policy")
             strategies_to_publish.append(strat_data)
 
         # 3. Collecting PORTFOLIO data
@@ -6988,6 +6997,29 @@ class TradingController:
                             )
                             return None
 
+            # Warmup recency gate: never evaluate signals on stale history
+            # (e.g. days-old HTF rows served from a snapshot right after
+            # resubscribe). Skipped explicitly as WARMUP, not REJECTED.
+            stale_desc = []
+            ages_desc = []
+            for k in required_data_keys:
+                if not k.startswith("kline_"):
+                    continue
+                parts = k.split("_")
+                tf = parts[1] if len(parts) > 1 else "1m"
+                fresh, age_str = is_kline_fresh(market_data.get(k), tf)
+                ages_desc.append(f"{k}={age_str}")
+                if not fresh:
+                    stale_desc.append(f"{k} ({age_str} old)")
+            if stale_desc:
+                logger.warning(
+                    f"{log_prefix} WARMUP: stale kline data, skipping signal "
+                    f"evaluation: {', '.join(stale_desc)}. History backfill "
+                    f"will converge cache; no signal was rejected."
+                )
+                return None
+            logger.debug(f"{log_prefix} kline data ages: {', '.join(ages_desc)}")
+
             return market_data
         finally:
             elapsed_ms = (time.perf_counter() - start_ts) * 1000.0
@@ -7341,6 +7373,12 @@ class TradingController:
                     signal_result.details["marketType"] = (
                         "SPOT" if normalized_market_type == "spot" else "FUTURES"
                     )
+                    # Precise routing: lets _process_signal resolve the exact
+                    # running copy (matters for hedge legs sharing a config).
+                    if pair_info.get("instance_id"):
+                        signal_result.details.setdefault(
+                            "instance_id", pair_info.get("instance_id")
+                        )
                 self.loop.create_task(
                     self._process_signal(
                         signal_result, pair_info, market_data_snapshot=market_data
@@ -8324,6 +8362,43 @@ class TradingController:
                     f"{log_prefix} CRITICAL: Running configuration not found for strategy '{signal.strategy_name}'. Signal ignored."
                 )
                 return
+
+            # HEDGE MIRROR: leg B of a hedge pair trades inverted signals
+            # (LONG<->SHORT, SL/TP mirrored). Covers every signal path since
+            # all of them funnel through _process_signal.
+            try:
+                from bot_module.hedge_mirror import maybe_mirror_hedge_signal
+
+                mirrored_signal = maybe_mirror_hedge_signal(
+                    signal, running_instance_config
+                )
+            except Exception as e_mirror:
+                logger.error(
+                    f"{log_prefix} Hedge mirror hook failed: {e_mirror}. Signal ignored.",
+                    exc_info=True,
+                )
+                return
+            if mirrored_signal is None:
+                logger.warning(
+                    f"{log_prefix} Hedge mirror dropped signal (fail-closed: "
+                    "mirror required but failed)."
+                )
+                return
+            if mirrored_signal is not signal:
+                signal = mirrored_signal
+                log_prefix = f"[ProcessSignal:{signal.strategy_name}:{signal.symbol}:{signal.direction.name}]"
+                logger.info(f"{log_prefix} Hedge mirror applied (leg B).")
+
+            # HEDGE SIZING: fixed-notional mode overrides the risk budget so
+            # both legs open the same USD volume (fail-open to strategy sizing).
+            try:
+                from bot_module.hedge_mirror import maybe_apply_hedge_sizing
+
+                signal = maybe_apply_hedge_sizing(signal, running_instance_config)
+            except Exception as e_hedge_size:
+                logger.warning(
+                    f"{log_prefix} Hedge sizing hook failed (non-fatal): {e_hedge_size}"
+                )
 
             # NEW: Get mode and select executor
             mode = running_instance_config.get(
@@ -10299,6 +10374,15 @@ class TradingController:
             logger.info(
                 f"{log_prefix} Processing final exit. Current pos status: {position.status}."
             )
+
+            # HEDGE RACE: for RACE_FINAL_MARKET groups, ask the sibling leg
+            # to market-close (fire-and-forget; own SL/TP stays the safety net).
+            try:
+                self._maybe_publish_hedge_race_close(position, reason)
+            except Exception as e_hedge:
+                logger.warning(
+                    f"{log_prefix} Hedge race publish failed (non-fatal): {e_hedge}"
+                )
 
             # Collect order IDs for cancellation BEFORE the position is deleted or its status changes such that,
             # that _cancel_all_exit_orders will not be able to find them.
@@ -15451,6 +15535,76 @@ class TradingController:
             )
             return None
         return executor
+
+    def _maybe_publish_hedge_race_close(
+        self, position: LivePosition, reason: str
+    ) -> None:
+        """Fire-and-forget sibling close for RACE_FINAL_MARKET hedge groups.
+
+        No-op for INDEPENDENT groups (default), for HEDGE-originated exits
+        (loop guard), and when the sibling cannot be addressed. Safe to call
+        from inside the position lock: only schedules an async publish task.
+        """
+        from bot_module.hedge_mirror import (
+            HEDGE_CLOSE_REASON_PREFIX,
+            HEDGE_EXIT_RACE_FINAL_MARKET,
+            build_hedge_race_close_command,
+        )
+
+        if reason and HEDGE_CLOSE_REASON_PREFIX in str(reason).upper():
+            return
+        signal_details = getattr(position, "signal_details", None)
+        if not isinstance(signal_details, dict):
+            return
+        if signal_details.get("hedge_exit_policy") != HEDGE_EXIT_RACE_FINAL_MARKET:
+            return
+        group_id = signal_details.get("hedge_group_id")
+        sibling_key_id = signal_details.get("hedge_sibling_api_key_id")
+        if not group_id or sibling_key_id is None:
+            logger.debug(
+                f"[HedgeRace:{position.symbol}] RACE policy but no group/sibling "
+                "attribution. Skipping."
+            )
+            return
+        if self.redis_client is None:
+            logger.debug(f"[HedgeRace:{position.symbol}] No redis client. Skipping.")
+            return
+        try:
+            market_type = self._market_type_for_position(position)
+        except Exception:
+            market_type = None
+        try:
+            sibling_id = int(sibling_key_id)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"[HedgeRace:{position.symbol}] Invalid sibling api_key_id: "
+                f"{sibling_key_id}. Skipping."
+            )
+            return
+        cmd = build_hedge_race_close_command(
+            user_id=getattr(position, "user_id", None) or self.user_id,
+            api_key_id=sibling_id,
+            group_id=str(group_id),
+            symbol=position.symbol,
+            market_type=market_type,
+        )
+        logger.info(
+            f"[HedgeRace:{position.symbol}] Final exit '{reason}' -> closing "
+            f"sibling leg (api_key_id={sibling_id}, group={group_id})."
+        )
+        self.loop.create_task(
+            self._publish_hedge_command(cmd),
+            name=f"HedgeRaceClose_{position.symbol}",
+        )
+
+    async def _publish_hedge_command(self, cmd: dict) -> None:
+        """Publishes a hedge command to the shared Redis command bus."""
+        try:
+            await self.redis_client.publish(
+                config.REDIS_COMMAND_CHANNEL, json.dumps(cmd, default=str)
+            )
+        except Exception as e:
+            logger.warning(f"Hedge command publish failed: {e}")
 
     async def close_position(
         self,

@@ -165,41 +165,69 @@ async def test_concurrent_telemetry_submission(
     db_session.add(_make_config())
     await db_session.commit()
 
-    async def submit_report(idx: int):
-        payload = {
-            "symbol": "BTCUSDT",
-            "direction": "LONG",
-            "entry_price": 10.0,
-            "exit_price": 11.0,
-            "trade_mode": "LIVE",
-            "exchange_id": "weex",
-            "market_type": "futures",
-            "broker_trade_id": f"conc-trade-id-{idx}",
-            "trade_volume_usdt": 1000.0,
-            "market_context": {},
-        }
-        body = json.dumps(payload, sort_keys=True).encode()
-        sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        headers = {
-            "X-Node-UUID": "conc-tele-node",
-            "X-Node-Secret": secret,
-            "X-Node-Signature": sig,
-            "Content-Type": "application/json",
-        }
-        return await test_client.post(
-            "/api/v1/hub/telemetry/report", content=body, headers=headers
+    # SQLite StaticPool shares a single DBAPI connection across all async sessions.
+    # Concurrent transactions on a single SQLite connection cause transaction interleaving
+    # in in-memory test environments. We serialize the DB sessions for this test's concurrent requests.
+    lock = asyncio.Lock()
+    from api.database import get_db
+
+    original_get_db = app.dependency_overrides.get(get_db)
+
+    async def locked_get_db():
+        async with lock:
+            if original_get_db:
+                async for s in original_get_db():
+                    yield s
+            else:
+                from tests.conftest import TestAsyncSessionLocal
+
+                async with TestAsyncSessionLocal() as s:
+                    yield s
+
+    app.dependency_overrides[get_db] = locked_get_db
+    try:
+        async def submit_report(idx: int):
+            payload = {
+                "symbol": "BTCUSDT",
+                "direction": "LONG",
+                "entry_price": 10.0,
+                "exit_price": 11.0,
+                "trade_mode": "LIVE",
+                "exchange_id": "weex",
+                "market_type": "futures",
+                "broker_trade_id": f"conc-trade-id-{idx}",
+                "trade_volume_usdt": 1000.0,
+                "market_context": {},
+            }
+            body = json.dumps(payload, sort_keys=True).encode()
+            sig = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+            headers = {
+                "X-Node-UUID": "conc-tele-node",
+                "X-Node-Secret": secret,
+                "X-Node-Signature": sig,
+                "Content-Type": "application/json",
+            }
+            return await test_client.post(
+                "/api/v1/hub/telemetry/report", content=body, headers=headers
+            )
+
+        responses = await asyncio.gather(*(submit_report(i) for i in range(5)))
+
+        for resp in responses:
+            assert resp.status_code == 201
+
+        db_session.expire_all()
+
+        # Verify 5 distinct reports inserted
+        res = await db_session.execute(
+            select(models.HubTelemetryReport).where(
+                models.HubTelemetryReport.node_uuid == "conc-tele-node"
+            )
         )
-
-    responses = await asyncio.gather(*(submit_report(i) for i in range(5)))
-
-    for resp in responses:
-        assert resp.status_code == 201
-
-    # Verify 5 distinct reports inserted
-    res = await db_session.execute(
-        select(models.HubTelemetryReport).where(
-            models.HubTelemetryReport.node_uuid == "conc-tele-node"
-        )
-    )
-    reports = res.scalars().all()
-    assert len(reports) == 5
+        reports = res.scalars().all()
+        assert len(reports) == 5
+    finally:
+        if original_get_db is not None:
+            app.dependency_overrides[get_db] = original_get_db
+        else:
+            app.dependency_overrides.pop(get_db, None)

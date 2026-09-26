@@ -214,6 +214,80 @@ def _market_data_redis_snapshot_key(stream_key: str) -> str:
     return f"{getattr(config, 'MARKET_DATA_REDIS_SNAPSHOT_KEY_PREFIX', 'depthsight:market_data:snapshot')}:{stream_key}"
 
 
+_KLINE_TF_MINUTES = {"m": 1, "h": 60, "d": 1440, "w": 10080}
+
+# How many timeframe intervals a cached history tail may lag behind wall
+# clock before it counts as stale (covers closed + forming candle + jitter).
+KLINE_FRESHNESS_MAX_LAG_MULT = 3.0
+
+
+def parse_timeframe_minutes(timeframe: Any) -> Optional[int]:
+    """Parses '15m'/'1h'/'4h'/'1d'/'1w' into minutes. None if unparseable."""
+    if not timeframe or not isinstance(timeframe, str):
+        return None
+    match = re.fullmatch(r"(\d+)([mhdw])", timeframe.strip().lower())
+    if not match:
+        return None
+    return int(match.group(1)) * _KLINE_TF_MINUTES[match.group(2)]
+
+
+def kline_data_age(df: Any) -> Optional[timedelta]:
+    """Age of the last candle in a kline DataFrame. None if undeterminable."""
+    try:
+        if df is None or getattr(df, "empty", True):
+            return None
+        index = df.index
+        if len(index) == 0:
+            return None
+        last = index[-1]
+        if hasattr(last, "to_pydatetime"):
+            last = last.to_pydatetime()
+        now = datetime.now(timezone.utc)
+        if getattr(last, "tzinfo", None) is None:
+            last = last.replace(tzinfo=timezone.utc)
+        age = now - last
+        if age < timedelta(0):
+            return timedelta(0)
+        return age
+    except Exception:
+        return None
+
+
+def _format_age(age: Optional[timedelta]) -> str:
+    if age is None:
+        return "unknown age"
+    total_seconds = int(age.total_seconds())
+    days, rem = divmod(total_seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+    if days:
+        return f"{days}d{hours}h"
+    if hours:
+        return f"{hours}h{minutes}m"
+    return f"{minutes}m"
+
+
+def is_kline_fresh(
+    df: Any, timeframe: Any, max_lag_mult: float = KLINE_FRESHNESS_MAX_LAG_MULT
+) -> Tuple[bool, str]:
+    """Checks that a kline cache tail is recent enough to evaluate on.
+
+    Returns (fresh, human_readable_age). Unknown timeframes or undeterminable
+    age count as fresh (we cannot judge them) — staleness must be proven,
+    not assumed.
+    """
+    minutes = parse_timeframe_minutes(timeframe)
+    if minutes is None or minutes <= 0:
+        return True, "unknown timeframe, skipped"
+    age = kline_data_age(df)
+    if age is None:
+        return False, "empty or unreadable history"
+    limit = timedelta(minutes=minutes * max_lag_mult)
+    if age <= limit:
+        return True, _format_age(age)
+    return False, _format_age(age)
+
+
 class DataConsumer:
     def __init__(
         self,
@@ -1451,6 +1525,28 @@ class DataConsumer:
                         continue
                 if not rows:
                     return False
+                # Freshness gate BEFORE clobbering the local cache: a stale
+                # snapshot (e.g. days-old HTF rows served right after
+                # resubscribe) must never replace live-accumulated data.
+                try:
+                    snapshot_last_ms = int(rows[-1][0])
+                except (TypeError, ValueError, IndexError):
+                    snapshot_last_ms = None
+                if snapshot_last_ms is not None:
+                    minutes = parse_timeframe_minutes(timeframe)
+                    if minutes:
+                        age_ms = int(time.time() * 1000) - snapshot_last_ms
+                        if age_ms > minutes * 60 * 1000 * KLINE_FRESHNESS_MAX_LAG_MULT:
+                            logger.warning(
+                                "[RedisMarketData] Rejecting stale snapshot for %s "
+                                "(last candle %s old, limit %sx%s). "
+                                "Keeping local cache; history will backfill.",
+                                cache_key,
+                                _format_age(timedelta(milliseconds=max(age_ms, 0))),
+                                KLINE_FRESHNESS_MAX_LAG_MULT,
+                                timeframe,
+                            )
+                            return False
                 cache_deque = _global_kline_cache[cache_key]
                 cache_deque.clear()
                 cache_deque.extend(rows)
@@ -1986,6 +2082,20 @@ class DataConsumer:
                 if df_c is not None:
                     cached_count = max(cached_count, len(df_c))
             has_enough = min_candles is None or cached_count >= min_candles
+
+            # Recency gate: a full-but-ancient cache must not count as
+            # "loaded". Row count alone once served a 4-day-old snapshot as
+            # current data (stale HTF trend/levels evaluated and traded on).
+            if has_enough and not force and data_type_key.startswith("kline_"):
+                cached_df = _global_kline_df_cache.get(cache_key)
+                fresh, age_str = is_kline_fresh(cached_df, timeframe)
+                if not fresh:
+                    has_enough = False
+                    logger.warning(
+                        f"{log_prefix} Cached history is stale ({age_str} old) "
+                        f"for {timeframe} (rows={cached_count}). "
+                        f"Forcing re-download instead of trusting row count."
+                    )
 
             if not force and has_enough and cache_key in _global_history_loaded_keys:
                 logger.debug(

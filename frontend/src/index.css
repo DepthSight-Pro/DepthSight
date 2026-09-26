@@ -472,3 +472,58 @@
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.95) 100%) !important;
 	border-color: rgba(15, 23, 42, 0.1) !important;
 }
+
+/* --- High-Contrast Input & Textarea Placeholder Rules for Light Theme --- */
+.light input::placeholder,
+.light textarea::placeholder,
+.light [class*="placeholder:text-"]::placeholder,
+.light [class*="placeholder-"]::placeholder,
+.light [cmdk-input]::placeholder {
+	color: #64748b !important;
+	opacity: 1 !important;
+}
+.light input::-webkit-input-placeholder,
+.light textarea::-webkit-input-placeholder,
+.light [class*="placeholder:text-"]::-webkit-input-placeholder,
+.light [class*="placeholder-"]::-webkit-input-placeholder,
+.light [cmdk-input]::-webkit-input-placeholder {
+	color: #64748b !important;
+	opacity: 1 !important;
+}
+.light input::-moz-placeholder,
+.light textarea::-moz-placeholder,
+.light [class*="placeholder:text-"]::-moz-placeholder,
+.light [class*="placeholder-"]::-moz-placeholder,
+.light [cmdk-input]::-moz-placeholder {
+	color: #64748b !important;
+	opacity: 1 !important;
+}
+.light input:-ms-input-placeholder,
+.light textarea:-ms-input-placeholder,
+.light [class*="placeholder:text-"]:-ms-input-placeholder,
+.light [class*="placeholder-"]:-ms-input-placeholder,
+.light [cmdk-input]:-ms-input-placeholder {
+	color: #64748b !important;
+	opacity: 1 !important;
+}
+
+/* In light mode, active tabs and white-translucent buttons become crisp white cards with dark slate text */
+.light [data-state="active"][class*="data-[state=active]:bg-white"],
+.light [data-state="active"][class*="data-[state=active]:text-white"] {
+	background-color: #ffffff !important;
+	color: #090d16 !important;
+	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08) !important;
+	border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+.light button[class*="bg-white/[0.08]"]:not([class*="bg-primary"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-blue"]):not([class*="bg-cyan"]):not([class*="bg-azure"]):not([class*="bg-destructive"]),
+.light button[class*="bg-white/10"]:not([class*="bg-primary"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-blue"]):not([class*="bg-cyan"]):not([class*="bg-azure"]):not([class*="bg-destructive"]) {
+	background-color: #ffffff !important;
+	color: #090d16 !important;
+	box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08) !important;
+	border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+.light button[class*="bg-white/"]:not([class*="bg-primary"]):not([class*="bg-emerald"]):not([class*="bg-rose"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-blue"]):not([class*="bg-cyan"]):not([class*="bg-azure"]):not([class*="bg-destructive"]) {
+	color: #090d16 !important;
+}

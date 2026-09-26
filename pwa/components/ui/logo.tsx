@@ -42,7 +42,8 @@ export const Logo: React.FC<LogoProps> = ({
 		>
 			<style>
 				{`
-          .logo-text-depth { fill: #FFFFFF !important; }
+          .logo-text-depth { fill: var(--logo-text-color, #FFFFFF); }
+          .light .logo-text-depth, [data-theme="light"] .logo-text-depth { fill: #090D16 !important; }
           @keyframes logo-rotate-spinner {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -149,7 +150,7 @@ export const Logo: React.FC<LogoProps> = ({
 				fontFamily="Montserrat, Helvetica, Arial, sans-serif"
 				fontSize="38"
 			>
-				<tspan fontWeight="700" className="logo-text-depth">
+				<tspan fontWeight="700" className="logo-text-depth" fill="var(--logo-text-color, #FFFFFF)">
 					Depth
 				</tspan>
 				<tspan

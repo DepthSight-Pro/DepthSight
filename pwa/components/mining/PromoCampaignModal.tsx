@@ -131,29 +131,29 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 	const exchangeName = (promoStatus.exchangeId || "bitget").toUpperCase();
 
 	return (
-		<div className="fixed inset-0 z-50 bg-[#0B1118] text-[hsl(var(--foreground))] flex flex-col animate-in fade-in duration-200">
+		<div className="fixed inset-0 z-50 bg-background text-foreground flex flex-col animate-in fade-in duration-200">
 			{/* Sticky Navigation Bar */}
-			<div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#0F1923]/95 backdrop-blur-md px-4 py-3 shadow-sm">
+			<div className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/95 backdrop-blur-md px-4 py-3 shadow-sm">
 				<button
 					type="button"
 					onClick={onClose}
-					className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition hover:text-white active:scale-95"
+					className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition hover:text-foreground active:scale-95"
 				>
-					<ChevronLeft className="h-5 w-5 text-[#00F0FF]" />
+					<ChevronLeft className="h-5 w-5 text-cyan-600 dark:text-[#00F0FF]" />
 					<span>{t("mining.backToMining", "Back")}</span>
 				</button>
 
 				<div className="flex items-center gap-2">
-					<span className="text-sm font-bold text-white tracking-tight truncate max-w-[170px]">
+					<span className="text-sm font-bold text-foreground tracking-tight truncate max-w-[170px]">
 						{promoStatus.campaignName || t("mining.promoQuestsTitle", "Bitget Launch Quests")}
 					</span>
 					{promoStatus.isAdminPreview ? (
-						<span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[9px] font-black uppercase text-amber-300">
+						<span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-black uppercase text-amber-600 dark:text-amber-300">
 							<Lock className="h-2 w-2 mr-1" />
 							{t("mining.adminPreviewBadge", "ADMIN PREVIEW")}
 						</span>
 					) : (
-						<span className="rounded-full border border-[#00F0FF]/40 bg-[#1DA2B4]/20 px-2 py-0.5 text-[9px] font-black uppercase text-[#00F0FF]">
+						<span className="rounded-full border border-cyan-500/40 dark:border-[#00F0FF]/40 bg-cyan-500/15 dark:bg-[#1DA2B4]/20 px-2 py-0.5 text-[9px] font-black uppercase text-cyan-600 dark:text-[#00F0FF]">
 							{t("mining.liveBadge", "LIVE")}
 						</span>
 					)}
@@ -162,7 +162,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 				<button
 					type="button"
 					onClick={onClose}
-					className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground transition hover:bg-white/10 hover:text-white"
+					className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/80 text-muted-foreground transition hover:bg-muted hover:text-foreground"
 					aria-label="Close"
 				>
 					<X className="h-4 w-4" />
@@ -172,15 +172,15 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 			{/* Scrollable Body */}
 			<div className="flex-1 overflow-y-auto p-4 space-y-4 pb-12">
 				{/* Top Hero / Pool Stats Card */}
-				<div className="relative overflow-hidden rounded-2xl border border-[#1DA2B4]/30 bg-gradient-to-br from-[#1DA2B4]/15 via-[#0F1923]/95 to-blue-500/10 p-4 shadow-lg">
-					<div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-[radial-gradient(circle,rgba(0,240,255,0.2)_0%,transparent_70%)]" />
+				<div className="relative overflow-hidden rounded-2xl border border-[#1DA2B4]/30 dark:border-[#1DA2B4]/40 bg-gradient-to-br from-[#1DA2B4]/15 via-sky-400/5 to-cyan-500/10 dark:from-[#1DA2B4]/15 dark:via-[#0F1923]/95 dark:to-blue-500/10 bg-card p-4 shadow-sm dark:shadow-lg">
+					<div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-[radial-gradient(circle,rgba(0,240,255,0.15)_0%,transparent_70%)]" />
 
 					<div className="relative flex items-start gap-3 mb-3">
-						<div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#00F0FF]/40 bg-[#1DA2B4]/20 p-1.5 shadow-[0_0_15px_rgba(29,162,180,0.35)]">
-							<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(29,162,180,0.5)]" />
+						<div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-1.5 shadow-sm dark:shadow-[0_0_15px_rgba(29,162,180,0.35)]">
+							<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(29,162,180,0.4)]" />
 						</div>
 						<div className="min-w-0">
-							<h2 className="text-base font-black text-white leading-tight">
+							<h2 className="text-base font-black text-foreground dark:text-white leading-tight">
 								{promoStatus.campaignName ||
 									t("mining.promoQuestsTitle", "Bitget Launch Quests")}
 							</h2>
@@ -195,11 +195,11 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 					</div>
 
 					{/* Pool Remaining Metric */}
-					<div className="rounded-xl border border-[#1DA2B4]/40 bg-[#1DA2B4]/10 p-3 shadow-inner">
+					<div className="rounded-xl border border-cyan-500/30 dark:border-[#1DA2B4]/40 bg-cyan-500/5 dark:bg-[#1DA2B4]/10 p-3 shadow-inner">
 						<div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
 							{t("mining.promoPoolRemaining", "Airdrop Pool Remaining")}
 						</div>
-						<div className="text-2xl font-black font-mono bg-gradient-to-r from-[#00F0FF] via-[#1DA2B4] to-blue-400 bg-clip-text text-transparent">
+						<div className="text-2xl font-black font-mono bg-gradient-to-r from-cyan-600 via-[#1DA2B4] to-blue-500 dark:from-[#00F0FF] dark:via-[#1DA2B4] dark:to-blue-400 bg-clip-text text-transparent">
 							{(promoStatus.remainingPool || 0).toLocaleString()} $DEPTH
 						</div>
 						<div className="text-[10px] text-muted-foreground">
@@ -241,12 +241,12 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 						return (
 							<div
 								key={quest.questType}
-								className={`relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-[#0F1923]/90 p-4 transition-all duration-300 shadow-md ${
+								className={`relative flex flex-col justify-between overflow-hidden rounded-2xl border bg-card p-4 transition-all duration-300 shadow-sm ${
 									quest.isClaimed
-										? "border-[#1DA2B4]/30 opacity-90"
+										? "border-cyan-500/30 dark:border-[#1DA2B4]/30 opacity-90"
 										: quest.allRequirementsMet
-											? "border-[#00F0FF]/60 shadow-[0_0_20px_rgba(29,162,180,0.25)] ring-1 ring-[#00F0FF]/30"
-											: "border-white/10"
+											? "border-cyan-500/60 dark:border-[#00F0FF]/60 shadow-[0_0_20px_rgba(29,162,180,0.25)] ring-1 ring-cyan-500/30"
+											: "border-border"
 								}`}
 							>
 								{/* Quest Card Top */}
@@ -256,8 +256,8 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 											<div
 												className={`flex h-9 w-9 items-center justify-center rounded-xl border p-1.5 ${
 													isApi
-														? "border-[#00F0FF]/30 bg-[#1DA2B4]/15"
-														: "border-blue-500/30 bg-blue-500/15 text-blue-400"
+														? "border-cyan-500/30 bg-cyan-500/10"
+														: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400"
 												}`}
 											>
 												{isApi ? (
@@ -267,7 +267,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 												)}
 											</div>
 											<div>
-												<h3 className="text-sm font-bold text-white tracking-tight">
+												<h3 className="text-sm font-bold text-card-foreground tracking-tight">
 													{isApi
 														? t("mining.questApiPioneerTitle", quest.title)
 														: t("mining.questNodeRunnerTitle", quest.title)}
@@ -283,12 +283,12 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 										<div
 											className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${
 												quest.isClaimed
-													? "border-[#00F0FF]/40 bg-[#1DA2B4]/15 text-[#00F0FF]"
+													? "border-cyan-500/40 bg-cyan-500/15 text-cyan-600 dark:text-[#00F0FF]"
 													: quest.allRequirementsMet
-														? "border-[#00F0FF]/60 bg-[#00F0FF]/15 text-[#00F0FF] animate-pulse"
+														? "border-cyan-500/60 bg-cyan-500/20 text-cyan-600 dark:text-[#00F0FF] animate-pulse"
 														: isVolumeVerifying
-															? "border-amber-500/40 bg-amber-500/15 text-amber-400 animate-pulse"
-															: "border-white/10 bg-white/5 text-muted-foreground"
+															? "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400 animate-pulse"
+															: "border-border bg-muted/60 text-muted-foreground"
 											}`}
 										>
 											{quest.isClaimed
@@ -306,7 +306,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 									{/* Reward Banner */}
 									<div className="my-2.5 inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5">
 										<span className="text-sm">💰</span>
-										<span className="text-xs font-black text-amber-400 font-mono">
+										<span className="text-xs font-black text-amber-600 dark:text-amber-400 font-mono">
 											{quest.reward.toLocaleString()} $DEPTH
 										</span>
 										<span className="text-[10px] text-muted-foreground">
@@ -318,7 +318,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 
 									{/* Slots Progress Bar */}
 									<div className="mb-3 space-y-1">
-										<div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+										<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted dark:bg-white/10">
 											<div
 												className={`h-full rounded-full transition-all duration-500 ${
 													isApi
@@ -331,15 +331,15 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 									</div>
 
 									{/* Requirements Checklist */}
-									<div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3 mb-4 text-xs">
+									<div className="space-y-2 rounded-xl border border-border bg-muted/40 dark:bg-black/30 p-3 mb-4 text-xs">
 										{/* Req 1: API Key / UID */}
 										<div className="flex items-center justify-between gap-2">
 											<div className="flex items-center gap-2 text-muted-foreground">
 												<span
 													className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
 														reqs.hasExchangeKey
-															? "bg-[#1DA2B4]/25 text-[#00F0FF] border border-[#00F0FF]/40"
-															: "bg-white/5 text-muted-foreground border border-white/10"
+															? "bg-cyan-500/20 text-cyan-600 dark:text-[#00F0FF] border border-cyan-500/40"
+															: "bg-muted text-muted-foreground border border-border"
 													}`}
 												>
 													{reqs.hasExchangeKey ? "✓" : "○"}
@@ -351,15 +351,15 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 												</span>
 											</div>
 											{reqs.exchangeUid ? (
-												<span className="font-mono text-[11px] font-bold text-[#00F0FF]">
+												<span className="font-mono text-[11px] font-bold text-cyan-600 dark:text-[#00F0FF]">
 													{reqs.exchangeUid}
 												</span>
 											) : reqs.hasExchangeKey ? (
-												<span className="text-[10px] text-emerald-400 font-semibold">
+												<span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
 													{t("mining.questStatusConnected", "Connected")}
 												</span>
 											) : (
-												<span className="text-[10px] text-rose-400 font-semibold">
+												<span className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold">
 													{t("mining.questStatusNotConnected", "Not connected")}
 												</span>
 											)}
@@ -371,15 +371,15 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 												<span
 													className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
 														reqs.hasWallet
-															? "bg-[#1DA2B4]/25 text-[#00F0FF] border border-[#00F0FF]/40"
-															: "bg-white/5 text-muted-foreground border border-white/10"
+															? "bg-cyan-500/20 text-cyan-600 dark:text-[#00F0FF] border border-cyan-500/40"
+															: "bg-muted text-muted-foreground border border-border"
 													}`}
 												>
 													{reqs.hasWallet ? "✓" : "○"}
 												</span>
 												<span>{t("mining.questReqWallet", "Wallet linked & verified")}</span>
 											</div>
-											<span className="font-mono text-[11px] text-white">
+											<span className="font-mono text-[11px] text-foreground dark:text-white">
 												{reqs.hasWallet
 													? t("mining.questStatusLinked", "Linked")
 													: t("mining.questStatusMissing", "Missing")}
@@ -396,8 +396,8 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 																reqs.isPhysicalNode &&
 																(reqs.nodeAgeDays || 0) >=
 																	(reqs.minNodeAgeDays || 14)
-																	? "bg-[#1DA2B4]/25 text-[#00F0FF] border border-[#00F0FF]/40"
-																	: "bg-white/5 text-muted-foreground border border-white/10"
+																	? "bg-cyan-500/20 text-cyan-600 dark:text-[#00F0FF] border border-cyan-500/40"
+																	: "bg-muted text-muted-foreground border border-border"
 															}`}
 														>
 															{reqs.isPhysicalNode &&
@@ -412,7 +412,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 															})}
 														</span>
 													</div>
-													<span className="font-mono text-[11px] text-white">
+													<span className="font-mono text-[11px] text-foreground dark:text-white">
 														{reqs.isPhysicalNode
 															? t("mining.questNodeAgeDays", "{{days}} days", { days: reqs.nodeAgeDays || 0 })
 															: t("mining.questStatusNotRunning", "Not running")}
@@ -424,8 +424,8 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 														<span
 															className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
 																reqs.hasActiveMining
-																	? "bg-[#1DA2B4]/25 text-[#00F0FF] border border-[#00F0FF]/40"
-																	: "bg-white/5 text-muted-foreground border border-white/10"
+																	? "bg-cyan-500/20 text-cyan-600 dark:text-[#00F0FF] border border-cyan-500/40"
+																	: "bg-muted text-muted-foreground border border-border"
 															}`}
 														>
 															{reqs.hasActiveMining ? "✓" : "○"}
@@ -434,7 +434,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 															{t("mining.questReqActiveMining", "Active mining (trade in last 7 days)")}
 														</span>
 													</div>
-													<span className="font-mono text-[11px] text-white">
+													<span className="font-mono text-[11px] text-foreground dark:text-white">
 														{reqs.hasActiveMining
 															? t("mining.questStatusActive", "Active")
 															: t("mining.questStatusNoTrades", "No recent trades")}
@@ -450,10 +450,10 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 													<span
 														className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] font-bold ${
 															isVolumeVerified
-																? "bg-[#1DA2B4]/25 text-[#00F0FF] border border-[#00F0FF]/40"
+																? "bg-cyan-500/20 text-cyan-600 dark:text-[#00F0FF] border border-cyan-500/40"
 																: isVolumeVerifying
-																	? "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse"
-																	: "bg-white/5 text-muted-foreground border border-white/10"
+																	? "bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 animate-pulse"
+																	: "bg-muted text-muted-foreground border border-border"
 														}`}
 													>
 														{isVolumeVerified ? "✓" : isVolumeVerifying ? "⏳" : "○"}
@@ -472,11 +472,11 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 															  )}
 													</span>
 												</div>
-												<span className={`font-mono text-[11px] font-bold ${isVolumeVerified ? "text-[#00F0FF]" : isVolumeVerifying ? "text-amber-400" : "text-white"}`}>
+												<span className={`font-mono text-[11px] font-bold ${isVolumeVerified ? "text-cyan-600 dark:text-[#00F0FF]" : isVolumeVerifying ? "text-amber-600 dark:text-amber-400" : "text-foreground dark:text-white"}`}>
 													${totalVolume.toFixed(2)} / ${volumeThreshold.toLocaleString()}
 												</span>
 											</div>
-											<div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+											<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted dark:bg-white/10">
 												<div
 													className={`h-full rounded-full transition-all duration-500 ${
 														isVolumeVerified
@@ -489,9 +489,9 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 												/>
 											</div>
 											{isVolumeVerifying && (
-												<div className="flex items-center justify-between text-[10px] text-amber-400/90 pt-0.5 font-medium">
+												<div className="flex items-center justify-between text-[10px] text-amber-600 dark:text-amber-400/90 pt-0.5 font-medium">
 													<span className="flex items-center gap-1.5">
-														<span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />
+														<span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
 														{t("mining.questVolumePendingVerification", "Volume reached • Awaiting broker verification")}
 													</span>
 													<span className="font-mono text-[10px] text-muted-foreground">
@@ -509,7 +509,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 										<button
 											type="button"
 											disabled
-											className="w-full flex items-center justify-center gap-2 rounded-xl border border-[#1DA2B4]/40 bg-[#1DA2B4]/15 py-2.5 text-xs font-bold text-[#00F0FF] cursor-default opacity-80"
+											className="w-full flex items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 py-2.5 text-xs font-bold text-cyan-600 dark:text-[#00F0FF] cursor-default opacity-85"
 										>
 											<Check className="h-4 w-4" />
 											{t("mining.questRewardClaimedBtn", "Reward Claimed — {{amount}} $DEPTH Added", {
@@ -538,16 +538,16 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 										<button
 											type="button"
 											disabled
-											className="w-full flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 py-2.5 text-xs font-semibold text-amber-400 cursor-not-allowed shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+											className="w-full flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 py-2.5 text-xs font-semibold text-amber-600 dark:text-amber-400 cursor-not-allowed shadow-[0_0_15px_rgba(245,158,11,0.15)]"
 										>
-											<Loader2 className="h-4 w-4 animate-spin text-amber-400" />
+											<Loader2 className="h-4 w-4 animate-spin text-amber-500" />
 											<span>{t("mining.questVolumeVerifyingBtn", "Verifying Trading Volume...")}</span>
 										</button>
 									) : (
 										<button
 											type="button"
 											disabled
-											className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-medium text-muted-foreground cursor-not-allowed opacity-60"
+											className="w-full rounded-xl border border-border bg-muted/60 py-2.5 text-xs font-medium text-muted-foreground cursor-not-allowed opacity-75"
 										>
 											{t(
 												"mining.questCompleteRequirements",
@@ -562,9 +562,9 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 				</div>
 
 				{/* Footer Security Notes */}
-				<div className="space-y-2 rounded-xl border border-white/10 bg-card/30 p-3 text-[11px] text-muted-foreground">
+				<div className="space-y-2 rounded-xl border border-border bg-card p-3 text-[11px] text-muted-foreground">
 					<div className="flex items-center gap-2">
-						<ShieldCheck className="h-4 w-4 text-[#00F0FF] shrink-0" />
+						<ShieldCheck className="h-4 w-4 text-cyan-600 dark:text-[#00F0FF] shrink-0" />
 						<span>
 							{t(
 								"mining.questFootnoteUid",
@@ -573,7 +573,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 						</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<Clock className="h-4 w-4 text-[#00F0FF] shrink-0" />
+						<Clock className="h-4 w-4 text-cyan-600 dark:text-[#00F0FF] shrink-0" />
 						<span>
 							{t(
 								"mining.questFootnoteDuration",
@@ -582,7 +582,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 						</span>
 					</div>
 					<div className="flex items-center gap-2">
-						<Check className="h-4 w-4 text-[#00F0FF] shrink-0" />
+						<Check className="h-4 w-4 text-cyan-600 dark:text-[#00F0FF] shrink-0" />
 						<span>
 							{t(
 								"mining.questFootnoteVerification",

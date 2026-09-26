@@ -23,6 +23,8 @@
 	"deleteTooltip": "Delete",
 	"addCopyTooltip": "Start copy on another coin",
 	"copiesCount": "{{count}} copies",
+	"hedgeLegBadge": "Hedge {{leg}}",
+	"extraInstanceBadge": "2nd account",
 
 	"filters": {
 		"all": "All",

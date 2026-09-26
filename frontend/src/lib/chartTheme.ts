@@ -1,6 +1,5 @@
 // src/lib/chartTheme.ts
 
-import { ColorType } from "lightweight-charts";
 import { useTheme } from "@/context/ThemeProvider";
 
 export interface ChartThemeColors {

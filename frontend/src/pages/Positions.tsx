@@ -447,13 +447,13 @@ export default function Positions() {
 							placeholder="Filter symbol..."
 							value={symbolFilter}
 							onChange={(e) => setSymbolFilter(e.target.value)}
-							className="h-7.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 text-[11px] text-white placeholder-white/30 outline-none transition-colors focus:border-white/20"
+							className="h-7.5 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] px-2.5 text-[11px] text-foreground dark:text-white placeholder:text-muted-foreground dark:placeholder-white/30 outline-none transition-colors focus:border-border dark:focus:border-white/20"
 						/>
 						{symbolFilter && (
 							<button
 								type="button"
 								onClick={() => setSymbolFilter("")}
-								className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
+								className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground dark:text-white/30 hover:text-foreground dark:hover:text-white"
 							>
 								<X size={11} />
 							</button>

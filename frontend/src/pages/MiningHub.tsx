@@ -544,19 +544,19 @@ const MiningHub: React.FC = () => {
         className="w-full"
       >
         <div className="flex items-center overflow-x-auto pb-1 max-w-full touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-white/[0.04] border border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
+          <TabsList className="inline-flex h-auto w-auto items-center justify-start rounded-xl bg-muted/60 dark:bg-white/[0.04] border border-border/80 dark:border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
             <TabsTrigger
               value="overview"
-              className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+              className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted/60 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
             >
-              <Flame className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+              <Flame className="w-4 h-4 text-cyan-600 dark:text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
               <span>{t("subtabOverview", "Overview & Pools")}</span>
             </TabsTrigger>
             <TabsTrigger
               value="referrals"
-              className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+              className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted/60 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
             >
-              <Users className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+              <Users className="w-4 h-4 text-cyan-600 dark:text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
               <span>{t("subtabReferrals", "My Referrals Network")}</span>
               {referralsData?.totalInvited !== undefined && (
                 <span className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-cyan/10 text-cyan border border-cyan/20">
@@ -566,9 +566,9 @@ const MiningHub: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger
               value="trades"
-              className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+              className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted/60 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
             >
-              <Activity className="w-4 h-4 text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
+              <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan/60 group-hover:text-cyan group-data-[state=active]:text-cyan group-data-[state=active]:drop-shadow-[0_0_8px_rgba(0,212,255,0.85)] transition-all shrink-0" />
               <span>{t("subtabTrades", "Trades & Telemetry")}</span>
               {tradesData?.total !== undefined && (
                 <span className="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-cyan/10 text-cyan border border-cyan/20">
@@ -579,7 +579,7 @@ const MiningHub: React.FC = () => {
             {promoStatus?.hasActiveCampaign && (
               <TabsTrigger
                 value="quests"
-                className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-white/50 hover:text-white/80 hover:bg-white/[0.03] data-[state=active]:bg-white/[0.08] data-[state=active]:text-white data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-white/10 whitespace-nowrap"
+                className="group relative flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:text-foreground hover:bg-muted/60 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/[0.03] data-[state=active]:bg-card dark:data-[state=active]:bg-white/[0.08] data-[state=active]:text-foreground dark:data-[state=active]:text-white data-[state=active]:shadow-sm dark:data-[state=active]:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] data-[state=active]:border data-[state=active]:border-border/80 dark:data-[state=active]:border-white/10 whitespace-nowrap"
               >
                 <span className="text-sm">🎁</span>
                 <span>{t("subtabQuests", "Quests")}</span>
@@ -643,12 +643,12 @@ const MiningHub: React.FC = () => {
                 </p>
               </div>
               <div className="relative w-full sm:w-64">
-                <Search className="h-4 w-4 absolute left-3 top-3 text-white/40" />
+                <Search className="h-4 w-4 absolute left-3 top-3 text-muted-foreground dark:text-white/40" />
                 <Input
                   placeholder={t("searchReferralPlaceholder", "Search by Node ID or Name...")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-10 rounded-xl bg-white/[0.04] border-white/10 text-white placeholder:text-white/30 text-xs focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30 transition-colors"
+                  className="pl-9 h-10 rounded-xl bg-card dark:bg-white/[0.04] border-border dark:border-white/10 text-foreground dark:text-white placeholder:text-muted-foreground dark:placeholder:text-white/30 text-xs focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30 transition-colors"
                 />
               </div>
             </div>
@@ -741,20 +741,20 @@ const MiningHub: React.FC = () => {
         </div>
       ) : activeSubTab === "trades" ? (
         <div className="space-y-6">
-          <div className="glass relative rounded-2xl border border-white/10 p-6 shadow-xl space-y-6 animate-fade-up overflow-hidden">
+          <div className="glass relative rounded-2xl border border-border/80 dark:border-white/10 p-6 shadow-xl space-y-6 animate-fade-up overflow-hidden">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-2">
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-cyan" />
+                <h3 className="text-base font-bold text-foreground dark:text-white flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-cyan-600 dark:text-cyan" />
                   {t("tradesTitle", "Telemetry Trade Reports History")}
                 </h3>
-                <p className="text-xs text-white/50 mt-0.5">
+                <p className="text-xs text-muted-foreground dark:text-white/50 mt-0.5">
                   {t("tradesDesc", "Inspect trade reports, exchange verification status, and daily mining rewards.")}
                 </p>
               </div>
 
               {/* Scope Sub-tabs Pills: All / My Trades / Referral Trades */}
-              <div className="inline-flex rounded-xl bg-white/[0.04] border border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
+              <div className="inline-flex rounded-xl bg-muted/60 dark:bg-white/[0.04] border border-border/80 dark:border-white/5 p-1 gap-1 shadow-inner backdrop-blur-md">
                 <button
                   onClick={() => {
                     setSelectedScopeFilter("all");
@@ -764,11 +764,11 @@ const MiningHub: React.FC = () => {
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     selectedScopeFilter === "all" && selectedUserIdFilter === undefined
-                      ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-white/10"
-                      : "text-white/50 hover:text-white/80 hover:bg-white/[0.03]"
+                      ? "bg-card dark:bg-white/[0.08] text-foreground dark:text-white shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-border/80 dark:border-white/10 font-semibold"
+                      : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80 hover:bg-muted/60 dark:hover:bg-white/[0.03]"
                   }`}
                 >
-                  <Activity className="h-3.5 w-3.5 text-cyan" />
+                  <Activity className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan" />
                   <span>{t("allTrades", "Все сделки")}</span>
                 </button>
                 <button
@@ -780,11 +780,11 @@ const MiningHub: React.FC = () => {
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     selectedScopeFilter === "my"
-                      ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-white/10"
-                      : "text-white/50 hover:text-white/80 hover:bg-white/[0.03]"
+                      ? "bg-card dark:bg-white/[0.08] text-foreground dark:text-white shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-border/80 dark:border-white/10 font-semibold"
+                      : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80 hover:bg-muted/60 dark:hover:bg-white/[0.03]"
                   }`}
                 >
-                  <UserCheck className="h-3.5 w-3.5 text-cyan" />
+                  <UserCheck className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan" />
                   <span>{t("myTrades", "Мои сделки")}</span>
                 </button>
                 <button
@@ -796,22 +796,22 @@ const MiningHub: React.FC = () => {
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     selectedScopeFilter === "referrals"
-                      ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-white/10"
-                      : "text-white/50 hover:text-white/80 hover:bg-white/[0.03]"
+                      ? "bg-card dark:bg-white/[0.08] text-foreground dark:text-white shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-border/80 dark:border-white/10 font-semibold"
+                      : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80 hover:bg-muted/60 dark:hover:bg-white/[0.03]"
                   }`}
                 >
-                  <Users className="h-3.5 w-3.5 text-cyan" />
+                  <Users className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan" />
                   <span>{t("referralTrades", "Сделки рефералов")}</span>
                 </button>
               </div>
             </div>
 
             {/* Filters Bar: Search, Status, Exchange */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-xl bg-white/[0.02] border border-white/5">
+            <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-xl bg-card/60 dark:bg-white/[0.02] border border-border/80 dark:border-white/5">
               <div className="flex flex-wrap items-center gap-2 flex-1">
                 {/* Search Input */}
                 <div className="relative w-full sm:w-56">
-                  <Search className="h-4 w-4 absolute left-3 top-2.5 text-white/40" />
+                  <Search className="h-4 w-4 absolute left-3 top-2.5 text-muted-foreground dark:text-white/40" />
                   <Input
                     placeholder={t("filterUserPlaceholder", "Search symbol or order...")}
                     value={tradesSearch}
@@ -819,12 +819,12 @@ const MiningHub: React.FC = () => {
                       setTradesSearch(e.target.value);
                       setTradesPage(1);
                     }}
-                    className="pl-9 h-9 rounded-xl bg-white/[0.04] border-white/10 text-white placeholder:text-white/30 text-xs focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30 transition-colors"
+                    className="pl-9 h-9 rounded-xl bg-card dark:bg-white/[0.04] border-border dark:border-white/10 text-foreground dark:text-white placeholder:text-muted-foreground dark:placeholder:text-white/30 text-xs focus:border-cyan/50 focus:ring-1 focus:ring-cyan/30 transition-colors"
                   />
                 </div>
 
                 {/* Status Filter */}
-                <div className="inline-flex items-center rounded-xl border border-white/5 bg-white/[0.04] p-1 gap-1">
+                <div className="inline-flex items-center rounded-xl border border-border/80 dark:border-white/5 bg-muted/60 dark:bg-white/[0.04] p-1 gap-1">
                   {["ALL", "PENDING", "VERIFIED", "REJECTED"].map((st) => (
                     <button
                       key={st}
@@ -834,8 +834,8 @@ const MiningHub: React.FC = () => {
                       }}
                       className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors ${
                         selectedStatusFilter === st
-                          ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-white/10"
-                          : "text-white/50 hover:text-white/80 hover:bg-white/[0.03]"
+                          ? "bg-card dark:bg-white/[0.08] text-foreground dark:text-white shadow-sm dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] border border-border/80 dark:border-white/10 font-semibold"
+                          : "text-muted-foreground hover:text-foreground dark:text-white/50 dark:hover:text-white/80 hover:bg-muted/60 dark:hover:bg-white/[0.03]"
                       }`}
                     >
                       {st === "ALL"
@@ -858,11 +858,11 @@ const MiningHub: React.FC = () => {
                       setTradesPage(1);
                     }}
                   >
-                    <SelectTrigger className="h-9 rounded-xl text-xs font-medium bg-white/[0.04] border-white/10 text-white focus:border-cyan/50">
+                    <SelectTrigger className="h-9 rounded-xl text-xs font-medium bg-card dark:bg-white/[0.04] border-border dark:border-white/10 text-foreground dark:text-white focus:border-cyan/50">
                       <SelectValue placeholder={t("allExchanges", "All Exchanges")} />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl bg-obsidian/95 border border-white/10 text-white backdrop-blur-2xl shadow-2xl p-1">
-                      <SelectItem value="all" className="rounded-lg py-1.5 px-2.5 text-xs font-medium text-white/90 focus:bg-white/[0.08] focus:text-white cursor-pointer transition-colors">
+                    <SelectContent className="rounded-xl bg-popover/95 dark:bg-obsidian/95 border border-border dark:border-white/10 text-popover-foreground dark:text-white backdrop-blur-2xl shadow-2xl p-1">
+                      <SelectItem value="all" className="rounded-lg py-1.5 px-2.5 text-xs font-medium text-foreground dark:text-white/90 hover:bg-muted dark:focus:bg-white/[0.08] dark:focus:text-white cursor-pointer transition-colors">
                         {t("allExchanges", "All Exchanges")}
                       </SelectItem>
                       {Array.from(
@@ -875,7 +875,7 @@ const MiningHub: React.FC = () => {
                           ),
                         ])
                       ).map((ex) => (
-                        <SelectItem key={ex} value={ex} className="rounded-lg py-1.5 px-2.5 text-xs uppercase font-medium text-white/90 focus:bg-white/[0.08] focus:text-white cursor-pointer transition-colors">
+                        <SelectItem key={ex} value={ex} className="rounded-lg py-1.5 px-2.5 text-xs uppercase font-medium text-foreground dark:text-white/90 hover:bg-muted dark:focus:bg-white/[0.08] dark:focus:text-white cursor-pointer transition-colors">
                           <div className="flex items-center gap-2">
                             <ExchangeBadge exchange={ex} size="xs" />
                             <span>{ex}</span>
@@ -891,7 +891,7 @@ const MiningHub: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => refetchTrades()}
-                className="h-9 w-9 rounded-xl border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white transition-colors p-0"
+                className="h-9 w-9 rounded-xl border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.04] text-muted-foreground hover:text-foreground hover:bg-muted dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white transition-colors p-0"
                 title="Refresh trades"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${isLoadingTrades ? "animate-spin" : ""}`} />
@@ -1049,10 +1049,10 @@ const MiningHub: React.FC = () => {
 
             {/* Pagination Bar */}
             {tradesData && tradesData.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4 text-xs text-white/50">
+              <div className="mt-6 flex items-center justify-between border-t border-border/80 dark:border-white/5 pt-4 text-xs text-muted-foreground dark:text-white/50">
                 <div>
-                  Showing Page <strong className="text-white">{tradesData.page}</strong> of{" "}
-                  <strong className="text-white">{tradesData.totalPages}</strong> (Total: {tradesData.total} trades)
+                  Showing Page <strong className="text-foreground dark:text-white">{tradesData.page}</strong> of{" "}
+                  <strong className="text-foreground dark:text-white">{tradesData.totalPages}</strong> (Total: {tradesData.total} trades)
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -1060,7 +1060,7 @@ const MiningHub: React.FC = () => {
                     size="sm"
                     disabled={tradesPage <= 1}
                     onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
-                    className="h-8 rounded-xl border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white text-xs gap-1 transition-colors"
+                    className="h-8 rounded-xl border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.04] text-muted-foreground hover:text-foreground hover:bg-muted dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white text-xs gap-1 transition-colors"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     {t("pagePrev", "Previous")}
@@ -1070,7 +1070,7 @@ const MiningHub: React.FC = () => {
                     size="sm"
                     disabled={tradesPage >= tradesData.totalPages}
                     onClick={() => setTradesPage((p) => p + 1)}
-                    className="h-8 rounded-xl border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08] hover:text-white text-xs gap-1 transition-colors"
+                    className="h-8 rounded-xl border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.04] text-muted-foreground hover:text-foreground hover:bg-muted dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white text-xs gap-1 transition-colors"
                   >
                     {t("pageNext", "Next")}
                     <ChevronRight className="h-3.5 w-3.5" />
@@ -1171,15 +1171,15 @@ const MiningHub: React.FC = () => {
 
               {/* Right: Supported Exchanges & Rebate Rates */}
               {groupedExchanges.length > 0 && (
-                <div className="glass relative rounded-2xl border border-white/10 shadow-xl overflow-hidden p-5 flex flex-col justify-between h-full">
+                <div className="glass relative rounded-2xl border border-border/80 dark:border-white/10 shadow-xl overflow-hidden p-5 flex flex-col justify-between h-full">
                   <div>
                     <div className="flex items-center gap-2 mb-1.5">
-                      <Globe className="h-4 w-4 text-cyan-400" />
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white/70">
+                      <Globe className="h-4 w-4 text-cyan-500 dark:text-cyan-400" />
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/80 dark:text-white/70">
                         {t("supportedExchanges", "Supported Mining Exchanges & Rebates")}
                       </h3>
                     </div>
-                    <p className="text-[11px] text-white/50 mb-3 leading-tight">
+                    <p className="text-[11px] text-muted-foreground dark:text-white/50 mb-3 leading-tight">
                       {t("supportedExchangesDesc", "Trade mining rewards are calculated for live trades executed on the following exchanges:")}
                     </p>
                     <div className="flex flex-wrap gap-2 pt-0.5">
@@ -1202,40 +1202,40 @@ const MiningHub: React.FC = () => {
                           <TooltipProvider key={exItem.baseKey} delayDuration={150}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div className={`group flex items-center gap-2 border ${exItem.isBoosted ? "border-amber-500/40 bg-amber-500/10 hover:border-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.15)]" : "border-white/10 bg-white/[0.03] hover:border-cyan-500/40 hover:bg-white/[0.06]"} transition-all px-3 py-2 rounded-xl text-xs cursor-help backdrop-blur-md`}>
+                                <div className={`group flex items-center gap-2 border ${exItem.isBoosted ? "border-amber-500/50 dark:border-amber-500/40 bg-amber-500/10 hover:border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.15)]" : "border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.03] hover:border-cyan-500/40 hover:bg-muted dark:hover:bg-white/[0.06]"} transition-all px-3 py-2 rounded-xl text-xs cursor-help backdrop-blur-md`}>
                                   <ExchangeBadge exchange={exItem.baseKey} size="xs" />
-                                  <span className="font-mono font-bold uppercase text-white/90 text-xs tracking-wide">{exItem.label}</span>
+                                  <span className="font-mono font-bold uppercase text-foreground dark:text-white/90 text-xs tracking-wide">{exItem.label}</span>
                                   {exItem.isBoosted && (
-                                    <Badge className="bg-amber-500/20 text-amber-300 border-amber-500/40 text-[10px] font-mono font-bold flex items-center gap-1 animate-pulse rounded-md px-1.5 py-0.5">
+                                    <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-[10px] font-mono font-extrabold flex items-center gap-1 animate-pulse rounded-md px-1.5 py-0.5 shadow-sm">
                                       🔥 {exItem.multiplier}x
                                     </Badge>
                                   )}
-                                  <Info className="h-3 w-3 text-white/40 group-hover:text-cyan-400 transition-colors ml-0.5" />
+                                  <Info className="h-3 w-3 text-muted-foreground/60 dark:text-white/40 group-hover:text-cyan-500 dark:group-hover:text-cyan-400 transition-colors ml-0.5" />
                                 </div>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-xs text-xs p-3 shadow-2xl bg-[#0c121e] text-white/90 border border-white/15 rounded-xl backdrop-blur-xl space-y-2">
-                                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-                                  <div className="flex items-center gap-2 font-bold text-white">
+                              <TooltipContent side="top" className="max-w-xs text-xs p-3.5 shadow-2xl bg-popover/95 dark:bg-[#0c121e] text-popover-foreground dark:text-white/90 border border-border dark:border-white/15 rounded-xl backdrop-blur-xl space-y-2.5">
+                                <div className="flex items-center justify-between border-b border-border/80 dark:border-white/10 pb-1.5">
+                                  <div className="flex items-center gap-2 font-bold text-foreground dark:text-white">
                                     <ExchangeBadge exchange={exItem.baseKey} size="xs" />
                                     <span>{exItem.label}</span>
                                   </div>
                                   {exItem.isBoosted && (
-                                    <span className="text-[10px] text-amber-400 font-mono font-bold">
+                                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-mono font-extrabold">
                                       🔥 {exItem.multiplier}x BOOST
                                     </span>
                                   )}
                                 </div>
-                                <div className="space-y-1 text-[11px] font-mono">
+                                <div className="space-y-1.5 text-[11px] font-mono">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-white/60 font-sans">{t("futuresRebate", "Futures Rebate")}:</span>
-                                    <span className="text-cyan-300 font-bold">{((exItem.futuresRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
+                                    <span className="text-muted-foreground dark:text-white/60 font-sans">{t("futuresRebate", "Futures Rebate")}:</span>
+                                    <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.futuresRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
                                   </div>
                                   <div className="flex items-center justify-between">
-                                    <span className="text-white/60 font-sans">{t("spotRebate", "Spot Rebate")}:</span>
-                                    <span className="text-cyan-300 font-bold">{((exItem.spotRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
+                                    <span className="text-muted-foreground dark:text-white/60 font-sans">{t("spotRebate", "Spot Rebate")}:</span>
+                                    <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.spotRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
                                   </div>
                                 </div>
-                                <p className="text-[10px] text-white/70 leading-relaxed pt-1.5 border-t border-white/5">
+                                <p className="text-[10.5px] text-muted-foreground dark:text-white/70 leading-relaxed pt-1.5 border-t border-border/60 dark:border-white/5">
                                   {tooltipExtra}
                                 </p>
                               </TooltipContent>
@@ -1245,8 +1245,8 @@ const MiningHub: React.FC = () => {
                       })}
                     </div>
                   </div>
-                  <div className="mt-3.5 pt-3 border-t border-white/10 flex items-start gap-2 text-[11px] text-white/50 bg-white/[0.01] p-2.5 rounded-xl border border-white/5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                  <div className="mt-3.5 pt-3 border-t border-border/80 dark:border-white/10 flex items-start gap-2 text-[11px] text-muted-foreground dark:text-white/50 bg-muted/30 dark:bg-white/[0.01] p-2.5 rounded-xl border border-border/60 dark:border-white/5">
+                    <ShieldCheck className="h-3.5 w-3.5 text-cyan-500 dark:text-cyan-400 shrink-0 mt-0.5" />
                     <p className="leading-snug">
                       {t("supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly. The Central Hub securely verifies every trade directly via the exchanges' broker APIs.")}
                     </p>

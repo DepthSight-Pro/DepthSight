@@ -1,6 +1,6 @@
 // src/components/strategies/LaunchStrategyModal.tsx
 
-import { FlaskConical, Key, Loader2, Radio, Wallet } from "lucide-react";
+import { FlaskConical, Key, Loader2, Radio } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo } from "react";
 import {

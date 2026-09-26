@@ -1,3 +1,5 @@
+import time
+
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -5,6 +7,14 @@ from unittest.mock import AsyncMock, MagicMock
 from bot_module import data_consumer
 from bot_module.data_consumer import DataConsumer
 from bot_module.controller import TradingController
+
+
+def _recent_ohlcv(n, end_ms, step_ms=60000):
+    """Candles ending at end_ms: freshness gates treat 2020-era fixtures
+    as stale, so tests share one fixed recent base for exact overlap."""
+    return [
+        [end_ms - (n - 1 - i) * step_ms, 1.0, 1.1, 0.9, 1.0, 100.0] for i in range(n)
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -38,9 +48,8 @@ async def test_ensure_history_loaded_min_candles():
     mock_executor.market_type = "futures_usdtm"
 
     # Return 30 candles on fetch_ohlcv
-    mock_ohlcv = [
-        [1600000000000 + i * 60000, 1.0, 1.1, 0.9, 1.0, 100.0] for i in range(30)
-    ]
+    base_ms = int(time.time() * 1000)
+    mock_ohlcv = _recent_ohlcv(30, base_ms)
     mock_fetch = AsyncMock(return_value=mock_ohlcv)
     mock_executor.fetch_ohlcv = mock_fetch
 
@@ -67,10 +76,9 @@ async def test_ensure_history_loaded_min_candles():
     assert res2 is True
     assert mock_fetch.call_count == 1
 
-    # 3. Call with min_candles=50 (more than in cache) -> triggers download
-    mock_ohlcv_50 = [
-        [1600000000000 + i * 60000, 1.0, 1.1, 0.9, 1.0, 100.0] for i in range(50)
-    ]
+    # 3. Call with min_candles=50 (more than in cache) -> triggers download.
+    # Same base: first 30 rows overlap the cached batch, merged total is 50.
+    mock_ohlcv_50 = _recent_ohlcv(50, base_ms)
     mock_fetch.return_value = mock_ohlcv_50
     res3 = await consumer._ensure_history_loaded(
         "kline_1m", "XRPUSDT", "1m", "futures_usdtm", "weex", min_candles=50
@@ -117,9 +125,7 @@ async def test_controller_gather_market_data_backfills_missing_candles():
     mock_executor.market_type = "futures_usdtm"
 
     # Setup executor to return 30 candles on backfill
-    mock_ohlcv_30 = [
-        [1600000000000 + i * 60000, 1.0, 1.1, 0.9, 1.0, 100.0] for i in range(30)
-    ]
+    mock_ohlcv_30 = _recent_ohlcv(30, int(time.time() * 1000))
     mock_executor.fetch_ohlcv = AsyncMock(return_value=mock_ohlcv_30)
 
     consumer = DataConsumer(
@@ -129,9 +135,10 @@ async def test_controller_gather_market_data_backfills_missing_candles():
 
     # Prepopulate cache with only 5 candles (< 20 required)
     cache_key = "weex:futures_usdtm:XRPUSDT:1m"
+    end_ms = int(time.time() * 1000)
     for i in range(5):
         data_consumer._global_kline_cache[cache_key].append(
-            (1600000000000 + i * 60000, 1.0, 1.1, 0.9, 1.0, 100.0)
+            (end_ms - (5 - 1 - i) * 60000, 1.0, 1.1, 0.9, 1.0, 100.0)
         )
     data_consumer._global_history_loaded_keys.add(cache_key)
 

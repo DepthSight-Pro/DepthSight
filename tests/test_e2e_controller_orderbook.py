@@ -223,6 +223,15 @@ async def test_e2e_signal_approved_on_companion_density(
         return_value=(test_signal, 100.0, {})
     )
 
+    # 3b. Bypass the shared-gather WARMUP freshness gate: the per-instance
+    # path only needs a non-empty frame here (check_signal is mocked above
+    # and sizing comes from the mocked RiskManager).
+    monkeypatch.setattr(
+        controller,
+        "_gather_market_data_for_strategy",
+        AsyncMock(return_value={"kline_1m": pd.DataFrame([{"close": 50150.0}])}),
+    )
+
     # 4. Call signal processing directly for this instance
     await controller._check_and_process_signal_for_instance(
         volume_breakout_instance, config_dict, "BTCUSDT", pair_info_for_check

@@ -23,6 +23,8 @@
 	"deleteTooltip": "Удалить",
 	"addCopyTooltip": "Запустить копию на другой монете",
 	"copiesCount": "{{count}} копий",
+	"hedgeLegBadge": "Хедж {{leg}}",
+	"extraInstanceBadge": "2-й аккаунт",
 
 	"filters": {
 		"all": "Все",

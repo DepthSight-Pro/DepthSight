@@ -1085,6 +1085,14 @@ export const useStartStrategy = () => {
 			symbols?: string[];
 			params?: Record<string, unknown>;
 			apiKeyId?: number; // ADDED FIELD for multi-accounts
+			hedge?: {
+				enabled: boolean;
+				leg_b_api_key_id?: number;
+				side_mode?: string;
+				exit_policy?: string;
+				size_mode?: string;
+				notional_usd?: number;
+			}; // Hedge (mirror) launch on two exchanges
 		}
 	>({
 		mutationFn: ({
@@ -1094,6 +1102,7 @@ export const useStartStrategy = () => {
 			symbols,
 			params,
 			apiKeyId,
+			hedge,
 		}) => {
 			// Explicitly creating an object that matches the `StrategyStartRequest` schema on the backend.
 			const requestBody: Record<string, unknown> = {
@@ -1107,6 +1116,11 @@ export const useStartStrategy = () => {
 			// Adding api_key_id only if it is specified
 			if (apiKeyId !== undefined) {
 				requestBody.api_key_id = apiKeyId;
+			}
+
+			// Hedge (mirror) launch: the backend fans out to two START_STRATEGY commands
+			if (hedge !== undefined) {
+				requestBody.hedge = hedge;
 			}
 
 			// Sending the object converted to a JSON string.

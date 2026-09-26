@@ -234,6 +234,16 @@ async def test_full_integration_visual_strategy(mocker):
             side_effect=mock_gather_market_data,
         )
 
+        # The CANDLE_CLOSE path pre-gathers shared data (with a WARMUP
+        # freshness gate) before per-instance checks run: serve the same
+        # fixture frame so the event reaches the strategy.
+        mocker.patch.object(
+            controller,
+            "_gather_market_data_for_required_keys",
+            new_callable=AsyncMock,
+            return_value={"kline_1m": mock_kline_df},
+        )
+
         candle_close_event = {
             "type": "CANDLE_CLOSE",
             "symbol": "TESTUSDT",

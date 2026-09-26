@@ -114,6 +114,14 @@ const resolveStrategyEquity = (
 export type CombinedStrategy = StrategyConfig &
 	Partial<Omit<StrategyData, "id" | "name">> & {
 		instances?: StrategyData[];
+		/** Card identity: saved-config id, or running instance id for leg cards. */
+		cardId: string;
+		/** Saved strategy config id (edit / delete / launch target). */
+		sourceConfigId: string;
+		/** Set on per-leg cards: the single running instance shown. */
+		legInstance?: StrategyData;
+		/** Hedge group shared by both legs (when known). */
+		hedgeGroupId?: string | null;
 	};
 
 type FilterType = "all" | "running" | "stopped" | "paper" | "live" | "favorites";
@@ -321,18 +329,61 @@ export default function Strategies() {
 			instancesByConfig.set(key, arr);
 		}
 
-		return savedConfigs.map((config) => {
-			const instances = instancesByConfig.get(config.id) ?? [];
-			const primary = instances[0];
-			return {
-				...config,
-				...primary,
-				id: config.id,
-				name: config.name,
-				status: instances.length ? primary?.status || "RUNNING" : "STOPPED",
-				instances,
-			};
-		});
+		return savedConfigs
+			.map((config) => {
+				const instances = instancesByConfig.get(config.id) ?? [];
+				const distinctKeys = new Set(
+					instances.map((inst) =>
+						inst.api_key_id !== null && inst.api_key_id !== undefined
+							? `key:${inst.api_key_id}`
+							: `inst:${inst.id}`,
+					),
+				);
+				// A config running on several accounts (e.g. a hedge pair on
+				// two exchanges) becomes one stable card per instance.
+				// A single card would flip exchange/PnL between polls because
+				// instances[0] order from Redis aggregation is not deterministic.
+				if (instances.length > 1 && distinctKeys.size > 1) {
+					const sorted = [...instances].sort((a, b) => {
+						const ka =
+							a.api_key_id !== null && a.api_key_id !== undefined
+								? Number(a.api_key_id)
+								: Number.MAX_SAFE_INTEGER;
+						const kb =
+							b.api_key_id !== null && b.api_key_id !== undefined
+								? Number(b.api_key_id)
+								: Number.MAX_SAFE_INTEGER;
+						if (ka !== kb) return ka - kb;
+						return String(a.id).localeCompare(String(b.id));
+					});
+					return sorted.map((inst) => ({
+						...config,
+						...inst,
+						id: String(inst.id),
+						cardId: String(inst.id),
+						sourceConfigId: config.id,
+						name: config.name,
+						status: inst.status || "RUNNING",
+						instances: [inst],
+						legInstance: inst,
+						hedgeGroupId: inst.hedge_group_id ?? null,
+					}));
+				}
+				const primary = instances[0];
+				return [
+					{
+						...config,
+						...primary,
+						id: config.id,
+						cardId: config.id,
+						sourceConfigId: config.id,
+						name: config.name,
+						status: instances.length ? primary?.status || "RUNNING" : "STOPPED",
+						instances,
+					},
+				];
+			})
+			.flat();
 	}, [savedConfigs, liveRunningStrategies]);
 
 	// Filtered list
@@ -364,22 +415,38 @@ export default function Strategies() {
 				if (filterType === "live")
 					return s.mode === "live" || s.instances?.some((i) => i.mode === "live");
 				if (filterType === "favorites")
-					return favoriteIds.includes(s.id);
+					return favoriteIds.includes(s.cardId);
 				return true;
 			});
 		}
 
-		// Sort priority: running first, then favorites, then alphabetically by name.
+		// Sort priority: running first, then favorites, then alphabetically
+		// by name. Legs of one config share a name — tiebreak by exchange and
+		// card id so hedge cards keep a stable order.
 		return [...result].sort((a, b) => {
 			const aRunning = (a.instances ?? []).length > 0 ? 0 : 1;
 			const bRunning = (b.instances ?? []).length > 0 ? 0 : 1;
 			if (aRunning !== bRunning) return aRunning - bRunning;
-			const aFav = favoriteIds.includes(a.id) ? 0 : 1;
-			const bFav = favoriteIds.includes(b.id) ? 0 : 1;
+			const aFav = favoriteIds.includes(a.cardId) ? 0 : 1;
+			const bFav = favoriteIds.includes(b.cardId) ? 0 : 1;
 			if (aFav !== bFav) return aFav - bFav;
-			return a.name.localeCompare(b.name, undefined, {
+			const byName = a.name.localeCompare(b.name, undefined, {
 				sensitivity: "base",
 			});
+			if (byName !== 0) return byName;
+			const byEx = String(
+				(a as CombinedStrategy & { exchange?: string | null }).exchange ??
+					a.instances?.[0]?.exchange ??
+					"",
+			).localeCompare(
+				String(
+					(b as CombinedStrategy & { exchange?: string | null }).exchange ??
+						b.instances?.[0]?.exchange ??
+						"",
+				),
+			);
+			if (byEx !== 0) return byEx;
+			return a.cardId.localeCompare(b.cardId);
 		});
 	}, [combinedStrategies, searchQuery, filterType, favoriteIds]);
 
@@ -389,6 +456,12 @@ export default function Strategies() {
 			(s) => (s.instances ?? []).length > 0,
 		).length;
 	}, [combinedStrategies]);
+
+	// Saved configs (legs of one config share a sourceConfigId — count once)
+	const savedStrategiesCount = useMemo(
+		() => new Set(combinedStrategies.map((s) => s.sourceConfigId)).size,
+		[combinedStrategies],
+	);
 
 	const totalRealizedPnl = useMemo(() => {
 		// Sum unique instances only so Total P&L matches the sum of cards.
@@ -428,7 +501,7 @@ export default function Strategies() {
 	const handleStart = (strategy: CombinedStrategy) => {
 		setLaunchConfig({
 			open: true,
-			configId: strategy.id,
+			configId: strategy.sourceConfigId,
 			strategy,
 		});
 	};
@@ -485,7 +558,7 @@ export default function Strategies() {
 		setConfirmAction({
 			open: true,
 			actionType: "stop",
-			configId: strategy.id,
+			configId: strategy.sourceConfigId,
 			instanceId: inst.id,
 			title: t("confirmation.stopTitle", {
 				defaultValue: `Stop "${strategy.name}"?`,
@@ -506,7 +579,7 @@ export default function Strategies() {
 		setConfirmAction({
 			open: true,
 			actionType: "delete",
-			configId: strategy.id,
+			configId: strategy.sourceConfigId,
 			instanceId: null,
 			title: t("confirmation.deleteTitle", {
 				defaultValue: `Delete "${strategy.name}"?`,
@@ -530,7 +603,10 @@ export default function Strategies() {
 		);
 
 		const onSettled = () => {
-			if (selectedStrategyId === confirmAction.configId) {
+			if (
+				selectedStrategyId === confirmAction.configId ||
+				selectedStrategyId === confirmAction.instanceId
+			) {
 				setSelectedStrategyId(null);
 			}
 			setConfirmAction({
@@ -556,15 +632,15 @@ export default function Strategies() {
 		}
 	};
 
-	// Strategy detail drawer selection
+	// Strategy detail drawer selection (cards are keyed by cardId)
 	const selectedStrategy = combinedStrategies.find(
-		(s) => s.id === selectedStrategyId,
+		(s) => s.cardId === selectedStrategyId,
 	);
 
 	const strategyForPanel = useMemo(() => {
 		if (!selectedStrategy) return null;
 		return {
-			id: selectedStrategy.id,
+			id: selectedStrategy.sourceConfigId,
 			name: selectedStrategy.name,
 			strategy_name:
 				selectedStrategy.config_data?.strategy_name || "Unknown Type",
@@ -623,10 +699,10 @@ export default function Strategies() {
 						label={t("statSlots", "Saved Strategies")}
 						value={
 							<>
-								{combinedStrategies.length}
+								{savedStrategiesCount}
 								<span className="text-base text-white/30">
 									{" "}
-									/ {Math.max(10, combinedStrategies.length)}
+									/ {Math.max(10, savedStrategiesCount)}
 								</span>
 							</>
 						}
@@ -705,13 +781,13 @@ export default function Strategies() {
 							placeholder={t("searchPlaceholder", "Search strategies, symbols...")}
 							value={searchQuery}
 							onChange={(e) => setSearchQuery(e.target.value)}
-							className="h-7.5 w-48 sm:w-60 rounded-lg border border-white/10 bg-white/[0.03] pl-2.5 pr-7 text-[11px] text-white placeholder-white/30 outline-none transition-colors focus:border-cyan/40"
+							className="h-7.5 w-48 sm:w-60 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] pl-2.5 pr-7 text-[11px] text-foreground dark:text-white placeholder:text-muted-foreground dark:placeholder-white/30 outline-none transition-colors focus:border-cyan/40"
 						/>
 						{searchQuery && (
 							<button
 								type="button"
 								onClick={() => setSearchQuery("")}
-								className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
+								className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground dark:text-white/30 hover:text-foreground dark:hover:text-white"
 							>
 								<X size={11} />
 							</button>
@@ -859,13 +935,13 @@ export default function Strategies() {
 						const timeframe =
 							resolveStrategyTimeframe(s.config_data) ?? "15m";
 						const isActionPending =
-							pendingActionId === s.id ||
+							pendingActionId === s.cardId ||
 							(primary && pendingActionId === primary.id);
 						const equity = resolveStrategyEquity(s, primary, strategyEquity);
 
 							return (
 								<div
-									key={s.id}
+									key={s.cardId}
 									className={cn(
 										"glass group relative rounded-2xl p-4 transition-all hover:-translate-y-0.5 hover:border-white/15 animate-fade-up flex flex-col justify-between",
 										isRunning &&
@@ -883,21 +959,21 @@ export default function Strategies() {
 										type="button"
 										onClick={(e) => {
 											e.stopPropagation();
-											toggleFavorite(s.id);
+											toggleFavorite(s.cardId);
 										}}
 										className={cn(
 											"absolute top-3.5 right-3.5 z-10 flex items-center justify-center w-7 h-7 rounded-lg transition-all",
-											favoriteIds.includes(s.id)
+											favoriteIds.includes(s.cardId)
 												? "text-amber-400 bg-amber-400/10 border border-amber-400/30 hover:bg-amber-400/20 shadow-[0_0_12px_rgba(251,191,36,0.35)]"
 												: "text-white/30 hover:text-amber-400 hover:bg-white/5 border border-transparent opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100",
 										)}
 										title={
-											favoriteIds.includes(s.id)
+											favoriteIds.includes(s.cardId)
 												? t("removeFromFavorites", "Remove from favorites")
 												: t("addToFavorites", "Add to favorites")
 										}
 										aria-label={
-											favoriteIds.includes(s.id)
+											favoriteIds.includes(s.cardId)
 												? t("removeFromFavorites", "Remove from favorites")
 												: t("addToFavorites", "Add to favorites")
 										}
@@ -905,7 +981,7 @@ export default function Strategies() {
 										<Star
 											className={cn(
 												"w-4 h-4 transition-transform active:scale-90",
-												favoriteIds.includes(s.id)
+												favoriteIds.includes(s.cardId)
 													? "fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]"
 													: "hover:scale-110",
 											)}
@@ -936,11 +1012,20 @@ export default function Strategies() {
 												<div className="flex items-center gap-1.5 flex-wrap">
 													<span
 														className="truncate text-[13.5px] font-semibold text-white hover:text-cyan cursor-pointer transition-colors"
-														onClick={() => setSelectedStrategyId(s.id)}
+														onClick={() => setSelectedStrategyId(s.cardId)}
 														title={s.name}
 													>
 														{s.name}
 													</span>
+													{s.legInstance && (
+														<Badge tone="cyan">
+															{s.legInstance.hedge_leg
+																? t("hedgeLegBadge", "Hedge {{leg}}", {
+																		leg: s.legInstance.hedge_leg,
+																	})
+																: t("extraInstanceBadge", "2nd account")}
+														</Badge>
+													)}
 													<Badge
 														tone={
 															isRunning
@@ -1114,7 +1199,7 @@ export default function Strategies() {
 											variant="ghost"
 											size="xs"
 											icon={<Pencil size={11} />}
-											onClick={() => navigate(`/editor/${s.id}`)}
+											onClick={() => navigate(`/editor/${s.sourceConfigId}`)}
 											title={t("editButton", "Load in editor")}
 											className="text-white/60 hover:text-cyan hover:bg-cyan/10"
 										>

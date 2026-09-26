@@ -1,4 +1,5 @@
 import logging
+import copy
 import json
 import uuid
 from typing import List, Optional
@@ -525,48 +526,93 @@ async def start_strategy_instance(
         request.api_key_id = active_keys[0].id
         api_key = active_keys[0]
 
+    # --- Hedge (mirror) leg B resolution (before permission checks) ---
+    hedge_request = (
+        request.hedge if (request.hedge is not None and request.hedge.enabled) else None
+    )
+    leg_b_key = None
+    if hedge_request is not None:
+        if hedge_request.leg_b_api_key_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="hedge.leg_b_api_key_id is required for a hedge launch.",
+            )
+        leg_b_key = await crud.get_api_key_by_id(
+            db, current_user.id, int(hedge_request.leg_b_api_key_id)
+        )
+        if not leg_b_key:
+            raise HTTPException(
+                status_code=404,
+                detail="Hedge leg B API key not found or you don't have permission.",
+            )
+        if int(leg_b_key.id) == int(api_key.id):
+            raise HTTPException(
+                status_code=400,
+                detail="Hedge legs must use two different API keys (accounts).",
+            )
+        if not leg_b_key.is_active or (leg_b_key.status or "") == "invalid":
+            raise HTTPException(
+                status_code=400,
+                detail="Hedge leg B API key is not active. Verify it in Settings.",
+            )
+        base_ex_a = ((api_key.exchange or "").strip().lower()).replace("_testnet", "")
+        base_ex_b = ((leg_b_key.exchange or "").strip().lower()).replace("_testnet", "")
+        if not base_ex_a or not base_ex_b or base_ex_a == base_ex_b:
+            raise HTTPException(
+                status_code=400,
+                detail="Hedge legs must run on two different exchanges "
+                f"(got '{api_key.exchange}' and '{leg_b_key.exchange}').",
+            )
+
     # Ensure plans config is synchronized from database
     await plans_config.load_from_db(db)
 
-    # --- Live/Paper Trading Permission Checks ---
+    # --- Live/Paper Trading Permission Checks (both hedge legs) ---
     user_plan = plans_config.get_plan(current_user.plan)
     limits = user_plan.get("limits", {})
+    keys_for_permission_check = [api_key] if leg_b_key is None else [api_key, leg_b_key]
     if "allow_real_trading" not in user_plan.get("permissions", []):
         allow_free_bybit = limits.get("allow_free_bybit_trading", False)
         allow_free_weex = limits.get("allow_free_weex_trading", False)
         allow_free_okx = limits.get("allow_free_okx_trading", False)
         allow_free_bitget = limits.get("allow_free_bitget_trading", False)
         if allow_free_bybit or allow_free_weex or allow_free_okx or allow_free_bitget:
-            exch = (
-                api_key.exchange.strip().lower()
-                if (api_key and api_key.exchange)
-                else ""
-            )
-            is_valid = False
-            if allow_free_bybit and (exch == "bybit" or exch.startswith("bybit")):
-                is_valid = True
-            elif allow_free_weex and exch.startswith("weex"):
-                is_valid = True
-            elif allow_free_okx and exch.startswith("okx"):
-                is_valid = True
-            elif allow_free_bitget and exch.startswith("bitget"):
-                is_valid = True
-
-            if not is_valid:
-                allowed_exchanges = []
-                if allow_free_bybit:
-                    allowed_exchanges.append("Bybit")
-                if allow_free_weex:
-                    allowed_exchanges.append("WEEX")
-                if allow_free_okx:
-                    allowed_exchanges.append("OKX")
-                if allow_free_bitget:
-                    allowed_exchanges.append("Bitget")
-                allowed_str = " or ".join(allowed_exchanges)
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Trading on your plan is only allowed using {allowed_str} API keys.",
+            allowed_exchanges = []
+            if allow_free_bybit:
+                allowed_exchanges.append("Bybit")
+            if allow_free_weex:
+                allowed_exchanges.append("WEEX")
+            if allow_free_okx:
+                allowed_exchanges.append("OKX")
+            if allow_free_bitget:
+                allowed_exchanges.append("Bitget")
+            allowed_str = " or ".join(allowed_exchanges)
+            for key_to_check in keys_for_permission_check:
+                exch = (
+                    key_to_check.exchange.strip().lower()
+                    if (key_to_check and key_to_check.exchange)
+                    else ""
                 )
+                is_valid = False
+                if allow_free_bybit and (exch == "bybit" or exch.startswith("bybit")):
+                    is_valid = True
+                elif allow_free_weex and exch.startswith("weex"):
+                    is_valid = True
+                elif allow_free_okx and exch.startswith("okx"):
+                    is_valid = True
+                elif allow_free_bitget and exch.startswith("bitget"):
+                    is_valid = True
+
+                if not is_valid:
+                    leg_note = (
+                        ""
+                        if leg_b_key is None
+                        else f" (hedge leg '{key_to_check.name}')"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Trading on your plan is only allowed using {allowed_str} API keys{leg_note}.",
+                    )
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -600,6 +646,23 @@ async def start_strategy_instance(
         redis_client=redis_client,
     )
 
+    # Hedge leg B counts as its own live instance against the plan limit.
+    if leg_b_key is not None:
+        await _ensure_no_overlapping_running_instance(
+            redis_client=redis_client,
+            config_id=config_id,
+            api_key_id=int(leg_b_key.id),
+            symbol_selection_mode=symbol_selection_mode,
+            symbols=symbols,
+            user_id=current_user.id,
+        )
+        await _enforce_live_strategy_limit(
+            user=current_user,
+            request=request.model_copy(update={"api_key_id": int(leg_b_key.id)}),
+            db=db,
+            redis_client=redis_client,
+        )
+
     # 3. Perform permission checks (symbol list restrictions only apply to backtests)
     pass
 
@@ -621,6 +684,47 @@ async def start_strategy_instance(
         config_data_dict.update(request.params)
 
     _enforce_strategy_plan_restrictions(config_data_dict, current_user)
+
+    # --- Hedge blocks: futures-only, shared group id, per-leg roles ---
+    hedge_group_id: Optional[str] = None
+    leg_b_config_data: Optional[dict] = None
+    if leg_b_key is not None and hedge_request is not None:
+        market_type_raw = str(
+            config_data_dict.get("marketType")
+            or config_data_dict.get("market_type")
+            or "FUTURES"
+        ).upper()
+        if market_type_raw == "SPOT":
+            raise HTTPException(
+                status_code=400,
+                detail="Hedge (mirror) mode requires FUTURES market type "
+                "(SHORT leg is impossible on SPOT).",
+            )
+        hedge_group_id = uuid.uuid4().hex
+        exit_policy = hedge_request.exit_policy
+        base_hedge = {
+            "enabled": True,
+            "group_id": hedge_group_id,
+            "side_mode": "OPPOSITE",
+            "exit_policy": exit_policy,
+            "size_mode": hedge_request.size_mode,
+            "notional_usd": hedge_request.notional_usd,
+        }
+        config_data_dict["hedge"] = {
+            **base_hedge,
+            "leg": "A",
+            "invert": False,
+            "api_key_id": int(api_key.id),
+            "sibling_api_key_id": int(leg_b_key.id),
+        }
+        leg_b_config_data = copy.deepcopy(config_data_dict)
+        leg_b_config_data["hedge"] = {
+            **base_hedge,
+            "leg": "B",
+            "invert": True,
+            "api_key_id": int(leg_b_key.id),
+            "sibling_api_key_id": int(api_key.id),
+        }
 
     # Resolve target_api_key_id for multi-account support
     target_api_key_id = request.api_key_id
@@ -648,7 +752,20 @@ async def start_strategy_instance(
 
     command = {"command": "START_STRATEGY", "payload": payload}
 
-    # 5. Publish the command to Redis
+    # Hedge leg B payload: same strategy/symbols, mirrored role.
+    leg_b_instance_id: Optional[str] = None
+    leg_b_command: Optional[dict] = None
+    if leg_b_key is not None and leg_b_config_data is not None:
+        leg_b_instance_id = f"{config_id}:{uuid.uuid4().hex[:8]}"
+        leg_b_payload = {
+            **payload,
+            "id": leg_b_instance_id,
+            "config_data": leg_b_config_data,
+            "api_key_id": int(leg_b_key.id),
+        }
+        leg_b_command = {"command": "START_STRATEGY", "payload": leg_b_payload}
+
+    # 5. Publish the command(s) to Redis
 
     try:
         if target_api_key_id:
@@ -669,6 +786,26 @@ async def start_strategy_instance(
         logger.info(
             f"START_STRATEGY command published for config_id {config_id} in mode {mode} (api_key_id: {target_api_key_id})."
         )
+
+        if leg_b_command is not None and leg_b_instance_id is not None:
+            leg_b_activate_cmd = {
+                "command": "ACTIVATE_API_KEY",
+                "payload": {
+                    "user_id": current_user.id,
+                    "api_key_id": int(leg_b_key.id),
+                },
+            }
+            await redis_client.publish(
+                bot_config.REDIS_COMMAND_CHANNEL, json.dumps(leg_b_activate_cmd)
+            )
+            await redis_client.publish(
+                bot_config.REDIS_COMMAND_CHANNEL, json.dumps(leg_b_command)
+            )
+            logger.info(
+                f"Hedge leg B START_STRATEGY published for config_id {config_id} "
+                f"in mode {mode} (api_key_id: {leg_b_key.id}, "
+                f"group: {hedge_group_id})."
+            )
     except Exception as e:
         logger.error(
             f"Failed to publish START_STRATEGY for config {config_id}. Error: {e}",
@@ -678,13 +815,18 @@ async def start_strategy_instance(
             status_code=503, detail="Failed to send start strategy command to the bot."
         )
 
-    return {
-        "data": {
-            "message": f"START_STRATEGY command sent for config {config_id}.",
-            "mode": mode,
-            "instance_id": instance_id,
-        }
+    response_data = {
+        "message": f"START_STRATEGY command sent for config {config_id}.",
+        "mode": mode,
+        "instance_id": instance_id,
     }
+    if hedge_group_id is not None:
+        response_data["hedge_group_id"] = hedge_group_id
+        response_data["leg_b_instance_id"] = leg_b_instance_id
+        response_data["leg_b_api_key_id"] = (
+            int(leg_b_key.id) if leg_b_key is not None else None
+        )
+    return {"data": response_data}
 
 
 @strategies_router.delete(
