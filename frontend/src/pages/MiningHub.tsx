@@ -29,7 +29,7 @@ import {
   Info,
   KeyRound,
   UserCheck,
-  Award
+  Power
 } from "lucide-react";
 import { AppLoader } from "@/components/shared/AppLoader";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
-import { useGetMiningStatus, useActivateMining, useDeactivateMining, useGetMiningReferrals, useGetMiningTrades, useGetPromoStatus, type LocalMiningStatusResponse } from "@/lib/api";
+import { useGetMiningStatus, useActivateMining, useDeactivateMining, useGetMiningReferrals, useGetMiningTrades, useGetPromoStatus, useWalletStatus, type LocalMiningStatusResponse } from "@/lib/api";
 import { NodeWalletModal } from "@/components/mining/NodeWalletModal";
 import { PromoBanner } from "@/components/mining/PromoBanner";
 import { PromoQuestsTab } from "@/components/mining/PromoQuestsTab";
@@ -74,7 +74,7 @@ const StatCard = ({
   isLoading: boolean;
   accent?: string;
 }) => (
-  <div className="glass relative rounded-2xl p-4 overflow-hidden group hover:border-white/10 transition-all duration-300 animate-fade-up">
+  <div className="glass relative rounded-2xl p-4 overflow-hidden group hover:border-border dark:hover:border-white/10 transition-all duration-300 animate-fade-up border border-border/80 dark:border-white/10">
     {/* Ambient corner glow */}
     <div
       className="pointer-events-none absolute -top-14 -right-14 h-36 w-36 rounded-full blur-3xl opacity-20 group-hover:opacity-35 transition-opacity duration-300"
@@ -86,11 +86,11 @@ const StatCard = ({
     />
 
     <div className="flex items-start justify-between relative z-10">
-      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
+      <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground dark:text-white/40">
         {title}
       </span>
       <div
-        className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/5 bg-white/[0.03] transition-colors group-hover:border-white/10 shadow-sm"
+        className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/80 dark:border-white/5 bg-background/50 dark:bg-white/[0.03] transition-colors group-hover:border-border dark:group-hover:border-white/10 shadow-xs"
         style={{ color: accent }}
       >
         <Icon className="h-3.5 w-3.5" />
@@ -99,14 +99,14 @@ const StatCard = ({
 
     <div className="mt-2.5 relative z-10">
       {isLoading ? (
-        <Skeleton className="h-8 w-28 bg-white/5 rounded-lg" />
+        <Skeleton className="h-8 w-28 bg-muted dark:bg-white/5 rounded-lg" />
       ) : (
-        <div className="text-[22px] leading-tight font-semibold text-white font-mono tracking-tight">
+        <div className="text-[22px] leading-tight font-semibold text-foreground dark:text-white font-mono tracking-tight">
           {value}
         </div>
       )}
       {subtitle && (
-        <p className="text-[11px] text-white/40 mt-1 truncate">{subtitle}</p>
+        <p className="text-[11px] text-muted-foreground dark:text-white/40 mt-1 truncate">{subtitle}</p>
       )}
     </div>
   </div>
@@ -149,6 +149,7 @@ const MiningHub: React.FC = () => {
   const [tradesSearch, setTradesSearch] = useState<string>("");
 
   const { data: status, isLoading, refetch } = useGetMiningStatus();
+  const { data: walletStatus } = useWalletStatus();
   const { data: promoStatus } = useGetPromoStatus({
     nodeUuid: status?.nodeUuid || status?.node_uuid,
   });
@@ -465,7 +466,7 @@ const MiningHub: React.FC = () => {
   }
 
   // Calculate welcome bonus progress
-  const dailyEmission = stats?.daily_emission ?? stats?.dailyEmission ?? 547945;
+  const dailyEmission = stats?.daily_emission ?? stats?.dailyEmission ?? 547945.21;
   const yourEpochReward = stats?.your_epoch_reward ?? stats?.yourEpochReward ?? 0.0;
   const epochTotalRebates = stats?.epoch_total_rebates ?? stats?.epochTotalRebates ?? 0.0;
   const userCumulativeRebate = status?.userCumulativeRebate ?? stats?.your_cumulative_rebates ?? stats?.yourCumulativeRebates ?? stats?.user_cumulative_rebate ?? stats?.userCumulativeRebate ?? stats?.cumulativeRebates ?? epochTotalRebates;
@@ -475,58 +476,239 @@ const MiningHub: React.FC = () => {
   const welcomeProgress = Math.min((userCumulativeRebate / welcomeTarget) * 100, 100);
   const inviteLink = `${window.location.origin}/register?ref=${status?.nodeReferralCode || ""}`;
 
+  const now = new Date();
+  const utcSeconds = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds();
+  const epochProgressPercent = Math.min(Math.max(Math.round((utcSeconds / 86400) * 100), 1), 100);
+  const epochDashOffset = Number((163.36 * (1 - epochProgressPercent / 100)).toFixed(2));
+  const epochNumber = status?.epoch_number ?? status?.epochNumber ?? (typeof stats?.epoch_number === "number" ? stats.epoch_number : undefined) ?? (typeof stats?.epochNumber === "number" ? stats.epochNumber : undefined) ?? 24;
+
+  const totalMinedVal = status?.totalMined ?? stats?.your_cumulative_reward ?? 0.0;
+  const totalMinedDisplay = totalMinedVal >= 1000
+    ? Math.round(totalMinedVal).toLocaleString("en-US").replace(/,/g, " ")
+    : totalMinedVal.toFixed(2);
+
+  const boundAddress = walletStatus?.walletAddress || status?.walletAddress || status?.payoutAddress || status?.wallet_address;
+
   return (
     <div className="min-h-full flex-1 flex flex-col justify-between">
       <div className="flex-1 container mx-auto py-8 px-4 space-y-8">
-        {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            {isMobile && (
-              <SidebarTrigger className="h-8 w-8 text-white/70 hover:text-white border border-white/10 bg-white/5 hover:bg-white/10 rounded-lg shrink-0" />
-            )}
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3 text-white">
-              {t("title", "Trade Mining & Referrals")}
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                {t("connected", "Active")}
-              </span>
-            </h1>
+        {/* Canonical Mining Hub Hero Header */}
+        <div className="glass relative overflow-hidden rounded-2xl border border-border/80 dark:border-white/10 shadow-2xl bg-card/90 dark:bg-[#0B0F19]/40 animate-fade-up">
+          {/* Ambient Radials */}
+          <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[#0066FF]/12 blur-[90px] dark:bg-[#0066FF]/18" />
+          <div className="pointer-events-none absolute -left-16 -bottom-24 h-64 w-64 rounded-full bg-[#00D4FF]/10 blur-[90px] dark:bg-[#00D4FF]/15" />
+
+          {/* Upper Deck: SectionTitle, Badges, Total Mined, Gauge, Deactivate Action */}
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-6 p-6">
+            
+            {/* Left: SectionTitle + Node Metadata Badges */}
+            <div className="min-w-0 max-w-2xl">
+              <div className="flex items-center gap-2">
+                {isMobile && (
+                  <SidebarTrigger className="h-7 w-7 text-muted-foreground hover:text-foreground border border-border/80 bg-background/50 rounded-lg shrink-0 mr-1" />
+                )}
+                <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#00D4FF]">
+                  proof of trade
+                </div>
+              </div>
+              <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight mt-1">
+                <span className="bg-gradient-to-r from-[#00D4FF] via-[#0066FF] to-[#003CBB] bg-clip-text text-transparent">
+                  DEPTH Mining Hub
+                </span>
+              </h1>
+              <p className="mt-1.5 text-xs sm:text-sm text-muted-foreground dark:text-slate-400 leading-relaxed">
+                {t("miningHeroDesc", "Your node converts verified exchange volume into DEPTH emissions. Referrals compound your share of every epoch.")}
+              </p>
+
+              {/* Badges Row: status, nodeName, Hub registered, wallet modal trigger */}
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                {/* Node Mining Active Status */}
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 transition-all">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{t("nodeMining", "Node mining")}</span>
+                </span>
+
+                {/* Node Name */}
+                <span className="inline-flex items-center rounded-md border border-[#00D4FF]/30 bg-[#00D4FF]/10 px-2.5 py-0.5 text-[11px] font-mono font-semibold text-[#00D4FF]">
+                  {status?.nodeName || "Primary_Node"}
+                </span>
+
+                {/* Hub Registered */}
+                <span className="inline-flex items-center rounded-md border border-[#0066FF]/30 bg-[#0066FF]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#3B82F6] dark:text-[#60A5FA]">
+                  {t("hubRegistered", "Hub registered")}
+                </span>
+
+                {/* Node Wallet Modal Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsWalletModalOpen(true)}
+                  className="group flex items-center gap-1.5 rounded-lg border border-border/80 dark:border-white/10 bg-card hover:bg-muted/70 dark:bg-white/[0.04] dark:hover:bg-white/[0.08] px-2.5 py-1 text-[11px] tabular text-foreground/80 dark:text-slate-300 hover:text-foreground dark:hover:text-white transition-all shadow-xs cursor-pointer"
+                  title={t("configureNodeWallet", "Configure Node Wallet")}
+                >
+                  <Wallet className="w-3.5 h-3.5 text-[#00D4FF]" />
+                  <span className="font-mono font-medium">
+                    {boundAddress
+                      ? `${boundAddress.slice(0, 6)}...${boundAddress.slice(-4)}`
+                      : t("nodeWallet", "EVM Wallet")}
+                  </span>
+                  <KeyRound className="w-3 h-3 text-muted-foreground/60 dark:text-white/40 group-hover:text-foreground dark:group-hover:text-white transition-colors" />
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Total mined + Divider + Radial Gauge + Deactivate Button */}
+            <div className="flex items-center gap-6 flex-wrap sm:flex-nowrap">
+              
+              {/* Total Mined */}
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground dark:text-slate-500 font-semibold">
+                  {t("totalMined", "Total mined")}
+                </div>
+                <div className="font-display text-2xl sm:text-3xl font-bold tabular bg-gradient-to-r from-[#00D4FF] via-[#0066FF] to-[#003CBB] bg-clip-text text-transparent font-mono">
+                  {totalMinedDisplay}
+                </div>
+                <div className="text-[11px] text-muted-foreground dark:text-slate-400 font-medium">
+                  DEPTH · {t("totalMinedSubtitle", "All-time accumulated earnings")}
+                </div>
+              </div>
+
+              {/* Vertical Divider */}
+              <div className="hidden h-14 w-px bg-border/80 dark:bg-white/10 sm:block" />
+
+              {/* Gauge + Deactivate Column */}
+              <div className="flex flex-col items-center gap-2">
+                {/* Radial Epoch Gauge */}
+                <div className="relative flex flex-col items-center justify-center">
+                  <div className="relative w-16 h-16 flex items-center justify-center">
+                    <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 64 64">
+                      <defs>
+                        <linearGradient id="header-total-mined-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#00D4FF" />
+                          <stop offset="60%" stopColor="#0066FF" />
+                          <stop offset="100%" stopColor="#003CBB" />
+                        </linearGradient>
+                      </defs>
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="26"
+                        strokeWidth="5"
+                        fill="none"
+                        className="stroke-slate-200 dark:stroke-white/10"
+                      />
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="26"
+                        stroke="url(#header-total-mined-grad)"
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                        fill="none"
+                        strokeDasharray="163.36"
+                        strokeDashoffset={epochDashOffset}
+                        className="transition-all duration-700"
+                        style={{
+                          filter: "drop-shadow(0 0 6px rgba(0,212,255,0.5)) drop-shadow(0 0 10px rgba(0,102,255,0.35))",
+                        }}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span className="font-mono text-xs font-extrabold text-foreground dark:text-white leading-none">
+                        {epochProgressPercent}%
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[9px] uppercase tracking-wider font-mono mt-1 font-bold bg-gradient-to-r from-[#00D4FF] to-[#0066FF] bg-clip-text text-transparent">
+                    Epoch #{epochNumber}
+                  </span>
+                </div>
+
+                {/* Deactivate Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeactivate}
+                  disabled={isDeactivating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-xl border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 text-xs font-semibold transition-all shadow-xs"
+                >
+                  {isDeactivating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Power className="h-3.5 w-3.5" />
+                  )}
+                  <span>{t("disableMining", "Disable Mining")}</span>
+                </Button>
+              </div>
+
+            </div>
           </div>
-          <p className="text-xs sm:text-sm text-white/50 mt-1">
-            {t("subtitle", "Provide telemetry and earn $DEPTH tokens on every trade")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsWalletModalOpen(true)}
-            className="rounded-xl border-cyan/30 bg-cyan/5 text-cyan hover:bg-cyan/10 hover:text-cyan hover:border-cyan/50 text-xs font-semibold h-9 px-3.5 gap-1.5 transition-all shadow-sm"
-          >
-            <KeyRound className="h-3.5 w-3.5" />
-            <span>{t("nodeWallet", "Node Wallet")}</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDeactivate}
-            disabled={isDeactivating}
-            className="rounded-xl border-white/10 bg-white/[0.03] text-white/60 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/30 text-xs font-semibold h-9 px-3.5 transition-colors"
-          >
-            {isDeactivating ? (
-              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-            ) : null}
-            {t("disableMining", "Disable Mining")}
-          </Button>
-          <div className="flex items-center gap-2 border border-white/10 bg-white/[0.03] px-3.5 h-9 rounded-xl">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs text-white/60 font-mono font-medium">
-              {status?.nodeName || "Node"}
-            </span>
+
+          {/* Bottom 4-Cell Metric Grid */}
+          <div className="grid grid-cols-2 gap-px border-t border-border/80 dark:border-white/10 bg-border/60 dark:bg-white/10 lg:grid-cols-4">
+            
+            {/* Card 1: Today's Est. Reward */}
+            <div className="bg-card dark:bg-[#0B0F19]/80 px-5 py-3.5 transition-colors hover:bg-muted/50 dark:hover:bg-[#0B0F19] space-y-0.5">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500 font-semibold">
+                {t("todayEstReward", "Today's Est. Reward")}
+              </div>
+              <div className="mt-0.5 font-display text-base sm:text-lg font-bold tabular text-foreground dark:text-white font-mono">
+                {yourEpochReward >= 1000
+                  ? Math.round(yourEpochReward).toLocaleString("en-US").replace(/,/g, " ")
+                  : yourEpochReward.toFixed(2)}{" "}
+                $DEPTH
+              </div>
+              <div className="text-[11px] text-muted-foreground/80 dark:text-slate-400">
+                {t("todayEstRewardSubtitle", "Expected from current daily pool")}
+              </div>
+            </div>
+
+            {/* Card 2: Today's Rebates */}
+            <div className="bg-card dark:bg-[#0B0F19]/80 px-5 py-3.5 transition-colors hover:bg-muted/50 dark:hover:bg-[#0B0F19] space-y-0.5">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500 font-semibold">
+                {t("todayRebates", "Today's Rebates")}
+              </div>
+              <div className="mt-0.5 font-display text-base sm:text-lg font-bold tabular text-foreground dark:text-white font-mono">
+                ${epochTotalRebates.toFixed(2)}
+              </div>
+              <div className="text-[11px] text-muted-foreground/80 dark:text-slate-400">
+                {t("todayRebatesSubtitle", "USDT commission rebates today")}
+              </div>
+            </div>
+
+            {/* Card 3: Daily Emission Pool */}
+            <div className="bg-card dark:bg-[#0B0F19]/80 px-5 py-3.5 transition-colors hover:bg-muted/50 dark:hover:bg-[#0B0F19] space-y-0.5">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500 font-semibold">
+                {t("dailyEmission", "Daily Emission Pool")}
+              </div>
+              <div className="mt-0.5 font-display text-base sm:text-lg font-bold tabular text-foreground dark:text-white font-mono">
+                {dailyEmission % 1 !== 0
+                  ? dailyEmission.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/,/g, " ")
+                  : Math.round(dailyEmission).toLocaleString("en-US").replace(/,/g, " ")}{" "}
+                $DEPTH
+              </div>
+              <div className="text-[11px] text-muted-foreground/80 dark:text-slate-400">
+                {t("dailyEmissionSubtitle", "Shared daily emission pool")}
+              </div>
+            </div>
+
+            {/* Card 4: Total Distributed */}
+            <div className="bg-card dark:bg-[#0B0F19]/80 px-5 py-3.5 transition-colors hover:bg-muted/50 dark:hover:bg-[#0B0F19] space-y-0.5">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500 font-semibold">
+                {t("totalDistributed", "Total Distributed")}
+              </div>
+              <div className="mt-0.5 font-display text-base sm:text-lg font-bold tabular text-emerald-600 dark:text-emerald-400 font-mono">
+                {totalDistributed >= 1000
+                  ? Math.round(totalDistributed).toLocaleString("en-US").replace(/,/g, " ")
+                  : totalDistributed.toFixed(2)}{" "}
+                $DEPTH
+              </div>
+              <div className="text-[11px] text-muted-foreground/80 dark:text-slate-400">
+                {t("totalDistributedSubtitle", "Distributed across all epochs")}
+              </div>
+            </div>
+
           </div>
         </div>
-      </div>
 
       {promoStatus?.hasActiveCampaign && (
         <PromoBanner
@@ -1082,49 +1264,7 @@ const MiningHub: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* Grid Stats */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <StatCard
-              title={t("totalMined", "Total Mined")}
-              value={`${status?.totalMined?.toFixed(2) || "0.00"} $DEPTH`}
-              subtitle={t("totalMinedSubtitle", "All-time accumulated earnings")}
-              icon={Coins}
-              accent="#00d4ff"
-              isLoading={isLoading}
-            />
-            <StatCard
-              title={t("todayEstReward", "Today's Est. Reward")}
-              value={`${yourEpochReward >= 1000 ? Math.round(yourEpochReward).toLocaleString("en-US").replace(/,/g, " ") : yourEpochReward.toFixed(2)} $DEPTH`}
-              subtitle={t("todayEstRewardSubtitle", "Expected from current daily pool")}
-              icon={Flame}
-              accent="#ff5c00"
-              isLoading={isLoading}
-            />
-            <StatCard
-              title={t("todayRebates", "Today's Rebates")}
-              value={`$${epochTotalRebates.toFixed(2)}`}
-              subtitle={t("todayRebatesSubtitle", "USDT commission rebates today")}
-              icon={Activity}
-              accent="#0066ff"
-              isLoading={isLoading}
-            />
-            <StatCard
-              title={t("dailyEmission", "Daily Emission Pool")}
-              value={`${dailyEmission.toLocaleString()} $DEPTH`}
-              subtitle={t("dailyEmissionSubtitle", "Shared daily emission pool")}
-              icon={Sparkles}
-              accent="#a855f7"
-              isLoading={isLoading}
-            />
-            <StatCard
-              title={t("totalDistributed", "Total Distributed")}
-              value={`${totalDistributed >= 1000 ? Math.round(totalDistributed).toLocaleString("en-US").replace(/,/g, " ") : totalDistributed.toFixed(2)} $DEPTH`}
-              subtitle={t("totalDistributedSubtitle", "Distributed across all epochs")}
-              icon={Award}
-              accent="#10e0a0"
-              isLoading={isLoading}
-            />
-          </div>
+          {/* Overview Tab Content */}
 
           {/* Node Sharing Policy & Supported Exchanges (Side by side on lg screens) */}
           {((status?.userRewardSharePercent !== undefined || stats?.userRatio !== undefined) || groupedExchanges.length > 0) && (

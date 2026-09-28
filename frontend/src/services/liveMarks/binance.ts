@@ -1,15 +1,23 @@
 // frontend/src/services/liveMarks/binance.ts
-// Binance Futures public markPrice stream (no auth, one socket for all symbols).
+// Binance public streams (no auth, one socket for all symbols):
+// - futures: wss://fstream.binance.com markPrice@1s (mark `p`, fallback `c`)
+// - spot:    wss://stream.binance.com:9443 miniTicker (last `c`, 1s)
 import {
 	type CreateMarksAdapter,
+	type LiveMarket,
 	type MarksCallback,
 	cleanSymbol,
 } from "./types";
-import { toBinanceStream } from "./symbolMap";
+import { toBinanceFuturesStream, toBinanceSpotStream } from "./symbolMap";
 
-export const createBinanceAdapter: CreateMarksAdapter = (
+const FUTURES_BASE = "wss://fstream.binance.com/stream?streams=";
+const SPOT_BASE = "wss://stream.binance.com:9443/stream?streams=";
+
+const createBinanceWsAdapter = (
 	onTick: MarksCallback,
-) => {
+	market: LiveMarket,
+): ReturnType<CreateMarksAdapter> => {
+	const toStream = market === "spot" ? toBinanceSpotStream : toBinanceFuturesStream;
 	let ws: WebSocket | null = null;
 	let symbols: string[] = [];
 	let closed = false;
@@ -17,20 +25,22 @@ export const createBinanceAdapter: CreateMarksAdapter = (
 
 	const connect = () => {
 		if (closed || symbols.length === 0) return;
-		const streams = symbols.map(toBinanceStream).join("/");
-		ws = new WebSocket(
-			`wss://fstream.binance.com/stream?streams=${streams}`,
-		);
+		const streams = symbols.map(toStream).join("/");
+		const base = market === "spot" ? SPOT_BASE : FUTURES_BASE;
+		ws = new WebSocket(`${base}${streams}`);
 		ws.onmessage = (ev) => {
 			try {
 				const msg = JSON.parse(ev.data as string);
 				const d = msg?.data;
 				if (!d) return;
 				// markPrice stream: { s: "BTCUSDT", p: "67234.5", T: ... }
+				// miniTicker stream: { s: "BTCUSDT", c: "67230.1", ... }
 				const sym = cleanSymbol(String(d.s ?? ""));
-				const price = Number(d.p ?? d.c);
-				if (!sym || !Number.isFinite(price) || price <= 0) return;
-				onTick({ symbol: sym, price, ts: Date.now(), exchange: "binance" });
+				if (!sym || !symbols.includes(sym)) return;
+				const price =
+					market === "spot" ? Number(d.c) : Number(d.p ?? d.c);
+				if (!Number.isFinite(price) || price <= 0) return;
+				onTick({ symbol: sym, price, ts: Date.now(), exchange: "binance", market });
 			} catch {
 				/* ignore malformed tick */
 			}
@@ -86,3 +96,12 @@ export const createBinanceAdapter: CreateMarksAdapter = (
 		},
 	};
 };
+
+export const createBinanceFuturesAdapter: CreateMarksAdapter = (onTick) =>
+	createBinanceWsAdapter(onTick, "futures");
+
+export const createBinanceSpotAdapter: CreateMarksAdapter = (onTick) =>
+	createBinanceWsAdapter(onTick, "spot");
+
+/** Legacy default: futures socket (kept for backward compat). */
+export const createBinanceAdapter: CreateMarksAdapter = createBinanceFuturesAdapter;

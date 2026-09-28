@@ -1838,6 +1838,34 @@ async def get_trades(
     return result.scalars().all()
 
 
+async def get_realized_pnl_by_config(
+    db: AsyncSession, user_id: int, api_key_id: Optional[int] = None
+) -> Dict[str, float]:
+    """Sums closed-trade PnL per strategy config for exact display attribution.
+
+    Unlike the RiskManager pool (keyed by strategy *class* name and shared by
+    every strategy on the account), this maps each saved config to its own
+    lifetime realized PnL. ``api_key_id=None`` matches legacy rows with an
+    unset key (SQL ``IS NULL``); otherwise only this account's trades count.
+    """
+    query = (
+        select(models.Trade.strategy_config_id, func.sum(models.Trade.pnl))
+        .where(models.Trade.user_id == user_id)
+        .where(models.Trade.strategy_config_id.is_not(None))
+        .where(models.Trade.api_key_id == api_key_id)
+        .group_by(models.Trade.strategy_config_id)
+    )
+    result = await db.execute(query)
+    totals: Dict[str, float] = {}
+    for config_id, total in result.all():
+        if config_id:
+            try:
+                totals[str(config_id)] = float(total or 0.0)
+            except (TypeError, ValueError):
+                continue
+    return totals
+
+
 async def get_trades_with_count_by_run_id(
     db: AsyncSession, user_id: int, run_id: str, skip: int = 0, limit: int = 20
 ) -> Tuple[List[models.BacktestTrade], int]:

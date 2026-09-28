@@ -58,6 +58,8 @@ export interface StrategyData {
 	market_type: string;
 	status: string;
 	pnl: number;
+	unrealized_pnl?: number | null;
+	realized_pnl?: number | null;
 	open_positions: number;
 	started_at: string;
 	params: Record<string, unknown>;

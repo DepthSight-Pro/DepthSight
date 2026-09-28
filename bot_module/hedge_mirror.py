@@ -9,12 +9,18 @@ One strategy runs on two exchanges (two API keys, two TradingControllers):
   because each leg's controller leads its own position lifecycle.
 
 Exit coupling is configurable per hedge group (``exit_policy``):
-- ``INDEPENDENT`` (default): legs live until their own TP/SL. The only
-  coupling is the paired launch. Best for decorrelated markets: a leg that
-  did not hit its stop may still ride into profit after the sibling closed.
-- ``RACE_FINAL_MARKET``: the first leg's FINAL exit publishes a
+- ``RACE_FINAL_MARKET`` (default): the first leg's FINAL exit publishes a
   ``HEDGE_CLOSE_LEG`` command; the sibling controller market-closes its
   position for the same symbol/group immediately.
+- ``SPREAD_PROFIT_EXIT``: one-sided spread take-profit. Each leg publishes
+  its live mark/PnL to Redis; when the PAIR unrealized PnL (my pnl +
+  sibling pnl, direction-agnostic by construction) reaches
+  ``spread_exit_threshold_pct`` of the combined notional, the leg closes
+  itself and market-closes the sibling. Requires ``FIXED_NOTIONAL`` sizing
+  (equal notionals are what maps spread deviation to pair PnL).
+- ``INDEPENDENT``: legs live until their own TP/SL. The only coupling is
+  the paired launch. Best for decorrelated markets: a leg that did not hit
+  its stop may still ride into profit after the sibling closed.
 - ``MOVE_SL_TO_BE``: reserved for a future soft-coupling (ratchet sibling
   SL to breakeven instead of market-closing). Currently behaves as
   ``INDEPENDENT``.
@@ -23,7 +29,12 @@ Volume sync is configurable per hedge group (``size_mode``):
 - ``FIXED_NOTIONAL`` (default): both legs open the same USD notional
   (``notional_usd``), so rebate farming earns symmetric volume on both
   exchanges. Implemented as an implied risk-budget override before
-  RiskManager sizing; lot-step rounding and safety caps may leave dust.
+  RiskManager sizing; lot-step rounding and safety caps may still cause dust.
+- ``SYNC_STEP``: strict volume sync. Both legs quantize down to the shared
+  lot step (``qty_step``, the coarsest step of the two exchanges, resolved
+  at launch), enter simultaneously, verify executed quantities post-fill,
+  and watch for orphan legs (``entry_sync_timeout_sec``). Either both legs
+  hold equal volumes or neither holds a position.
 - ``INDEPENDENT``: each leg sizes by the strategy's own risk % of its
   account balance (volumes will differ across accounts).
 
@@ -35,6 +46,7 @@ stop-loss mechanism.
 from __future__ import annotations
 
 import logging
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, Optional
 
 from bot_module.datatypes import (
@@ -52,21 +64,156 @@ HEDGE_EXIT_INDEPENDENT = "INDEPENDENT"
 HEDGE_EXIT_RACE_FINAL_MARKET = "RACE_FINAL_MARKET"
 HEDGE_EXIT_MOVE_SL_TO_BE = "MOVE_SL_TO_BE"
 
+HEDGE_EXIT_SPREAD_PROFIT = "SPREAD_PROFIT_EXIT"
+
 HEDGE_EXIT_POLICIES = (
-    HEDGE_EXIT_INDEPENDENT,
     HEDGE_EXIT_RACE_FINAL_MARKET,
+    HEDGE_EXIT_INDEPENDENT,
     HEDGE_EXIT_MOVE_SL_TO_BE,
+    HEDGE_EXIT_SPREAD_PROFIT,
 )
 
-HEDGE_DEFAULT_EXIT_POLICY = HEDGE_EXIT_INDEPENDENT
+HEDGE_DEFAULT_EXIT_POLICY = HEDGE_EXIT_RACE_FINAL_MARKET
+
+# Spread-exit tuning (seconds / percent).
+HEDGE_SPREAD_CHECK_INTERVAL_SEC = 3.0
+HEDGE_SIBLING_STALE_SEC = 5.0
+HEDGE_MARK_TTL_SEC = 30
+HEDGE_COOLDOWN_TTL_SEC = 300
+HEDGE_DEFAULT_SPREAD_THRESHOLD_PCT = 0.5
+HEDGE_DEFAULT_SPREAD_COOLDOWN_SEC = 60
+
+HEDGE_REDIS_PREFIX = "depthsight:hedge"
+
+
+def hedge_mark_key(group_id: str, symbol: str, leg: str) -> str:
+    """Redis key for one leg's live mark/PnL snapshot."""
+    return f"{HEDGE_REDIS_PREFIX}:mark:{group_id}:{str(symbol).upper()}:{leg}"
+
+
+def hedge_cooldown_key(group_id: str, symbol: str) -> str:
+    """Redis key holding the last spread-trigger timestamp."""
+    return f"{HEDGE_REDIS_PREFIX}:spread_cool:{group_id}:{str(symbol).upper()}"
+
+
+def hedge_entry_key(group_id: str, symbol: str, leg: str) -> str:
+    """Redis key for one leg's executed entry (qty/price/ts)."""
+    return f"{HEDGE_REDIS_PREFIX}:entry:{group_id}:{str(symbol).upper()}:{leg}"
+
+
+HEDGE_ENTRY_TTL_SEC = 7 * 24 * 3600  # entry proof must outlive positions
+
+
+def quantize_to_shared_step(
+    qty: float, shared_step: float, own_step: float
+) -> Optional[float]:
+    """Floors ``qty`` to the shared hedge lot step (exact-sync volumes).
+
+    Returns None when syncing is unsafe: non-positive inputs, a shared step
+    finer than the leg's own step (stale specs — caller falls back), steps
+    that are not integer multiples of each other, or a non-positive result.
+    """
+    try:
+        q = Decimal(str(qty))
+        shared = Decimal(str(shared_step))
+        own = Decimal(str(own_step))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if q <= 0 or shared <= 0 or own <= 0:
+        return None
+    ratio = shared / own
+    if abs(ratio - round(ratio)) > Decimal("1e-9"):
+        return None
+    steps = (q / shared).to_integral_value(rounding=ROUND_DOWN)
+    if steps <= 0:
+        return None
+    return float(steps * shared)
+
+
+def hedge_spread_stats_key(group_id: str, symbol: str) -> str:
+    """Redis hash with spread-exit stats (exits/dev_sum_pct/last_ts/threshold).
+
+    Lets us rank venue pairs by how often they actually pay, instead of
+    guessing. Read with HGETALL; fields are plain numbers/strings.
+    """
+    return f"{HEDGE_REDIS_PREFIX}:spread_stats:{group_id}:{str(symbol).upper()}"
+
+
+HEDGE_SPREAD_STATS_TTL_SEC = 30 * 24 * 3600
+
+
+def sibling_leg(leg: Optional[str]) -> Optional[str]:
+    if leg == "A":
+        return "B"
+    if leg == "B":
+        return "A"
+    return None
+
+
+def spread_trigger_fires(
+    *,
+    my_pnl: float,
+    sibling_pnl: float,
+    combined_notional_usd: float,
+    threshold_pct: float,
+) -> bool:
+    """One-sided spread take-profit test (pure, direction-agnostic).
+
+    Both PnLs are already signed, so no leg-direction logic is needed here:
+    the pair earns exactly when their sum is positive. Fires only when pair
+    profit reaches ``threshold_pct`` percent of the combined notional.
+    """
+    try:
+        combined = float(combined_notional_usd)
+        threshold = float(threshold_pct)
+    except (TypeError, ValueError):
+        return False
+    if combined <= 0 or threshold <= 0:
+        return False
+    try:
+        pair_pnl = float(my_pnl) + float(sibling_pnl)
+    except (TypeError, ValueError):
+        return False
+    return pair_pnl >= combined * threshold / 100.0
+
+
+def pair_pnl_pct(
+    *,
+    my_pnl: float,
+    sibling_pnl: float,
+    combined_notional_usd: float,
+) -> Optional[float]:
+    """Pair unrealized PnL in percent of combined notional (None if unknown)."""
+    try:
+        combined = float(combined_notional_usd)
+    except (TypeError, ValueError):
+        return None
+    if combined <= 0:
+        return None
+    try:
+        return (float(my_pnl) + float(sibling_pnl)) / combined * 100.0
+    except (TypeError, ValueError):
+        return None
+
 
 HEDGE_SIDE_MODE_OPPOSITE = "OPPOSITE"
 
 HEDGE_SIZE_FIXED_NOTIONAL = "FIXED_NOTIONAL"
 HEDGE_SIZE_INDEPENDENT = "INDEPENDENT"
+HEDGE_SIZE_SYNC_STEP = "SYNC_STEP"
 HEDGE_DEFAULT_SIZE_MODE = HEDGE_SIZE_FIXED_NOTIONAL
+HEDGE_SIZE_MODES = (
+    HEDGE_SIZE_FIXED_NOTIONAL,
+    HEDGE_SIZE_INDEPENDENT,
+    HEDGE_SIZE_SYNC_STEP,
+)
 
 HEDGE_CLOSE_REASON_PREFIX = "HEDGE_RACE"
+HEDGE_SPREAD_REASON_PREFIX = "HEDGE_SPREAD"
+HEDGE_SYNC_FAIL_REASON_PREFIX = "HEDGE_SYNC_FAIL"
+
+HEDGE_CLOSE_REASON_PREFIX = "HEDGE_RACE"
+HEDGE_SPREAD_REASON_PREFIX = "HEDGE_SPREAD"
 
 
 def get_hedge_config(running_instance_config: Any) -> Optional[Dict[str, Any]]:
@@ -344,19 +491,21 @@ def build_hedge_race_close_command(
     group_id: str,
     symbol: str,
     market_type: Optional[str] = None,
+    reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Builds a CLOSE_POSITION command that shuts the sibling hedge leg.
 
     Reuses the existing CLOSE_POSITION command path (filtered by
     ``api_key_id`` in every controller's Redis listener); the ``reason``
-    carries the HEDGE_RACE prefix so the receiving leg does not re-broadcast.
+    carries a HEDGE_* prefix so the receiving leg does not re-broadcast.
     """
+    group_short = str(group_id)[:8]
     payload: Dict[str, Any] = {
         "user_id": user_id,
         "api_key_id": api_key_id,
         "hedge_group_id": group_id,
         "symbol": symbol,
-        "reason": f"{HEDGE_CLOSE_REASON_PREFIX}:{group_id[:8]}",
+        "reason": reason or f"{HEDGE_CLOSE_REASON_PREFIX}:{group_short}",
     }
     if market_type:
         payload["market_type"] = market_type

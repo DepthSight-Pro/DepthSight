@@ -607,6 +607,20 @@ class TradingController:
         ] = {}  # config_id -> (instance, full_config_dict)
         self.instances_lock = asyncio.Lock()  # Lock to protect the new dictionary
 
+        # Display realized PnL keyed by SOURCE config id (exact per-card
+        # attribution). The RiskManager pool is keyed by strategy CLASS name
+        # and shared by every strategy on this account, so it must never be
+        # used for per-card display. Seeded from the trades table at start,
+        # then accumulated on every final exit (no extra DB reads per publish).
+        self._realized_pnl_by_config: Dict[str, float] = {}
+        self._realized_pnl_seeded: bool = False
+
+        # Hedge SYNC pairing latch: entry_client_order_ids that have observed
+        # a fresh sibling entry at least once. Latched positions are never
+        # treated as orphans by the entry watchdog, even after the sibling's
+        # Redis entry proof expires.
+        self._hedge_paired_positions: Set[str] = set()
+
         # Adding a task to listen for commands from Redis
         self._redis_listener_task: Optional[asyncio.Task] = None
         # HFT event listener
@@ -1090,6 +1104,9 @@ class TradingController:
         await self.load_symbol_selection_config()
 
         await self._load_runtime_state()
+
+        # Seed exact per-config realized PnL for cards (fail-open).
+        await self._seed_realized_pnl_by_config()
 
         # Synchronization with the exchange (picking up "lost" positions and removing closed ones)
         await self._reconcile_positions_with_exchange()
@@ -1899,6 +1916,50 @@ class TradingController:
     def _source_config_id(self, config_dict: dict) -> Optional[str]:
         """Returns the source strategy config id of a running instance payload."""
         return config_dict.get("config_id") or config_dict.get("id")
+
+    def _accumulate_realized_pnl(
+        self, config_id: Optional[str], pnl: Optional[float]
+    ) -> None:
+        """Adds a closed trade's PnL to the per-config display tracker."""
+        if not config_id:
+            return
+        if pnl is None:
+            return
+        try:
+            value = float(pnl)
+        except (TypeError, ValueError):
+            return
+        if value != value:  # NaN guard
+            return
+        key = str(config_id)
+        self._realized_pnl_by_config[key] = (
+            self._realized_pnl_by_config.get(key, 0.0) + value
+        )
+
+    async def _seed_realized_pnl_by_config(self) -> None:
+        """One-time load of lifetime realized PnL per config from the trades table."""
+        if self._realized_pnl_seeded:
+            return
+        try:
+            async for db in self.get_db_session():
+                seed = await crud.get_realized_pnl_by_config(
+                    db, user_id=self.user_id, api_key_id=self.api_key_id
+                )
+                for config_id, total in seed.items():
+                    self._realized_pnl_by_config[str(config_id)] = (
+                        self._realized_pnl_by_config.get(str(config_id), 0.0) + total
+                    )
+                self._realized_pnl_seeded = True
+                logger.info(
+                    f"[RealizedSeed] Loaded realized PnL for "
+                    f"{len(seed)} configs (user={self.user_id}, "
+                    f"api_key_id={self.api_key_id})."
+                )
+        except Exception as e_seed:
+            logger.warning(
+                f"[RealizedSeed] Failed to seed per-config realized PnL "
+                f"(non-fatal, live exits still accumulate): {e_seed}"
+            )
 
     def _instance_covers_symbol(self, config_dict: dict, symbol: Optional[str]) -> bool:
         """True if the instance's symbol coverage includes the given symbol."""
@@ -4719,29 +4780,20 @@ class TradingController:
                 symbols_list = config_dict.get("symbols", [])
                 symbols_str = ", ".join(symbols_list) if symbols_list else "None"
 
-            # Strategy PnL = Realized (from RM) + Unrealized (from current positions)
-            # Realized PnL is tracked per (symbol, strategy_name); sum over the
-            # instance's covered symbols so copies on different coins don't share PnL.
-            realized_pnl = 0.0
-            if (
-                config_dict.get("symbol_selection_mode") or "STATIC"
-            ).upper() == "STATIC":
-                perf_symbols = config_dict.get("symbols", [])
-            else:
-                perf_symbols = []
-            if perf_symbols:
-                for perf_symbol in perf_symbols:
-                    realized_pnl += self.rm.get_pnl_for_strategy(
-                        symbol=perf_symbol, strategy_name=instance.NAME
-                    )
-            else:
-                realized_pnl = self.rm.get_pnl_for_strategy(
-                    symbol=None, strategy_name=instance.NAME
-                )
+            # Strategy PnL = Realized (exact per-config display tracker) +
+            # Unrealized (from current positions). NOTE: rm.get_pnl_for_strategy
+            # is keyed by strategy CLASS name and shared by every strategy on
+            # this account, so it must NOT feed per-card display (it inflated
+            # cards and grew with unrelated closes).
+            source_config_id_for_pnl = self._source_config_id(config_dict)
+            realized_pnl = self._realized_pnl_by_config.get(
+                str(source_config_id_for_pnl) if source_config_id_for_pnl else "",
+                0.0,
+            )
 
             unrealized_pnl_strat = 0.0
             instance_open_positions = 0
-            source_config_id = self._source_config_id(config_dict)
+            source_config_id = source_config_id_for_pnl
             for pos in active_positions_copy:
                 # Count only truly open positions: CLOSING/zombie entries must
                 # not inflate the card counter (positions list filters them too).
@@ -4778,7 +4830,10 @@ class TradingController:
                 .get("marketType", "PAPER")
                 .lower(),
                 "status": "in_position" if instance_open_positions > 0 else "running",
-                "pnl": round(total_instance_pnl, 4),
+                "pnl": round(unrealized_pnl_strat, 4),
+                "unrealized_pnl": round(unrealized_pnl_strat, 4),
+                "realized_pnl": round(realized_pnl, 4),
+                "total_pnl": round(total_instance_pnl, 4),
                 "open_positions": instance_open_positions,
                 "started_at": config_dict.get(
                     "started_at", datetime.now(timezone.utc).isoformat()
@@ -5182,6 +5237,15 @@ class TradingController:
             60  # Reconciliation once per minute (sufficient for prevention)
         )
 
+        # Hedge spread exits (SPREAD_PROFIT_EXIT legs publish marks and
+        # evaluate pair profit; spreads live seconds-minutes, 3s is enough).
+        last_hedge_spread_time = 0
+        hedge_spread_interval = 3.0
+
+        # Hedge SYNC entry watchdog (lone legs that never paired up).
+        last_hedge_sync_time = 0
+        hedge_sync_interval = 10.0
+
         while self._running:
             token = user_id_context.set(self.user_id)
             try:
@@ -5234,6 +5298,26 @@ class TradingController:
                         name=f"PeriodicReconcile_{self.user_id}",
                     )
                     last_reconcile_time = now
+
+                # 7. Hedge spread exits (own step: throttled inside)
+                if now - last_hedge_spread_time >= hedge_spread_interval:
+                    try:
+                        await self._check_hedge_spread_exits()
+                    except Exception as e_spread:
+                        logger.debug(
+                            f"Hedge spread check failed (non-fatal): {e_spread}"
+                        )
+                    last_hedge_spread_time = now
+
+                # 8. Hedge SYNC entry watchdog (own step: throttled inside)
+                if now - last_hedge_sync_time >= hedge_sync_interval:
+                    try:
+                        await self._check_hedge_entry_sync()
+                    except Exception as e_sync:
+                        logger.debug(
+                            f"Hedge entry-sync watchdog failed (non-fatal): {e_sync}"
+                        )
+                    last_hedge_sync_time = now
 
             except Exception as e:
                 logger.error(f"Error in periodic tasks loop: {e}", exc_info=True)
@@ -8746,6 +8830,26 @@ class TradingController:
                 return
 
             final_initial_quantity = initial_quantity_adj
+            # HEDGE SYNC_STEP: quantize to the shared lot step so both legs
+            # open identical volumes despite different exchange lot grids.
+            # On sync failure the own entry is aborted AND the sibling is
+            # closed (atomicity: either equal volumes or no positions).
+            hedge_sync_result = await self._apply_hedge_sync_step(
+                signal=signal,
+                approved_qty=initial_quantity_adj,
+                lot_params=lot_params,
+                running_instance_config=running_instance_config,
+                log_prefix=log_prefix,
+                market_type=market_type,
+            )
+            if hedge_sync_result is not None:
+                if hedge_sync_result <= 0:
+                    return  # aborted + sibling cancelled inside
+                final_initial_quantity = hedge_sync_result
+                logger.info(
+                    f"{log_prefix} Hedge SYNC_STEP applied. Final Qty: "
+                    f"{final_initial_quantity} (was {initial_quantity_adj})."
+                )
             entry_client_order_id = f"x-entry-{uuid.uuid4().hex[:14]}"
             if executor and hasattr(executor, "format_client_order_id"):
                 formatted_cid = executor.format_client_order_id(entry_client_order_id)
@@ -9806,6 +9910,22 @@ class TradingController:
                 logger.info(
                     f"{log_prefix} Final fill status for entry. Proceeding to place/update Take Profit orders based on final qty {position.initial_quantity:.8f}."
                 )
+                # Hedge SYNC_STEP: broadcast the executed entry and verify the
+                # sibling opened the identical volume (atomicity).
+                try:
+                    await self._publish_hedge_entry_event(position, symbol)
+                except Exception as e_entry_pub:
+                    logger.debug(
+                        f"{log_prefix} Hedge entry publish failed (non-fatal): "
+                        f"{e_entry_pub}"
+                    )
+                try:
+                    await self._verify_hedge_entry_sync(position, symbol)
+                except Exception as e_entry_verify:
+                    logger.debug(
+                        f"{log_prefix} Hedge entry verify failed (non-fatal): "
+                        f"{e_entry_verify}"
+                    )
                 use_virtual_spot_tps = self._position_should_use_virtual_spot_tps(
                     position, executor_for_entry_fill
                 )
@@ -11059,6 +11179,20 @@ class TradingController:
                         logger.info(
                             f"{log_prefix} Successfully saved trade to database."
                         )
+
+                        # Exact per-config display attribution (see
+                        # _realized_pnl_by_config): accumulate AFTER the trade
+                        # is safely stored so display never drifts from the DB.
+                        try:
+                            self._accumulate_realized_pnl(
+                                trade_data_for_db.get("strategy_config_id"),
+                                trade_data_for_db.get("pnl"),
+                            )
+                        except Exception as e_acc:
+                            logger.debug(
+                                f"{log_prefix} Realized display accumulation "
+                                f"failed (non-fatal): {e_acc}"
+                            )
 
                         # Federated Trade-Mining Telemetry
                         try:
@@ -15539,24 +15673,33 @@ class TradingController:
     def _maybe_publish_hedge_race_close(
         self, position: LivePosition, reason: str
     ) -> None:
-        """Fire-and-forget sibling close for RACE_FINAL_MARKET hedge groups.
+        """Fire-and-forget sibling close for coupled hedge groups.
 
-        No-op for INDEPENDENT groups (default), for HEDGE-originated exits
+        Fires for RACE_FINAL_MARKET on any final exit, and for
+        SPREAD_PROFIT_EXIT on any NON-spread final exit (individual TP/SL,
+        manual, emergency) — a lone surviving leg must never stay naked
+        directional. Spread-triggered exits send their own command already.
+        No-op for INDEPENDENT groups, for HEDGE-originated exits
         (loop guard), and when the sibling cannot be addressed. Safe to call
         from inside the position lock: only schedules an async publish task.
         """
         from bot_module.hedge_mirror import (
-            HEDGE_CLOSE_REASON_PREFIX,
             HEDGE_EXIT_RACE_FINAL_MARKET,
+            HEDGE_EXIT_SPREAD_PROFIT,
             build_hedge_race_close_command,
         )
 
-        if reason and HEDGE_CLOSE_REASON_PREFIX in str(reason).upper():
+        # Loop guard: any HEDGE_* exit (RACE, SPREAD, or a received sibling
+        # close) never re-broadcasts — the originator already sent the command.
+        if reason and "HEDGE_" in str(reason).upper():
             return
         signal_details = getattr(position, "signal_details", None)
         if not isinstance(signal_details, dict):
             return
-        if signal_details.get("hedge_exit_policy") != HEDGE_EXIT_RACE_FINAL_MARKET:
+        if signal_details.get("hedge_exit_policy") not in (
+            HEDGE_EXIT_RACE_FINAL_MARKET,
+            HEDGE_EXIT_SPREAD_PROFIT,
+        ):
             return
         group_id = signal_details.get("hedge_group_id")
         sibling_key_id = signal_details.get("hedge_sibling_api_key_id")
@@ -15605,6 +15748,685 @@ class TradingController:
             )
         except Exception as e:
             logger.warning(f"Hedge command publish failed: {e}")
+
+    @staticmethod
+    def _hedge_position_side(direction: Any) -> int:
+        """+1 for LONG, -1 for SHORT, 0 when unknown (SignalDirection-safe)."""
+        name = str(getattr(direction, "name", direction) or "").upper()
+        if name == "LONG":
+            return 1
+        if name == "SHORT":
+            return -1
+        return 0
+
+    async def _check_hedge_spread_exits(self) -> None:
+        """Spread take-profit for SPREAD_PROFIT_EXIT hedge legs (periodic).
+
+        Every OPEN hedge leg publishes its live mark/PnL to Redis and reads
+        the sibling's snapshot. When pair PnL (mine + sibling, already signed
+        so no direction logic is needed) reaches the configured threshold of
+        the combined notional, this leg market-closes itself and asks the
+        sibling to do the same. Stale sibling data never triggers.
+        """
+        from bot_module.hedge_mirror import HEDGE_EXIT_SPREAD_PROFIT
+
+        if self.redis_client is None:
+            return
+        try:
+            async with self._positions_dict_lock:
+                positions = list(self._active_positions.values())
+        except Exception:
+            return
+        for position in positions:
+            try:
+                if getattr(position, "status", None) != "OPEN":
+                    continue
+                details = getattr(position, "signal_details", None)
+                if not isinstance(details, dict):
+                    continue
+                if details.get("hedge_exit_policy") != HEDGE_EXIT_SPREAD_PROFIT:
+                    continue
+                if not details.get("hedge_group_id") or not details.get("hedge_leg"):
+                    continue
+                await self._hedge_spread_tick(position, details)
+            except Exception as e_tick:
+                logger.debug(f"[HedgeSpread] Tick failed (non-fatal): {e_tick}")
+
+    async def _hedge_spread_tick(self, position: LivePosition, details: dict) -> None:
+        """One spread evaluation for a single OPEN hedge position."""
+        from bot_module import hedge_mirror as hm
+
+        group_id = str(details.get("hedge_group_id"))
+        leg = details.get("hedge_leg")
+        sib_leg = hm.sibling_leg(leg)
+        if not sib_leg:
+            return
+        symbol = position.symbol
+
+        # 1. Hedge config (threshold/cooldown/notional) from the running instance.
+        found = await self._find_running_instance_by_symbol(symbol, position.config_id)
+        hedge_cfg = (
+            (found[2].get("config_data", {}) or {}).get("hedge") if found else None
+        )
+        if not isinstance(hedge_cfg, dict):
+            return
+        if (
+            str(hedge_cfg.get("size_mode") or "").upper()
+            != hm.HEDGE_SIZE_FIXED_NOTIONAL
+        ):
+            return
+        try:
+            notional = float(hedge_cfg.get("notional_usd") or 0.0)
+            threshold_pct = float(
+                hedge_cfg.get(
+                    "spread_exit_threshold_pct",
+                    hm.HEDGE_DEFAULT_SPREAD_THRESHOLD_PCT,
+                )
+            )
+            cooldown_sec = float(
+                hedge_cfg.get(
+                    "spread_exit_cooldown_sec", hm.HEDGE_DEFAULT_SPREAD_COOLDOWN_SEC
+                )
+            )
+        except (TypeError, ValueError):
+            return
+        if notional <= 0 or threshold_pct <= 0 or cooldown_sec < 0:
+            return
+
+        # 2. Own live mark/PnL + publish.
+        mark = None
+        try:
+            if self.consumer is not None:
+                mark = await self.consumer.get_latest_price(symbol)
+        except Exception:
+            mark = None
+        try:
+            mark_f = float(mark)
+        except (TypeError, ValueError):
+            return
+        try:
+            entry_f = float(position.entry_price)
+            qty_f = float(position.remaining_quantity)
+        except (TypeError, ValueError):
+            return
+        my_side = self._hedge_position_side(position.direction)
+        if my_side == 0 or qty_f <= 0:
+            return
+        my_pnl = (mark_f - entry_f) * qty_f * my_side
+        now = time.time()
+        try:
+            await self.redis_client.set(
+                hm.hedge_mark_key(group_id, symbol, leg),
+                json.dumps(
+                    {
+                        "mark": mark_f,
+                        "pnl": my_pnl,
+                        "qty": qty_f,
+                        "entry": entry_f,
+                        "direction": str(
+                            getattr(position.direction, "name", position.direction)
+                        ).upper(),
+                        "ts": now,
+                        "api_key_id": getattr(position, "api_key_id", None),
+                    },
+                    default=str,
+                ),
+                ex=hm.HEDGE_MARK_TTL_SEC,
+            )
+        except Exception as e_pub:
+            logger.debug(f"[HedgeSpread:{symbol}] Mark publish failed: {e_pub}")
+            return
+
+        # 3. Sibling snapshot (fresh only).
+        try:
+            raw = await self.redis_client.get(
+                hm.hedge_mark_key(group_id, symbol, sib_leg)
+            )
+        except Exception:
+            return
+        if not raw:
+            return
+        try:
+            sib = json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw)
+        except Exception:
+            return
+        if not isinstance(sib, dict):
+            return
+        try:
+            sib_ts = float(sib.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            return
+        if now - sib_ts > hm.HEDGE_SIBLING_STALE_SEC:
+            return
+        sib_side = self._hedge_position_side(sib.get("direction"))
+        if sib_side == 0 or sib_side == my_side:
+            logger.debug(
+                f"[HedgeSpread:{symbol}] Sibling leg has unexpected direction "
+                f"(mine={my_side}, sibling={sib_side}). Skipping."
+            )
+            return
+        try:
+            sib_pnl = float(sib.get("pnl"))
+        except (TypeError, ValueError):
+            return
+
+        # 4. Cooldown (shared per group+symbol so a fresh pair can't instantly
+        # re-trigger on stale data right after a close).
+        cool_key = hm.hedge_cooldown_key(group_id, symbol)
+        try:
+            cool_raw = await self.redis_client.get(cool_key)
+            if cool_raw is not None and now - float(cool_raw) < cooldown_sec:
+                return
+        except (TypeError, ValueError):
+            pass
+        except Exception:
+            return
+
+        # 5. One-sided trigger on pair profit.
+        combined = 2.0 * notional
+        if not hm.spread_trigger_fires(
+            my_pnl=my_pnl,
+            sibling_pnl=sib_pnl,
+            combined_notional_usd=combined,
+            threshold_pct=threshold_pct,
+        ):
+            return
+        deviation_pct = hm.pair_pnl_pct(
+            my_pnl=my_pnl, sibling_pnl=sib_pnl, combined_notional_usd=combined
+        )
+        logger.info(
+            f"[HedgeSpread:{symbol}] SPREAD EXIT triggered (group={group_id}, "
+            f"pair_pnl_pct={deviation_pct}, threshold={threshold_pct}%). "
+            f"Closing both legs."
+        )
+        try:
+            await self.redis_client.set(
+                cool_key, str(now), ex=hm.HEDGE_COOLDOWN_TTL_SEC
+            )
+        except Exception:
+            pass
+        # Spread-exit stats for pair ranking (which venue pairs pay).
+        try:
+            stats_key = hm.hedge_spread_stats_key(group_id, symbol)
+            await self.redis_client.hincrby(stats_key, "exits", 1)
+            if deviation_pct is not None:
+                await self.redis_client.hincrbyfloat(
+                    stats_key, "dev_sum_pct", float(deviation_pct)
+                )
+            await self.redis_client.hset(
+                stats_key,
+                mapping={
+                    "last_ts": str(now),
+                    "threshold_pct": str(threshold_pct),
+                    "symbol": symbol,
+                },
+            )
+            await self.redis_client.expire(stats_key, hm.HEDGE_SPREAD_STATS_TTL_SEC)
+        except Exception as e_stats:
+            logger.debug(
+                f"[HedgeSpread:{symbol}] Stats record failed (non-fatal): {e_stats}"
+            )
+        try:
+            if isinstance(details, dict):
+                details["hedge_spread_exit_deviation_pct"] = deviation_pct
+        except Exception:
+            pass
+        sibling_key_id = details.get("hedge_sibling_api_key_id")
+        try:
+            sibling_id = (
+                int(sibling_key_id)
+                if sibling_key_id is not None
+                else (await self._hedge_sibling_key_from_config(position))
+            )
+        except (TypeError, ValueError):
+            sibling_id = None
+        self.loop.create_task(
+            self.close_position(
+                symbol,
+                f"{hm.HEDGE_SPREAD_REASON_PREFIX}:{group_id[:8]}",
+                market_type=getattr(position, "market_type", None),
+            ),
+            name=f"HedgeSpreadClose_{symbol}",
+        )
+        if sibling_id is not None:
+            cmd = hm.build_hedge_race_close_command(
+                user_id=getattr(position, "user_id", None) or self.user_id,
+                api_key_id=sibling_id,
+                group_id=group_id,
+                symbol=symbol,
+                market_type=getattr(position, "market_type", None),
+                reason=f"{hm.HEDGE_SPREAD_REASON_PREFIX}:{group_id[:8]}",
+            )
+            self.loop.create_task(
+                self._publish_hedge_command(cmd),
+                name=f"HedgeSpreadRace_{symbol}",
+            )
+
+    async def _hedge_sibling_key_from_config(
+        self, position: LivePosition
+    ) -> Optional[int]:
+        """Resolves the sibling api_key_id from the running instance config."""
+        found = await self._find_running_instance_by_symbol(
+            position.symbol, position.config_id
+        )
+        if not found:
+            return None
+        hedge_cfg = (found[2].get("config_data", {}) or {}).get("hedge")
+        if not isinstance(hedge_cfg, dict):
+            return None
+        try:
+            return int(hedge_cfg.get("sibling_api_key_id"))
+        except (TypeError, ValueError):
+            return None
+
+    async def _hedge_sibling_key_from_config(
+        self, position: LivePosition
+    ) -> Optional[int]:
+        """Resolves the sibling api_key_id from the running instance config."""
+        found = await self._find_running_instance_by_symbol(
+            position.symbol, position.config_id
+        )
+        if not found:
+            return None
+        hedge_cfg = (found[2].get("config_data", {}) or {}).get("hedge")
+        if not isinstance(hedge_cfg, dict):
+            return None
+        try:
+            return int(hedge_cfg.get("sibling_api_key_id"))
+        except (TypeError, ValueError):
+            return None
+
+    async def _hedge_sync_config_for_position(
+        self, position: LivePosition
+    ) -> Optional[dict]:
+        """Returns the hedge block when this position belongs to a SYNC_STEP leg."""
+        from bot_module import hedge_mirror as hm
+
+        details = getattr(position, "signal_details", None)
+        if not isinstance(details, dict):
+            return None
+        if str(details.get("hedge_size_mode") or "").upper() != hm.HEDGE_SIZE_SYNC_STEP:
+            # Fall back to the instance config (tags may predate SYNC_STEP).
+            found = await self._find_running_instance_by_symbol(
+                position.symbol, position.config_id
+            )
+            if not found:
+                return None
+            hedge_cfg = (found[2].get("config_data", {}) or {}).get("hedge")
+            if not isinstance(hedge_cfg, dict):
+                return None
+            if str(hedge_cfg.get("size_mode") or "").upper() != hm.HEDGE_SIZE_SYNC_STEP:
+                return None
+            return hedge_cfg
+        # Tags confirm SYNC_STEP: still prefer the full instance config.
+        found = await self._find_running_instance_by_symbol(
+            position.symbol, position.config_id
+        )
+        if found:
+            hedge_cfg = (found[2].get("config_data", {}) or {}).get("hedge")
+            if (
+                isinstance(hedge_cfg, dict)
+                and str(hedge_cfg.get("size_mode") or "").upper()
+                == hm.HEDGE_SIZE_SYNC_STEP
+            ):
+                return hedge_cfg
+        return None
+
+    def _hedge_sync_timeout(self, hedge_cfg: dict) -> float:
+        try:
+            timeout = float(hedge_cfg.get("entry_sync_timeout_sec", 120.0))
+        except (TypeError, ValueError):
+            timeout = 120.0
+        return max(0.0, timeout)
+
+    async def _publish_hedge_entry_event(
+        self, position: LivePosition, symbol: str
+    ) -> None:
+        """Broadcasts this leg's executed entry for SYNC_STEP verification."""
+        from bot_module import hedge_mirror as hm
+
+        if self.redis_client is None:
+            return
+        details = getattr(position, "signal_details", None)
+        if not isinstance(details, dict):
+            return
+        group_id = details.get("hedge_group_id")
+        leg = details.get("hedge_leg")
+        if not group_id or leg not in ("A", "B"):
+            return
+        hedge_cfg = await self._hedge_sync_config_for_position(position)
+        if hedge_cfg is None:
+            return
+        try:
+            qty = float(position.initial_quantity)
+        except (TypeError, ValueError):
+            return
+        if qty <= 0:
+            return
+        await self.redis_client.set(
+            hm.hedge_entry_key(str(group_id), symbol, str(leg)),
+            json.dumps(
+                {
+                    "qty": qty,
+                    "price": getattr(position, "entry_price", None),
+                    "ts": time.time(),
+                    "leg": leg,
+                    "api_key_id": getattr(position, "api_key_id", None),
+                },
+                default=str,
+            ),
+            ex=hm.HEDGE_ENTRY_TTL_SEC,
+        )
+        logger.debug(
+            f"[HedgeSync:{symbol}] Entry event published (leg={leg}, qty={qty})."
+        )
+
+    async def _close_hedge_pair_for_sync_fail(
+        self,
+        *,
+        symbol: str,
+        group_id: str,
+        sibling_key_id: Any,
+        position: LivePosition,
+        why: str,
+    ) -> None:
+        """Closes both legs after a SYNC_STEP integrity failure (idempotent)."""
+        from bot_module import hedge_mirror as hm
+
+        logger.warning(
+            f"[HedgeSync:{symbol}] {why} Closing both legs (group={group_id})."
+        )
+        reason = f"{hm.HEDGE_SYNC_FAIL_REASON_PREFIX}:{str(group_id)[:8]}"
+        self.loop.create_task(
+            self.close_position(
+                symbol,
+                reason,
+                market_type=getattr(position, "market_type", None),
+            ),
+            name=f"HedgeSyncClose_{symbol}",
+        )
+        try:
+            sibling_id = int(sibling_key_id)
+        except (TypeError, ValueError):
+            return
+        try:
+            cmd = hm.build_hedge_race_close_command(
+                user_id=getattr(position, "user_id", None) or self.user_id,
+                api_key_id=sibling_id,
+                group_id=str(group_id),
+                symbol=symbol,
+                market_type=getattr(position, "market_type", None),
+                reason=reason,
+            )
+            await self._publish_hedge_command(cmd)
+        except Exception as e_pub:
+            logger.debug(f"[HedgeSync:{symbol}] Sibling cancel publish failed: {e_pub}")
+
+    async def _verify_hedge_entry_sync(
+        self, position: LivePosition, symbol: str
+    ) -> None:
+        """Post-fill check: sibling entry must exist, be fresh and match qty."""
+        from bot_module import hedge_mirror as hm
+
+        if self.redis_client is None:
+            return
+        details = getattr(position, "signal_details", None)
+        if not isinstance(details, dict):
+            return
+        group_id = details.get("hedge_group_id")
+        leg = details.get("hedge_leg")
+        sib_leg = hm.sibling_leg(leg)
+        if not group_id or not sib_leg:
+            return
+        hedge_cfg = await self._hedge_sync_config_for_position(position)
+        if hedge_cfg is None:
+            return
+        timeout = self._hedge_sync_timeout(hedge_cfg)
+        window = max(timeout, 60.0)
+        try:
+            my_qty = float(position.initial_quantity)
+            my_entry_ts = float(position.entry_time or 0.0)
+        except (TypeError, ValueError):
+            return
+        try:
+            raw = await self.redis_client.get(
+                hm.hedge_entry_key(str(group_id), symbol, sib_leg)
+            )
+        except Exception:
+            return
+        if not raw:
+            return  # sibling not filled yet: the watchdog covers lateness
+        try:
+            sib = json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw)
+        except Exception:
+            return
+        if not isinstance(sib, dict):
+            return
+        try:
+            sib_ts = float(sib.get("ts") or 0.0)
+            sib_qty = float(sib.get("qty"))
+        except (TypeError, ValueError):
+            return
+        if abs(sib_ts - my_entry_ts) > window:
+            await self._close_hedge_pair_for_sync_fail(
+                symbol=symbol,
+                group_id=str(group_id),
+                sibling_key_id=details.get("hedge_sibling_api_key_id"),
+                position=position,
+                why=(
+                    f"sibling entry is stale (mine={my_entry_ts:.0f}, "
+                    f"sibling={sib_ts:.0f}, window={window:.0f}s)."
+                ),
+            )
+            return
+        if abs(sib_qty - my_qty) > 1e-8:
+            await self._close_hedge_pair_for_sync_fail(
+                symbol=symbol,
+                group_id=str(group_id),
+                sibling_key_id=details.get("hedge_sibling_api_key_id"),
+                position=position,
+                why=f"executed qty mismatch (mine={my_qty}, sibling={sib_qty}).",
+            )
+            return
+        # Paired and matching: latch so the watchdog never treats this leg
+        # as an orphan, even after the sibling's entry proof expires.
+        pair_key = getattr(position, "entry_client_order_id", None) or (
+            f"{symbol}:{position.entry_time}"
+        )
+        self._hedge_paired_positions.add(pair_key)
+
+    async def _check_hedge_entry_sync(self) -> None:
+        """Watchdog: close a lone SYNC leg whose sibling never entered.
+
+        A leg that has once observed a fresh sibling entry is latched as
+        paired and never treated as an orphan afterwards — even after the
+        sibling's Redis entry proof expires.
+        """
+        from bot_module import hedge_mirror as hm
+
+        if self.redis_client is None:
+            return
+        try:
+            async with self._positions_dict_lock:
+                positions = list(self._active_positions.values())
+        except Exception:
+            return
+        now = time.time()
+        for position in positions:
+            try:
+                if getattr(position, "status", None) != "OPEN":
+                    continue
+                pair_key = getattr(position, "entry_client_order_id", None) or (
+                    f"{position.symbol}:{position.entry_time}"
+                )
+                if pair_key in self._hedge_paired_positions:
+                    continue
+                details = getattr(position, "signal_details", None)
+                if not isinstance(details, dict):
+                    continue
+                group_id = details.get("hedge_group_id")
+                leg = details.get("hedge_leg")
+                sib_leg = hm.sibling_leg(leg)
+                if not group_id or not sib_leg:
+                    continue
+                hedge_cfg = await self._hedge_sync_config_for_position(position)
+                if hedge_cfg is None:
+                    continue
+                timeout = self._hedge_sync_timeout(hedge_cfg)
+                if timeout <= 0:
+                    continue  # watchdog disabled by configuration
+                try:
+                    my_entry_ts = float(position.entry_time or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                paired = False
+                try:
+                    raw = await self.redis_client.get(
+                        hm.hedge_entry_key(str(group_id), position.symbol, sib_leg)
+                    )
+                except Exception:
+                    raw = None
+                if raw:
+                    try:
+                        sib = (
+                            json.loads(raw)
+                            if isinstance(raw, (str, bytes))
+                            else dict(raw)
+                        )
+                        sib_ts = float(sib.get("ts") or 0.0)
+                        paired = abs(sib_ts - my_entry_ts) <= max(timeout, 60.0)
+                    except Exception:
+                        paired = False
+                if paired:
+                    self._hedge_paired_positions.add(pair_key)
+                    continue
+                if now - my_entry_ts < timeout:
+                    continue
+                await self._close_hedge_pair_for_sync_fail(
+                    symbol=position.symbol,
+                    group_id=str(group_id),
+                    sibling_key_id=details.get("hedge_sibling_api_key_id"),
+                    position=position,
+                    why=(
+                        f"sibling leg did not enter within {timeout:.0f}s of this leg."
+                    ),
+                )
+            except Exception as e_tick:
+                logger.debug(f"[HedgeSync] Watchdog tick failed: {e_tick}")
+
+    async def _apply_hedge_sync_step(
+        self,
+        *,
+        signal: StrategySignal,
+        approved_qty: float,
+        lot_params: Optional[dict],
+        running_instance_config: dict,
+        log_prefix: str,
+        market_type: Optional[str] = None,
+    ) -> Optional[float]:
+        """Quantizes an approved qty to the shared hedge lot step.
+
+        Returns the synced qty, None when this is not a SYNC_STEP leg
+        (caller proceeds normally), or 0.0 when the entry must be aborted
+        (own entry skipped AND sibling closed for pair atomicity).
+        """
+        from bot_module import hedge_mirror as hm
+
+        hedge_cfg = hm.get_hedge_config(running_instance_config)
+        if not hedge_cfg:
+            return None
+        if str(hedge_cfg.get("size_mode") or "").upper() != hm.HEDGE_SIZE_SYNC_STEP:
+            return None
+        steps = hedge_cfg.get("qty_steps") or {}
+        shared_step = None
+        if isinstance(steps, dict):
+            try:
+                shared_step = float(steps.get(signal.symbol.upper()))
+            except (TypeError, ValueError):
+                shared_step = None
+        if not shared_step or shared_step <= 0:
+            logger.warning(
+                f"{log_prefix} Hedge SYNC_STEP has no shared step for "
+                f"{signal.symbol}. Proceeding unsynced (fail-open)."
+            )
+            return None
+
+        lot = lot_params if isinstance(lot_params, dict) else {}
+        try:
+            own_step = float(lot.get("stepSize") or shared_step)
+        except (TypeError, ValueError):
+            own_step = shared_step
+        try:
+            min_qty = float(lot.get("minQty") or 0.0)
+        except (TypeError, ValueError):
+            min_qty = 0.0
+        try:
+            max_qty = float(lot.get("maxQty") or float("inf"))
+        except (TypeError, ValueError):
+            max_qty = float("inf")
+
+        synced = hm.quantize_to_shared_step(approved_qty, shared_step, own_step)
+
+        async def _abort_sync(reason: str) -> float:
+            logger.warning(f"{log_prefix} Hedge SYNC_STEP aborted: {reason}")
+            try:
+                self.trade_logger.log_event(
+                    event_type="SIGNAL_REJECTED_HEDGE_SYNC",
+                    data={
+                        "symbol": signal.symbol,
+                        "strategy": signal.strategy_name,
+                        "reason": reason,
+                        **(signal.details if isinstance(signal.details, dict) else {}),
+                    },
+                )
+            except Exception:
+                pass
+            try:
+                group_id = str(hedge_cfg.get("group_id") or "")
+                sibling_key_id = hedge_cfg.get("sibling_api_key_id")
+                if group_id and sibling_key_id is not None:
+                    cmd = hm.build_hedge_race_close_command(
+                        user_id=running_instance_config.get("user_id") or self.user_id,
+                        api_key_id=int(sibling_key_id),
+                        group_id=group_id,
+                        symbol=signal.symbol,
+                        market_type=market_type,
+                        reason=f"{hm.HEDGE_SYNC_FAIL_REASON_PREFIX}:{group_id[:8]}",
+                    )
+                    await self._publish_hedge_command(cmd)
+            except Exception as e_cancel:
+                logger.debug(
+                    f"{log_prefix} Hedge SYNC sibling cancel failed: {e_cancel}"
+                )
+            return 0.0
+
+        if synced is None:
+            return await _abort_sync(
+                f"cannot quantize qty {approved_qty} to shared step {shared_step} "
+                f"(own step {own_step})"
+            )
+        if synced <= 0:
+            return await _abort_sync(
+                f"quantized qty {synced} is not positive "
+                f"(approved {approved_qty}, shared step {shared_step})"
+            )
+        if min_qty > 0 and synced < min_qty:
+            return await _abort_sync(
+                f"synced qty {synced} below exchange minQty {min_qty}"
+            )
+        if synced > max_qty:
+            return await _abort_sync(
+                f"synced qty {synced} above exchange maxQty {max_qty}"
+            )
+        try:
+            if signal.details is None:
+                signal.details = {}
+            if isinstance(signal.details, dict):
+                signal.details["hedge_qty_synced"] = synced
+                signal.details["hedge_qty_step"] = shared_step
+        except Exception:
+            pass
+        return synced
 
     async def close_position(
         self,

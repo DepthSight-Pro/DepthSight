@@ -1,30 +1,58 @@
 // frontend/src/services/liveMarks/index.ts
-// Groups open symbols by exchange, keeps max 1 socket per exchange.
+// Groups open symbols by exchange+market, keeps max 1 socket per group.
 import { normalizeKlineExchange } from "@/services/exchangeKlineService";
-import { createBinanceAdapter } from "./binance";
-import { createBybitAdapter } from "./bybit";
-import { createOkxAdapter } from "./okx";
-import { createBitgetAdapter } from "./bitget";
-import { createWeexAdapter } from "./weex";
+import {
+	createBinanceFuturesAdapter,
+	createBinanceSpotAdapter,
+} from "./binance";
+import {
+	createBybitFuturesAdapter,
+	createBybitSpotAdapter,
+} from "./bybit";
+import { createOkxFuturesAdapter, createOkxSpotAdapter } from "./okx";
+import {
+	createBitgetFuturesAdapter,
+	createBitgetSpotAdapter,
+} from "./bitget";
+import { createWeexFuturesAdapter, createWeexSpotAdapter } from "./weex";
 import {
 	type CreateMarksAdapter,
+	type LiveMarket,
 	type MarksCallback,
 	type MarksHandle,
 	cleanSymbol,
+	normalizeLiveMarket,
 } from "./types";
 
 const REGISTRY: Record<string, CreateMarksAdapter> = {
-	binance: createBinanceAdapter,
-	bybit: createBybitAdapter,
-	okx: createOkxAdapter,
-	bitget: createBitgetAdapter,
-	weex: createWeexAdapter,
+	binance: createBinanceFuturesAdapter,
+	binance_spot: createBinanceSpotAdapter,
+	bybit: createBybitFuturesAdapter,
+	bybit_spot: createBybitSpotAdapter,
+	okx: createOkxFuturesAdapter,
+	okx_spot: createOkxSpotAdapter,
+	bitget: createBitgetFuturesAdapter,
+	bitget_spot: createBitgetSpotAdapter,
+	weex: createWeexFuturesAdapter,
+	weex_spot: createWeexSpotAdapter,
 };
 
 export interface LiveSymbol {
 	symbol: string;
 	exchange?: string | null;
+	/** Raw market scope ("spot", "futures_usdtm", ...). Defaults to futures. */
+	market?: string | null;
 }
+
+/** Group key: "<exchange>" for futures, "<exchange>_spot" for spot. */
+export const groupKeyFor = (
+	exchange?: string | null,
+	market?: string | null,
+): string => {
+	const ex = normalizeKlineExchange(exchange);
+	const mkt: LiveMarket = normalizeLiveMarket(market ?? exchange);
+	return mkt === "spot" ? `${ex}_spot` : ex;
+};
 
 export const groupByExchange = (
 	items: LiveSymbol[],
@@ -33,9 +61,9 @@ export const groupByExchange = (
 	for (const it of items) {
 		const sym = cleanSymbol(it.symbol);
 		if (!sym) continue;
-		const ex = normalizeKlineExchange(it.exchange);
-		if (!groups[ex]) groups[ex] = [];
-		if (!groups[ex].includes(sym)) groups[ex].push(sym);
+		const key = groupKeyFor(it.exchange, it.market);
+		if (!groups[key]) groups[key] = [];
+		if (!groups[key].includes(sym)) groups[key].push(sym);
 	}
 	return groups;
 };
@@ -53,7 +81,8 @@ export const createLiveMarksManager = (onTick: MarksCallback) => {
 			}
 		}
 		for (const [ex, syms] of Object.entries(groups)) {
-			const factory = REGISTRY[ex] ?? REGISTRY.binance;
+			const base = ex.endsWith("_spot") ? ex.slice(0, -5) : ex;
+			const factory = REGISTRY[ex] ?? REGISTRY[base] ?? REGISTRY.binance;
 			if (!handles[ex]) handles[ex] = factory(onTick);
 			handles[ex].setSymbols(syms);
 		}

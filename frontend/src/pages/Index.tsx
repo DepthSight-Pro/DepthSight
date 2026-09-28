@@ -42,6 +42,7 @@ import { useLiveMarks } from "@/hooks/useLiveMarks";
 import {
 	applyLiveMarksToPositions,
 	overlayLiveStrategyPnl,
+	readMarketOf,
 } from "@/lib/livePnl";
 import {
 	useConfig,
@@ -454,6 +455,7 @@ const Index = () => {
 			(realPositions || []).map((p: PositionData) => ({
 				symbol: String(p.symbol),
 				exchange: (p.exchange as string | null) ?? null,
+				market: readMarketOf(p),
 			})),
 		[realPositions],
 	);

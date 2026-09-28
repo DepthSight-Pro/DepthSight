@@ -8,7 +8,10 @@
 	"colStrategy": "Strategy Type",
 	"colSymbols": "Symbols",
 	"colRuntime": "Runtime",
-	"colTotalPnl": "Total PnL",
+	"colTotalPnl": "Unrealized P&L",
+	"colUnrealizedPnl": "Unrealized P&L",
+	"statUnrealizedPnl": "Unrealized P&L",
+	"statRealizedPnl": "Unrealized P&L",
 	"noStrategies": "No saved strategy configurations found.",
 	"searchPlaceholder": "Search strategies...",
 	"openPositions": "Open Positions",
@@ -134,7 +137,9 @@
 		"noStrategySelectedDesc": "Click on a running instance from the list to view its live details."
 	},
 	"overviewTab": {
-		"totalPnl": "Total PnL",
+		"totalPnl": "Unrealized P&L",
+		"unrealizedPnl": "Unrealized P&L",
+		"realizedPnl": "Realized P&L",
 		"status": "Status",
 		"symbol": "Symbol(s)",
 		"marketType": "Market Type",

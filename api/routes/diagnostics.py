@@ -429,6 +429,129 @@ async def proxy_klines(
     return rows
 
 
+# --- Funding proxy cache: {cache_key: (cached_at_epoch, payload)} ---
+_FUNDING_CACHE: Dict[str, Any] = {}
+_FUNDING_CACHE_TTL_SECONDS = 60.0
+
+
+@diagnostics_router.get(
+    "/proxy/funding",
+    summary="Current funding rate for a futures symbol (public market data)",
+)
+async def proxy_funding(
+    symbol: str,
+    response: Response,
+    exchange: str = "binance",
+    current_user: models.User = Depends(get_current_user),
+):
+    """Unified multi-exchange funding proxy (public market data, no API keys).
+
+    Uses ccxt ``fetch_funding_rate`` and normalizes to:
+    ``{exchange, symbol, funding_rate, predicted_rate, next_funding_time_ms,
+    interval_hours}``. Results are cached for 60s (funding barely moves).
+    """
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    exchange_id = _normalize_kline_exchange(exchange)
+    if exchange_id not in SUPPORTED_KLINE_EXCHANGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported exchange '{exchange}'. "
+            f"Supported: {sorted(SUPPORTED_KLINE_EXCHANGES)}",
+        )
+    symbol_upper = (symbol or "").strip().upper()
+    if not symbol_upper:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query param 'symbol' is required (e.g. ZECUSDT).",
+        )
+
+    cache_key = f"{exchange_id}:{symbol_upper}"
+    now_epoch = datetime.now(timezone.utc).timestamp()
+    cached = _FUNDING_CACHE.get(cache_key)
+    if cached and (now_epoch - cached[0]) < _FUNDING_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        import asyncio
+
+        import ccxt.async_support as ccxt
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"ccxt is not installed: {exc}",
+        )
+
+    ccxt_symbol = _to_ccxt_swap_symbol(symbol_upper)
+    default_type = "future" if exchange_id == "binance" else "swap"
+
+    exchange_instance = None
+    try:
+        exchange_cls = getattr(ccxt, exchange_id, None)
+        if exchange_cls is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Exchange '{exchange_id}' is not available in ccxt",
+            )
+        exchange_instance = exchange_cls(
+            {
+                "enableRateLimit": True,
+                "timeout": 15000,
+                "options": {"defaultType": default_type},
+            }
+        )
+        funding = await asyncio.wait_for(
+            exchange_instance.fetch_funding_rate(ccxt_symbol),
+            timeout=25,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            f"Unified funding proxy failed for {symbol_upper} on {exchange_id}: {exc}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{exchange_id} funding error for {symbol_upper}: {exc}",
+        )
+    finally:
+        if exchange_instance is not None:
+            try:
+                await exchange_instance.close()
+            except Exception:
+                pass
+
+    def _as_float(value: Any) -> Optional[float]:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed == parsed else None  # filter NaN
+
+    info = funding.get("info") if isinstance(funding, dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+    collect_cycle_min = _as_float(info.get("collectCycle"))
+    next_ms_raw = funding.get("nextFundingTimestamp") or info.get("nextFundingTime")
+    try:
+        next_ms = int(next_ms_raw) if next_ms_raw is not None else None
+    except (TypeError, ValueError):
+        next_ms = None
+    payload = {
+        "exchange": exchange_id,
+        "symbol": symbol_upper,
+        "funding_rate": _as_float(funding.get("fundingRate")),
+        "predicted_rate": _as_float(
+            funding.get("nextFundingRate", info.get("forecastFundingRate"))
+        ),
+        "next_funding_time_ms": next_ms,
+        "interval_hours": (collect_cycle_min / 60.0)
+        if collect_cycle_min and collect_cycle_min > 0
+        else 8.0,
+    }
+    _FUNDING_CACHE[cache_key] = (now_epoch, payload)
+    return payload
+
+
 @diagnostics_router.get(
     "/diagnostics/preview-foundation",
     response_model=schemas.ApiResponseData[schemas.FoundationPreviewResponse],

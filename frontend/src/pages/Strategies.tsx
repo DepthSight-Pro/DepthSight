@@ -20,12 +20,14 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { PageLayout } from "@/components/layout/PageLayout";
+import { usePortfolioMode } from "@/context/PortfolioModeContext";
 import { useWebSocket } from "@/context/WebSocketProvider";
 import { useLiveMarks } from "@/hooks/useLiveMarks";
 import { normalizeExchangeKey } from "@/lib/exchanges";
 import {
 	applyLiveMarksToPositions,
 	overlayLiveStrategyPnl,
+	readMarketOf,
 } from "@/lib/livePnl";
 import { resolveStrategyTimeframe } from "@/lib/strategyMeta";
 import { ConfirmationModal } from "@/components/shared/ConfirmationModal";
@@ -57,7 +59,23 @@ import {
 import { cumulativePnlByStrategy } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { useAccountStore } from "@/stores/accountStore";
-import type { PositionData, StrategyConfig, StrategyData } from "@/types/api";
+import type {
+	MarketScope,
+	PositionData,
+	StrategyConfig,
+	StrategyData,
+} from "@/types/api";
+
+// Market filter values from the header scope switcher (AppHeader):
+// "all" | "futures_usdtm" | "spot". Strategy/position payloads carry
+// variants ("FUTURES", "futures", "futures_usdtm", "SPOT", "spot"),
+// so normalize before comparing. Mirrors Index normalizeMarketScope.
+const normalizeScopeMarket = (v: unknown): MarketScope => {
+	if (!v || v === "all") return "all";
+	return String(v).toLowerCase().startsWith("spot")
+		? "spot"
+		: "futures_usdtm";
+};
 
 // Helper to format runtime
 const calculateRuntime = (startTime: string | undefined): string => {
@@ -76,7 +94,14 @@ const resolveStrategyEquity = (
 	equityMap?: Map<string, number[]>,
 ): number[] => {
 	if (!equityMap) return [];
-	const candidateKeys: (string | undefined | null)[] = [
+	const cardApiKeyId =
+		s.legInstance?.api_key_id ??
+		primary?.api_key_id ??
+		(s.instances && s.instances.length === 1 ? s.instances[0].api_key_id : undefined) ??
+		s.api_key_id;
+
+	const baseCandidates: (string | undefined | null)[] = [
+		s.sourceConfigId ? String(s.sourceConfigId) : undefined,
 		s.id ? String(s.id) : undefined,
 		primary?.config_id ? String(primary.config_id) : undefined,
 		s.name,
@@ -88,13 +113,25 @@ const resolveStrategyEquity = (
 
 	if (s.instances && s.instances.length > 0) {
 		for (const inst of s.instances) {
-			candidateKeys.push(
+			baseCandidates.push(
 				inst.config_id ? String(inst.config_id) : undefined,
 				inst.name,
 				inst.strategy_name,
 				inst.id ? String(inst.id) : undefined,
 			);
 		}
+	}
+
+	const candidateKeys: string[] = [];
+	// If card is scoped to an account (e.g. hedge leg or single-account run), prioritize scoped key
+	if (cardApiKeyId !== null && cardApiKeyId !== undefined) {
+		for (const k of baseCandidates) {
+			if (k) candidateKeys.push(`${k}::${cardApiKeyId}`);
+		}
+	}
+	// Fallback to unscoped keys
+	for (const k of baseCandidates) {
+		if (k) candidateKeys.push(k);
 	}
 
 	let bestMatch: number[] = [];
@@ -131,12 +168,26 @@ const FAVORITES_STORAGE_KEY = "depthsight_favorite_strategies";
 export default function Strategies() {
 	const { t } = useTranslation(["strategies", "common"]);
 	const navigate = useNavigate();
-	const { selectedApiKeyId } = useAccountStore();
+	const { mode } = usePortfolioMode();
+	const { selectedApiKeyId, selectedMarketType } = useAccountStore();
 	const { readyState } = useWebSocket();
 	const wsLive = readyState === 1;
 	const strategiesPoll = wsLive ? false : 5000;
 
-	// Fetch live and paper running strategies (push-driven; poll on WS outage)
+	// Scope mirrors the Positions tab (Positions.tsx hookParams):
+	// live mode follows the header account + market scope, paper mode is
+	// unscoped (single simulated account). The other mode is hidden so each
+	// regime can be inspected separately.
+	const scopeApiKeyId =
+		mode === "live" && selectedApiKeyId !== "all"
+			? selectedApiKeyId
+			: undefined;
+	const scopeMarket: MarketScope =
+		mode === "live" ? normalizeScopeMarket(selectedMarketType) : "all";
+
+	// Fetch running strategies (push-driven; poll on WS outage).
+	// Both modes stay subscribed so the Live/Paper toggle is instant;
+	// only the active mode is displayed below.
 	const {
 		data: liveRunning = [],
 		isLoading: isLoadingLive,
@@ -184,24 +235,35 @@ export default function Strategies() {
 			limit: 10000,
 		});
 
-	const allTrades = useMemo(() => {
-		const live = liveTradesData?.trades || [];
-		const paper = paperTradesData?.trades || [];
-		return [...live, ...paper];
-	}, [liveTradesData, paperTradesData]);
+	// Equity sparklines follow the visible mode (and the selected account in
+	// live mode) so cards never plot the hidden regime's closed trades.
+	const scopedTrades = useMemo(() => {
+		const trades =
+			mode === "live"
+				? liveTradesData?.trades || []
+				: paperTradesData?.trades || [];
+		if (mode !== "live" || scopeApiKeyId === undefined) return trades;
+		return trades.filter((tr) => {
+			const keyId =
+				(tr as { api_key_id?: unknown }).api_key_id ?? null;
+			return keyId != null && Number(keyId) === Number(scopeApiKeyId);
+		});
+	}, [mode, liveTradesData, paperTradesData, scopeApiKeyId]);
 
 	const strategyEquity = useMemo(
-		() => cumulativePnlByStrategy(allTrades),
-		[allTrades],
+		() => cumulativePnlByStrategy(scopedTrades),
+		[scopedTrades],
 	);
 
 	const isInitialLoading =
-		isLoadingLive || isLoadingPaper || isLoadingConfigs;
+		isLoadingConfigs || (mode === "live" ? isLoadingLive : isLoadingPaper);
 
 	const runningStrategies = useMemo(() => {
-		// Dedupe by instance id: live/paper queries + WS pushes can deliver
-		// the same instance twice, which doubled Total P&L.
-		const all = [...liveRunning, ...paperRunning];
+		// Only the active portfolio mode is shown; the other regime stays
+		// hidden so Live/Paper can be inspected separately (like Positions).
+		// Dedupe by instance id: query + WS pushes can deliver the same
+		// instance twice, which doubled Total P&L.
+		const all = mode === "live" ? liveRunning : paperRunning;
 		const seen = new Set<string>();
 		return all.filter((inst) => {
 			const key = String(
@@ -209,30 +271,87 @@ export default function Strategies() {
 			);
 			if (seen.has(key)) return false;
 			seen.add(key);
+			// Header account scope (live only; paper is a single account).
+			if (
+				scopeApiKeyId !== undefined &&
+				inst.api_key_id != null &&
+				Number(inst.api_key_id) !== Number(scopeApiKeyId)
+			) {
+				return false;
+			}
+			// Header market scope (live only; /strategies has no server-side
+			// market filter, so apply it on the client). Untagged instances
+			// default to futures (same as the /positions server default).
+			if (scopeMarket !== "all") {
+				const rawMarket =
+					(inst as { market_type?: unknown }).market_type ??
+					(inst as { marketType?: unknown }).marketType;
+				const instMarket =
+					rawMarket === null || rawMarket === undefined || rawMarket === ""
+						? "futures_usdtm"
+						: normalizeScopeMarket(rawMarket);
+				if (instMarket !== scopeMarket) return false;
+			}
 			return true;
 		});
-	}, [liveRunning, paperRunning]);
+	}, [mode, liveRunning, paperRunning, scopeApiKeyId, scopeMarket]);
 
 	// Live overlay for strategy PnL: snapshot positions give entry/qty,
 	// exchange ticks move the unrealized part (indicative, like Positions tab).
 	// Push snapshots keep these queries fresh; poll only on socket outage.
-	const { data: liveModePositions } = usePositions({
-		mode: "live",
-		refetchInterval: strategiesPoll,
-	});
-	const { data: paperModePositions } = usePositions({
-		mode: "paper",
-		refetchInterval: strategiesPoll,
-	});
-	const snapshotPositions = useMemo(
-		() => [...(liveModePositions ?? []), ...(paperModePositions ?? [])],
-		[liveModePositions, paperModePositions],
-	);
+	// Scope mirrors Positions tab: live follows header account + market,
+	// paper is unscoped. Only the active mode feeds the overlay.
+	const { data: liveModePositions, refetch: refetchLivePositions } =
+		usePositions({
+			mode: "live",
+			apiKeyId: selectedApiKeyId,
+			marketType: selectedMarketType,
+			refetchInterval: strategiesPoll,
+		});
+	const { data: paperModePositions, refetch: refetchPaperPositions } =
+		usePositions({
+			mode: "paper",
+			refetchInterval: strategiesPoll,
+		});
+	const snapshotPositions = useMemo(() => {
+		const src = mode === "live" ? liveModePositions : paperModePositions;
+		const list = [...(src ?? [])];
+		if (mode !== "live") return list;
+		// Server already filters live by account + market; re-filter as a
+		// guard against WS-merged rows from other scopes in shared caches.
+		return list.filter((p) => {
+			if (
+				scopeApiKeyId !== undefined &&
+				p.api_key_id != null &&
+				Number(p.api_key_id) !== Number(scopeApiKeyId)
+			) {
+				return false;
+			}
+			if (scopeMarket !== "all") {
+				const rawMarket =
+					(p as { market_type?: unknown }).market_type ??
+					(p as { marketType?: unknown }).marketType;
+				const pm =
+					rawMarket === null || rawMarket === undefined || rawMarket === ""
+						? "futures_usdtm"
+						: normalizeScopeMarket(rawMarket);
+				if (pm !== scopeMarket) return false;
+			}
+			return true;
+		});
+	}, [
+		mode,
+		liveModePositions,
+		paperModePositions,
+		scopeApiKeyId,
+		scopeMarket,
+	]);
 	const liveStrategySymbols = useMemo(
 		() =>
 			snapshotPositions.map((p: PositionData) => ({
 				symbol: String(p.symbol),
 				exchange: p.exchange ?? null,
+				market: readMarketOf(p),
 			})),
 		[snapshotPositions],
 	);
@@ -463,16 +582,23 @@ export default function Strategies() {
 		[combinedStrategies],
 	);
 
-	const totalRealizedPnl = useMemo(() => {
-		// Sum unique instances only so Total P&L matches the sum of cards.
+	const totalUnrealizedPnl = useMemo(() => {
+		// Sum unrealized PnL of the visible (header-scoped) mode only,
+		// deduplicated per (config, account) so the header matches the
+		// positions tab.
 		const seen = new Set<string>();
 		return liveRunningStrategies.reduce((sum, inst) => {
 			const key = String(
-				inst.id ?? `${inst.config_id}-${inst.mode}-${inst.api_key_id}`,
+				inst.config_id ?? inst.id ?? `${inst.mode}-${inst.api_key_id}`,
 			);
-			if (seen.has(key)) return sum;
-			seen.add(key);
-			return sum + (inst.pnl || 0);
+			const scoped = `${key}::${inst.api_key_id ?? ""}`;
+			if (seen.has(scoped)) return sum;
+			seen.add(scoped);
+			const pnlVal =
+				inst.unrealized_pnl !== undefined && inst.unrealized_pnl !== null
+					? Number(inst.unrealized_pnl)
+					: Number(inst.pnl || 0);
+			return sum + pnlVal;
 		}, 0);
 	}, [liveRunningStrategies]);
 
@@ -495,6 +621,8 @@ export default function Strategies() {
 		refetchConfigs();
 		refetchLiveTrades();
 		refetchPaperTrades();
+		refetchLivePositions();
+		refetchPaperPositions();
 	};
 
 	// Start strategy -> open LaunchStrategyModal
@@ -676,17 +804,17 @@ export default function Strategies() {
 						icon={<Play size={14} />}
 					/>
 					<Stat
-						label={t("statRealizedPnl", "Total P&L")}
+						label={t("statUnrealizedPnl", "Unrealized P&L")}
 						value={
 							<span
 								className={
-									totalRealizedPnl >= 0 ? "text-profit" : "text-rose-400"
+									totalUnrealizedPnl >= 0 ? "text-profit" : "text-rose-400"
 								}
 							>
-								{fmt.usd(totalRealizedPnl, 2)}
+								{fmt.usd(totalUnrealizedPnl, 2)}
 							</span>
 						}
-						accent={totalRealizedPnl >= 0 ? "#00d4ff" : "#ff3b5c"}
+						accent={totalUnrealizedPnl >= 0 ? "#00d4ff" : "#ff3b5c"}
 						icon={<TrendingUp size={14} />}
 					/>
 					<Stat
@@ -1109,7 +1237,7 @@ export default function Strategies() {
 												{fmt.signed(pnl, 2)} USDT
 											</div>
 											<div className="text-[10px] text-white/35">
-												{t("colTotalPnl", "Total P&L")}
+												{t("colUnrealizedPnl", "Unrealized P&L")}
 											</div>
 										</div>
 									</div>

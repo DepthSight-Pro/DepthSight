@@ -12,11 +12,18 @@ from bot_module.datatypes import (
 from bot_module.hedge_mirror import (
     HEDGE_DEFAULT_EXIT_POLICY,
     get_hedge_config,
+    hedge_cooldown_key,
+    hedge_entry_key,
+    hedge_mark_key,
     invert_signal,
     is_mirror_leg,
     maybe_apply_hedge_sizing,
     maybe_mirror_hedge_signal,
     mirror_price,
+    pair_pnl_pct,
+    quantize_to_shared_step,
+    sibling_leg,
+    spread_trigger_fires,
     tag_hedge_details,
 )
 
@@ -250,3 +257,203 @@ def test_sizing_applies_to_mirrored_leg():
     sized = maybe_apply_hedge_sizing(mirrored, payload)
     assert sized.risk_usd == pytest.approx(200.0 * 10.0 / 1000.0)
     assert sized.details["hedge_leg"] == "B"
+
+
+def test_sibling_leg():
+    assert sibling_leg("A") == "B"
+    assert sibling_leg("B") == "A"
+    assert sibling_leg(None) is None
+    assert sibling_leg("X") is None
+
+
+def test_hedge_redis_keys():
+    assert (
+        hedge_mark_key("grp", "zecusdt", "A") == "depthsight:hedge:mark:grp:ZECUSDT:A"
+    )
+    assert (
+        hedge_cooldown_key("grp", "ZECUSDT")
+        == "depthsight:hedge:spread_cool:grp:ZECUSDT"
+    )
+    assert (
+        hedge_entry_key("grp", "ZECUSDT", "B") == "depthsight:hedge:entry:grp:ZECUSDT:B"
+    )
+
+
+def test_quantize_to_shared_step_weex_case():
+    # The live case: $20 notional at ~1.54 with a shared step of 10.
+    assert quantize_to_shared_step(12.96, 10.0, 10.0) == pytest.approx(10.0)
+    assert quantize_to_shared_step(12.96, 10.0, 0.001) == pytest.approx(10.0)
+    assert quantize_to_shared_step(25.0, 10.0, 1.0) == pytest.approx(20.0)
+
+
+def test_quantize_to_shared_step_rejects_unsafe():
+    assert quantize_to_shared_step(5.0, 10.0, 10.0) is None  # rounds to zero
+    assert quantize_to_shared_step(10.0, 0.0, 0.001) is None
+    assert quantize_to_shared_step(10.0, -1.0, 0.001) is None
+    assert quantize_to_shared_step(0.0, 10.0, 10.0) is None
+    # Incommensurable steps: syncing would silently desync.
+    assert quantize_to_shared_step(10.0, 0.5, 0.3) is None
+    assert quantize_to_shared_step("bad", 10.0, 10.0) is None
+
+
+def test_spread_trigger_fires_on_profit():
+    # Pair +$1.0 on $200 combined = +0.5% >= 0.5% threshold.
+    assert (
+        spread_trigger_fires(
+            my_pnl=0.6,
+            sibling_pnl=0.4,
+            combined_notional_usd=200.0,
+            threshold_pct=0.5,
+        )
+        is True
+    )
+
+
+def test_spread_trigger_direction_agnostic():
+    # Same economics expressed from the SHORT leg's perspective.
+    assert (
+        spread_trigger_fires(
+            my_pnl=0.4,
+            sibling_pnl=0.6,
+            combined_notional_usd=200.0,
+            threshold_pct=0.5,
+        )
+        is True
+    )
+
+
+def test_spread_trigger_ignores_loss_and_noise():
+    # Below threshold: no fire.
+    assert (
+        spread_trigger_fires(
+            my_pnl=0.3,
+            sibling_pnl=0.2,
+            combined_notional_usd=200.0,
+            threshold_pct=0.5,
+        )
+        is False
+    )
+    # Adverse move must NEVER fire (one-sided by design).
+    assert (
+        spread_trigger_fires(
+            my_pnl=-5.0,
+            sibling_pnl=1.0,
+            combined_notional_usd=200.0,
+            threshold_pct=0.5,
+        )
+        is False
+    )
+
+
+def test_spread_trigger_rejects_garbage():
+    assert (
+        spread_trigger_fires(
+            my_pnl=10.0,
+            sibling_pnl=10.0,
+            combined_notional_usd=0.0,
+            threshold_pct=0.5,
+        )
+        is False
+    )
+    assert (
+        spread_trigger_fires(
+            my_pnl=10.0,
+            sibling_pnl=10.0,
+            combined_notional_usd=200.0,
+            threshold_pct=0.0,
+        )
+        is False
+    )
+    assert (
+        spread_trigger_fires(
+            my_pnl="bad",
+            sibling_pnl=1.0,
+            combined_notional_usd=200.0,
+            threshold_pct=0.5,
+        )
+        is False
+    )
+
+
+def test_pair_pnl_pct():
+    assert pair_pnl_pct(
+        my_pnl=1.0, sibling_pnl=1.0, combined_notional_usd=200.0
+    ) == pytest.approx(1.0)
+    assert pair_pnl_pct(my_pnl=1.0, sibling_pnl=1.0, combined_notional_usd=0.0) is None
+
+
+def test_spread_policy_requires_fixed_notional():
+    from pydantic import ValidationError
+
+    from api.schemas import HedgeLaunchConfig
+
+    ok = HedgeLaunchConfig(
+        enabled=True,
+        leg_b_api_key_id=2,
+        exit_policy="SPREAD_PROFIT_EXIT",
+        size_mode="FIXED_NOTIONAL",
+        notional_usd=100.0,
+        spread_exit_threshold_pct=0.5,
+    )
+    assert ok.exit_policy == "SPREAD_PROFIT_EXIT"
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_PROFIT_EXIT",
+            size_mode="INDEPENDENT",
+            notional_usd=100.0,
+        )
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_PROFIT_EXIT",
+            size_mode="FIXED_NOTIONAL",
+            notional_usd=100.0,
+            spread_exit_threshold_pct=0.0,
+        )
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_PROFIT_EXIT",
+            size_mode="FIXED_NOTIONAL",
+            notional_usd=100.0,
+            spread_exit_threshold_pct=25.0,
+        )
+
+
+def test_sync_step_schema_validation():
+    from pydantic import ValidationError
+
+    from api.schemas import HedgeLaunchConfig
+
+    ok = HedgeLaunchConfig(
+        enabled=True,
+        leg_b_api_key_id=2,
+        size_mode="SYNC_STEP",
+        notional_usd=20.0,
+        entry_sync_timeout_sec=120.0,
+    )
+    assert ok.size_mode == "SYNC_STEP"
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            size_mode="SYNC_STEP",
+            entry_sync_timeout_sec=120.0,
+        )  # notional required
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            size_mode="SYNC_STEP",
+            notional_usd=20.0,
+            entry_sync_timeout_sec=-5.0,
+        )

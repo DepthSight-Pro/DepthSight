@@ -1097,26 +1097,48 @@ class HedgeLaunchConfig(BaseModel):
         "OPPOSITE", description="Only OPPOSITE (LONG+SHORT) is supported"
     )
     exit_policy: str = Field(
-        "INDEPENDENT",
-        description="INDEPENDENT (each leg to its own TP/SL), "
-        "RACE_FINAL_MARKET (first final exit market-closes the sibling), "
+        "RACE_FINAL_MARKET",
+        description="RACE_FINAL_MARKET (first final exit market-closes the sibling), "
+        "SPREAD_PROFIT_EXIT (one-sided spread take-profit on pair PnL), "
+        "INDEPENDENT (each leg to its own TP/SL), "
         "MOVE_SL_TO_BE (reserved, currently behaves as INDEPENDENT)",
     )
     size_mode: str = Field(
         "FIXED_NOTIONAL",
-        description="FIXED_NOTIONAL (both legs open the same USD notional) "
+        description="FIXED_NOTIONAL (both legs open the same USD notional), "
+        "SYNC_STEP (exact synced volumes via a shared lot step, simultaneous), "
         "or INDEPENDENT (each leg sizes by its own risk %)",
     )
     notional_usd: Optional[float] = Field(
         None,
-        description="Target USD notional per leg when size_mode=FIXED_NOTIONAL",
+        description="Target USD notional per leg when size_mode is "
+        "FIXED_NOTIONAL or SYNC_STEP",
+    )
+    entry_sync_timeout_sec: float = Field(
+        120.0,
+        description="SYNC_STEP orphan watchdog: close a lone leg if the "
+        "sibling has no entry within this many seconds (0 disables)",
+    )
+    spread_exit_threshold_pct: float = Field(
+        0.5,
+        description="Pair profit trigger for SPREAD_PROFIT_EXIT "
+        "(percent of combined notional)",
+    )
+    spread_exit_cooldown_sec: float = Field(
+        60.0,
+        description="Min seconds between spread exits of one pair",
     )
 
     @field_validator("exit_policy")
     @classmethod
     def _normalize_exit_policy(cls, v: Any) -> str:
-        allowed = {"INDEPENDENT", "RACE_FINAL_MARKET", "MOVE_SL_TO_BE"}
-        normalized = str(v or "INDEPENDENT").strip().upper()
+        allowed = {
+            "INDEPENDENT",
+            "RACE_FINAL_MARKET",
+            "MOVE_SL_TO_BE",
+            "SPREAD_PROFIT_EXIT",
+        }
+        normalized = str(v or "RACE_FINAL_MARKET").strip().upper()
         if normalized not in allowed:
             raise ValueError(
                 f"Invalid hedge exit_policy '{v}'. Allowed: {sorted(allowed)}."
@@ -1134,7 +1156,7 @@ class HedgeLaunchConfig(BaseModel):
     @field_validator("size_mode")
     @classmethod
     def _normalize_size_mode(cls, v: Any) -> str:
-        allowed = {"FIXED_NOTIONAL", "INDEPENDENT"}
+        allowed = {"FIXED_NOTIONAL", "INDEPENDENT", "SYNC_STEP"}
         normalized = str(v or "FIXED_NOTIONAL").strip().upper()
         if normalized not in allowed:
             raise ValueError(
@@ -1144,12 +1166,39 @@ class HedgeLaunchConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_notional(self) -> "HedgeLaunchConfig":
-        if self.enabled and self.size_mode == "FIXED_NOTIONAL":
+        if self.enabled and self.size_mode in ("FIXED_NOTIONAL", "SYNC_STEP"):
             if self.notional_usd is None or float(self.notional_usd) <= 0:
                 raise ValueError(
                     "hedge.notional_usd must be a positive USD amount "
-                    "when size_mode='FIXED_NOTIONAL'."
+                    f"when size_mode='{self.size_mode}'."
                 )
+        try:
+            sync_timeout = float(self.entry_sync_timeout_sec)
+        except (TypeError, ValueError):
+            sync_timeout = -1.0
+        if sync_timeout < 0:
+            raise ValueError("hedge.entry_sync_timeout_sec must be >= 0.")
+        if self.enabled and self.exit_policy == "SPREAD_PROFIT_EXIT":
+            if self.size_mode not in ("FIXED_NOTIONAL", "SYNC_STEP"):
+                raise ValueError(
+                    "hedge.exit_policy='SPREAD_PROFIT_EXIT' requires "
+                    "size_mode='FIXED_NOTIONAL' or 'SYNC_STEP' (spread deviation "
+                    "maps to pair PnL only at equal notionals)."
+                )
+            try:
+                threshold = float(self.spread_exit_threshold_pct)
+            except (TypeError, ValueError):
+                threshold = 0.0
+            if not 0 < threshold <= 10:
+                raise ValueError(
+                    "hedge.spread_exit_threshold_pct must be within (0, 10]."
+                )
+            try:
+                cooldown = float(self.spread_exit_cooldown_sec)
+            except (TypeError, ValueError):
+                cooldown = -1.0
+            if cooldown < 0:
+                raise ValueError("hedge.spread_exit_cooldown_sec must be >= 0.")
         return self
 
 
@@ -1219,6 +1268,15 @@ class StrategyInfo(StrategyRunRequest):  # For response
     pnl: Optional[float] = Field(
         None, json_schema_extra={"example": 123.45}
     )  # Made Optional as it might not always be present
+    unrealized_pnl: Optional[float] = Field(
+        None, description="Unrealized floating PnL of current open positions"
+    )
+    realized_pnl: Optional[float] = Field(
+        None, description="Realized PnL from closed trades"
+    )
+    total_pnl: Optional[float] = Field(
+        None, description="Total PnL (realized + unrealized)"
+    )
     open_positions: Optional[int] = Field(
         None, json_schema_extra={"example": 1}
     )  # Made Optional

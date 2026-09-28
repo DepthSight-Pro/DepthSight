@@ -81,10 +81,17 @@ export const StrategyOverviewTab: React.FC<StrategyOverviewTabProps> = ({
 		<div>
 			<div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
 				<StatDisplay
-					label={t("overviewTab.totalPnl")}
+					label={t("overviewTab.unrealizedPnl", "Unrealized P&L")}
 					value={`${strategy.pnl >= 0 ? "+" : ""}${strategy.pnl.toFixed(2)} USD`}
 					className={strategy.pnl >= 0 ? "text-profit" : "text-loss"}
 				/>
+				{strategy.realized_pnl !== undefined && strategy.realized_pnl !== null && (
+					<StatDisplay
+						label={t("overviewTab.realizedPnl", "Realized P&L")}
+						value={`${Number(strategy.realized_pnl) >= 0 ? "+" : ""}${Number(strategy.realized_pnl).toFixed(2)} USD`}
+						className={Number(strategy.realized_pnl) >= 0 ? "text-profit" : "text-loss"}
+					/>
+				)}
 				<StatDisplay
 					label={t("overviewTab.status")}
 					value={getStatusBadge(strategy.status)}

@@ -33,16 +33,17 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 	return (
 		<div
 			onClick={onOpenQuests}
-			className="group relative mb-6 cursor-pointer overflow-hidden rounded-2xl border border-[#1DA2B4]/30 dark:border-[#1DA2B4]/40 bg-gradient-to-r from-[#1DA2B4]/15 via-sky-400/5 to-cyan-500/10 dark:from-[#1DA2B4]/20 dark:via-[#0F1923]/95 dark:to-blue-500/10 bg-card p-4 sm:p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#1DA2B4]/60 dark:hover:border-[#00F0FF]/70 shadow-sm hover:shadow-md dark:shadow-none dark:hover:shadow-[0_10px_35px_rgba(0,0,0,0.5),0_0_35px_rgba(29,162,180,0.25)]"
+			className="group relative cursor-pointer overflow-hidden rounded-2xl border-2 border-[#1DA2B4]/50 dark:border-[#00E5FF]/40 bg-gradient-to-r from-[#1DA2B4]/20 via-[#0E7490]/10 to-[#00D4FF]/15 dark:from-[#1DA2B4]/25 dark:via-[#0B1A2A]/90 dark:to-[#00D4FF]/15 p-4 sm:p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#1DA2B4]/80 dark:hover:border-[#00E5FF]/70 shadow-[0_2px_12px_rgba(29,162,180,0.12)] hover:shadow-[0_4px_20px_rgba(29,162,180,0.25)] dark:shadow-[0_0_20px_rgba(29,162,180,0.15)] dark:hover:shadow-[0_10px_40px_rgba(0,0,0,0.5),0_0_40px_rgba(0,212,255,0.3)]"
 		>
-			{/* Ambient background glow */}
-			<div className="pointer-events-none absolute -right-16 -top-16 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(0,240,255,0.15)_0%,rgba(29,162,180,0.05)_40%,transparent_70%)]" />
+			{/* Bright ambient glow blobs */}
+			<div className="pointer-events-none absolute -right-12 -top-12 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(0,229,255,0.25)_0%,rgba(29,162,180,0.1)_40%,transparent_70%)] dark:bg-[radial-gradient(circle,rgba(0,229,255,0.2)_0%,rgba(29,162,180,0.08)_40%,transparent_70%)]" />
+			<div className="pointer-events-none absolute -left-8 -bottom-8 h-40 w-40 rounded-full bg-[radial-gradient(circle,rgba(29,162,180,0.15)_0%,transparent_60%)] dark:bg-[radial-gradient(circle,rgba(0,212,255,0.12)_0%,transparent_60%)]" />
 
 			<div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				{/* Left: Icon & Titles */}
 				<div className="flex items-center gap-4 min-w-0">
-					<div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-1.5 shadow-sm dark:shadow-[0_0_20px_rgba(29,162,180,0.3)] transition-transform duration-300 group-hover:scale-105">
-						<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(29,162,180,0.4)]" />
+					<div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 border-[#1DA2B4]/40 dark:border-[#00E5FF]/50 bg-gradient-to-br from-[#1DA2B4]/25 to-[#0E7490]/15 dark:from-[#1DA2B4]/30 dark:to-[#00D4FF]/10 p-1.5 shadow-[0_0_12px_rgba(29,162,180,0.2)] dark:shadow-[0_0_24px_rgba(0,229,255,0.3)] transition-transform duration-300 group-hover:scale-110">
+						<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(29,162,180,0.5)]" />
 					</div>
 
 					<div className="min-w-0">
@@ -51,58 +52,58 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 								{promoStatus.campaignName || t("promoBannerTitle", "Bitget Launch Airdrop — 10,000,000 $DEPTH")}
 							</h3>
 							{promoStatus.isAdminPreview ? (
-								<span className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-500 dark:text-amber-400">
+								<span className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
 									<Lock className="h-2.5 w-2.5" />
 									{t("adminPreviewBadge", "ADMIN PREVIEW")}
 								</span>
 							) : (
-								<span className="flex items-center gap-1.5 rounded-full border border-[#00F0FF]/40 bg-[#1DA2B4]/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-[#00b4d8] dark:text-[#00F0FF] shadow-[0_0_12px_rgba(0,240,255,0.25)] animate-pulse">
-									<span className="h-1.5 w-1.5 rounded-full bg-[#00b4d8] dark:bg-[#00F0FF]" />
+								<span className="flex items-center gap-1.5 rounded-full border-2 border-[#00D4FF]/50 dark:border-[#00E5FF]/50 bg-[#1DA2B4]/20 dark:bg-[#00E5FF]/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-[#0E7490] dark:text-[#00E5FF] shadow-[0_0_16px_rgba(0,229,255,0.3)] animate-pulse">
+									<span className="h-1.5 w-1.5 rounded-full bg-[#0E7490] dark:bg-[#00E5FF] shadow-[0_0_6px_rgba(0,229,255,0.6)]" />
 									{t("liveBadge", "LIVE")}
 								</span>
 							)}
 						</div>
-						<p className="mt-0.5 truncate text-xs text-muted-foreground">
+						<p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-400">
 							{promoStatus.description ||
 								t("promoBannerSubtitle", "Connect Bitget API keys & trade to earn up to 25,000 $DEPTH per quest.")}
 						</p>
 					</div>
 				</div>
 
-				{/* Right: Metrics & Arrow (Variant 2: Slots · Pool · Claimed) */}
-				<div className="flex items-center justify-between sm:justify-end gap-5 sm:gap-6 sm:border-l sm:border-border/60 dark:sm:border-white/10 sm:pl-6 shrink-0">
+				{/* Right: Metrics & Arrow */}
+				<div className="flex items-center justify-between sm:justify-end gap-5 sm:gap-6 sm:border-l sm:border-[#1DA2B4]/20 dark:sm:border-[#00D4FF]/15 sm:pl-6 shrink-0">
 					{/* Slots Left */}
 					<div className="text-left sm:text-center">
 						<div className="text-base sm:text-lg font-black text-foreground dark:text-white font-mono">
 							{slotsLeft.toLocaleString()}
 						</div>
-						<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+						<div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
 							{t("promoSlotsLeft", "Slots left")}
 						</div>
 					</div>
 
 					{/* Airdrop Pool */}
 					<div className="text-left sm:text-center">
-						<div className="text-base sm:text-lg font-black font-mono bg-gradient-to-r from-cyan-600 via-[#1DA2B4] to-blue-500 dark:from-[#00F0FF] dark:via-[#1DA2B4] dark:to-blue-400 bg-clip-text text-transparent">
+						<div className="text-base sm:text-lg font-black font-mono bg-gradient-to-r from-[#0E7490] via-[#1DA2B4] to-[#0066FF] dark:from-[#00E5FF] dark:via-[#1DA2B4] dark:to-[#60A5FA] bg-clip-text text-transparent">
 							{((promoStatus.totalPool as number) || 10_000_000).toLocaleString()}
 						</div>
-						<div className="text-[10px] uppercase tracking-wider text-cyan-700 dark:text-cyan-300/80 font-medium">
+						<div className="text-[10px] uppercase tracking-wider text-[#0E7490] dark:text-[#67E8F9] font-semibold">
 							{t("promoAirdropPool", "Airdrop pool")}
 						</div>
 					</div>
 
 					{/* Claimed */}
 					<div className="text-left sm:text-center">
-						<div className="text-base sm:text-lg font-black text-foreground/90 dark:text-white/90 font-mono">
+						<div className="text-base sm:text-lg font-black text-foreground dark:text-white font-mono">
 							{(promoStatus.distributed || 0).toLocaleString()}
 						</div>
-						<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+						<div className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
 							{t("promoClaimedShort", "Claimed")}
 						</div>
 					</div>
 
 					{/* Action Arrow */}
-					<div className="flex h-9 w-9 items-center justify-center rounded-xl bg-black/[0.04] dark:bg-white/5 border border-border dark:border-white/10 text-muted-foreground transition-all duration-300 group-hover:translate-x-1 group-hover:bg-[#1DA2B4]/15 dark:group-hover:bg-[#1DA2B4]/20 group-hover:border-[#1DA2B4]/50 dark:group-hover:border-[#00F0FF]/40 group-hover:text-cyan-600 dark:group-hover:text-[#00F0FF]">
+					<div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1DA2B4]/10 dark:bg-[#00D4FF]/10 border border-[#1DA2B4]/30 dark:border-[#00D4FF]/25 text-[#0E7490] dark:text-[#67E8F9] transition-all duration-300 group-hover:translate-x-1 group-hover:bg-[#1DA2B4]/25 dark:group-hover:bg-[#00D4FF]/20 group-hover:border-[#1DA2B4]/60 dark:group-hover:border-[#00E5FF]/50 group-hover:text-[#1DA2B4] dark:group-hover:text-[#00E5FF] group-hover:shadow-[0_0_12px_rgba(29,162,180,0.3)]">
 						<ArrowRight className="h-4 w-4" />
 					</div>
 				</div>

@@ -6,6 +6,7 @@ import {
 	createLiveMarksManager,
 	type LiveSymbol,
 } from "@/services/liveMarks";
+import type { LiveMarket } from "@/services/liveMarks/types";
 
 // Re-exported from the shared lib so pages don't need this hook for math.
 export { calcLivePnl } from "@/lib/livePnl";
@@ -15,6 +16,7 @@ export interface LiveMark {
 	price: number;
 	ts: number;
 	exchange: string;
+	market?: LiveMarket;
 }
 
 const THROTTLE_MS = 250;
@@ -28,10 +30,10 @@ export function useLiveMarks(items: LiveSymbol[]): {
 	const lastEmitRef = useRef(0);
 	const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	const key = useMemo(
+	const 	key = useMemo(
 		() =>
 			[...items]
-				.map((i) => `${i.symbol}|${i.exchange ?? ""}`)
+				.map((i) => `${i.symbol}|${i.exchange ?? ""}|${i.market ?? ""}`)
 				.sort()
 				.join(","),
 		[items],
@@ -62,12 +64,14 @@ export function useLiveMarks(items: LiveSymbol[]): {
 
 		const manager = createLiveMarksManager((tick) => {
 			if (disposed || document.visibilityState === "hidden") return;
-			// Venue-scoped key: ticks from different exchanges for the same
-			// symbol must not overwrite each other.
-			cacheRef.current[markKey(tick.symbol, tick.exchange)] = {
+			// Venue-scoped key: ticks from different exchanges (and WEEX
+			// spot vs futures) for the same symbol must not overwrite
+			// each other.
+			cacheRef.current[markKey(tick.symbol, tick.exchange, tick.market)] = {
 				price: tick.price,
 				ts: tick.ts,
 				exchange: tick.exchange,
+				market: tick.market,
 			};
 			scheduleFlush();
 		});

@@ -37,7 +37,7 @@ import {
 import { usePortfolioMode } from "@/context/PortfolioModeContext";
 import { useWebSocket } from "@/context/WebSocketProvider";
 import { useLiveMarks } from "@/hooks/useLiveMarks";
-import { applyLiveMarksToPositions } from "@/lib/livePnl";
+import { applyLiveMarksToPositions, readMarketOf } from "@/lib/livePnl";
 import {
 	useClosePosition,
 	useConfig,
@@ -109,6 +109,7 @@ export default function Positions() {
 			(realPositions || []).map((p: PositionData) => ({
 				symbol: String(p.symbol),
 				exchange: (p.exchange as string | null) ?? null,
+				market: readMarketOf(p),
 			})),
 		[realPositions],
 	);
@@ -509,15 +510,18 @@ export default function Positions() {
 							</div>
 						) : (
 							filteredList.map((p) => {
+								// Rail window is the trade's own range [SL..TP]: using
+								// mark here collapses the window around the price and
+								// glues the SHORT circle to the SL edge.
 								const lo = Math.min(
 									p.sl ?? p.entry,
-									p.entry,
-									p.mark,
-								);
-								const hi = Math.max(
 									p.tp ?? p.entry,
 									p.entry,
-									p.mark,
+								);
+								const hi = Math.max(
+									p.sl ?? p.entry,
+									p.tp ?? p.entry,
+									p.entry,
 								);
 								const pos = (v: number) =>
 									Math.max(5, Math.min(95, ((v - lo) / (hi - lo || 1)) * 100));

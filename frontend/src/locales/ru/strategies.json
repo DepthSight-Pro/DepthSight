@@ -8,7 +8,10 @@
 	"colStrategy": "Тип стратегии",
 	"colSymbols": "Символы",
 	"colRuntime": "Время работы",
-	"colTotalPnl": "Общий PnL",
+	"colTotalPnl": "Плавающий PnL",
+	"colUnrealizedPnl": "Плавающий PnL",
+	"statUnrealizedPnl": "Плавающий PnL",
+	"statRealizedPnl": "Плавающий PnL",
 	"noStrategies": "Сохраненные конфигурации стратегий не найдены.",
 	"searchPlaceholder": "Поиск стратегий...",
 	"openPositions": "Открытые позиции",
@@ -134,7 +137,9 @@
 		"noStrategySelectedDesc": "Нажмите на запущенный экземпляр в списке, чтобы просмотреть его живые данные."
 	},
 	"overviewTab": {
-		"totalPnl": "Общий PnL",
+		"totalPnl": "Плавающий PnL",
+		"unrealizedPnl": "Плавающий PnL",
+		"realizedPnl": "Реализованный PnL",
 		"status": "Статус",
 		"symbol": "Символ(ы)",
 		"marketType": "Тип рынка",

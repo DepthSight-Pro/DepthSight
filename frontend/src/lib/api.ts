@@ -1092,6 +1092,9 @@ export const useStartStrategy = () => {
 				exit_policy?: string;
 				size_mode?: string;
 				notional_usd?: number;
+				spread_exit_threshold_pct?: number;
+				spread_exit_cooldown_sec?: number;
+				entry_sync_timeout_sec?: number;
 			}; // Hedge (mirror) launch on two exchanges
 		}
 	>({
@@ -2910,6 +2913,11 @@ export interface LocalMiningStatusResponse {
 	epoch_number?: number;
 	launchDate?: string;
 	launch_date?: string;
+	// Defensive legacy wallet aliases read by the Mining Hub wallet badge
+	// (canonical source: GET /node/wallet/status → WalletStatusResponse).
+	walletAddress?: string;
+	wallet_address?: string;
+	payoutAddress?: string;
 }
 
 export interface MiningActivatePayload {

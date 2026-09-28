@@ -164,9 +164,15 @@ export function cumulativePnlByStrategy(
 		if (!Number.isFinite(pnl)) continue;
 		const ts = toCloseMs(tr.timestamp_close);
 		if (ts === null) continue;
-		const keys = [tr.strategy, tr.strategy_config_id].filter(
+		const baseKeys = [tr.strategy, tr.strategy_config_id].filter(
 			(k): k is string => !!k,
 		);
+		const keys = [...baseKeys];
+		if (tr.api_key_id !== null && tr.api_key_id !== undefined) {
+			for (const bk of baseKeys) {
+				keys.push(`${bk}::${tr.api_key_id}`);
+			}
+		}
 		for (const key of keys) {
 			let bucket = byKey.get(key);
 			if (!bucket) {

@@ -67,6 +67,7 @@ import {
 	useUpdateStrategyConfig,
 } from "@/lib/api";
 import { hasProPlanAccess } from "@/lib/strategyRestrictions";
+import { normalizeExchangeKey } from "@/lib/exchanges";
 import { cn } from "@/lib/utils";
 // State, API & Types
 import { useStrategyEditorStore } from "@/stores/strategyEditorStore";
@@ -82,6 +83,7 @@ import {
 // Custom Components
 import { BacktestDatePresets } from "./BacktestDatePresets";
 import { FoundationWeightsModal } from "./FoundationWeightsModal";
+import { FundingSpread } from "./FundingSpread";
 import { SymbolCombobox } from "./SymbolCombobox";
 import type { ConditionBlock } from "./types";
 
@@ -165,12 +167,16 @@ export const ConfigAndLaunchPanel = memo(
 		const [hedgeEnabled, setHedgeEnabled] = useState(false);
 		const [hedgeLegBId, setHedgeLegBId] = useState<number | null>(null);
 		const [hedgeExitPolicy, setHedgeExitPolicy] = useState<
-			"INDEPENDENT" | "RACE_FINAL_MARKET"
-		>("INDEPENDENT");
+			"INDEPENDENT" | "RACE_FINAL_MARKET" | "SPREAD_PROFIT_EXIT"
+		>("RACE_FINAL_MARKET");
+		const [hedgeSpreadThreshold, setHedgeSpreadThreshold] =
+			useState<string>("0.5");
 		const [hedgeSizeMode, setHedgeSizeMode] = useState<
-			"FIXED_NOTIONAL" | "INDEPENDENT"
+			"FIXED_NOTIONAL" | "INDEPENDENT" | "SYNC_STEP"
 		>("FIXED_NOTIONAL");
 		const [hedgeNotional, setHedgeNotional] = useState<string>("100");
+		const [hedgeSyncTimeout, setHedgeSyncTimeout] =
+			useState<string>("120");
 
 		const activeApiKeys: ApiKey[] = useMemo(() => {
 			if (!config?.apiKeys) return [];
@@ -211,15 +217,31 @@ export const ConfigAndLaunchPanel = memo(
 		const hedgeSpotBlocked =
 			hedgeEnabled && (marketType || "FUTURES") !== "FUTURES";
 		const parsedHedgeNotional = Number.parseFloat(hedgeNotional);
+		const hedgeSizedMode =
+			hedgeSizeMode === "FIXED_NOTIONAL" || hedgeSizeMode === "SYNC_STEP";
 		const hedgeNotionalValid =
-			hedgeSizeMode !== "FIXED_NOTIONAL" ||
+			!hedgeSizedMode ||
 			(Number.isFinite(parsedHedgeNotional) && parsedHedgeNotional > 0);
+		const parsedSyncTimeout = Number.parseFloat(hedgeSyncTimeout);
+		const hedgeSyncTimeoutValid =
+			hedgeSizeMode !== "SYNC_STEP" ||
+			(Number.isFinite(parsedSyncTimeout) && parsedSyncTimeout >= 0);
+		const parsedSpreadThreshold = Number.parseFloat(hedgeSpreadThreshold);
+		const hedgeSpreadValid =
+			hedgeExitPolicy !== "SPREAD_PROFIT_EXIT" ||
+			(Number.isFinite(parsedSpreadThreshold) &&
+				parsedSpreadThreshold > 0 &&
+				parsedSpreadThreshold <= 10);
 		const hedgeReady =
 			!hedgeEnabled ||
 			(canEnableHedge &&
 				effectiveLegBId !== null &&
 				!hedgeSpotBlocked &&
-				hedgeNotionalValid);
+				hedgeNotionalValid &&
+				hedgeSpreadValid &&
+				hedgeSyncTimeoutValid &&
+				(hedgeExitPolicy !== "SPREAD_PROFIT_EXIT" ||
+					hedgeSizedMode));
 
 		const handleHedgeToggle = (checked: boolean) => {
 			setHedgeEnabled(checked);
@@ -227,6 +249,21 @@ export const ConfigAndLaunchPanel = memo(
 				setHedgeLegBId(eligibleLegBKeys[0].id);
 			}
 		};
+
+		// Resolved leg B account + normalized venue ids for the funding widget.
+		const hedgeLegBKey = useMemo(
+			() =>
+				effectiveLegBId !== null
+					? (activeApiKeys.find((k) => k.id === effectiveLegBId) ?? null)
+					: null,
+			[activeApiKeys, effectiveLegBId],
+		);
+		const fundingLegAExchange = legAKey
+			? (normalizeExchangeKey(legAKey.exchange) ?? null)
+			: null;
+		const fundingLegBExchange = hedgeLegBKey
+			? (normalizeExchangeKey(hedgeLegBKey.exchange) ?? null)
+			: null;
 
 		// Render-phase sync of selectedApiKeyId
 		const [prevActiveApiKeys, setPrevActiveApiKeys] = useState<ApiKey[]>([]);
@@ -503,8 +540,18 @@ export const ConfigAndLaunchPanel = memo(
 										exit_policy: hedgeExitPolicy,
 										size_mode: hedgeSizeMode,
 										notional_usd:
-											hedgeSizeMode === "FIXED_NOTIONAL"
+											hedgeSizedMode && hedgeNotionalValid
 												? parsedHedgeNotional
+												: undefined,
+										entry_sync_timeout_sec:
+											hedgeSizeMode === "SYNC_STEP" &&
+											hedgeSyncTimeoutValid
+												? parsedSyncTimeout
+												: undefined,
+										spread_exit_threshold_pct:
+											hedgeExitPolicy === "SPREAD_PROFIT_EXIT" &&
+											hedgeSpreadValid
+												? parsedSpreadThreshold
 												: undefined,
 									}
 								: undefined,
@@ -1346,15 +1393,25 @@ export const ConfigAndLaunchPanel = memo(
 														</Label>
 														<div className="grid grid-cols-2 gap-1.5">
 															{([
-																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeExitIndependent", "Leave the other leg running"), desc: t("configPanel.hedgeExitIndependentDesc") },
-																{ value: "RACE_FINAL_MARKET" as const, label: t("configPanel.hedgeExitRace", "Close the other leg at market"), desc: t("configPanel.hedgeExitRaceDesc") },
+																{ value: "RACE_FINAL_MARKET" as const, label: t("configPanel.hedgeExitRace", "Close the other leg at market"), desc: t("configPanel.hedgeExitRaceDesc"), wide: false },
+																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeExitIndependent", "Leave the other leg running"), desc: t("configPanel.hedgeExitIndependentDesc"), wide: false },
+																{ value: "SPREAD_PROFIT_EXIT" as const, label: t("configPanel.hedgeExitSpread", "Take profit on spread"), desc: t("configPanel.hedgeExitSpreadDesc"), wide: true },
 															] as const).map((opt) => (
 																<button
 																	key={opt.value}
 																	type="button"
-																	onClick={() => setHedgeExitPolicy(opt.value)}
+																	onClick={() => {
+																		setHedgeExitPolicy(opt.value);
+																		if (
+																			opt.value === "SPREAD_PROFIT_EXIT" &&
+																			hedgeSizeMode === "INDEPENDENT"
+																		) {
+																			setHedgeSizeMode("FIXED_NOTIONAL");
+																		}
+																	}}
 																	className={cn(
 																		"rounded-lg border px-2.5 py-2 text-left transition-all",
+																		opt.wide && "col-span-2",
 																		hedgeExitPolicy === opt.value
 																			? "border-cyan-500/40 bg-cyan-500/[0.06] ring-1 ring-cyan-500/20"
 																			: "border-border dark:border-white/[0.06] bg-transparent hover:bg-muted/30 dark:hover:bg-white/[0.02]",
@@ -1365,6 +1422,26 @@ export const ConfigAndLaunchPanel = memo(
 																</button>
 															))}
 														</div>
+														{hedgeExitPolicy === "SPREAD_PROFIT_EXIT" && (
+															<>
+																<div className="flex items-center gap-2">
+																	<Input
+																		type="number"
+																		min="0"
+																		step="0.1"
+																		value={hedgeSpreadThreshold}
+																		onChange={(e) => setHedgeSpreadThreshold(e.target.value)}
+																		className="h-8 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-xs text-foreground dark:text-white"
+																	/>
+																	<span className="text-[11px] text-muted-foreground dark:text-white/50 font-mono">% pair</span>
+																</div>
+																<p className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight">
+																	{hedgeSpreadValid
+																		? t("configPanel.hedgeExitSpreadHint")
+																		: t("configPanel.hedgeSpreadInvalid")}
+																</p>
+															</>
+														)}
 													</div>
 
 													{/* Size mode — segmented radio cards */}
@@ -1374,8 +1451,9 @@ export const ConfigAndLaunchPanel = memo(
 														</Label>
 														<div className="grid grid-cols-2 gap-1.5">
 															{([
-																{ value: "FIXED_NOTIONAL" as const, label: t("configPanel.hedgeSizeFixed", "Same volume ($)") },
-																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeSizeIndependent", "Independent (risk %)") },
+																{ value: "FIXED_NOTIONAL" as const, label: t("configPanel.hedgeSizeFixed", "Same volume ($)"), wide: false },
+																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeSizeIndependent", "Independent (risk %)"), wide: false },
+																{ value: "SYNC_STEP" as const, label: t("configPanel.hedgeSizeSync", "Exact same volume"), desc: t("configPanel.hedgeSizeSyncDesc"), wide: true },
 															] as const).map((opt) => (
 																<button
 																	key={opt.value}
@@ -1383,16 +1461,22 @@ export const ConfigAndLaunchPanel = memo(
 																	onClick={() => setHedgeSizeMode(opt.value)}
 																	className={cn(
 																		"rounded-lg border px-2.5 py-2 text-left transition-all text-[11px] font-medium",
+																		"wide" in opt && opt.wide && "col-span-2",
 																		hedgeSizeMode === opt.value
 																			? "border-cyan-500/40 bg-cyan-500/[0.06] ring-1 ring-cyan-500/20 text-foreground dark:text-white"
 																			: "border-border dark:border-white/[0.06] bg-transparent hover:bg-muted/30 dark:hover:bg-white/[0.02] text-muted-foreground dark:text-white/60",
 																	)}
 																>
 																	{opt.label}
+																	{"desc" in opt && opt.desc && (
+																		<div className="text-[10px] font-normal text-muted-foreground dark:text-white/40 leading-tight mt-0.5">
+																			{opt.desc}
+																		</div>
+																	)}
 																</button>
 															))}
 														</div>
-														{hedgeSizeMode === "FIXED_NOTIONAL" ? (
+														{hedgeSizedMode ? (
 															<>
 																<div className="flex items-center gap-2">
 																	<Input
@@ -1410,6 +1494,26 @@ export const ConfigAndLaunchPanel = memo(
 																		? t("configPanel.hedgeSizeFixedDesc")
 																		: t("configPanel.hedgeNotionalInvalid")}
 																</p>
+																{hedgeSizeMode === "SYNC_STEP" && (
+																	<>
+																		<div className="flex items-center gap-2">
+																			<Input
+																				type="number"
+																				min="0"
+																				step="1"
+																				value={hedgeSyncTimeout}
+																				onChange={(e) => setHedgeSyncTimeout(e.target.value)}
+																				className="h-8 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-xs text-foreground dark:text-white"
+																			/>
+																			<span className="text-[11px] text-muted-foreground dark:text-white/50 font-mono">sec</span>
+																		</div>
+																		<p className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight">
+																			{hedgeSyncTimeoutValid
+																				? t("configPanel.hedgeSyncTimeoutDesc")
+																				: t("configPanel.hedgeSyncTimeoutInvalid")}
+																		</p>
+																	</>
+																)}
 															</>
 														) : (
 															<p className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight">
@@ -1417,6 +1521,21 @@ export const ConfigAndLaunchPanel = memo(
 															</p>
 														)}
 													</div>
+
+													{/* Live funding spread for the chosen legs */}
+													{effectiveLegBId !== null && (
+														<FundingSpread
+															legAExchange={fundingLegAExchange}
+															legBExchange={fundingLegBExchange}
+															symbol={symbol}
+															notionalUsd={
+																hedgeSizedMode &&
+																hedgeNotionalValid
+																	? parsedHedgeNotional
+																	: null
+															}
+														/>
+													)}
 
 													{/* Info / errors */}
 													{hedgeSpotBlocked ? (

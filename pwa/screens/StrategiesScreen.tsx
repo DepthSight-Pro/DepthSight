@@ -13,6 +13,7 @@ import {
 	applyLiveMarksToPositions,
 	overlayLiveStrategyPnl,
 	readExchangeOf,
+	readMarketOf,
 } from "../lib/livePnl";
 import { resolveStrategyTimeframe } from "../lib/strategyMeta";
 import { api, hasUsableAuthToken } from "../services/api";
@@ -314,6 +315,7 @@ const StrategiesScreen: React.FC<StrategiesScreenProps> = ({
 		snapshotPositions.map((p) => ({
 			symbol: String(p.symbol),
 			exchange: readExchangeOf(p),
+			market: readMarketOf(p),
 		})),
 	);
 	const liveSnapshotPositions = useMemo(

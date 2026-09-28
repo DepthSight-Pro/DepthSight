@@ -18,7 +18,11 @@ import {
 import { Logo } from "../components/ui/logo";
 import { ICONS } from "../constants";
 import { useLiveMarks } from "../hooks/useLiveMarks";
-import { applyLiveMarksToPositions, readExchangeOf } from "../lib/livePnl";
+import {
+	applyLiveMarksToPositions,
+	readExchangeOf,
+	readMarketOf,
+} from "../lib/livePnl";
 import { api, hasUsableAuthToken } from "../services/api";
 import { useAccountStore } from "../stores/accountStore";
 import { useRealtimeStore } from "../stores/realtimeStore";
@@ -283,6 +287,7 @@ const DashboardScreen: React.FC = () => {
 			(snapshotPositions ?? []).map((p) => ({
 				symbol: String(p.symbol),
 				exchange: readExchangeOf(p),
+				market: readMarketOf(p),
 			})),
 		[snapshotPositions],
 	);

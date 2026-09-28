@@ -3,6 +3,10 @@
 // Backend snapshots stay the source of truth; ticks only move numbers locally.
 
 import { normalizeExchangeKey } from "@/lib/exchanges";
+import {
+	normalizeLiveMarket,
+	type LiveMarket,
+} from "@/services/liveMarks/types";
 
 /** Normalizes any venue string ("Bybit_Testnet", "binance"...) to a stable
  * match key ("" when no venue is known). Tick and position exchanges come
@@ -13,14 +17,33 @@ const normEx = (exchange: unknown): string => {
 	return normalizeExchangeKey(raw) ?? raw.trim().toLowerCase();
 };
 
-/** Marks-cache / lookup key: "SYMBOL|EXCHANGE". */
-export const markKey = (symbol: unknown, exchange: unknown): string =>
-	`${String(symbol)}|${normEx(exchange)}`;
+/** Reads the market scope off a position-like row (market_type, marketType,
+ * or exchange-suffix fallback like "weex_spot"). Defaults to "futures". */
+export const readMarketOf = (p: unknown): LiveMarket => {
+	if (!p || typeof p !== "object") return "futures";
+	const row = p as Record<string, unknown>;
+	return normalizeLiveMarket(
+		row.market_type ?? row.marketType ?? row.market ?? row.exchange,
+	);
+};
+
+/** Marks-cache / lookup key: "SYMBOL|EXCHANGE|fut|spot" — futures and spot
+ * ticks for the same symbol never overwrite each other on any venue. */
+export const markKey = (
+	symbol: unknown,
+	exchange: unknown,
+	market?: unknown,
+): string => {
+	const ex = normEx(exchange);
+	const mkt = normalizeLiveMarket(market ?? exchange);
+	return `${String(symbol)}|${ex}|${mkt === "spot" ? "spot" : "fut"}`;
+};
 
 export interface LiveMarkLike {
 	price: number;
 	ts: number;
 	exchange: string;
+	market?: LiveMarket;
 }
 
 export const calcLivePnl = (
@@ -47,6 +70,8 @@ export type PositionLike = {
 	strategy_name?: unknown;
 	api_key_id?: unknown;
 	exchange?: unknown;
+	market_type?: unknown;
+	marketType?: unknown;
 	/** Source strategy config id. Positions and strategy cards are linked by
 	 * config id: `strategy`/`strategy_name` is a CLASS name (e.g.
 	 * "VisualBuilderStrategy") shared by every visual strategy, so name-based
@@ -63,8 +88,10 @@ export function applyLiveMarksToPositions<T extends PositionLike>(
 	let changed = false;
 	const out = positions.map((p) => {
 		// Venue-scoped tick only: a tick from another exchange (same symbol)
-		// must never move this position's PnL.
-		const tick = marks[markKey(p.symbol, p.exchange)];
+		// must never move this position's PnL. WEEX additionally scopes by
+		// market, so spot ticks never move futures positions and vice versa.
+		const tick =
+			marks[markKey(p.symbol, p.exchange, readMarketOf(p))];
 		if (!tick) return p;
 		changed = true;
 		return {
@@ -96,16 +123,29 @@ export type StrategyLike = {
 	name?: unknown;
 	mode?: unknown;
 	pnl?: unknown;
+	unrealized_pnl?: unknown;
+	realized_pnl?: unknown;
+	total_pnl?: unknown;
+	open_positions?: unknown;
 	exchange?: unknown;
+	api_key_id?: unknown;
 	/** Running instance's source config id (same string as the position's
 	 * `config_id`). Cards without it fall back to legacy name matching. */
 	config_id?: unknown;
 };
 
+/** Normalizes an api key id to a bucket fragment ("" when unknown). */
+const normApiKey = (apiKeyId: unknown): string => {
+	if (apiKeyId === null || apiKeyId === undefined || apiKeyId === "") return "";
+	return String(apiKeyId);
+};
+
 /** Aggregated position PnL for one side (snapshot or live), attributed per
  * strategy card:
- * - `byConfig`: per `mode|exchange|config_id` — the exact bucket (positions
- *   carry the source config id, so same-named strategies never share PnL),
+ * - `byConfig`: per `mode|exchange|api_key|config_id` — the exact bucket
+ *   (positions carry the source config id, so same-named strategies never
+ *   share PnL, and the api key scope keeps sibling accounts on one
+ *   exchange from absorbing each other's unrealized PnL),
  * - `legacyEx`/`legacyAny`: name buckets (`mode|exchange|name`, `mode|name`)
  *   kept only for old snapshots written before positions carried
  *   `config_id` (they expire with the 30s Redis TTL),
@@ -120,11 +160,16 @@ type SideSums = {
 const cfgBucket = (
 	mode: unknown,
 	exchange: unknown,
+	apiKeyId: unknown,
 	configId: string,
-): string =>
-	exchange === null || exchange === undefined || exchange === ""
-		? `${String(mode ?? "").toLowerCase()}|cfg:${configId}`
-		: `${String(mode ?? "").toLowerCase()}|${normEx(exchange)}|cfg:${configId}`;
+): string => {
+	const ex = normEx(exchange);
+	const api = normApiKey(apiKeyId);
+	const m = String(mode ?? "").toLowerCase();
+	return ex
+		? `${m}|${ex}|key:${api}|cfg:${configId}`
+		: `${m}|key:${api}|cfg:${configId}`;
+};
 
 const sumPositions = (list: PositionLike[]): SideSums => {
 	const side: SideSums = {
@@ -141,8 +186,8 @@ const sumPositions = (list: PositionLike[]): SideSums => {
 		const mn = modeName(p.mode, name);
 		const cfgId = String(p.config_id ?? "").trim();
 		if (cfgId) {
-			// Exact attribution: one bucket per (mode, venue, config).
-			const k = cfgBucket(p.mode, ex, cfgId);
+			// Exact attribution: one bucket per (mode, venue, account, config).
+			const k = cfgBucket(p.mode, ex, p.api_key_id, cfgId);
 			side.byConfig.set(k, (side.byConfig.get(k) ?? 0) + v);
 		} else if (ex) {
 			// Legacy snapshot row without config_id.
@@ -158,25 +203,46 @@ const sumPositions = (list: PositionLike[]): SideSums => {
 	return side;
 };
 
-/** Resolve the position-PnL sum attributable to one strategy on one venue.
- * Primary match is by source config id, so two same-named strategies on the
- * same exchange never share PnL (the card with no positions of its own gets
- * `undefined` and stays untouched instead of absorbing another card's
- * unrealized PnL). Name-based buckets are only a fallback for legacy
- * snapshots without `config_id`. */
+/** Resolve the position-PnL sum attributable to one strategy on one venue
+ * and account. Primary match is by source config id, so two same-named
+ * strategies on the same exchange never share PnL, and sibling accounts
+ * running one config never absorb each other's unrealized PnL (the card
+ * with no positions of its own gets `undefined` and stays untouched).
+ * Name-based buckets are only a fallback for legacy snapshots without
+ * `config_id`. */
 const lookup = (
 	side: SideSums,
 	mode: unknown,
 	exchange: unknown,
 	name: string,
 	configId?: unknown,
+	apiKeyId?: unknown,
 ): number | undefined => {
 	const ex = normEx(exchange);
 	const mn = modeName(mode, name);
 	const cfgId = String(configId ?? "").trim();
 	if (cfgId) {
-		const v = side.byConfig.get(cfgBucket(mode, ex, cfgId));
+		const v = side.byConfig.get(cfgBucket(mode, ex, apiKeyId, cfgId));
 		if (v !== undefined) return v;
+		const cardApi = normApiKey(apiKeyId);
+		if (cardApi) {
+			// Account-scoped card with no positions of its own: never leak
+			// another account's same-config PnL into it.
+			return undefined;
+		}
+		// Card without an account tag (e.g. aggregated view): sum this
+		// config across accounts on the same mode + venue.
+		let total: number | undefined;
+		const prefix = ex
+			? `${String(mode ?? "").toLowerCase()}|${ex}|key:`
+			: `${String(mode ?? "").toLowerCase()}|key:`;
+		const suffix = `|cfg:${cfgId}`;
+		for (const [k, sum] of side.byConfig) {
+			if (k.startsWith(prefix) && k.endsWith(suffix)) {
+				total = (total ?? 0) + sum;
+			}
+		}
+		if (total !== undefined) return total;
 		// No positions attributed to this config yet. Fall back to legacy
 		// name buckets (possible only for snapshots written before
 		// config_id existed); positions of OTHER same-named configs live in
@@ -201,12 +267,10 @@ const lookup = (
 };
 
 /**
- * Strategy PnL = realized + unrealized(positions). Rebase the snapshot value
- * by the delta between snapshot and live position PnL so strategy cards
- * breathe on ticks too. Positions are attributed by source `config_id`
- * (exact), so two same-named strategies on the same exchange never share
- * PnL; name-based matching remains only as a fallback for legacy snapshots
- * written before positions carried `config_id`.
+ * Strategy PnL = live unrealized PnL of open positions (matching Positions tab),
+ * while historical closed trades are plotted on the equity sparklines.
+ * Positions are attributed by source `config_id` (exact), so two same-named
+ * strategies on the same exchange never share PnL.
  */
 export function overlayLiveStrategyPnl<S extends StrategyLike>(
 	strategies: S[] | undefined,
@@ -221,22 +285,31 @@ export function overlayLiveStrategyPnl<S extends StrategyLike>(
 	let changed = false;
 	const out = strategies.map((s) => {
 		const name = String(s.strategy_name ?? s.name ?? "");
-		if (!name) return s;
+		if (!name && !s.config_id) return s;
 		const liveV = lookup(
 			live,
 			s.mode,
 			s.exchange,
 			name,
 			s.config_id,
+			s.api_key_id,
 		);
-		if (liveV === undefined) return s;
-		const snapV =
-			lookup(snap, s.mode, s.exchange, name, s.config_id) ?? 0;
-		const base = Number(s.pnl ?? 0);
-		const adj = base - snapV + liveV;
-		if (adj === base) return s;
+		const snapV = lookup(
+			snap,
+			s.mode,
+			s.exchange,
+			name,
+			s.config_id,
+			s.api_key_id,
+		);
+		const liveUnrealized = liveV !== undefined ? liveV : snapV;
+		const targetPnl =
+			liveUnrealized !== undefined
+				? liveUnrealized
+				: (s.open_positions === 0 ? 0 : Number(s.unrealized_pnl ?? s.pnl ?? 0));
+		if (targetPnl === s.pnl) return s;
 		changed = true;
-		return { ...s, pnl: adj, _livePnl: true } as S;
+		return { ...s, pnl: targetPnl, unrealized_pnl: targetPnl, _livePnl: true } as S;
 	});
 	return changed ? out : strategies;
 }

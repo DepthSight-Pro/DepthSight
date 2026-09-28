@@ -1,8 +1,11 @@
+import asyncio
 import logging
 import copy
 import json
+import math
+import time
 import uuid
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
@@ -466,6 +469,136 @@ async def _ensure_no_overlapping_running_instance(
             )
 
 
+# --- Hedge SYNC_STEP lot-spec cache: {exchange: (cached_at_epoch, markets)} ---
+_HEDGE_MARKETS_CACHE: Dict[str, Tuple[float, dict]] = {}
+_HEDGE_MARKETS_TTL_SECONDS = 24 * 3600
+
+
+def _extract_hedge_lot_spec(market: dict) -> Tuple[float, Optional[float]]:
+    """Returns (qty_step, min_qty) from a ccxt unified market dict.
+
+    These venues report the amount step directly in ``precision.amount``
+    (e.g. weex XRP 10.0, bitget XRP 1.0, weex ZEC 0.1).
+    """
+    precision = (market.get("precision") or {}).get("amount")
+    limits_amount = (market.get("limits") or {}).get("amount") or {}
+    try:
+        step = float(precision) if precision is not None else 0.0
+    except (TypeError, ValueError):
+        step = 0.0
+    try:
+        min_qty = (
+            float(limits_amount.get("min"))
+            if limits_amount.get("min") is not None
+            else None
+        )
+    except (TypeError, ValueError):
+        min_qty = None
+    if step <= 0:
+        raise ValueError(f"Unusable lot step in market spec: {market!r}")
+    return step, min_qty
+
+
+async def _fetch_hedge_lot_specs(exchange: str, symbols: List[str]) -> Dict[str, dict]:
+    """Public lot specs + last prices per symbol via ccxt (no API keys).
+
+    Returns ``{SYMBOL: {"step": ..., "min_qty": ..., "price": ...}}``.
+    Raises HTTPException(502/400) when specs cannot be resolved — a SYNC
+    launch must fail loudly rather than silently desync volumes.
+    """
+    try:
+        import ccxt.async_support as ccxt
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"ccxt is not installed: {exc}",
+        )
+
+    exchange_id = (exchange or "").strip().lower().replace("_testnet", "")
+    now_epoch = time.time()
+    cached = _HEDGE_MARKETS_CACHE.get(exchange_id)
+    markets = None
+    if cached and (now_epoch - cached[0]) < _HEDGE_MARKETS_TTL_SECONDS:
+        markets = cached[1]
+
+    exchange_instance = None
+    try:
+        exchange_cls = getattr(ccxt, exchange_id, None)
+        if exchange_cls is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Exchange '{exchange_id}' is not available in ccxt",
+            )
+        exchange_instance = exchange_cls(
+            {
+                "enableRateLimit": True,
+                "timeout": 15000,
+                "options": {
+                    "defaultType": "future" if exchange_id == "binance" else "swap"
+                },
+            }
+        )
+        if markets is None:
+            markets = await asyncio.wait_for(
+                exchange_instance.load_markets(), timeout=30
+            )
+            _HEDGE_MARKETS_CACHE[exchange_id] = (now_epoch, markets)
+
+        specs: Dict[str, dict] = {}
+        for raw_symbol in symbols:
+            symbol_upper = (raw_symbol or "").strip().upper()
+            ccxt_symbol = symbol_upper
+            if "/" not in ccxt_symbol:
+                for quote in ("USDT", "USDC", "USD"):
+                    if ccxt_symbol.endswith(quote) and len(ccxt_symbol) > len(quote):
+                        base = ccxt_symbol[: -len(quote)]
+                        ccxt_symbol = f"{base}/{quote}:{quote}"
+                        break
+            market = (markets or {}).get(ccxt_symbol)
+            if not market:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Symbol '{symbol_upper}' is not listed on {exchange_id}; "
+                        "SYNC_STEP hedge needs it on both exchanges."
+                    ),
+                )
+            try:
+                step, min_qty = _extract_hedge_lot_spec(market)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"{exchange_id} lot spec error for {symbol_upper}: {exc}",
+                )
+            try:
+                ticker = await asyncio.wait_for(
+                    exchange_instance.fetch_ticker(ccxt_symbol), timeout=20
+                )
+                price = float(ticker.get("last") or ticker.get("close") or 0.0)
+            except Exception:
+                price = 0.0
+            specs[symbol_upper] = {
+                "step": step,
+                "min_qty": min_qty,
+                "price": price,
+            }
+        return specs
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(f"Hedge lot-spec fetch failed for {exchange_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not load lot specs for {exchange_id}: {exc}",
+        )
+    finally:
+        if exchange_instance is not None:
+            try:
+                await exchange_instance.close()
+            except Exception:
+                pass
+
+
 @strategies_router.post(
     "",
     status_code=status.HTTP_202_ACCEPTED,
@@ -709,7 +842,77 @@ async def start_strategy_instance(
             "exit_policy": exit_policy,
             "size_mode": hedge_request.size_mode,
             "notional_usd": hedge_request.notional_usd,
+            "spread_exit_threshold_pct": hedge_request.spread_exit_threshold_pct,
+            "spread_exit_cooldown_sec": hedge_request.spread_exit_cooldown_sec,
+            "entry_sync_timeout_sec": hedge_request.entry_sync_timeout_sec,
         }
+        # SYNC_STEP: resolve the shared lot step per symbol (coarsest of the
+        # two venues) and pre-validate the notional against both min lots,
+        # so a leg can never be stillborn at runtime.
+        if hedge_request.size_mode == "SYNC_STEP":
+            static_symbols = [
+                str(s).strip().upper() for s in (symbols or []) if str(s).strip()
+            ]
+            if (
+                symbol_selection_mode or "STATIC"
+            ).upper() != "STATIC" or not static_symbols:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Hedge size_mode='SYNC_STEP' requires an explicit "
+                    "STATIC symbol list (lot steps are per symbol).",
+                )
+            try:
+                specs_a, specs_b = await asyncio.gather(
+                    _fetch_hedge_lot_specs(api_key.exchange, static_symbols),
+                    _fetch_hedge_lot_specs(leg_b_key.exchange, static_symbols),
+                )
+            except HTTPException:
+                raise
+            qty_steps: Dict[str, float] = {}
+            notional = float(hedge_request.notional_usd or 0.0)
+            for sym in static_symbols:
+                spec_a = specs_a.get(sym, {})
+                spec_b = specs_b.get(sym, {})
+                try:
+                    step_a = float(spec_a.get("step") or 0.0)
+                    step_b = float(spec_b.get("step") or 0.0)
+                    price_a = float(spec_a.get("price") or 0.0)
+                    price_b = float(spec_b.get("price") or 0.0)
+                except (TypeError, ValueError):
+                    step_a = step_b = price_a = price_b = 0.0
+                if step_a <= 0 or step_b <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Unusable lot specs for {sym}.",
+                    )
+                shared_step = max(step_a, step_b)
+                qty_steps[sym] = shared_step
+                # Pre-validate: the synced qty must clear both min lots.
+                for leg_label, leg_min, leg_price, leg_ex in (
+                    ("A", spec_a.get("min_qty"), price_a, api_key.exchange),
+                    ("B", spec_b.get("min_qty"), price_b, leg_b_key.exchange),
+                ):
+                    ref_price = leg_price if leg_price > 0 else None
+                    if ref_price is None:
+                        continue  # price unknown: runtime guards still apply
+                    synced_qty = (
+                        math.floor(notional / ref_price / shared_step) * shared_step
+                    )
+                    try:
+                        min_qty = float(leg_min) if leg_min is not None else 0.0
+                    except (TypeError, ValueError):
+                        min_qty = 0.0
+                    if synced_qty <= 0 or (min_qty > 0 and synced_qty < min_qty):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"Hedge SYNC_STEP: notional ${notional:g} is too "
+                                f"small for {sym} on leg {leg_label} ({leg_ex}): "
+                                f"synced qty {synced_qty:g} < min {min_qty:g}. "
+                                "Raise the USD notional."
+                            ),
+                        )
+            base_hedge["qty_steps"] = qty_steps
         config_data_dict["hedge"] = {
             **base_hedge,
             "leg": "A",

@@ -6,6 +6,7 @@ export interface LiveMarkLike {
 	price: number;
 	ts: number;
 	exchange: string;
+	market?: string;
 }
 
 /** Read the runtime exchange field (absent from PWA static types). */
@@ -61,9 +62,35 @@ const normEx = (exchange: unknown): string => {
 	return normalizeExchangeKey(raw) ?? raw.trim().toLowerCase();
 };
 
-/** Marks-cache / lookup key: "SYMBOL|EXCHANGE". */
-export const markKey = (symbol: unknown, exchange: unknown): string =>
-	`${String(symbol)}|${normEx(exchange)}`;
+/** Reads the market scope off a position-like row (market_type, marketType,
+ * or exchange-suffix fallback like "weex_spot"). Defaults to "futures". */
+export const readMarketOf = (p: unknown): string => {
+	if (!p || typeof p !== "object") return "futures";
+	const row = p as Record<string, unknown>;
+	const raw = row.market_type ?? row.marketType ?? row.market ?? row.exchange;
+	if (raw === null || raw === undefined) return "futures";
+	const normalized = String(raw).trim().toLowerCase();
+	if (!normalized) return "futures";
+	return normalized.includes("spot") ? "spot" : "futures";
+};
+
+/** Marks-cache / lookup key: "SYMBOL|EXCHANGE|fut|spot" — futures and spot
+ * ticks for the same symbol never overwrite each other on any venue. */
+export const markKey = (
+	symbol: unknown,
+	exchange: unknown,
+	market?: unknown,
+): string => {
+	const ex = normEx(exchange);
+	const raw = market ?? exchange;
+	const mkt =
+		raw === null || raw === undefined
+			? "futures"
+			: String(raw).trim().toLowerCase().includes("spot")
+				? "spot"
+				: "futures";
+	return `${String(symbol)}|${ex}|${mkt}`;
+};
 
 export const calcLivePnl = (
 	direction: string,
@@ -89,6 +116,8 @@ export type PositionLike = {
 	strategy_name?: unknown;
 	api_key_id?: unknown;
 	exchange?: unknown;
+	market_type?: unknown;
+	marketType?: unknown;
 	/** Source strategy config id. Positions and strategy cards are linked by
 	 * config id: `strategy`/`strategy_name` is a CLASS name (e.g.
 	 * "VisualBuilderStrategy") shared by every visual strategy, so name-based
@@ -104,8 +133,12 @@ export function applyLiveMarksToPositions<T extends PositionLike>(
 	if (!positions || Object.keys(marks).length === 0) return positions;
 	let changed = false;
 	const out = positions.map((p) => {
+		const exact = marks[markKey(p.symbol, p.exchange, readMarketOf(p))];
+		// Bare-symbol fallback is kept only for non-WEEX venues (legacy ticks
+		// without venue). For WEEX it would leak spot ticks into futures
+		// positions and vice versa.
 		const tick =
-			marks[markKey(p.symbol, p.exchange)] ?? marks[String(p.symbol)];
+			exact ?? (normEx(p.exchange) === "weex" ? undefined : marks[String(p.symbol)]);
 		if (!tick) return p;
 		changed = true;
 		return {
@@ -137,6 +170,9 @@ export type StrategyLike = {
 	name?: unknown;
 	mode?: unknown;
 	pnl?: unknown;
+	unrealized_pnl?: unknown;
+	realized_pnl?: unknown;
+	open_positions?: unknown;
 	exchange?: unknown;
 	/** Running instance's source config id (same string as the position's
 	 * `config_id`). Cards without it fall back to legacy name matching. */
@@ -275,14 +311,16 @@ export function overlayLiveStrategyPnl<S extends StrategyLike>(
 			name,
 			s.config_id,
 		);
-		if (liveV === undefined) return s;
-		const snapV =
-			lookup(snap, s.mode, s.exchange, name, s.config_id) ?? 0;
-		const base = Number(s.pnl ?? 0);
-		const adj = base - snapV + liveV;
-		if (adj === base) return s;
+		const snapV = lookup(snap, s.mode, s.exchange, name, s.config_id);
+		const liveUnrealized = liveV !== undefined ? liveV : snapV;
+		const openPositionsCount = Number(s.open_positions ?? 0);
+		const targetPnl =
+			liveUnrealized !== undefined
+				? liveUnrealized
+				: (openPositionsCount === 0 ? 0 : Number(s.unrealized_pnl ?? s.pnl ?? 0));
+		if (targetPnl === s.pnl) return s;
 		changed = true;
-		return { ...s, pnl: adj, _livePnl: true } as S;
+		return { ...s, pnl: targetPnl, unrealized_pnl: targetPnl, _livePnl: true } as S;
 	});
 	return changed ? out : strategies;
 }

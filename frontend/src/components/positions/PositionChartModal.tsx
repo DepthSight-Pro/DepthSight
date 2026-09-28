@@ -46,7 +46,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLiveMarks } from "@/hooks/useLiveMarks";
 import { apiClient } from "@/lib/apiClient";
-import { calcLivePnl, markKey } from "@/lib/livePnl";
+import { calcLivePnl, markKey, readMarketOf } from "@/lib/livePnl";
 import { cn, estimateTickSize } from "@/lib/utils";
 import {
 	fetchSymbolInfo,
@@ -582,15 +582,22 @@ export const PositionChartModal: React.FC<PositionChartModalProps> = ({
 	// Live mark + PnL overlay — same direct-exchange ticks source as the
 	// Positions tab (backend snapshot stays the source of truth).
 	// Subscribe only while the modal is open.
+	const positionMarket = readMarketOf(position);
 	const liveSymbols = useMemo(
 		() =>
 			isOpen
-				? [{ symbol: String(position.symbol), exchange: venueRaw }]
+				? [
+						{
+							symbol: String(position.symbol),
+							exchange: venueRaw,
+							market: positionMarket,
+						},
+					]
 				: [],
-		[isOpen, position.symbol, venueRaw],
+		[isOpen, position.symbol, venueRaw, positionMarket],
 	);
 	const { marks } = useLiveMarks(liveSymbols);
-	const liveTick = marks[markKey(position.symbol, venueRaw)];
+	const liveTick = marks[markKey(position.symbol, venueRaw, positionMarket)];
 	const isLive = Boolean(liveTick) && Number(liveTick?.price) > 0;
 	const liveMarkPrice = isLive ? Number(liveTick?.price) : 0;
 	// Effective mark: live tick wins, snapshot prop is the fallback.

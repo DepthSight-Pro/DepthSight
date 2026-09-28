@@ -1,21 +1,22 @@
 // pwa/services/liveMarks/okx.ts
-// OKX public tickers (no auth). BTCUSDT -> BTC-USDT-SWAP.
+// OKX public tickers (no auth, one socket per market):
+// - futures: BTCUSDT -> BTC-USDT-SWAP (markPx ?? last)
+// - spot:    BTCUSDT -> BTC-USDT      (last ?? markPx)
 import {
 	type CreateMarksAdapter,
+	type LiveMarket,
 	type MarksCallback,
 	cleanSymbol,
 } from "./types";
-import { toOkxInstId } from "./symbolMap";
+import { toOkxInstId, toOkxSpotInstId } from "./symbolMap";
 
 const URL = "wss://ws.okx.com:8443/ws/v5/public";
 
-interface OkxTicker {
-	instId?: unknown;
-	markPx?: unknown;
-	last?: unknown;
-}
-
-export const createOkxAdapter: CreateMarksAdapter = (onTick: MarksCallback) => {
+const createOkxWsAdapter = (
+	onTick: MarksCallback,
+	market: LiveMarket,
+): ReturnType<CreateMarksAdapter> => {
+	const toInstId = market === "spot" ? toOkxSpotInstId : toOkxInstId;
 	let ws: WebSocket | null = null;
 	let symbols: string[] = [];
 	let closed = false;
@@ -25,14 +26,11 @@ export const createOkxAdapter: CreateMarksAdapter = (onTick: MarksCallback) => {
 	const sendSubs = () => {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
 		instToUnified.clear();
-		for (const s of symbols) instToUnified.set(toOkxInstId(s), s);
+		for (const s of symbols) instToUnified.set(toInstId(s), s);
 		ws.send(
 			JSON.stringify({
 				op: "subscribe",
-				args: symbols.map((s) => ({
-					channel: "tickers",
-					instId: toOkxInstId(s),
-				})),
+				args: symbols.map((s) => ({ channel: "tickers", instId: toInstId(s) })),
 			}),
 		);
 	};
@@ -43,19 +41,20 @@ export const createOkxAdapter: CreateMarksAdapter = (onTick: MarksCallback) => {
 		ws.onopen = sendSubs;
 		ws.onmessage = (ev) => {
 			try {
-				const msg = JSON.parse(ev.data as string) as {
-					arg?: { instId?: unknown };
-					data?: OkxTicker[];
-				};
+				const msg = JSON.parse(ev.data as string);
 				const arr = msg?.data;
 				if (!Array.isArray(arr) || arr.length === 0) return;
 				const d = arr[0];
 				const instId = String(msg?.arg?.instId ?? d?.instId ?? "");
 				const unified =
 					instToUnified.get(instId) ?? cleanSymbol(instId.replace(/-/g, ""));
-				const price = Number(d?.markPx ?? d?.last);
-				if (!unified || !Number.isFinite(price) || price <= 0) return;
-				onTick({ symbol: unified, price, ts: Date.now(), exchange: "okx" });
+				if (!unified || !symbols.includes(unified)) return;
+				const price =
+					market === "spot"
+						? Number(d?.last ?? d?.markPx)
+						: Number(d?.markPx ?? d?.last);
+				if (!Number.isFinite(price) || price <= 0) return;
+				onTick({ symbol: unified, price, ts: Date.now(), exchange: "okx", market });
 			} catch {
 				/* ignore */
 			}
@@ -99,3 +98,12 @@ export const createOkxAdapter: CreateMarksAdapter = (onTick: MarksCallback) => {
 		},
 	};
 };
+
+export const createOkxFuturesAdapter: CreateMarksAdapter = (onTick) =>
+	createOkxWsAdapter(onTick, "futures");
+
+export const createOkxSpotAdapter: CreateMarksAdapter = (onTick) =>
+	createOkxWsAdapter(onTick, "spot");
+
+/** Legacy default: futures socket (kept for backward compat). */
+export const createOkxAdapter: CreateMarksAdapter = createOkxFuturesAdapter;

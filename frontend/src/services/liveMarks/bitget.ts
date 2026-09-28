@@ -1,16 +1,21 @@
 // frontend/src/services/liveMarks/bitget.ts
-// Bitget v2 public ticker (no auth). USDT-FUTURES uses "BTCUSDT".
+// Bitget v2 public ticker (no auth, one socket per market):
+// - futures: instType USDT-FUTURES, "BTCUSDT" (markPrice ?? lastPr)
+// - spot:    instType SPOT,         "BTCUSDT" (lastPr, no markPrice)
 import {
 	type CreateMarksAdapter,
+	type LiveMarket,
 	type MarksCallback,
 	cleanSymbol,
 } from "./types";
 
 const URL = "wss://ws.bitget.com/v2/ws/public";
 
-export const createBitgetAdapter: CreateMarksAdapter = (
+const createBitgetWsAdapter = (
 	onTick: MarksCallback,
-) => {
+	market: LiveMarket,
+): ReturnType<CreateMarksAdapter> => {
+	const instType = market === "spot" ? "SPOT" : "USDT-FUTURES";
 	let ws: WebSocket | null = null;
 	let symbols: string[] = [];
 	let closed = false;
@@ -22,7 +27,7 @@ export const createBitgetAdapter: CreateMarksAdapter = (
 			JSON.stringify({
 				op: "subscribe",
 				args: symbols.map((s) => ({
-					instType: "USDT-FUTURES",
+					instType,
 					channel: "ticker",
 					instId: cleanSymbol(s),
 				})),
@@ -41,9 +46,13 @@ export const createBitgetAdapter: CreateMarksAdapter = (
 				if (!Array.isArray(arr) || arr.length === 0) return;
 				const d = arr[0];
 				const sym = cleanSymbol(String(msg?.arg?.instId ?? d?.instId ?? ""));
-				const price = Number(d?.markPrice ?? d?.lastPr);
-				if (!sym || !Number.isFinite(price) || price <= 0) return;
-				onTick({ symbol: sym, price, ts: Date.now(), exchange: "bitget" });
+				if (!sym || !symbols.includes(sym)) return;
+				const price =
+					market === "spot"
+						? Number(d?.lastPr ?? d?.markPrice)
+						: Number(d?.markPrice ?? d?.lastPr);
+				if (!Number.isFinite(price) || price <= 0) return;
+				onTick({ symbol: sym, price, ts: Date.now(), exchange: "bitget", market });
 			} catch {
 				/* ignore */
 			}
@@ -87,3 +96,12 @@ export const createBitgetAdapter: CreateMarksAdapter = (
 		},
 	};
 };
+
+export const createBitgetFuturesAdapter: CreateMarksAdapter = (onTick) =>
+	createBitgetWsAdapter(onTick, "futures");
+
+export const createBitgetSpotAdapter: CreateMarksAdapter = (onTick) =>
+	createBitgetWsAdapter(onTick, "spot");
+
+/** Legacy default: futures socket (kept for backward compat). */
+export const createBitgetAdapter: CreateMarksAdapter = createBitgetFuturesAdapter;
