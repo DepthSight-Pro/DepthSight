@@ -82,7 +82,17 @@ async def test_first_api_key_achievement(
     auto_mock_grant_achievement: AsyncMock,
 ):
     """Tests that 'first_api_key' is granted when a user adds their first API key."""
-    test_user.api_keys = []  # Ensure the user has no keys initially
+    # Mirrors api/routes/api_keys.py: first-key check is an explicit query, NOT
+    # a touch of the lazy User.api_keys relationship (see B1). The test_user
+    # fixture ships with a key, so remove keys first to simulate a fresh user.
+    from sqlalchemy import delete as sa_delete
+
+    await db_session.execute(
+        sa_delete(models.ApiKey).where(models.ApiKey.user_id == test_user.id)
+    )
+    await db_session.flush()
+    existing_keys = await crud.get_api_keys_for_user(db_session, test_user.id)
+    assert existing_keys == []
 
     with (
         patch(
@@ -100,7 +110,7 @@ async def test_first_api_key_achievement(
         )
 
         # Directly call the logic that should be in the endpoint
-        is_first_key = not test_user.api_keys
+        is_first_key = not existing_keys
         if is_first_key:
             await api.gamification.grant_achievement(
                 db_session, test_user.id, "first_api_key"

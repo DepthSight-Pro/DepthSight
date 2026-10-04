@@ -186,6 +186,7 @@ async def test_concurrent_telemetry_submission(
 
     app.dependency_overrides[get_db] = locked_get_db
     try:
+
         async def submit_report(idx: int):
             payload = {
                 "symbol": "BTCUSDT",

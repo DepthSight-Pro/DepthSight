@@ -69,25 +69,25 @@ class User(Base):
     tradingview_webhook_token = Column(String, unique=True, index=True, nullable=True)
     referred_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
-    # Relationships
-    config = relationship(
-        "AppConfig", back_populates="user", uselist=False, lazy="selectin"
-    )
-    api_keys = relationship("ApiKey", back_populates="user", lazy="selectin")
+    # Relationships. NOTE: no lazy="selectin" here on purpose. selectin makes
+    # EVERY User load (including get_user_by_username on each authenticated
+    # request) emit 6 extra queries for collections the caller usually never
+    # touches. Default lazy loading ("select") fetches them on first access
+    # instead - one query at auth, plus one per collection actually used.
+    # Add explicit selectinload() at call sites that iterate many users with
+    # their collections (admin listings) to avoid N+1 there.
+    config = relationship("AppConfig", back_populates="user", uselist=False)
+    api_keys = relationship("ApiKey", back_populates="user")
     backtest_runs = relationship(
         "BacktestRun",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",
     )
-    strategy_configs = relationship(
-        "StrategyConfig", back_populates="owner", lazy="selectin"
-    )
+    strategy_configs = relationship("StrategyConfig", back_populates="owner")
     genetic_runs = relationship(
         "GeneticRun",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin",
     )
     bonuses = relationship(
         "Bonus",

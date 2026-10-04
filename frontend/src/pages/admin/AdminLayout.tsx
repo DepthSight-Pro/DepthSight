@@ -14,6 +14,7 @@ import {
 	Layers,
 	Brain,
 	Gift,
+	BarChart3,
 } from "lucide-react";
 import type React from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -73,6 +74,11 @@ const AdminLayout: React.FC = () => {
 		},
 		...(isCentralHub
 			? [
+					{
+						to: "/admin/mining-analytics",
+						text: "Mining Analytics",
+						icon: <BarChart3 className="h-4 w-4" />,
+					},
 					{
 						to: "/admin/promo",
 						text: "Promo Campaigns",

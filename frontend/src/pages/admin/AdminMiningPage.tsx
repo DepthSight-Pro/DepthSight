@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Pickaxe, Settings, Coins, RefreshCw, AlertCircle, Globe, ShieldCheck, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, KeyRound, CalendarIcon, UploadCloud, FileSpreadsheet, CheckCircle2, Flame } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Pickaxe, Settings, Coins, RefreshCw, AlertCircle, Globe, ShieldCheck, Check, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, KeyRound, CalendarIcon, UploadCloud, FileSpreadsheet, CheckCircle2, Flame, BarChart3 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, startOfToday } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -386,6 +387,14 @@ const AdminMiningPage: React.FC = () => {
 					</p>
 				</div>
 				<div className="flex items-center gap-2">
+					{isCentralHub && (
+						<Button asChild variant="default" size="sm" className="flex items-center gap-2 bg-gradient-to-r from-primary to-purple-600 text-white shadow-md hover:opacity-90">
+							<Link to="/admin/mining-analytics">
+								<BarChart3 className="h-4 w-4" />
+								{t("analyticsNavButton")}
+							</Link>
+						</Button>
+					)}
 					<Button variant="outline" size="sm" onClick={() => setIsWalletModalOpen(true)} className="flex items-center gap-2 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10">
 						<KeyRound className="h-4 w-4" />
 						Node Admin Wallet

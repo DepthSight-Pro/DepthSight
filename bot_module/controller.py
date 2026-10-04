@@ -4,8 +4,10 @@
 import asyncio
 import os
 import logging
+import random
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Dict, Optional, Any, Set, List, Tuple, Union, Callable
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
@@ -26,7 +28,12 @@ from bot_module import config
 from bot_module.feature_extractor import FeatureExtractor
 from bot_module.model_pipeline import ModelPipeline
 from bot_module.realtime_ml_logger import RealtimeMLLogger
-from bot_module.data_consumer import DataConsumer, is_kline_fresh
+from bot_module.data_consumer import (
+    DataConsumer,
+    _global_kline_df_cache,
+    _kline_cache_key,
+    is_kline_fresh,
+)
 from bot_module.executor import BinanceExecutor
 from bot_module.paper_executor import PaperTradingExecutor
 from bot_module.risk_manager import RiskManager
@@ -40,6 +47,7 @@ from bot_module.runtime_dependencies import (
     send_push_notification,
 )
 from bot_module.symbol_selection import SymbolSelectionConfig
+from bot_module import private_stream_registry
 from bot_module.strategy import (
     StrategySignal,
     get_strategy_instance,
@@ -438,6 +446,17 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> Optional[float]:
         return None
 
 
+# ClientOrderId prefixes minted by this codebase (entries, TPs, SLs, forced
+# closes). Used to tell sibling controllers' orders apart from truly manual
+# ones when several controllers share one exchange key (and therefore one
+# private stream): our format + not in my known set = sibling's, ignore it for
+# adoption/close decisions. Deliberately excludes "hft-" (other subsystem).
+OWN_CID_PREFIXES = ("x-entry-", "x-ptp-", "x-tp-", "x-sl-", "x-close-")
+
+# Position statuses that mean "this controller actively needs exchange updates".
+_LIVE_DEMAND_STATUSES = frozenset({"PENDING_ENTRY", "OPEN", "CLOSING"})
+
+
 class TradingController:
     """
     Central component managing trading logic:
@@ -522,6 +541,18 @@ class TradingController:
         self.get_db_session = get_db if get_db is not None else _default_get_db
         logger.info("TradingController initialized with DB session factory.")
 
+        # Lazy private streams (one shared loop per exchange key, see
+        # private_stream_registry): keys this controller currently holds,
+        # when demand last existed (for idle close), and last poller tick.
+        self._private_stream_keys: Set[Tuple[str, Any]] = set()
+        self._private_stream_idle_since: Optional[float] = None
+        self._private_stream_last_poll: float = 0.0
+        self._private_stream_last_open_attempt: float = 0.0
+        # Hottest TP/SL distance from the last reaper tick (None = no live
+        # demand or not computed yet). Reused by the poll tick for the hot
+        # interval without rescanning positions.
+        self._private_stream_heat_value: Optional[float] = None
+
         # Pass notifier and loop to risk_manager IMMEDIATELY
         if self.rm:
             self.rm.telegram_notifier = self.telegram_notifier
@@ -538,7 +569,19 @@ class TradingController:
                 max_queue_size=config.SIGNAL_QUEUE_MAX_SIZE,
             )
 
-        # Initializing Redis client for Controller
+        # Initializing Redis client for Controller.
+        # max_connections is capped (see config.REDIS_POOL_MAX_CONNECTIONS):
+        # one pool per controller with the redis-py default of 50 means
+        # thousands of fds past ~100 controllers and EMFILE under burst load.
+        # Both attributes are set before the try so the except branch below
+        # cannot leave the object half-initialized (publish guards on them).
+        self._state_seq = 0
+        self._publish_state_in_flight = False
+        # Serialize per-tick paper order checks: the periodic loop fires every
+        # second, so without this guard a saturated loop stacks concurrent
+        # check_open_orders tasks per controller (each holding order/price
+        # copies). A skipped tick is harmless: the next tick re-checks.
+        self._paper_order_check_in_flight = False
         try:
             self.redis_client = redis.Redis(
                 host=config.REDIS_HOST,
@@ -547,6 +590,7 @@ class TradingController:
                 username=config.REDIS_USERNAME,
                 password=config.REDIS_PASSWORD,
                 decode_responses=True,
+                max_connections=config.REDIS_POOL_MAX_CONNECTIONS,
             )
             self.redis_key_positions = "depthsight:state:positions"  # Key for positions
             self.redis_key_strategies = (
@@ -561,12 +605,9 @@ class TradingController:
             logger.info(
                 "TradingController initialized Redis client for state publishing."
             )
-            # Monotonic sequence for WS push snapshots (reconcile/stale-drop on frontend).
-            self._state_seq = 0
         except Exception as e:
             logger.error(f"Failed to initialize Redis client in TradingController: {e}")
             self.redis_client = None
-            self._state_seq = 0
 
         # In-app / Web Push mirror of Telegram notifications (bot_module/ui_notifier).
         # Wraps the notifier once so all existing call sites are mirrored without edits.
@@ -924,6 +965,40 @@ class TradingController:
             return sl_price is None or target_price < sl_price
         return False
 
+    @asynccontextmanager
+    async def _owned_session(self):
+        """Yield one DB session that is always rolled back and closed.
+
+        Replaces `async for db in self.get_db_session()`, which abandons the
+        generator (and its checked-out pool connection) whenever the body
+        returns or raises: with ~300 controllers doing that every few seconds
+        the pool drains to QueuePool timeout even though the pool is sized
+        correctly. Works with the real get_db and with the async-generator
+        mocks used in tests.
+        """
+        gen = self.get_db_session()
+        try:
+            db = await gen.__anext__()
+        except StopAsyncIteration:
+            raise RuntimeError("DB session factory yielded nothing")
+        try:
+            yield db
+        except Exception:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                await gen.aclose()
+            except Exception:
+                pass
+            try:
+                await db.close()
+            except Exception:
+                pass
+
     async def load_symbol_selection_config(self) -> bool:
         """
         Loads the user's symbol selection configuration from the API.
@@ -931,7 +1006,7 @@ class TradingController:
         """
         log_prefix = "[LoadSymbolSelectionConfig]"
         try:
-            async for db in self.get_db_session():
+            async with self._owned_session() as db:
                 user_config_data = await crud.get_user_symbol_selection_config(
                     db, self.user_id
                 )
@@ -1030,7 +1105,7 @@ class TradingController:
         Returns None when unavailable; never raises.
         """
         try:
-            async for db in self.get_db_session():
+            async with self._owned_session() as db:
                 user = await crud.admin_get_user_details(db, self.user_id)
                 if user and getattr(user, "push_subscription", None):
                     subscription = user.push_subscription
@@ -1054,7 +1129,7 @@ class TradingController:
             f"Controller for user_id={self.user_id} starting. Loading user-specific configuration..."
         )
         try:
-            async for db in self.get_db_session():
+            async with self._owned_session() as db:
                 app_config = await crud.get_config(db, user_id=self.user_id)
                 if app_config and self.rm:
                     logger.info("Applying user-specific runtime settings.")
@@ -1154,6 +1229,23 @@ class TradingController:
             if api_key:
                 started_stream_keys.add(stream_key)
 
+            # Private streams are LAZY by default (PRIVATE_WS_MODE=auto): they
+            # open on first live demand and close after the idle timeout (see
+            # _ensure_private_streams / reaper). 1m bots are flat most of the
+            # time, so steady-state stream count is ~open positions, not
+            # ~controllers - 10-50x under exchange per-IP ceilings. Streams
+            # cannot be multiplexed across users, but they CAN be shared across
+            # this key's controllers via private_stream_registry (which also
+            # ends the single-session kick storms on bitget/weex).
+            # PRIVATE_WS_MODE=always preserves the old boot-open behavior.
+            boot_open = (
+                str(getattr(config, "PRIVATE_WS_MODE", "auto") or "auto")
+                .strip()
+                .lower()
+                == "always"
+            )
+            if not boot_open:
+                continue
             if hasattr(stream_executor, "start_user_data_stream"):
                 if clean_exchange_id in {"bitget", "weex"}:
                     # Identify the owner of every private WS stream so a
@@ -1355,6 +1447,13 @@ class TradingController:
         logger.debug("Clearing DataConsumer subscriptions...")
         await self.consumer.clear_all_subscriptions()
         logger.debug("Stopping Executor User Data Stream...")
+        # Release shared private loops first (refcounted: the loop stops only
+        # when no sibling controller needs it). Direct stops below stay as a
+        # fallback for boot-opened (always-mode) streams.
+        try:
+            await self._release_private_streams()
+        except Exception as e:
+            logger.debug(f"Private stream release on stop failed: {e}")
         live_executor = self.executors.get("live")
         executors_for_stream_stop = [live_executor, *self.market_executors.values()]
         stopped_executor_ids = set()
@@ -1444,7 +1543,28 @@ class TradingController:
                         logger.info(f"Received command '{command_type}' via Redis.")
 
                         if command_type == "START_STRATEGY":
-                            await self._handle_start_strategy_command(payload)
+                            start_applied = await self._handle_start_strategy_command(
+                                payload
+                            )
+                            # A2 fix: acknowledge the command so the API can tell
+                            # "applied" apart from "silently dropped". A None
+                            # result means "not for this controller" (another one
+                            # handles it) - only the handler acks.
+                            if start_applied is not None and command_data.get(
+                                "command_id"
+                            ):
+                                from bot_module.redis_handler import (
+                                    publish_command_ack,
+                                )
+
+                                await publish_command_ack(
+                                    self.redis_client,
+                                    command_data.get("command_id"),
+                                    status="ok" if start_applied else "error",
+                                    detail=None
+                                    if start_applied
+                                    else "start_strategy_failed",
+                                )
                         elif command_type == "STOP_STRATEGY":
                             await self._handle_stop_strategy_command(payload)
                         elif command_type == "TV_WEBHOOK_SIGNAL":
@@ -1941,7 +2061,7 @@ class TradingController:
         if self._realized_pnl_seeded:
             return
         try:
-            async for db in self.get_db_session():
+            async with self._owned_session() as db:
                 seed = await crud.get_realized_pnl_by_config(
                     db, user_id=self.user_id, api_key_id=self.api_key_id
                 )
@@ -2029,7 +2149,13 @@ class TradingController:
         return False
 
     async def _handle_start_strategy_command(self, payload: dict):
-        """Processes the command to start a strategy instance."""
+        """Processes the command to start a strategy instance.
+
+        Returns True when the strategy was started (or was already running),
+        False when this controller owned the command but failed to apply it,
+        and None when the command is not for this controller (no ack - another
+        controller handles it). See the A2 fix (command acks).
+        """
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "[_handle_start_strategy_command] Received payload: %s",
@@ -2137,7 +2263,7 @@ class TradingController:
             logger.error(
                 f"Invalid START_STRATEGY payload: missing 'id' or 'strategy_name' inside 'config_data'. Payload: {payload}"
             )
-            return
+            return False
 
         log_prefix = f"[StartCmd:{strategy_name}:{config_id[:8]}]"
 
@@ -2149,7 +2275,7 @@ class TradingController:
                 logger.warning(
                     f"{log_prefix} An instance of this config already covers the requested symbol(s). Skipping duplicate launch."
                 )
-                return
+                return True
 
             params_for_instance = config_data.copy()
             params_for_instance["config"] = config_data
@@ -2162,7 +2288,7 @@ class TradingController:
                 logger.error(
                     f"{log_prefix} Could not create instance for strategy '{strategy_name}'."
                 )
-                return
+                return False
 
             # Adding start time to payload
             payload["started_at"] = datetime.now(timezone.utc).isoformat()
@@ -2204,6 +2330,8 @@ class TradingController:
                 logger.warning(
                     f"{log_prefix} Balance refresh during strategy start failed: {e}"
                 )
+
+        return True
 
     async def _handle_tv_webhook_signal_command(self, payload: dict):
         command_user_id = payload.get("user_id")
@@ -3179,7 +3307,7 @@ class TradingController:
         # 2. If not running in memory, check active StrategyConfig in DB for this user
         if not assigned_config_id:
             try:
-                async for db in self.get_db_session():
+                async with self._owned_session() as db:
                     user_configs = await crud.get_strategy_configs_by_user(
                         db, user_id=self.user_id
                     )
@@ -3251,7 +3379,6 @@ class TradingController:
                         logger.info(
                             f"Adopt:{symbol}: Matched StrategyConfig '{matched_config.name}' (id={matched_config.id}) from DB."
                         )
-                        break
                     else:
                         logger.info(
                             f"Adopt:{symbol}: Found {len(user_configs)} StrategyConfigs in DB, but none matched symbol {symbol}."
@@ -3265,7 +3392,7 @@ class TradingController:
         # 3. Fallback: check last trade in DB
         if not assigned_config_id:
             try:
-                async for db in self.get_db_session():
+                async with self._owned_session() as db:
                     last_trade = await crud.get_last_open_trade_for_symbol(
                         db, self.user_id, symbol, api_key_id=self.api_key_id
                     )
@@ -3288,7 +3415,6 @@ class TradingController:
                             f"Adopt:{symbol}: Matched last trade {last_trade.trade_uuid} "
                             f"(config_id={assigned_config_id}, name={assigned_strategy_name})."
                         )
-                        break
                     else:
                         logger.info(
                             f"Adopt:{symbol}: No recent trade found in DB for user_id={self.user_id}, symbol={symbol}."
@@ -3672,6 +3798,27 @@ class TradingController:
                     logger.error(
                         f"[ApiKeyHealth] DB session error for key status: {e_db}"
                     )
+
+    async def _has_live_strategy_instances(self) -> bool:
+        """True when at least one running strategy instance is in live mode.
+
+        Used to skip exchange-facing periodic work (reconcile) for controllers
+        that only run paper strategies. Fail-CLOSED: on any error returns True
+        so live trading is never starved of reconciliation by a helper bug.
+        """
+        try:
+            async with self.instances_lock:
+                for _instance, payload in list(
+                    self.running_strategy_instances.values()
+                ):
+                    if (
+                        isinstance(payload, dict)
+                        and str(payload.get("mode", "")).lower() == "live"
+                    ):
+                        return True
+        except Exception:
+            return True
+        return False
 
     async def _reconcile_positions_with_exchange(self):
         """
@@ -4277,7 +4424,7 @@ class TradingController:
                         f"{log_prefix} Auto-starting strategy for open position on {pos.symbol} (config_id={config_id})..."
                     )
                     try:
-                        async for db in self.get_db_session():
+                        async with self._owned_session() as db:
                             strat_config = await crud.get_strategy_config(
                                 db, self.user_id, str(config_id)
                             )
@@ -4632,6 +4779,26 @@ class TradingController:
             self._active_positions = ActivePositionMap()
 
     async def _publish_state_to_redis(self):
+        """Serialize state publishes: skip if a previous publish is still running.
+
+        This method is fire-and-forget scheduled from ~10 call sites
+        (create_task), so without this guard a burst (e.g. every controller
+        reacting to the same candle close) stacks concurrent publishes per
+        controller. Each concurrent publish checks out its own pool connection,
+        which grows every per-controller pool toward its max and was a direct
+        contributor to EMFILE ("Too many open files") past ~100 controllers -
+        on top of piling up task objects holding full state copies (memory).
+        A skipped publish is harmless: state is refreshed every few seconds.
+        """
+        if self._publish_state_in_flight:
+            return
+        self._publish_state_in_flight = True
+        try:
+            await self._publish_state_to_redis_impl()
+        finally:
+            self._publish_state_in_flight = False
+
+    async def _publish_state_to_redis_impl(self):
         """
         Collects data on running strategies, active positions, and the OVERALL portfolio state,
         and then publishes them to Redis.
@@ -5017,7 +5184,7 @@ class TradingController:
         """
         log_prefix = "[ReloadUserAppConfig]"
         try:
-            async for db in self.get_db_session():
+            async with self._owned_session() as db:
                 app_config = await crud.get_config(db, user_id=self.user_id)
                 if app_config:
                     # 1. Update Notifications (Telegram Chat ID)
@@ -5066,12 +5233,33 @@ class TradingController:
                         f"{log_prefix} Could not load AppConfig for user {self.user_id}."
                     )
 
-                break  # Break after one successful load
-
         except Exception as e:
             logger.error(
                 f"{log_prefix} Failed to reload user app config: {e}", exc_info=True
             )
+
+    def _spawn_paper_order_check(self):
+        """Fire-and-forget paper TP/SL check, serialized per controller.
+
+        Returns the task, or None when the previous check is still running
+        (tick skipped) or no paper executor is attached. Without the skip, a
+        saturated event loop stacks one check task per tick per controller and
+        the pile grows without bound (task objects + order/price copies).
+        """
+        paper_ex = (self.executors or {}).get("paper")
+        if paper_ex is None or self._paper_order_check_in_flight:
+            return None
+        self._paper_order_check_in_flight = True
+
+        async def _run():
+            try:
+                await paper_ex.check_open_orders()
+            finally:
+                self._paper_order_check_in_flight = False
+
+        return self.loop.create_task(
+            _run(), name=f"PeriodicPaperOrderCheck_User{self.user_id}"
+        )
 
     async def _run_config_reloader(self):
         """Periodically checks and reloads optimized parameters and symbol selection settings."""
@@ -5232,7 +5420,10 @@ class TradingController:
         rm_save_interval = 30
 
         # Initializing variables for reconciliation
-        last_reconcile_time = 0
+        # Stagger the first run per controller: without this every controller
+        # reconciles on the same tick after a (re)start, herding thousands of
+        # REST calls at the exchanges in the same second (see B4).
+        last_reconcile_time = -random.uniform(0, 60)
         reconcile_interval = (
             60  # Reconciliation once per minute (sufficient for prevention)
         )
@@ -5250,12 +5441,10 @@ class TradingController:
             token = user_id_context.set(self.user_id)
             try:
                 now = time.monotonic()
-                # On every tick of the periodic task, check pending orders in paper mode
+                # On every tick of the periodic task, check pending orders in paper mode.
+                # Serialized per controller (skip if the previous check still runs).
                 if self.executors.get("paper"):
-                    self.loop.create_task(
-                        self.executors["paper"].check_open_orders(),
-                        name=f"PeriodicPaperOrderCheck_User{self.user_id}",
-                    )
+                    self._spawn_paper_order_check()
 
                 # 1. Checking symbol list updates
                 if now - last_symbol_check_time >= symbol_check_interval:
@@ -5291,12 +5480,17 @@ class TradingController:
                     last_rm_save_time = now
 
                 # 6. Periodic reconciliation with the exchange (protection against duplicates)
+                # Skipped while the controller runs no LIVE strategies: reconcile
+                # is a multi-REST-call body every 60s per controller, and a
+                # paper-only controller has nothing to reconcile. Live instances
+                # always reconcile (fail-closed in the helper). See B4.
                 if now - last_reconcile_time >= reconcile_interval:
-                    # Run in background to avoid blocking the loop
-                    self.loop.create_task(
-                        self._reconcile_positions_with_exchange(),
-                        name=f"PeriodicReconcile_{self.user_id}",
-                    )
+                    if await self._has_live_strategy_instances():
+                        # Run in background to avoid blocking the loop
+                        self.loop.create_task(
+                            self._reconcile_positions_with_exchange(),
+                            name=f"PeriodicReconcile_{self.user_id}",
+                        )
                     last_reconcile_time = now
 
                 # 7. Hedge spread exits (own step: throttled inside)
@@ -5318,6 +5512,29 @@ class TradingController:
                             f"Hedge entry-sync watchdog failed (non-fatal): {e_sync}"
                         )
                     last_hedge_sync_time = now
+
+                # 9. Lazy private streams: keep shared loops while live demand
+                # exists, release after the idle timeout (cheap scan per tick).
+                try:
+                    await self._private_stream_reaper_tick(now)
+                except Exception as e_reap:
+                    logger.debug(f"Private stream reaper tick failed: {e_reap}")
+
+                # 10. Streamless REST poll: fills for live positions without a
+                # healthy shared loop (poll-only exchanges like WEEX, gaps
+                # while a loop (re)opens, WS outages). Self-throttled inside.
+                try:
+                    await self._streamless_poll_tick(now)
+                except Exception as e_poll:
+                    logger.debug(f"Streamless poll tick failed: {e_poll}")
+
+                # 11. Kline freshness watchdog: a silently dead channel freezes
+                # its cache forever (backfill runs at subscribe and on stale
+                # eval only). Self-throttled inside; WARNING-alerts + backfills.
+                try:
+                    await self._history_watchdog_tick(now)
+                except Exception as e_watchdog:
+                    logger.debug(f"History watchdog tick failed: {e_watchdog}")
 
             except Exception as e:
                 logger.error(f"Error in periodic tasks loop: {e}", exc_info=True)
@@ -7096,6 +7313,56 @@ class TradingController:
                 if not fresh:
                     stale_desc.append(f"{k} ({age_str} old)")
             if stale_desc:
+                # Staleness-triggered backfill (throttled per key inside
+                # ensure): a stale-but-fat cache never trips the row-count
+                # on-demand path above, so without this a silently dead
+                # channel freezes signals forever (observed: 3 days). Re-read
+                # once after the attempt; skip only if still stale.
+                if hasattr(self.consumer, "_ensure_history_loaded"):
+                    for k in required_data_keys:
+                        if not k.startswith("kline_"):
+                            continue
+                        parts = k.split("_")
+                        tf = parts[1] if len(parts) > 1 else "1m"
+                        try:
+                            await self.consumer._ensure_history_loaded(
+                                k,
+                                symbol,
+                                tf,
+                                normalized_market_type,
+                                force=True,
+                            )
+                        except Exception as e_ensure:
+                            logger.debug(
+                                f"{log_prefix} Staleness backfill failed for {k}: {e_ensure}"
+                            )
+                    for k in required_data_keys:
+                        if k.startswith("kline_"):
+                            parts = k.split("_")
+                            target_sym = parts[2] if len(parts) == 3 else symbol
+                            tf = parts[1] if len(parts) > 1 else "1m"
+                            try:
+                                df = await self.consumer.get_kline_history(
+                                    target_sym,
+                                    tf,
+                                    market_type=normalized_market_type,
+                                )
+                            except Exception:
+                                df = None
+                            if df is not None:
+                                market_data[k] = df
+                    stale_desc = []
+                    ages_desc = []
+                    for k in required_data_keys:
+                        if not k.startswith("kline_"):
+                            continue
+                        parts = k.split("_")
+                        tf = parts[1] if len(parts) > 1 else "1m"
+                        fresh, age_str = is_kline_fresh(market_data.get(k), tf)
+                        ages_desc.append(f"{k}={age_str} (after backfill)")
+                        if not fresh:
+                            stale_desc.append(f"{k} ({age_str} old)")
+            if stale_desc:
                 logger.warning(
                     f"{log_prefix} WARMUP: stale kline data, skipping signal "
                     f"evaluation: {', '.join(stale_desc)}. History backfill "
@@ -8214,6 +8481,33 @@ class TradingController:
             )
             return None
 
+    def _entry_jitter_seconds(self, mode: str) -> float:
+        """Random pre-entry delay for live orders (exchange burst protection).
+
+        Paper simulation never touches the exchange, so it is never delayed.
+        Returns 0 when ENTRY_JITTER_MAX_SECONDS is 0 (default: current behavior).
+        """
+        if mode == "paper":
+            return 0.0
+        try:
+            cap = float(getattr(config, "ENTRY_JITTER_MAX_SECONDS", 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+        if cap <= 0:
+            return 0.0
+        return random.uniform(0, cap)
+
+    async def _maybe_stagger_entry(self, mode: str, log_prefix: str = "") -> float:
+        """Sleep the jitter delay before a live entry. Returns the delay."""
+        delay = self._entry_jitter_seconds(mode)
+        if delay > 0:
+            logger.info(
+                f"{log_prefix} Staggering live entry by {delay:.2f}s "
+                f"(ENTRY_JITTER_MAX_SECONDS={config.ENTRY_JITTER_MAX_SECONDS})."
+            )
+            await asyncio.sleep(delay)
+        return delay
+
     async def _process_signal(
         self,
         signal: StrategySignal,
@@ -8360,8 +8654,10 @@ class TradingController:
                     return
 
                 if not await self.rm.is_symbol_trading_allowed(signal.symbol):
+                    last_reason = getattr(self.rm, "_last_disable_reason", None)
                     logger.warning(
                         f"{log_prefix} Signal REJECTED by rm.is_symbol_trading_allowed (general block)."
+                        + (f" Reason: {last_reason}" if last_reason else "")
                     )
                     self.trade_logger.log_event(
                         event_type="SIGNAL_REJECTED_RISK_BLOCK",
@@ -8807,11 +9103,17 @@ class TradingController:
                 or initial_quantity_adj is None
                 or initial_quantity_adj <= 0
             ):
-                # Use the received reason for a more accurate log
+                # Keep the RiskManager's specific reason (ZERO_BALANCE,
+                # PAPER_BALANCE_FETCH_FAILED, MIN_QTY_VIOLATION, SL_TOO_CLOSE, ...).
+                # Only fall back to the generic text when it gave none - otherwise
+                # all ~19 distinct sizing rejections collapse into one useless
+                # "invalid quantity (None)" line in the event log.
                 final_rejection_reason = (
                     rejection_reason or "Unknown reason from RiskManager"
                 )
-                if initial_quantity_adj is None or initial_quantity_adj <= 0:
+                if not rejection_reason and (
+                    initial_quantity_adj is None or initial_quantity_adj <= 0
+                ):
                     final_rejection_reason = f"Risk Manager calculated invalid quantity ({initial_quantity_adj})"
 
                 logger.warning(
@@ -9072,6 +9374,14 @@ class TradingController:
 
             entry_order_response: Optional[Dict[str, Any]] = None
             try:
+                # Stagger live entries so a candle-close burst across hundreds
+                # of bots does not hit per-IP rate limits in the same second.
+                await self._maybe_stagger_entry(mode, log_prefix)
+                # A live fill arriving milliseconds after placement needs the
+                # private stream (or the REST poller) watching: ensure the
+                # shared loop BEFORE placing, not after.
+                if mode == "live":
+                    await self._ensure_private_streams()
                 logger.info(f"{log_prefix} Placing ENTRY order: {entry_order_params}")
                 symbol_arg = entry_order_params.pop("symbol")
                 side_arg = entry_order_params.pop("side")
@@ -10465,6 +10775,7 @@ class TradingController:
         exchange_pnl_available: bool = False,
         market_type: Optional[str] = None,
         price_source: Optional[str] = None,
+        closed_quantity: Optional[float] = None,
     ):
         # order_id and client_order_id here are the IDs of the order that TRIGGERED the final exit
         log_prefix = f"[_HandleFinalExit:{symbol}:{reason}]"
@@ -10588,6 +10899,11 @@ class TradingController:
                 else Decimal("0.0")
             )
             qty_closed_by_final_event = position.remaining_quantity
+            if closed_quantity is not None and closed_quantity > 0:
+                # Paper path: _notify decrements remaining BEFORE finalizing,
+                # so remaining is already 0 here and PnL would compute as 0.
+                # The notifier passes the actually closed quantity instead.
+                qty_closed_by_final_event = closed_quantity
 
             if qty_closed_by_final_event > 0 and exit_price > 0:
                 self._append_execution_event(
@@ -10644,6 +10960,8 @@ class TradingController:
 
                 if reason != "ALL_PARTIAL_TP":  # If not fully closed by partials
                     qty_closed_by_this_event = position.remaining_quantity
+                    if closed_quantity is not None and closed_quantity > 0:
+                        qty_closed_by_this_event = closed_quantity
                     if (
                         qty_closed_by_this_event > 0
                         and exit_price > 0
@@ -11130,7 +11448,14 @@ class TradingController:
                 signal_details_for_db["price_source"] = price_source or "ws_event"
 
                 trade_data_for_db = {
-                    "trade_uuid": position_to_process_copy.entry_client_order_id,  # Use Client Order ID as a unique trade ID
+                    # Exit rows are keyed by the TRIGGERING order (fill cid),
+                    # never by the entry cid: the entry fill already recorded
+                    # a row under the entry cid, so reusing it collides on
+                    # every close (UniqueViolation). position_entry_id keeps
+                    # the entry<->exit grouping for analytics.
+                    "trade_uuid": client_order_id
+                    or (str(order_id) if order_id is not None else None)
+                    or position_to_process_copy.entry_client_order_id,
                     "timestamp_close": datetime.fromtimestamp(
                         position_to_process_copy.closed_time, timezone.utc
                     )
@@ -11167,18 +11492,44 @@ class TradingController:
                 }
 
                 # Get the DB session and call the save function
-                async for db in self.get_db_session():
+                async with self._owned_session() as db:
                     try:
-                        await crud.create_trade(
-                            db=db,
-                            user_id=self.user_id,
-                            trade_data=trade_data_for_db,
-                            trade_mode=trade_mode_for_db,
-                        )
-                        await db.commit()  # Committing transaction
-                        logger.info(
-                            f"{log_prefix} Successfully saved trade to database."
-                        )
+                        exit_uuid = trade_data_for_db.get("trade_uuid")
+                        if exit_uuid and await crud.get_trade_by_uuid(db, exit_uuid):
+                            logger.info(
+                                f"{log_prefix} Exit trade {exit_uuid} already recorded - skipping duplicate insert."
+                            )
+                        else:
+                            try:
+                                await crud.create_trade(
+                                    db=db,
+                                    user_id=self.user_id,
+                                    trade_data=trade_data_for_db,
+                                    trade_mode=trade_mode_for_db,
+                                )
+                                await db.commit()  # Committing transaction
+                                logger.info(
+                                    f"{log_prefix} Successfully saved trade to database."
+                                )
+                            except Exception as e_dup:
+                                # Race: two finalizations inserting the same
+                                # exit row concurrently. A duplicate key is a
+                                # benign no-op (the row exists) - roll back
+                                # and continue. Anything else re-raises.
+                                err_name = type(e_dup).__name__
+                                if "UniqueViolation" in err_name or (
+                                    "IntegrityError" in err_name
+                                    or "already exists" in str(e_dup)
+                                ):
+                                    try:
+                                        await db.rollback()
+                                    except Exception:
+                                        pass
+                                    logger.info(
+                                        f"{log_prefix} Exit trade {exit_uuid} raced another insert - skipping duplicate."
+                                    )
+                                else:
+                                    raise
 
                         # Exact per-config display attribution (see
                         # _realized_pnl_by_config): accumulate AFTER the trade
@@ -11266,8 +11617,12 @@ class TradingController:
                                 if is_mining_enabled and is_eligible:
                                     strategy_config_id = trade_data_for_db.get(
                                         "strategy_config_id"
+                                    ) or getattr(
+                                        position_to_process_copy, "config_id", None
                                     )
                                     strategy_blocks = []
+                                    strat_raw_cfg = None
+
                                     if strategy_config_id:
                                         strat = await crud.get_strategy_config_by_id(
                                             db, strategy_config_id
@@ -11275,38 +11630,183 @@ class TradingController:
                                         if strat and isinstance(
                                             strat.config_data, dict
                                         ):
-                                            entry_conditions = strat.config_data.get(
-                                                "config", {}
-                                            ).get("entryConditions", {})
+                                            strat_raw_cfg = strat.config_data
 
-                                            def walk_conditions(node):
-                                                blocks = []
-                                                if isinstance(node, dict):
-                                                    node_type = node.get("type")
-                                                    if node_type:
-                                                        blocks.append(
-                                                            {
-                                                                "type": node_type,
-                                                                "params": node.get(
-                                                                    "params", {}
-                                                                ),
-                                                            }
-                                                        )
-                                                    children = node.get("children")
-                                                    if isinstance(children, list):
-                                                        for child in children:
-                                                            blocks.extend(
-                                                                walk_conditions(child)
-                                                            )
-                                                return blocks
-
-                                            strategy_blocks = walk_conditions(
-                                                entry_conditions
+                                    if (
+                                        not strat_raw_cfg
+                                        and strategy_config_id
+                                        and hasattr(self, "running_strategy_instances")
+                                    ):
+                                        run_entry = self.running_strategy_instances.get(
+                                            strategy_config_id
+                                        )
+                                        if (
+                                            run_entry
+                                            and len(run_entry) > 1
+                                            and isinstance(run_entry[1], dict)
+                                        ):
+                                            strat_raw_cfg = (
+                                                run_entry[1].get("config_data")
+                                                or run_entry[1]
                                             )
+
+                                    if not strat_raw_cfg and getattr(
+                                        position_to_process_copy, "config_id", None
+                                    ):
+                                        pos_cid = position_to_process_copy.config_id
+                                        strat_pos = (
+                                            await crud.get_strategy_config_by_id(
+                                                db, pos_cid
+                                            )
+                                        )
+                                        if strat_pos and isinstance(
+                                            strat_pos.config_data, dict
+                                        ):
+                                            strat_raw_cfg = strat_pos.config_data
+                                        elif hasattr(
+                                            self, "running_strategy_instances"
+                                        ):
+                                            run_entry = (
+                                                self.running_strategy_instances.get(
+                                                    pos_cid
+                                                )
+                                            )
+                                            if (
+                                                run_entry
+                                                and len(run_entry) > 1
+                                                and isinstance(run_entry[1], dict)
+                                            ):
+                                                strat_raw_cfg = (
+                                                    run_entry[1].get("config_data")
+                                                    or run_entry[1]
+                                                )
+
+                                    if strat_raw_cfg and isinstance(
+                                        strat_raw_cfg, dict
+                                    ):
+                                        cfg_dict = strat_raw_cfg
+                                        if isinstance(cfg_dict.get("config"), dict):
+                                            cfg_dict = cfg_dict["config"]
+                                        elif isinstance(
+                                            cfg_dict.get("strategy_json"), dict
+                                        ):
+                                            cfg_dict = cfg_dict["strategy_json"]
+                                        elif isinstance(cfg_dict.get("data"), dict):
+                                            cfg_dict = cfg_dict["data"]
+
+                                        def walk_conditions(node):
+                                            blocks = []
+                                            if isinstance(node, dict):
+                                                node_type = node.get("type")
+                                                if node_type and str(
+                                                    node_type
+                                                ).upper() not in ("AND", "OR"):
+                                                    blocks.append(
+                                                        {
+                                                            "type": str(node_type),
+                                                            "params": node.get(
+                                                                "params", {}
+                                                            )
+                                                            if isinstance(
+                                                                node.get("params"), dict
+                                                            )
+                                                            else {},
+                                                        }
+                                                    )
+                                                children = node.get("children")
+                                                if isinstance(children, list):
+                                                    for child in children:
+                                                        blocks.extend(
+                                                            walk_conditions(child)
+                                                        )
+                                            return blocks
+
+                                        extracted = []
+                                        # 1. Filters (where indicators like RSI, EMA, NATR, ADX, Vol live)
+                                        if "filters" in cfg_dict and isinstance(
+                                            cfg_dict["filters"], dict
+                                        ):
+                                            extracted.extend(
+                                                walk_conditions(cfg_dict["filters"])
+                                            )
+
+                                        # 2. Entry Conditions
+                                        if "entryConditions" in cfg_dict and isinstance(
+                                            cfg_dict["entryConditions"], dict
+                                        ):
+                                            extracted.extend(
+                                                walk_conditions(
+                                                    cfg_dict["entryConditions"]
+                                                )
+                                            )
+
+                                        # 3. Entry Trigger
+                                        if "entryTrigger" in cfg_dict and isinstance(
+                                            cfg_dict["entryTrigger"], dict
+                                        ):
+                                            t_type = (
+                                                cfg_dict["entryTrigger"].get("type")
+                                                or "entry_trigger"
+                                            )
+                                            t_params = cfg_dict["entryTrigger"].get(
+                                                "params", {}
+                                            )
+                                            if not isinstance(t_params, dict):
+                                                t_params = {}
+                                            if "timeframe" in cfg_dict["entryTrigger"]:
+                                                t_params = {
+                                                    **t_params,
+                                                    "timeframe": cfg_dict[
+                                                        "entryTrigger"
+                                                    ]["timeframe"],
+                                                }
+                                            extracted.append(
+                                                {
+                                                    "type": str(t_type),
+                                                    "params": t_params,
+                                                }
+                                            )
+
+                                        # 4. Position Management
+                                        mgmt = cfg_dict.get(
+                                            "positionManagement"
+                                        ) or cfg_dict.get("management")
+                                        if isinstance(mgmt, list):
+                                            for m in mgmt:
+                                                if isinstance(m, dict) and m.get(
+                                                    "type"
+                                                ):
+                                                    extracted.append(
+                                                        {
+                                                            "type": str(m.get("type")),
+                                                            "params": m.get(
+                                                                "params", {}
+                                                            )
+                                                            if isinstance(
+                                                                m.get("params"), dict
+                                                            )
+                                                            else {},
+                                                        }
+                                                    )
+
+                                        # Deduplicate while preserving order
+                                        seen_b = set()
+                                        for b in extracted:
+                                            b_key = (
+                                                b.get("type"),
+                                                json.dumps(
+                                                    b.get("params", {}), sort_keys=True
+                                                ),
+                                            )
+                                            if b_key not in seen_b:
+                                                seen_b.add(b_key)
+                                                strategy_blocks.append(b)
+
                                     if not strategy_blocks:
                                         strategy_blocks = [
                                             {
-                                                "type": position_to_process_copy.strategy,
+                                                "type": position_to_process_copy.strategy
+                                                or "VisualBuilderStrategy",
                                                 "params": {},
                                             }
                                         ]
@@ -11392,18 +11892,25 @@ class TradingController:
                                                 _close_ids.append(_cid_str)
 
                                     strat_tf = None
-                                    if (
-                                        strategy_config_id
-                                        and "strat" in locals()
-                                        and strat
-                                        and isinstance(strat.config_data, dict)
+                                    if strat_raw_cfg and isinstance(
+                                        strat_raw_cfg, dict
                                     ):
+                                        cfg_for_tf = strat_raw_cfg
+                                        if isinstance(cfg_for_tf.get("config"), dict):
+                                            cfg_for_tf = cfg_for_tf["config"]
                                         strat_tf = (
-                                            strat.config_data.get("config", {}).get(
-                                                "timeframe"
+                                            cfg_for_tf.get("timeframe")
+                                            or cfg_for_tf.get("candle_timeframe")
+                                            or cfg_for_tf.get("entry_timeframe")
+                                            or (
+                                                cfg_for_tf.get("entryTrigger", {}).get(
+                                                    "timeframe"
+                                                )
+                                                if isinstance(
+                                                    cfg_for_tf.get("entryTrigger"), dict
+                                                )
+                                                else None
                                             )
-                                            or strat.config_data.get("candle_timeframe")
-                                            or strat.config_data.get("entry_timeframe")
                                         )
                                     if not strat_tf:
                                         strat_tf = (
@@ -11413,6 +11920,75 @@ class TradingController:
                                             ).get("timeframe")
                                             or "1m"
                                         )
+
+                                    # Fallback calculation of market session from entry/close timestamp
+                                    _entry_ts = (
+                                        position_to_process_copy.entry_time
+                                        or position_to_process_copy.closed_time
+                                        or time.time()
+                                    )
+                                    _entry_hour = datetime.fromtimestamp(
+                                        _entry_ts, timezone.utc
+                                    ).hour
+                                    if 7 <= _entry_hour < 16:
+                                        _calc_session = "london"
+                                    elif 12 <= _entry_hour < 21:
+                                        _calc_session = "new_york"
+                                    elif 0 <= _entry_hour < 9:
+                                        _calc_session = "asia"
+                                    else:
+                                        _calc_session = "sydney"
+
+                                    _m_ctx = (
+                                        signal_specific_details.get(
+                                            "market_context", {}
+                                        )
+                                        if isinstance(
+                                            signal_specific_details.get(
+                                                "market_context"
+                                            ),
+                                            dict,
+                                        )
+                                        else {}
+                                    )
+                                    _natr_val = (
+                                        signal_specific_details.get("natr")
+                                        or signal_specific_details.get("natr_actual")
+                                        or _m_ctx.get("natr")
+                                    )
+                                    if _natr_val is None:
+                                        _e_atr = getattr(
+                                            position_to_process_copy, "entry_atr", None
+                                        )
+                                        _e_p = position_to_process_copy.entry_price
+                                        if _e_atr and _e_p and _e_p > 0:
+                                            try:
+                                                _natr_val = round(
+                                                    (float(_e_atr) / float(_e_p))
+                                                    * 100.0,
+                                                    4,
+                                                )
+                                            except Exception:
+                                                pass
+
+                                    _adx_val = (
+                                        signal_specific_details.get("adx")
+                                        or signal_specific_details.get("adx_actual")
+                                        or _m_ctx.get("adx")
+                                    )
+                                    _vol_ratio_val = (
+                                        signal_specific_details.get("volume_ratio")
+                                        or signal_specific_details.get(
+                                            "relative_volume"
+                                        )
+                                        or signal_specific_details.get("vol_ratio")
+                                        or _m_ctx.get("volume_ratio")
+                                    )
+                                    _session_val = (
+                                        signal_specific_details.get("session")
+                                        or _m_ctx.get("session")
+                                        or _calc_session
+                                    )
 
                                     payload = {
                                         "symbol": position_to_process_copy.symbol,
@@ -11428,26 +12004,10 @@ class TradingController:
                                         "max_floating_loss": position_to_process_copy.max_floating_loss,
                                         "strategy_blocks": strategy_blocks,
                                         "market_context": {
-                                            "session": signal_specific_details.get(
-                                                "session"
-                                            )
-                                            or signal_specific_details.get(
-                                                "market_context", {}
-                                            ).get("session"),
-                                            "natr": signal_specific_details.get("natr")
-                                            or signal_specific_details.get(
-                                                "market_context", {}
-                                            ).get("natr"),
-                                            "adx": signal_specific_details.get("adx")
-                                            or signal_specific_details.get(
-                                                "market_context", {}
-                                            ).get("adx"),
-                                            "volume_ratio": signal_specific_details.get(
-                                                "volume_ratio"
-                                            )
-                                            or signal_specific_details.get(
-                                                "market_context", {}
-                                            ).get("volume_ratio"),
+                                            "session": _session_val,
+                                            "natr": _natr_val,
+                                            "adx": _adx_val,
+                                            "volume_ratio": _vol_ratio_val,
                                         },
                                         "exchange_id": exch_id,
                                         "market_type": market_type_norm,
@@ -11496,8 +12056,6 @@ class TradingController:
                     except Exception as e_inner:
                         await db.rollback()
                         raise e_inner
-                    finally:
-                        break  # Exiting the loop after one iteration
             except Exception as e_db_save:
                 logger.error(
                     f"{log_prefix} CRITICAL: Failed to save trade to database for user_id={self.user_id}, symbol={symbol}. Error: {e_db_save}",
@@ -14448,6 +15006,530 @@ class TradingController:
                     return True
         return False
 
+    # ---- Lazy private streams (one shared loop per exchange key) ----
+
+    def _known_live_order_cids(self) -> Set[str]:
+        """Exact clientOrderIds this controller placed on live positions.
+
+        Used for sibling detection with SHARED private streams: several
+        controllers of one key receive the same account events, and the legacy
+        fuzzy cid matcher treats any same-tag cid as a match (the shared
+        "x-entry-" prefix alone is 8 chars). Only EXACT membership counts here.
+        Lock-free scan without awaits: safe between task switches. Best effort:
+        on any error returns empty (falls back to today's behavior).
+        """
+        out: Set[str] = set()
+        try:
+            positions = list(self._active_positions.values())
+        except Exception:
+            return out
+        for pos in positions:
+            try:
+                if getattr(pos, "mode", "live") != "live":
+                    continue
+                candidates = [
+                    getattr(pos, "entry_client_order_id", None),
+                    getattr(pos, "current_sl_client_order_id", None),
+                ]
+                for ptp in getattr(pos, "partial_tp_orders", None) or []:
+                    candidates.append(getattr(ptp, "client_order_id", None))
+                for cid in candidates:
+                    if cid:
+                        out.add(str(cid))
+            except Exception:
+                continue
+        return out
+
+    def _owns_live_cid(self, cid: Optional[str]) -> bool:
+        """Sync ownership check for the stream router."""
+        if not cid:
+            return False
+        try:
+            return str(cid) in self._known_live_order_cids()
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_own_format_cid(cid: Optional[str]) -> bool:
+        if not cid:
+            return False
+        s = str(cid).lower()
+        return s.startswith(OWN_CID_PREFIXES)
+
+    def _is_sibling_order(self, client_order_id: Optional[str]) -> bool:
+        """True when the event belongs to a SIBLING controller, not us.
+
+        Our-format cid that we did not place: with shared streams every
+        controller of the key sees it, and without this guard it would be
+        adopted as our SL or close our position as MANUAL_CLOSE_DETECTED
+        (or fuzzy-match our entry). Truly manual orders (foreign format) keep
+        today's behavior. x-close- is deliberately excluded: forced closes are
+        matched by prefix in section 4 and must keep flowing.
+        """
+        if not client_order_id:
+            return False
+        s = str(client_order_id)
+        if not s.lower().startswith(("x-entry-", "x-ptp-", "x-tp-", "x-sl-")):
+            return False
+        return s not in self._known_live_order_cids()
+
+    def _private_stream_policy(self, clean_exchange: str) -> str:
+        """'stream' or 'poll' for one exchange. Never raises."""
+        try:
+            mode = (
+                str(getattr(config, "PRIVATE_WS_MODE", "auto") or "auto")
+                .strip()
+                .lower()
+            )
+            if mode == "never":
+                return "poll"
+            if mode == "always":
+                return "stream"
+            poll_only = getattr(config, "PRIVATE_WS_POLL_ONLY_EXCHANGES", set())
+            if clean_exchange in {str(e).lower() for e in (poll_only or set())}:
+                return "poll"
+            return "stream"
+        except Exception:
+            return "stream"
+
+    def _stream_executors(self) -> List[Tuple[str, Any, Any]]:
+        """Distinct (exchange, api_key, executor) needing a private stream.
+
+        Mirrors the boot-time selection: live executor first, then market
+        executors, deduped per key (single-session exchanges kick on 2nd login).
+        """
+        out: List[Tuple[str, Any, Any]] = []
+        seen_keys = set()
+        seen_ids = set()
+        candidates = [self.executors.get("live"), *self.market_executors.values()]
+        for stream_executor in candidates:
+            if stream_executor is None:
+                continue
+            if not hasattr(stream_executor, "start_user_data_stream"):
+                continue
+            if id(stream_executor) in seen_ids:
+                continue
+            seen_ids.add(id(stream_executor))
+            exchange_name = str(
+                getattr(stream_executor, "exchange_id", "") or ""
+            ).lower()
+            clean_exchange = (
+                exchange_name.replace("_testnet", "")
+                .replace("_spot", "")
+                .replace("_linear", "")
+            )
+            api_key = getattr(stream_executor, "api_key", None)
+            if not api_key:
+                continue  # registry cannot share keyless streams; boot opens directly
+            key = (clean_exchange, api_key)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            out.append((clean_exchange, api_key, stream_executor))
+        return out
+
+    def _live_stream_demand(self) -> bool:
+        """True while any live position needs exchange updates."""
+        try:
+            for pos in list(self._active_positions.values()):
+                if getattr(pos, "mode", "live") != "live":
+                    continue
+                if getattr(pos, "status", None) in _LIVE_DEMAND_STATUSES:
+                    return True
+        except Exception:
+            return True  # fail-closed: demand on error
+        return False
+
+    def _private_stream_sub_id(self) -> Tuple[Any, Any]:
+        return (self.user_id, self.api_key_id)
+
+    async def _private_stream_heat(self) -> Optional[float]:
+        """Hottest relative distance of live positions to TP/SL (fraction).
+
+        0.001 = 0.1% away from a fill. None when no live position needs
+        exchange updates. Drives WS-slot promotion under a full connection
+        budget (smaller = hotter) and the hot-poll interval. Cheap: iterates
+        live positions only, prices come from the in-memory pair cache.
+        Never raises.
+        """
+        try:
+            best: Optional[float] = None
+            for pos in list(self._active_positions.values()):
+                if getattr(pos, "mode", "live") != "live":
+                    continue
+                if getattr(pos, "status", None) not in _LIVE_DEMAND_STATUSES:
+                    continue
+                mark = float(getattr(pos, "entry_price", 0) or 0)
+                try:
+                    pair = await self.consumer.get_active_pair_by_symbol(
+                        getattr(pos, "symbol", "")
+                    )
+                    if pair and pair.get("last_price"):
+                        mark = float(pair["last_price"])
+                except Exception:
+                    pass
+                if mark <= 0:
+                    continue
+                targets = []
+                for ptp in getattr(pos, "partial_tp_orders", None) or []:
+                    if getattr(ptp, "status", None) in {
+                        "PENDING",
+                        "PENDING_PLACEMENT",
+                        "VIRTUAL_PENDING",
+                    }:
+                        target = getattr(ptp, "target_price", None)
+                        if target:
+                            targets.append(float(target))
+                initial_tp = getattr(pos, "initial_take_profit", None)
+                if initial_tp:
+                    targets.append(float(initial_tp))
+                current_sl = getattr(pos, "current_sl_price", None)
+                if current_sl:
+                    targets.append(float(current_sl))
+                for target in targets:
+                    if target > 0:
+                        distance = abs(target - mark) / mark
+                        if best is None or distance < best:
+                            best = distance
+            return best
+        except Exception:
+            return None
+
+    async def _ensure_private_streams(self, heat: Optional[float] = None) -> bool:
+        """Attach to shared loops for every streamable key. Never raises.
+
+        Returns True if at least one path (stream or poller-fallback) can
+        deliver fills. Retried openings are throttled: a failed login must not
+        hot-loop against per-IP connection limits. `heat` (relative TP/SL
+        distance, smaller = hotter) lets a hot key take over the coldest
+        running loop when the process-global budget is full.
+        """
+        ok_any = False
+        now = time.monotonic()
+        last_attempt = getattr(self, "_private_stream_last_open_attempt", 0.0)
+        for clean_exchange, api_key, stream_executor in self._stream_executors():
+            if self._private_stream_policy(clean_exchange) != "stream":
+                ok_any = True  # poller path covers this key
+                continue
+            if private_stream_registry.is_stream_running(clean_exchange, api_key):
+                self._private_stream_keys.add((clean_exchange, api_key))
+                ok_any = True
+                continue
+            if now - last_attempt < 60:
+                continue
+            self._private_stream_last_open_attempt = now
+
+            def _open(router_cb, _ex=stream_executor):
+                return _ex.start_user_data_stream(router_cb)
+
+            async def _stop(_ex=stream_executor):
+                if hasattr(_ex, "stop_user_data_stream"):
+                    await _ex.stop_user_data_stream()
+
+            ok = await private_stream_registry.ensure_stream(
+                clean_exchange,
+                api_key,
+                self._private_stream_sub_id(),
+                on_event=self._handle_order_update,
+                owns_cid=self._owns_live_cid,
+                open_fn=_open,
+                stop_fn=_stop,
+                label=f"u{self.user_id}/k{self.api_key_id}",
+                heat=heat,
+            )
+            if ok:
+                self._private_stream_keys.add((clean_exchange, api_key))
+            ok_any = ok_any or ok
+        return ok_any
+
+    async def _release_private_streams(self) -> None:
+        """Detach from every held shared loop. Never raises."""
+        for clean_exchange, api_key in list(self._private_stream_keys):
+            try:
+                await private_stream_registry.release_stream(
+                    clean_exchange, api_key, self._private_stream_sub_id()
+                )
+            except Exception as e:
+                logger.debug(f"Private stream release failed: {e}")
+        self._private_stream_keys.clear()
+
+    async def _private_stream_reaper_tick(self, now: float) -> None:
+        """Keep streams while live demand exists, release after idle timeout.
+
+        Computes this controller's heat once per tick (for budget promotion)
+        and stashes it for the poll tick, so the positions scan runs once.
+        """
+        try:
+            if self._live_stream_demand():
+                self._private_stream_idle_since = None
+                heat = await self._private_stream_heat()
+                self._private_stream_heat_value = heat
+                for clean_exchange, api_key, _ex in self._stream_executors():
+                    private_stream_registry.report_heat(clean_exchange, api_key, heat)
+                await self._ensure_private_streams(heat=heat)
+                return
+            self._private_stream_heat_value = None
+            if not self._private_stream_keys:
+                self._private_stream_idle_since = None
+                return
+            idle_timeout = float(
+                getattr(config, "PRIVATE_WS_IDLE_TIMEOUT_SECONDS", 300) or 0
+            )
+            if self._private_stream_idle_since is None:
+                self._private_stream_idle_since = now
+                return
+            if (
+                idle_timeout <= 0
+                or now - self._private_stream_idle_since >= idle_timeout
+            ):
+                logger.info(
+                    f"[PrivateStream] no live demand for "
+                    f"{now - self._private_stream_idle_since:.0f}s, releasing "
+                    f"{len(self._private_stream_keys)} loop(s)."
+                )
+                await self._release_private_streams()
+                self._private_stream_idle_since = None
+        except Exception as e:
+            logger.debug(f"Private stream reaper tick failed: {e}")
+
+    async def _history_watchdog_tick(self, now: float) -> None:
+        """Freshness watchdog over subscribed kline keys (throttled).
+
+        A silently dead channel freezes its cache forever: backfill runs at
+        subscribe and on stale signal evaluation, but a quiet market (or a
+        wedged ensure path) means nobody notices. Every
+        HISTORY_WATCHDOG_INTERVAL_SECONDS this re-verifies every subscribed
+        kline key, WARNING-alerts with symbol/TF/age, and force backfills
+        stale ones (throttled per key inside ensure). Never raises.
+        """
+        try:
+            interval = float(
+                getattr(config, "HISTORY_WATCHDOG_INTERVAL_SECONDS", 300) or 300
+            )
+            last = float(getattr(self, "_last_history_watchdog_time", 0.0) or 0.0)
+            if now - last < interval:
+                return
+            self._last_history_watchdog_time = now
+            consumer = getattr(self, "consumer", None)
+            if consumer is None or not hasattr(consumer, "_ensure_history_loaded"):
+                return
+            stream_keys = set(
+                getattr(consumer, "_redis_market_stream_keys", None) or set()
+            )
+            if not stream_keys:
+                return
+            for stream_key in sorted(stream_keys):
+                try:
+                    head, _, tf_part = str(stream_key).partition("@kline_")
+                    if not tf_part:
+                        continue
+                    left = head.split(":")
+                    if len(left) != 3:
+                        continue
+                    exchange_id, market_type, symbol_lc = left
+                    cache_key = _kline_cache_key(
+                        symbol_lc.upper(), tf_part, exchange_id, market_type
+                    )
+                    df = _global_kline_df_cache.get(cache_key)
+                    fresh, age_str = is_kline_fresh(df, tf_part)
+                    if fresh:
+                        continue
+                    logger.warning(
+                        f"[HistoryWatchdog] stale subscribed key {stream_key} "
+                        f"({age_str} old) - forcing backfill."
+                    )
+                    await consumer._ensure_history_loaded(
+                        f"kline_{tf_part}",
+                        symbol_lc.upper(),
+                        tf_part,
+                        market_type,
+                        exchange_id,
+                        force=True,
+                    )
+                except Exception as e_key:
+                    logger.debug(f"[HistoryWatchdog] key {stream_key} failed: {e_key}")
+        except Exception as e:
+            logger.debug(f"History watchdog tick failed: {e}")
+
+    def _known_pending_live_orders(self) -> List[Tuple[Any, str, str, str]]:
+        """(executor, symbol, exchange_order_id, client_order_id) still pending.
+
+        Covers PENDING_ENTRY entries plus unfilled SL/TP legs of live positions.
+        Lock-free scan without awaits; best effort.
+        """
+        out: List[Tuple[Any, str, str, str]] = []
+        try:
+            positions = list(self._active_positions.values())
+        except Exception:
+            return out
+        for pos in positions:
+            try:
+                if getattr(pos, "mode", "live") != "live":
+                    continue
+                if getattr(pos, "status", None) not in _LIVE_DEMAND_STATUSES:
+                    continue
+                symbol = getattr(pos, "symbol", None)
+                if not symbol:
+                    continue
+                refs: List[Tuple[Any, str]] = []
+                if getattr(pos, "status", None) == "PENDING_ENTRY":
+                    refs.append(
+                        (
+                            getattr(pos, "entry_order_id", None),
+                            getattr(pos, "entry_client_order_id", None),
+                        )
+                    )
+                if getattr(pos, "current_sl_order_id", None):
+                    refs.append(
+                        (
+                            getattr(pos, "current_sl_order_id", None),
+                            getattr(pos, "current_sl_client_order_id", None),
+                        )
+                    )
+                for ptp in getattr(pos, "partial_tp_orders", None) or []:
+                    if getattr(ptp, "status", None) in ("FILLED", "CANCELED"):
+                        continue
+                    refs.append(
+                        (
+                            getattr(ptp, "order_id", None),
+                            getattr(ptp, "client_order_id", None),
+                        )
+                    )
+                try:
+                    executor = self._executor_for_market_type(
+                        getattr(pos, "market_type", "futures_usdtm"), mode="live"
+                    )
+                except Exception:
+                    executor = (self.executors or {}).get("live")
+                if executor is None:
+                    continue
+                for exch_id, cid in refs:
+                    if exch_id or cid:
+                        out.append(
+                            (executor, str(symbol), str(exch_id or ""), str(cid or ""))
+                        )
+            except Exception:
+                continue
+        return out
+
+    async def _streamless_poll_tick(self, now: float) -> None:
+        """Throttled wrapper: poll only when due, only without a live loop.
+
+        Skipped entirely when every needed key has a running shared loop (the
+        WS path delivers). Per-key sharing: with several strategies on one
+        key a single poll covers all siblings, so a key polled fresh by a
+        sibling is skipped here. Hot keys (positions very close to TP/SL but
+        without a WS slot) poll on the shorter hot interval. Per-tick jitter
+        spreads controllers that boot together so their polls don't herd onto
+        the exchange in one second. Never raises.
+        """
+        try:
+            if not self._live_stream_demand():
+                return
+            heat = getattr(self, "_private_stream_heat_value", None)
+            hot_distance = float(
+                getattr(config, "PRIVATE_WS_HOT_POLL_DISTANCE", 0.005) or 0.005
+            )
+            if heat is not None and heat < hot_distance:
+                interval = float(
+                    getattr(config, "PRIVATE_WS_HOT_POLL_INTERVAL_SECONDS", 8) or 8
+                )
+            else:
+                interval = float(
+                    getattr(config, "PRIVATE_WS_POLL_INTERVAL_SECONDS", 15) or 15
+                )
+            jitter = float(getattr(config, "PRIVATE_WS_POLL_JITTER_SECONDS", 5) or 0)
+            if now - self._private_stream_last_poll < interval + random.uniform(
+                0, max(jitter, 0)
+            ):
+                return
+            needed = {
+                (clean_exchange, api_key)
+                for clean_exchange, api_key, _ex in self._stream_executors()
+                if self._private_stream_policy(clean_exchange) == "stream"
+            }
+            if needed and all(
+                private_stream_registry.is_stream_running(ex, key) for ex, key in needed
+            ):
+                return  # WS path covers everything
+            if needed and not any(
+                private_stream_registry.should_poll(ex, key, interval)
+                for ex, key in needed
+            ):
+                return  # a sibling polled this key fresh
+            self._private_stream_last_poll = now
+            await self._streamless_poll_once()
+        except Exception as e:
+            logger.debug(f"[StreamlessPoll] tick failed: {e}")
+
+    async def _streamless_poll_once(self) -> int:
+        """Poll missing live orders via REST and feed fills into the WS path.
+
+        Covers: poll-only exchanges (WEEX), gaps while a shared loop (re)opens,
+        and WS outages. Returns the number of fill/cancel events delivered.
+        Never raises. Duplicates are harmless: the update handler dedups by
+        execution identity and _handle_final_exit is idempotent.
+        """
+        delivered = 0
+        try:
+            pending = self._known_pending_live_orders()
+            if not pending:
+                return 0
+            by_executor: Dict[int, Tuple[Any, List[Tuple[str, str, str]]]] = {}
+            for executor, symbol, exch_id, cid in pending:
+                bucket = by_executor.setdefault(id(executor), (executor, []))
+                bucket[1].append((symbol, exch_id, cid))
+            for _eid, (executor, refs) in by_executor.items():
+                try:
+                    open_orders = await executor.get_open_orders()
+                except Exception as e:
+                    logger.debug(f"[StreamlessPoll] open orders failed: {e}")
+                    continue
+                try:
+                    algo_orders = await executor.get_open_algo_orders()
+                except Exception:
+                    algo_orders = []
+                open_cids = set()
+                for o in list(open_orders or []) + list(algo_orders or []):
+                    if isinstance(o, dict):
+                        for k in ("clientOrderId", "client_order_id", "clientOid"):
+                            v = o.get(k)
+                            if v:
+                                open_cids.add(str(v))
+                for symbol, exch_id, cid in refs:
+                    if cid and cid in open_cids:
+                        continue  # still pending on exchange
+                    event = await executor.fetch_order_event(symbol, exch_id)
+                    if not event:
+                        continue
+                    status = ""
+                    inner = (
+                        event.get("o")
+                        if event.get("e") == "ORDER_TRADE_UPDATE"
+                        else event
+                    )
+                    if isinstance(inner, dict):
+                        status = str(inner.get("X", "")).upper()
+                    if status in (
+                        "FILLED",
+                        "PARTIALLY_FILLED",
+                        "CANCELED",
+                        "EXPIRED",
+                        "REJECTED",
+                    ):
+                        logger.info(
+                            f"[StreamlessPoll] delivering polled {status} for {symbol} "
+                            f"cid={cid or exch_id}."
+                        )
+                        try:
+                            await self._handle_order_update(event)
+                            delivered += 1
+                        except Exception as e:
+                            logger.debug(f"[StreamlessPoll] delivery failed: {e}")
+        except Exception as e:
+            logger.debug(f"[StreamlessPoll] tick failed: {e}")
+        return delivered
+
     async def _handle_order_update(self, data: Dict[str, Any]):
         raw_event_type = data.get("e")
         raw_symbol = data.get("s")  # Can be None for ACCOUNT_UPDATE
@@ -15319,6 +16401,16 @@ class TradingController:
                 return
 
             # 5. Detection of external/unknown SL orders (e.g., from Rust bot)
+            # Sibling guard: with one shared stream per key this controller also
+            # receives sibling controllers' fills. An order in OUR cid format
+            # that we did not place is a sibling's: never adopt it as our SL
+            # (truly manual orders use foreign formats and keep working).
+            if self._is_sibling_order(client_order_id):
+                logger.debug(
+                    f"{log_prefix} Ignoring sibling order {order_id} "
+                    f"(CliID: {client_order_id})."
+                )
+                return
             # If the position is OPEN but we have no SL ID, check if this "unknown" order is a stop-loss.
             if position.status == "OPEN" and position.current_sl_order_id is None:
                 is_potential_sl = False
@@ -15375,6 +16467,14 @@ class TradingController:
                         return
 
             # 6. Unknown/Unexpected order (possibly placed manually)
+            # Sibling guard (see section 5): a sibling's fill must never close
+            # our position as MANUAL_CLOSE_DETECTED.
+            if self._is_sibling_order(client_order_id):
+                logger.debug(
+                    f"{log_prefix} Ignoring sibling order {order_id} "
+                    f"(CliID: {client_order_id})."
+                )
+                return
             if position.status == "OPEN":  # Only if the position is still active
                 logger.warning(
                     f"{log_prefix} Update for UNKNOWN/UNEXPECTED order {order_id} (CliID: {client_order_id or 'N/A'}) received while position is OPEN."
@@ -15810,9 +16910,9 @@ class TradingController:
         )
         if not isinstance(hedge_cfg, dict):
             return
-        if (
-            str(hedge_cfg.get("size_mode") or "").upper()
-            != hm.HEDGE_SIZE_FIXED_NOTIONAL
+        if str(hedge_cfg.get("size_mode") or "").upper() not in (
+            hm.HEDGE_SIZE_FIXED_NOTIONAL,
+            hm.HEDGE_SIZE_SYNC_STEP,
         ):
             return
         try:
@@ -16324,7 +17424,8 @@ class TradingController:
         log_prefix: str,
         market_type: Optional[str] = None,
     ) -> Optional[float]:
-        """Quantizes an approved qty to the shared hedge lot step.
+        """Quantizes an approved qty to the shared hedge lot step and caps
+        it at ``notional_usd``.
 
         Returns the synced qty, None when this is not a SYNC_STEP leg
         (caller proceeds normally), or 0.0 when the entry must be aborted
@@ -16337,6 +17438,10 @@ class TradingController:
             return None
         if str(hedge_cfg.get("size_mode") or "").upper() != hm.HEDGE_SIZE_SYNC_STEP:
             return None
+        try:
+            hedge_notional = float(hedge_cfg.get("notional_usd") or 0.0)
+        except (TypeError, ValueError):
+            hedge_notional = 0.0
         steps = hedge_cfg.get("qty_steps") or {}
         shared_step = None
         if isinstance(steps, dict):
@@ -16410,6 +17515,38 @@ class TradingController:
                 f"quantized qty {synced} is not positive "
                 f"(approved {approved_qty}, shared step {shared_step})"
             )
+        # Hard cap at notional_usd: the strategy risk-% sizing (or a stale
+        # signal ref) must never open more than the user requested
+        # (e.g. $20 -> $60 before this guard). Uses the same ref as
+        # hedge_mirror sizing (trigger if present else entry) so the cap
+        # matches the risk-budget override.
+        if hedge_notional > 0:
+            _ref = (
+                signal.trigger_price
+                if signal.trigger_price is not None
+                else signal.entry_price
+            )
+            try:
+                _ref_f = float(_ref) if _ref is not None else 0.0
+            except (TypeError, ValueError):
+                _ref_f = 0.0
+            if _ref_f > 0:
+                _max_qty_raw = hedge_notional / _ref_f
+                _cap = hm.quantize_to_shared_step(_max_qty_raw, shared_step, own_step)
+                if _cap is None or _cap <= 0:
+                    return await _abort_sync(
+                        f"notional ${hedge_notional:g} too small for shared "
+                        f"step {shared_step} at ref {_ref_f} "
+                        f"(max qty {_max_qty_raw}). Raise the USD notional."
+                    )
+                if synced - _cap > 1e-8:
+                    logger.warning(
+                        f"{log_prefix} Hedge SYNC_STEP capped to notional: "
+                        f"synced {synced} -> {_cap} "
+                        f"(approved {approved_qty}, notional ${hedge_notional:g} "
+                        f"at ref {_ref_f})."
+                    )
+                    synced = _cap
         if min_qty > 0 and synced < min_qty:
             return await _abort_sync(
                 f"synced qty {synced} below exchange minQty {min_qty}"
@@ -16424,6 +17561,9 @@ class TradingController:
             if isinstance(signal.details, dict):
                 signal.details["hedge_qty_synced"] = synced
                 signal.details["hedge_qty_step"] = shared_step
+                if hedge_notional > 0:
+                    signal.details["hedge_notional_usd"] = hedge_notional
+                    signal.details["hedge_size_mode"] = hm.HEDGE_SIZE_SYNC_STEP
         except Exception:
             pass
         return synced
@@ -17699,7 +18839,7 @@ class TradingController:
         # Save a local copy for the Trades & Telemetry tab in the Local UI
         created_report_id = None
         try:
-            async for db in self.get_db_session():
+            async with self._owned_session() as db:
                 created_report = await crud.save_hub_telemetry_report(
                     db,
                     payload=payload,
@@ -17753,7 +18893,7 @@ class TradingController:
                         "[controller] Successfully uploaded telemetry to federation hub."
                     )
                     if created_report_id:
-                        async for db in self.get_db_session():
+                        async with self._owned_session() as db:
                             await crud.update_hub_telemetry_status(
                                 db, created_report_id, status="SENT"
                             )

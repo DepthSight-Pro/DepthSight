@@ -22,7 +22,9 @@ RATELIMIT_ENABLED = os.getenv("RATELIMIT_ENABLED", "true").lower() != "false"
 LIMITS_CONFIG = {
     "backtest": "100/hour",
     "genetic": "10/hour",
-    "login": os.getenv("RATE_LIMIT_LOGIN", "20/minute"),
+    # Default is the historical strict value (brute-force protection). Raise
+    # consciously via RATE_LIMIT_LOGIN - it weakens login protection.
+    "login": os.getenv("RATE_LIMIT_LOGIN", "5/hour"),
     "default": "600/minute",
     "hub_feedback": "5/hour",
     "hub_topics": "10/hour",

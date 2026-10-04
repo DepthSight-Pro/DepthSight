@@ -659,6 +659,41 @@ def block_real_api_calls(monkeypatch):
     yield  # Test is executed here
 
 
+@pytest.fixture(scope="function", autouse=True)
+def reset_plans_config_cache():
+    """Reset the plans-config singleton's DB-refresh cache between tests.
+
+    PlansConfig.load_from_db() trusts its in-memory copy for
+    PLANS_DB_REFRESH_TTL_SECONDS (B15 fix). The singleton is process-global
+    while each test gets a fresh in-memory DB, so without this reset a load
+    performed by one test would leak into the next and per-test DB rows would
+    be invisible. Snapshot/restore the in-memory dicts too: update_full_config
+    replaces them wholesale. Resetting restores exact per-test isolation.
+    """
+    import copy
+
+    from api.plans import plans_config
+
+    snapshot = {
+        name: copy.deepcopy(getattr(plans_config, name))
+        for name in (
+            "_plans",
+            "_billing",
+            "_referral_program",
+            "_affiliate_program",
+            "_block_restrictions",
+            "_registration_trial",
+        )
+    }
+    plans_config._last_db_refresh_ts = 0.0
+    plans_config._has_db_override = False
+    yield
+    for name, value in snapshot.items():
+        setattr(plans_config, name, value)
+    plans_config._last_db_refresh_ts = 0.0
+    plans_config._has_db_override = False
+
+
 async def override_get_db():
     async with TestAsyncSessionLocal() as session:
         yield session

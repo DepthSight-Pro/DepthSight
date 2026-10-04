@@ -1098,6 +1098,7 @@ export const hasProPlanAccess = (plan?: string | null): boolean => {
 export interface Token {
 	access_token: string;
 	token_type: string;
+	refresh_token?: string;
 }
 
 export interface PortfolioStatus {

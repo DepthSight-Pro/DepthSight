@@ -1,4 +1,6 @@
 import logging
+import asyncio
+import aiohttp
 from fastapi import (
     APIRouter,
     Depends,
@@ -41,6 +43,25 @@ REDIS_COMMAND_CHANNEL = getattr(
 HFT_CMD_CHANNEL = "hft:commands"
 
 logger = logging.getLogger(__name__)
+
+
+# Process-wide pooled aiohttp sessions, one per event loop (B13 fix). A fresh
+# ClientSession per request means a fresh connector per request: no keep-alive
+# reuse and no DNS cache on the path federated nodes drive. Sessions are bound
+# to their creating loop, hence the per-loop cache (tests cycle loops).
+_hub_http_sessions: dict = {}
+
+
+def _get_hub_http_session() -> "aiohttp.ClientSession":
+    loop = asyncio.get_running_loop()
+    session = _hub_http_sessions.get(loop)
+    if session is None or session.closed:
+        session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=10),
+            connector=aiohttp.TCPConnector(limit_per_host=20, use_dns_cache=True),
+        )
+        _hub_http_sessions[loop] = session
+    return session
 
 
 def _load_broker_xlsx_importer(module_name: str, friendly_name: str):
@@ -2684,7 +2705,6 @@ async def get_local_mining_trades(
     current_user: models.User = Depends(get_current_user),
 ):
     import os
-    import aiohttp
     from sqlalchemy import select, func, or_
     import math
 
@@ -2709,15 +2729,14 @@ async def get_local_mining_trades(
                 params["scope"] = scope.lower()
 
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{hub_url}/mining/node-trades",
-                        headers=headers,
-                        params=params,
-                        timeout=aiohttp.ClientTimeout(total=10),
-                    ) as resp:
-                        if resp.status == 200:
-                            return await resp.json()
+                session = _get_hub_http_session()
+                async with session.get(
+                    f"{hub_url}/mining/node-trades",
+                    headers=headers,
+                    params=params,
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
             except Exception as e:
                 logger.error(f"Error fetching trades from Hub: {e}")
 

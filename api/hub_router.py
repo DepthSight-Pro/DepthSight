@@ -6,9 +6,19 @@ import time
 import hashlib
 import httpx
 import random
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta, time as dt_time
 from typing import List, Dict, Optional, Literal, Any
-from fastapi import APIRouter, Body, Depends, HTTPException, status, Request, Header
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    HTTPException,
+    status,
+    Request,
+    Header,
+    Query,
+)
+from sqlalchemy import func, or_, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -2905,12 +2915,11 @@ def _resolve_report_multiplier(cfg, report) -> float:
          this exchange.
       3. 1.0.
     """
-    multipliers = getattr(cfg, "exchange_multipliers", None) or {}
     ex = str(getattr(report, "exchange_id", None) or "").lower().strip()
-    if ex:
-        key = ex if ex in multipliers else ex.split("_")[0]
-        if key in multipliers:
-            return _get_exchange_multiplier(cfg, ex)
+    if ex and cfg:
+        live_mult = _get_exchange_multiplier(cfg, ex)
+        if live_mult != 1.0:
+            return live_mult
 
     stamped = getattr(report, "mining_multiplier", None)
     try:
@@ -3125,11 +3134,13 @@ def _get_exchange_multiplier(
     """
     Returns the mining reward point multiplier for a given exchange.
     Checks exact match first (e.g. 'bitget_futures'), then base name ('bitget').
+    Case-insensitive on both exchange_id and configuration keys.
     Defaults to 1.0 (minimum allowed 0.1).
     """
     if not config or not exchange_id:
         return 1.0
-    multipliers = getattr(config, "exchange_multipliers", None) or {}
+    raw_multipliers = getattr(config, "exchange_multipliers", None) or {}
+    multipliers = {str(k).lower().strip(): v for k, v in raw_multipliers.items()}
     ex = str(exchange_id).lower().strip()
     if ex in multipliers:
         try:
@@ -3142,6 +3153,13 @@ def _get_exchange_multiplier(
             return max(0.1, float(multipliers[base]))
         except (ValueError, TypeError):
             return 1.0
+    # Also check if any configured key shares the base exchange name (e.g. "bitget_futures" when exchange is "bitget")
+    for k, v in multipliers.items():
+        if k.split("_")[0] == base:
+            try:
+                return max(0.1, float(v))
+            except (ValueError, TypeError):
+                return 1.0
     return 1.0
 
 
@@ -3467,15 +3485,25 @@ async def post_telemetry_report(
 
 @router.get("/telemetry/insights", response_model=List[schemas.TelemetryInsightItem])
 async def get_telemetry_insights(
-    symbol: Optional[str] = None, days: int = 30, db: AsyncSession = Depends(get_db)
+    symbol: Optional[str] = None,
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Aggregates trade telemetry data to return Swarm Intelligence insights.
     """
     try:
+        # B11 guardrails: the old code loaded EVERY report of the window into
+        # Python (100k+ rows with 200 nodes). Bound the input to the most recent
+        # slice - insights over recent data, not an OOM over history.
+        days = max(1, min(int(days or 30), 90))
+        max_rows = 20000
         time_limit = datetime.now(timezone.utc) - timedelta(days=days)
-        query = select(models.HubTelemetryReport).where(
-            models.HubTelemetryReport.created_at >= time_limit
+        query = (
+            select(models.HubTelemetryReport)
+            .where(models.HubTelemetryReport.created_at >= time_limit)
+            .order_by(models.HubTelemetryReport.created_at.desc())
+            .limit(max_rows)
         )
         if symbol:
             query = query.where(models.HubTelemetryReport.symbol == symbol)
@@ -3599,6 +3627,597 @@ async def trigger_mining_epoch(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process mining epoch: {e}",
         )
+
+
+async def _verify_hub_admin_access(
+    authorization: Optional[str], db: AsyncSession
+) -> None:
+    is_authorized = False
+    if authorization and authorization.startswith("Bearer "):
+        admin_key = authorization.split(" ")[1]
+        if HUB_ADMIN_API_KEY and admin_key == HUB_ADMIN_API_KEY:
+            is_authorized = True
+        else:
+            try:
+                from .auth import get_current_user_from_token
+
+                user = await get_current_user_from_token(admin_key, db)
+                if user and user.role == "admin":
+                    is_authorized = True
+            except Exception:
+                pass
+
+    if not is_authorized:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin authorization required for mining analytics.",
+        )
+
+
+@router.get("/mining/analytics", response_model=schemas.MiningAnalyticsSummaryResponse)
+async def get_mining_analytics(
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin-only endpoint. Returns comprehensive aggregation across the Central Hub:
+    Network scale, trade verification funnel, exchange breakdown (with auto-discovery of new exchanges),
+    rebate reconciliation, node metrics, and daily/epoch trends for charting.
+    """
+    await _verify_hub_admin_access(authorization, db)
+
+    today = datetime.now(timezone.utc).date()
+    effective_to = date_to or today
+    effective_from = date_from or (today - timedelta(days=30))
+
+    dt_from = datetime.combine(effective_from, dt_time.min, tzinfo=timezone.utc)
+    dt_to = datetime.combine(effective_to, dt_time.max, tzinfo=timezone.utc)
+
+    # 1. Network KPIs
+    total_users_stmt = select(func.count(models.User.id)).where(
+        models.User.role != "admin"
+    )
+    total_users = int((await db.scalar(total_users_stmt)) or 0)
+
+    total_nodes_stmt = select(func.count(models.HubNode.id)).where(
+        models.HubNode.is_banned.is_(False)
+    )
+    total_nodes = int((await db.scalar(total_nodes_stmt)) or 0)
+
+    active_ex_stmt = select(func.distinct(models.HubTelemetryReport.exchange_id)).where(
+        models.HubTelemetryReport.exchange_id.isnot(None)
+    )
+    active_ex_res = await db.scalars(active_ex_stmt)
+    active_exchanges = sorted([ex for ex in active_ex_res.all() if ex])
+
+    cfg = await _get_active_mining_config(db)
+    is_mining_enabled = bool(cfg.is_mining_enabled)
+
+    # 2. Trade Mining KPIs in selected date range
+    trades_filter = [
+        models.HubTelemetryReport.created_at >= dt_from,
+        models.HubTelemetryReport.created_at <= dt_to,
+    ]
+
+    stmt_kpi = select(
+        func.count(models.HubTelemetryReport.id).label("total_trades"),
+        func.sum(
+            case(
+                (models.HubTelemetryReport.verification_status == "VERIFIED", 1),
+                else_=0,
+            )
+        ).label("verified_count"),
+        func.sum(
+            case(
+                (models.HubTelemetryReport.verification_status == "PENDING", 1), else_=0
+            )
+        ).label("pending_count"),
+        func.sum(
+            case((models.HubTelemetryReport.verification_status == "ERROR", 1), else_=0)
+        ).label("error_count"),
+        func.sum(
+            case(
+                (
+                    (models.HubTelemetryReport.is_mining_eligible.is_(False))
+                    & (models.HubTelemetryReport.verification_status != "ERROR"),
+                    1,
+                ),
+                else_=0,
+            )
+        ).label("gated_count"),
+        func.sum(
+            case(
+                (
+                    models.HubTelemetryReport.verification_status == "VERIFIED",
+                    models.HubTelemetryReport.verified_volume_usdt,
+                ),
+                else_=0.0,
+            )
+        ).label("verified_volume"),
+    ).where(*trades_filter)
+
+    kpi_res = (await db.execute(stmt_kpi)).one()
+    total_trades = int(kpi_res.total_trades or 0)
+    verified_count = int(kpi_res.verified_count or 0)
+    pending_count = int(kpi_res.pending_count or 0)
+    error_count = int(kpi_res.error_count or 0)
+    gated_count = int(kpi_res.gated_count or 0)
+    total_verified_volume_usdt = round(float(kpi_res.verified_volume or 0.0), 2)
+    verification_rate = (
+        round((verified_count / total_trades * 100.0), 2) if total_trades > 0 else 0.0
+    )
+
+    # Total distributed DEPTH in date range
+    stmt_dist = select(func.sum(models.MiningEpoch.total_distributed)).where(
+        models.MiningEpoch.epoch_date >= effective_from,
+        models.MiningEpoch.epoch_date <= effective_to,
+    )
+    dist_val = await db.scalar(stmt_dist)
+    if dist_val is None or float(dist_val) == 0.0:
+        stmt_ledger_dist = select(func.sum(models.MiningLedger.total_reward)).where(
+            models.MiningLedger.epoch_date >= effective_from,
+            models.MiningLedger.epoch_date <= effective_to,
+        )
+        dist_val = await db.scalar(stmt_ledger_dist)
+    total_distributed_depth = round(float(dist_val or 0.0), 2)
+
+    # 3. Epochs in range
+    stmt_epochs = (
+        select(models.MiningEpoch)
+        .where(
+            models.MiningEpoch.epoch_date >= effective_from,
+            models.MiningEpoch.epoch_date <= effective_to,
+        )
+        .order_by(models.MiningEpoch.epoch_date.desc())
+        .limit(60)
+    )
+    epochs_rows = (await db.execute(stmt_epochs)).scalars().all()
+    epochs_items = [
+        schemas.MiningEpochAnalyticsItem(
+            epoch_date=ep.epoch_date,
+            status="closed"
+            if (ep.status in ("finalized", "closed") or ep.processed_at is not None)
+            else (ep.status or "open"),
+            daily_emission=float(ep.daily_emission or 0.0),
+            total_rebate_pool=round(float(ep.total_rebate_pool or 0.0), 2),
+            total_distributed=round(float(ep.total_distributed or 0.0), 2),
+            participating_nodes=int(ep.participating_nodes or 0),
+            processed_at=ep.processed_at,
+        )
+        for ep in epochs_rows
+    ]
+
+    # 4. Exchange breakdown & auto-discovery
+    stmt_first_seen = (
+        select(
+            models.HubTelemetryReport.exchange_id,
+            func.min(models.HubTelemetryReport.created_at).label("first_seen"),
+        )
+        .where(models.HubTelemetryReport.exchange_id.isnot(None))
+        .group_by(models.HubTelemetryReport.exchange_id)
+    )
+    first_seen_rows = (await db.execute(stmt_first_seen)).all()
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+    def _to_utc_dt(val: Any) -> Optional[datetime]:
+        if val is None:
+            return None
+        if isinstance(val, str):
+            try:
+                val = datetime.fromisoformat(val)
+            except Exception:
+                return None
+        if isinstance(val, datetime):
+            if val.tzinfo is None:
+                return val.replace(tzinfo=timezone.utc)
+            return val.astimezone(timezone.utc)
+        return None
+
+    new_exchanges = set()
+    for row in first_seen_rows:
+        if row.exchange_id and row.first_seen:
+            dt_fs = _to_utc_dt(row.first_seen)
+            if dt_fs and dt_fs >= seven_days_ago:
+                new_exchanges.add(row.exchange_id)
+
+    stmt_exchange = (
+        select(
+            models.HubTelemetryReport.exchange_id,
+            func.count(models.HubTelemetryReport.id).label("trade_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "VERIFIED", 1),
+                    else_=0,
+                )
+            ).label("verified_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "PENDING", 1),
+                    else_=0,
+                )
+            ).label("pending_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "ERROR", 1),
+                    else_=0,
+                )
+            ).label("error_count"),
+            func.sum(models.HubTelemetryReport.trade_volume_usdt).label("total_volume"),
+            func.sum(models.HubTelemetryReport.estimated_rebate_usdt).label(
+                "estimated_rebate"
+            ),
+            func.sum(
+                case(
+                    (
+                        models.HubTelemetryReport.verification_status == "VERIFIED",
+                        models.HubTelemetryReport.estimated_rebate_usdt,
+                    ),
+                    else_=0.0,
+                )
+            ).label("verified_rebate"),
+            func.sum(
+                case(
+                    (
+                        models.HubTelemetryReport.verification_status == "VERIFIED",
+                        models.HubTelemetryReport.verified_volume_usdt,
+                    ),
+                    else_=0.0,
+                )
+            ).label("verified_volume"),
+        )
+        .where(*trades_filter, models.HubTelemetryReport.exchange_id.isnot(None))
+        .group_by(models.HubTelemetryReport.exchange_id)
+    )
+    exchange_rows = (await db.execute(stmt_exchange)).all()
+    exchange_breakdown = []
+    for row in exchange_rows:
+        ex_id = row.exchange_id or "unknown"
+        # Real exchange rebate is stored directly in verified telemetry reports (no synthetic formulas)
+        verified_rebate = float(row.verified_rebate or 0.0)
+        verified_vol = float(row.verified_volume or 0.0)
+
+        v_count = int(row.verified_count or 0)
+        t_count = int(row.trade_count or 0)
+        est_reb = float(row.estimated_rebate or 0.0)
+
+        exchange_breakdown.append(
+            schemas.MiningExchangeBreakdownItem(
+                exchange_id=ex_id,
+                trade_count=t_count,
+                verified_count=v_count,
+                pending_count=int(row.pending_count or 0),
+                error_count=int(row.error_count or 0),
+                total_volume_usdt=round(float(row.total_volume or 0.0), 2),
+                verified_volume_usdt=round(verified_vol, 2),
+                estimated_rebate_usdt=round(est_reb, 2),
+                verified_rebate_usdt=round(verified_rebate, 2),
+                is_new=ex_id in new_exchanges,
+            )
+        )
+    exchange_breakdown.sort(key=lambda x: x.total_volume_usdt, reverse=True)
+
+    # 5. Node breakdown
+    nodes_rows = (
+        (
+            await db.execute(
+                select(models.HubNode)
+                .where(models.HubNode.is_banned.is_(False))
+                .order_by(models.HubNode.name.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    node_dict = {n.node_uuid: n for n in nodes_rows}
+
+    stmt_node_trades = (
+        select(
+            models.HubTelemetryReport.node_uuid,
+            func.count(models.HubTelemetryReport.id).label("trade_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "VERIFIED", 1),
+                    else_=0,
+                )
+            ).label("verified_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "ERROR", 1),
+                    else_=0,
+                )
+            ).label("error_count"),
+            func.sum(models.HubTelemetryReport.trade_volume_usdt).label("total_volume"),
+        )
+        .where(*trades_filter, models.HubTelemetryReport.node_uuid.isnot(None))
+        .group_by(models.HubTelemetryReport.node_uuid)
+    )
+    node_trades_rows = (await db.execute(stmt_node_trades)).all()
+    node_trade_stats = {r.node_uuid: r for r in node_trades_rows}
+
+    stmt_node_mined = (
+        select(
+            models.MiningLedger.node_uuid,
+            func.sum(models.MiningLedger.total_reward).label("mined_depth"),
+        )
+        .where(
+            models.MiningLedger.epoch_date >= effective_from,
+            models.MiningLedger.epoch_date <= effective_to,
+        )
+        .group_by(models.MiningLedger.node_uuid)
+    )
+    mined_rows = (await db.execute(stmt_node_mined)).all()
+    node_mined_map = {r.node_uuid: float(r.mined_depth or 0.0) for r in mined_rows}
+
+    now_utc = datetime.now(timezone.utc)
+    node_breakdown = []
+    for node_uuid, node in node_dict.items():
+        stats = node_trade_stats.get(node_uuid)
+        mined = node_mined_map.get(node_uuid, float(node.total_mined or 0.0))
+        is_online = False
+        if node.last_ping:
+            lp = _to_utc_dt(node.last_ping)
+            if lp:
+                is_online = (now_utc - lp).total_seconds() < 600
+        node_breakdown.append(
+            schemas.MiningNodeBreakdownItem(
+                node_uuid=node_uuid,
+                name=node.name or f"Node-{node_uuid[:8]}",
+                trade_count=int(stats.trade_count or 0) if stats else 0,
+                verified_count=int(stats.verified_count or 0) if stats else 0,
+                error_count=int(stats.error_count or 0) if stats else 0,
+                total_volume_usdt=round(float(stats.total_volume or 0.0), 2)
+                if stats
+                else 0.0,
+                total_mined_depth=round(mined, 2),
+                last_ping=node.last_ping,
+                is_online=is_online,
+            )
+        )
+    node_breakdown.sort(key=lambda x: x.total_volume_usdt, reverse=True)
+
+    # 6. Daily trends for charts
+    date_col = func.date(models.HubTelemetryReport.created_at).label("trade_date")
+    stmt_daily = (
+        select(
+            date_col,
+            models.HubTelemetryReport.exchange_id,
+            func.count(models.HubTelemetryReport.id).label("trade_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "VERIFIED", 1),
+                    else_=0,
+                )
+            ).label("verified_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "PENDING", 1),
+                    else_=0,
+                )
+            ).label("pending_count"),
+            func.sum(
+                case(
+                    (models.HubTelemetryReport.verification_status == "ERROR", 1),
+                    else_=0,
+                )
+            ).label("error_count"),
+            func.sum(models.HubTelemetryReport.trade_volume_usdt).label("total_volume"),
+        )
+        .where(*trades_filter)
+        .group_by(date_col, models.HubTelemetryReport.exchange_id)
+        .order_by(date_col.asc())
+    )
+    daily_rows = (await db.execute(stmt_daily)).all()
+    daily_map = {}
+    for row in daily_rows:
+        d_str = str(row.trade_date)[:10]
+        if d_str not in daily_map:
+            daily_map[d_str] = {
+                "date": d_str,
+                "total_volume": 0.0,
+                "trade_count": 0,
+                "verified_count": 0,
+                "pending_count": 0,
+                "error_count": 0,
+                "volume_by_exchange": {},
+            }
+        entry = daily_map[d_str]
+        vol = float(row.total_volume or 0.0)
+        entry["total_volume"] = round(entry["total_volume"] + vol, 2)
+        entry["trade_count"] += int(row.trade_count or 0)
+        entry["verified_count"] += int(row.verified_count or 0)
+        entry["pending_count"] += int(row.pending_count or 0)
+        entry["error_count"] += int(row.error_count or 0)
+        if row.exchange_id:
+            entry["volume_by_exchange"][row.exchange_id] = round(
+                entry["volume_by_exchange"].get(row.exchange_id, 0.0) + vol, 2
+            )
+    daily_trends = [
+        schemas.MiningDailyTrendItem(**v)
+        for v in sorted(daily_map.values(), key=lambda x: x["date"])
+    ]
+
+    # 7. Epoch trends for charts
+    stmt_ep_trends = (
+        select(models.MiningEpoch)
+        .where(
+            models.MiningEpoch.epoch_date >= effective_from,
+            models.MiningEpoch.epoch_date <= effective_to,
+        )
+        .order_by(models.MiningEpoch.epoch_date.asc())
+    )
+    ep_trends_rows = (await db.execute(stmt_ep_trends)).scalars().all()
+    epoch_trends = [
+        schemas.MiningEpochTrendItem(
+            epoch_date=str(ep.epoch_date),
+            daily_emission=float(ep.daily_emission or 0.0),
+            total_distributed=round(float(ep.total_distributed or 0.0), 2),
+            participating_nodes=int(ep.participating_nodes or 0),
+            total_rebate_pool=round(float(ep.total_rebate_pool or 0.0), 2),
+        )
+        for ep in ep_trends_rows
+    ]
+
+    return schemas.MiningAnalyticsSummaryResponse(
+        total_users=total_users,
+        total_nodes=total_nodes,
+        active_exchanges=active_exchanges,
+        is_mining_enabled=is_mining_enabled,
+        total_trades=total_trades,
+        verified_count=verified_count,
+        pending_count=pending_count,
+        error_count=error_count,
+        gated_count=gated_count,
+        verification_rate=verification_rate,
+        total_verified_volume_usdt=total_verified_volume_usdt,
+        total_distributed_depth=total_distributed_depth,
+        epochs=epochs_items,
+        exchange_breakdown=exchange_breakdown,
+        node_breakdown=node_breakdown,
+        daily_trends=daily_trends,
+        epoch_trends=epoch_trends,
+    )
+
+
+@router.get(
+    "/mining/analytics/trades",
+    response_model=schemas.MiningAnalyticsTradesResponse,
+)
+async def get_analytics_trades(
+    page: int = Query(1, ge=1),
+    limit: int = Query(25, ge=1, le=100),
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    exchange: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    search: Optional[str] = None,
+    node_uuid: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin-only endpoint. Returns paginated trades from HubTelemetryReport with resolved node names
+    and full verification details. Supports filtering by date range, exchange, status, node, and text search.
+    """
+    await _verify_hub_admin_access(authorization, db)
+
+    conditions = []
+    if date_from:
+        dt_from = datetime.combine(date_from, dt_time.min, tzinfo=timezone.utc)
+        conditions.append(models.HubTelemetryReport.created_at >= dt_from)
+    if date_to:
+        dt_to = datetime.combine(date_to, dt_time.max, tzinfo=timezone.utc)
+        conditions.append(models.HubTelemetryReport.created_at <= dt_to)
+    if exchange and exchange != "ALL":
+        conditions.append(models.HubTelemetryReport.exchange_id == exchange)
+    if status_filter and status_filter != "ALL":
+        if status_filter == "GATED":
+            conditions.append(models.HubTelemetryReport.is_mining_eligible.is_(False))
+            conditions.append(models.HubTelemetryReport.verification_status != "ERROR")
+        else:
+            conditions.append(
+                models.HubTelemetryReport.verification_status == status_filter
+            )
+    if node_uuid:
+        conditions.append(models.HubTelemetryReport.node_uuid == node_uuid)
+    if search and search.strip():
+        s = f"%{search.strip()}%"
+        conditions.append(
+            or_(
+                models.HubTelemetryReport.symbol.ilike(s),
+                models.HubTelemetryReport.broker_trade_id.ilike(s),
+                models.HubTelemetryReport.node_uuid.ilike(s),
+            )
+        )
+
+    stmt_count = select(func.count(models.HubTelemetryReport.id))
+    if conditions:
+        stmt_count = stmt_count.where(*conditions)
+    total = int((await db.scalar(stmt_count)) or 0)
+
+    offset = (page - 1) * limit
+    stmt_trades = (
+        select(models.HubTelemetryReport)
+        .order_by(models.HubTelemetryReport.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    if conditions:
+        stmt_trades = stmt_trades.where(*conditions)
+
+    reports = (await db.execute(stmt_trades)).scalars().all()
+
+    node_uuids = {r.node_uuid for r in reports if r.node_uuid}
+    node_name_map = {}
+    if node_uuids:
+        nodes_res = (
+            await db.execute(
+                select(models.HubNode.node_uuid, models.HubNode.name).where(
+                    models.HubNode.node_uuid.in_(node_uuids)
+                )
+            )
+        ).all()
+        node_name_map = {row.node_uuid: row.name for row in nodes_res}
+
+    cfg = await _get_active_mining_config(db)
+
+    items = []
+    for r in reports:
+        mult = _resolve_report_multiplier(cfg, r)
+        items.append(
+            schemas.MiningAnalyticsTradeItem(
+                id=str(r.id),
+                symbol=r.symbol,
+                direction=r.direction,
+                entry_price=float(r.entry_price or 0.0),
+                exit_price=float(r.exit_price or 0.0),
+                pnl_percent=r.pnl_percent,
+                trade_duration_sec=r.trade_duration_sec,
+                exit_reason=r.exit_reason,
+                trade_mode=r.trade_mode,
+                timeframe=r.timeframe,
+                max_floating_profit=r.max_floating_profit,
+                max_floating_loss=r.max_floating_loss,
+                strategy_blocks=r.strategy_blocks or [],
+                market_context=r.market_context or {},
+                created_at=r.created_at,
+                node_uuid=r.node_uuid,
+                node_name=node_name_map.get(
+                    r.node_uuid, f"Node-{r.node_uuid[:8]}" if r.node_uuid else "Unknown"
+                ),
+                source_node_uuid=r.source_node_uuid,
+                exchange_id=r.exchange_id,
+                market_type=r.market_type,
+                broker_trade_id=r.broker_trade_id,
+                close_broker_trade_ids=r.close_broker_trade_ids,
+                entry_broker_trade_ids=r.entry_broker_trade_ids,
+                trade_volume_usdt=r.trade_volume_usdt,
+                estimated_rebate_usdt=r.estimated_rebate_usdt,
+                score=r.score,
+                is_verified=bool(r.is_verified),
+                verification_status=r.verification_status or "PENDING",
+                verified_at=r.verified_at,
+                verified_volume_usdt=r.verified_volume_usdt,
+                verification_error=r.verification_error,
+                is_mining_eligible=bool(r.is_mining_eligible),
+                mining_multiplier=round(float(mult or 1.0), 2),
+                reward_tokens=float(r.reward_tokens or 0.0),
+                epoch_date=r.epoch_date,
+            )
+        )
+
+    import math
+
+    total_pages = max(1, math.ceil(total / limit)) if total > 0 else 1
+
+    return schemas.MiningAnalyticsTradesResponse(
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        items=items,
+    )
 
 
 @router.post(

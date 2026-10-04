@@ -238,9 +238,9 @@ interface PwaMiningDeactivateResponse {
 // --- Helper Functions ---
 
 /**
- * Read the access token tolerantly. PWA stores JSON {access_token, ...},
- * but the web app on the same origin shares localStorage["authToken"] and
- * stores a raw JWT — whichever logged in last wins. Accept both.
+ * Read the access token tolerantly. Supports:
+ * 1) Raw JWT string (written by desktop web app on the same origin or new PWA auth)
+ * 2) Legacy PWA JSON object: { access_token: "..." }
  */
 export const readAccessToken = (): string | null => {
 	try {
@@ -248,14 +248,14 @@ export const readAccessToken = (): string | null => {
 		if (!raw) return null;
 		const trimmed = raw.trim();
 		if (trimmed.startsWith("{")) {
-			const parsed: unknown = JSON.parse(trimmed);
+			const parsed = JSON.parse(trimmed);
 			if (parsed && typeof parsed === "object") {
 				const at = (parsed as Record<string, unknown>).access_token;
 				return typeof at === "string" && at.length > 0 ? at : null;
 			}
 			return null;
 		}
-		// Raw JWT fallback: three base64url segments.
+		// Raw JWT string: 3 segments separated by dots
 		return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(trimmed)
 			? trimmed
 			: null;
@@ -265,16 +265,30 @@ export const readAccessToken = (): string | null => {
 	}
 };
 
-/** PWA-format refresh token, if present (raw-JWT storage has none). */
-const readRefreshToken = (): string | null => {
+/**
+ * Read the refresh token tolerantly.
+ * 1) First check the standard "refreshToken" localStorage key (used by desktop web app).
+ * 2) Check if "authToken" key contains legacy JSON with refresh_token.
+ */
+export const readRefreshToken = (): string | null => {
 	try {
-		const raw = localStorage.getItem("authToken");
-		if (!raw || !raw.trim().startsWith("{")) return null;
-		const parsed: unknown = JSON.parse(raw);
-		if (parsed && typeof parsed === "object") {
-			const rt = (parsed as Record<string, unknown>).refresh_token;
-			return typeof rt === "string" && rt.length > 0 ? rt : null;
+		const separate = localStorage.getItem("refreshToken");
+		if (separate && separate.trim().length > 0) {
+			const trimmed = separate.trim();
+			if (!trimmed.startsWith("{")) {
+				return trimmed;
+			}
 		}
+
+		const raw = localStorage.getItem("authToken");
+		if (raw && raw.trim().startsWith("{")) {
+			const parsed = JSON.parse(raw.trim());
+			if (parsed && typeof parsed === "object") {
+				const rt = (parsed as Record<string, unknown>).refresh_token;
+				return typeof rt === "string" && rt.length > 0 ? rt : null;
+			}
+		}
+
 		return null;
 	} catch {
 		return null;
@@ -282,15 +296,8 @@ const readRefreshToken = (): string | null => {
 };
 
 /** True when at least one request can be authenticated. */
-export const hasUsableAuthToken = (): boolean => readAccessToken() !== null;
-
-/** Re-login is required: drop the broken token and reboot to AuthScreen. */
-const forceReLogin = () => {
-	localStorage.removeItem("authToken");
-	window.location.reload();
-};
-
-const getAuthToken = (): string | null => readAccessToken();
+export const hasUsableAuthToken = (): boolean =>
+	readAccessToken() !== null || readRefreshToken() !== null;
 
 let isRefreshing = false;
 let refreshSubscribers: ((token: string) => void)[] = [];
@@ -304,11 +311,79 @@ const onRefreshed = (token: string) => {
 	refreshSubscribers = [];
 };
 
+/**
+ * Thread-safe token refresh matching desktop web app behavior.
+ * If multiple requests receive 401 concurrently, only one call to /api/v1/refresh is made.
+ */
+export const refreshAuthToken = async (): Promise<string | null> => {
+	const refreshToken = readRefreshToken();
+	if (!refreshToken) {
+		return null;
+	}
+
+	if (isRefreshing) {
+		return new Promise<string>((resolve) => {
+			subscribeTokenRefresh((token: string) => {
+				resolve(token);
+			});
+		});
+	}
+
+	isRefreshing = true;
+	try {
+		const refreshResponse = await fetch(`${API_BASE_URL}/api/v1/refresh`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ refresh_token: refreshToken }),
+		});
+
+		if (refreshResponse.ok) {
+			const tokenData: Token = await refreshResponse.json();
+			localStorage.setItem("authToken", tokenData.access_token);
+			if (tokenData.refresh_token) {
+				localStorage.setItem("refreshToken", tokenData.refresh_token);
+			}
+			onRefreshed(tokenData.access_token);
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(
+					new CustomEvent("auth:token-refreshed", {
+						detail: {
+							token: tokenData.access_token,
+							refreshToken: tokenData.refresh_token,
+							tokenData,
+						},
+					}),
+				);
+			}
+			return tokenData.access_token;
+		} else if (refreshResponse.status === 401 || refreshResponse.status === 403) {
+			// Refresh token expired or revoked by server
+			localStorage.removeItem("authToken");
+			localStorage.removeItem("refreshToken");
+			localStorage.removeItem("authUser");
+			if (typeof window !== "undefined") {
+				window.dispatchEvent(new CustomEvent("auth:logout"));
+			}
+			return null;
+		} else {
+			console.warn("[PWA API] Token refresh returned non-ok status:", refreshResponse.status);
+			return null;
+		}
+	} catch (error) {
+		console.error("[PWA API] Token refresh network error:", error);
+		return null;
+	} finally {
+		isRefreshing = false;
+	}
+};
+
 const apiFetch = async <T = unknown>(
 	endpoint: string,
 	options: RequestInit = {},
 ): Promise<T> => {
-	const token = getAuthToken();
+	const token = readAccessToken();
 	const headers = new Headers(options.headers);
 
 	if (!headers.has("Content-Type")) {
@@ -329,55 +404,14 @@ const apiFetch = async <T = unknown>(
 		!endpoint.includes("/token") &&
 		!endpoint.includes("/refresh")
 	) {
-		const refreshToken = readRefreshToken();
-		if (!refreshToken) {
-			// Raw-JWT storage (written by the web app) or no token at all:
-			// refresh is impossible, re-login is required.
-			forceReLogin();
-			throw new Error("Not authenticated");
-		}
-		if (!isRefreshing) {
-			isRefreshing = true;
-			try {
-				const refreshResponse = await fetch(
-					`${API_BASE_URL}/api/v1/refresh`,
-					{
-						method: "POST",
-						headers: {
-							"Content-Type": "application/json",
-						},
-						body: JSON.stringify({ refresh_token: refreshToken }),
-					},
-				);
-
-				if (refreshResponse.ok) {
-					const newTokenData = await refreshResponse.json();
-					localStorage.setItem("authToken", JSON.stringify(newTokenData));
-					onRefreshed(newTokenData.access_token);
-				} else {
-					forceReLogin();
-					throw new Error("Not authenticated");
-				}
-			} catch (e) {
-				// Refresh failed or is impossible: back to AuthScreen.
-				forceReLogin();
-				throw e;
-			} finally {
-				isRefreshing = false;
-			}
-		}
-
-		const newAccessToken = await new Promise<string>((resolve) => {
-			subscribeTokenRefresh((token: string) => {
-				resolve(token);
+		const newAccessToken = await refreshAuthToken();
+		if (newAccessToken) {
+			headers.set("Authorization", `Bearer ${newAccessToken}`);
+			response = await fetch(`${API_BASE_URL}/api/v1${endpoint}`, {
+				...options,
+				headers,
 			});
-		});
-
-		headers.set("Authorization", `Bearer ${newAccessToken}`);
-		response = await fetch(`${API_BASE_URL}/api/v1${endpoint}`, {
-			...options,
-			headers,
-		});
+		}
 	}
 
 	if (!response.ok) {

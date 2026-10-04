@@ -57,8 +57,11 @@ async def add_api_key(
         f"User '{current_user.username}' (ID: {current_user.id}) adding new API key: {api_key_data.name}"
     )
 
-    # Check if this is the first API key
-    is_first_key = not current_user.api_keys
+    # Check if this is the first API key. Explicit query on purpose: User
+    # relationships are lazy (see B1 - no selectin), so touching
+    # current_user.api_keys here would raise MissingGreenlet on AsyncSession.
+    existing_keys = await crud.get_api_keys_for_user(db, current_user.id)
+    is_first_key = not existing_keys
 
     # Create the API key with duplicate check
     try:

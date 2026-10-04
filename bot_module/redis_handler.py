@@ -34,6 +34,9 @@ class RedisLogHandler(logging.Handler):
                 username=config.REDIS_USERNAME,
                 password=config.REDIS_PASSWORD,
                 decode_responses=True,
+                # Single process-wide instance, but cap it anyway: under fd
+                # pressure (EMFILE) an unbounded pool only makes things worse.
+                max_connections=getattr(config, "REDIS_POOL_MAX_CONNECTIONS", 5),
             )
             self.redis_client.ping()
             print("[RedisLogHandler INFO] Successfully connected to Redis.")
@@ -116,3 +119,29 @@ class RedisLogHandler(logging.Handler):
             entry.update(record.extra_data)
 
         return entry
+
+
+async def publish_command_ack(redis_client, command_id, status="ok", detail=None):
+    """Publish a bot-command acknowledgement (A2 fix).
+
+    No-op when command_id is missing (old API versions send no id) or the
+    client is unavailable. Never raises: an ack must not break the command it
+    reports on.
+    """
+    if not command_id or redis_client is None:
+        return
+    try:
+        await redis_client.publish(
+            config.REDIS_COMMAND_ACK_CHANNEL,
+            json.dumps(
+                {
+                    "command_id": command_id,
+                    "status": status,
+                    "detail": detail,
+                }
+            ),
+        )
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            f"Failed to publish ack for command {command_id}: {e}"
+        )

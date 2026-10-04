@@ -25,7 +25,7 @@ from api.database import (
 config = context.config
 
 
-config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", ""))
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("+asyncpg", "+psycopg2"))
 
 
 if config.config_file_name is not None:

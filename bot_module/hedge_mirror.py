@@ -30,11 +30,13 @@ Volume sync is configurable per hedge group (``size_mode``):
   (``notional_usd``), so rebate farming earns symmetric volume on both
   exchanges. Implemented as an implied risk-budget override before
   RiskManager sizing; lot-step rounding and safety caps may still cause dust.
-- ``SYNC_STEP``: strict volume sync. Both legs quantize down to the shared
-  lot step (``qty_step``, the coarsest step of the two exchanges, resolved
-  at launch), enter simultaneously, verify executed quantities post-fill,
-  and watch for orphan legs (``entry_sync_timeout_sec``). Either both legs
-  hold equal volumes or neither holds a position.
+- ``SYNC_STEP``: strict volume sync. Both legs first apply the same
+  ``notional_usd`` risk-budget override as ``FIXED_NOTIONAL``, then
+  quantize down to the shared lot step (``qty_step``, the coarsest step of
+  the two exchanges, resolved at launch), enter simultaneously, verify
+  executed quantities post-fill, and watch for orphan legs
+  (``entry_sync_timeout_sec``). Either both legs hold equal volumes capped
+  at ``notional_usd`` or neither holds a position.
 - ``INDEPENDENT``: each leg sizes by the strategy's own risk % of its
   account balance (volumes will differ across accounts).
 
@@ -272,12 +274,17 @@ def maybe_apply_hedge_sizing(
 ) -> StrategySignal:
     """Synchronizes hedge leg volumes to the same USD notional.
 
-    In ``FIXED_NOTIONAL`` mode both legs override the strategy's risk budget
-    with an implied ``risk_usd`` that yields ``notional_usd`` at the signal
-    reference price (``qty = risk / SL_distance`` in RiskManager, so
-    ``risk_usd = notional * SL_distance / ref``). Exchange lot-step rounding
-    and the max-notional safety cap may still cause dust-level differences;
-    hard limits (minQty/min-notional) keep rejecting as before.
+    In ``FIXED_NOTIONAL`` and ``SYNC_STEP`` modes both legs override the
+    strategy's risk budget with an implied ``risk_usd`` that yields
+    ``notional_usd`` at the signal reference price
+    (``qty = risk / SL_distance`` in RiskManager, so
+    ``risk_usd = notional * SL_distance / ref``). ``SYNC_STEP`` additionally
+    quantizes the approved qty to the shared lot step in the controller, so
+    without this override the strategy risk-% sizing would open arbitrary
+    (e.g. $60 instead of the requested $20) equal-but-oversized legs.
+    Exchange lot-step rounding and the max-notional safety cap may still
+    cause dust-level differences; hard limits (minQty/min-notional) keep
+    rejecting as before.
     Never raises: on any problem the signal is left unchanged (fail-open to
     the strategy's own risk-% sizing).
     """
@@ -288,10 +295,8 @@ def maybe_apply_hedge_sizing(
         return signal
     if not hedge_cfg:
         return signal
-    if (
-        str(hedge_cfg.get("size_mode") or HEDGE_SIZE_INDEPENDENT).upper()
-        != HEDGE_SIZE_FIXED_NOTIONAL
-    ):
+    size_mode = str(hedge_cfg.get("size_mode") or HEDGE_SIZE_INDEPENDENT).upper()
+    if size_mode not in (HEDGE_SIZE_FIXED_NOTIONAL, HEDGE_SIZE_SYNC_STEP):
         return signal
     try:
         notional = float(hedge_cfg.get("notional_usd") or 0.0)
@@ -309,10 +314,13 @@ def maybe_apply_hedge_sizing(
         )
         return signal
 
-    if signal.mode != OrderMode.MARKET:
-        ref = signal.entry_price
-    else:
-        ref = signal.trigger_price
+    # Reference price must match RiskManager.assess_signal, which sizes by
+    # trigger_price when present (else entry_price). Using a mode-based
+    # ref here (entry for LIMIT) diverged from RM and produced
+    # notional != requested whenever trigger != entry.
+    ref = (
+        signal.trigger_price if signal.trigger_price is not None else signal.entry_price
+    )
     if ref is None or float(ref) <= 0:
         logger.error(
             "[HedgeSize:%s] No reference price for fixed-notional sizing. "
@@ -342,12 +350,13 @@ def maybe_apply_hedge_sizing(
             signal.details = {}
         if isinstance(signal.details, dict):
             signal.details["hedge_notional_usd"] = notional
-            signal.details["hedge_size_mode"] = HEDGE_SIZE_FIXED_NOTIONAL
+            signal.details["hedge_size_mode"] = size_mode
     except Exception as exc:
         logger.debug("Hedge sizing tagging failed (non-fatal): %s", exc)
     logger.info(
-        "[HedgeSize:%s] Fixed notional $%.2f -> risk_usd $%.4f (ref %.4f).",
+        "[HedgeSize:%s] %s $%.2f -> risk_usd $%.4f (ref %.4f).",
         signal.symbol,
+        size_mode,
         notional,
         float(signal.risk_usd or 0.0),
         ref,

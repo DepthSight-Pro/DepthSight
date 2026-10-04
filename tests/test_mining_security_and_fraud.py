@@ -27,7 +27,7 @@ from sqlalchemy.future import select
 from api import models
 from api.depthsight_api import app
 from api.hub_router import router as hub_router
-from tasks import _async_process_mining_epoch
+from tasks import _async_process_mining_epoch, _async_process_open_epochs
 
 pytestmark = pytest.mark.asyncio
 
@@ -75,6 +75,17 @@ async def _run_epoch(db_session: AsyncSession, force_date=None):
     with patch("api.database.get_isolated_worker_session", mock_isolated_session):
         await _async_process_mining_epoch(force_yesterday_date=target_date)
     db_session.expire_all()
+
+
+async def _run_open_epochs(db_session: AsyncSession, **kwargs):
+    @asynccontextmanager
+    async def mock_isolated_session():
+        yield db_session
+
+    with patch("api.database.get_isolated_worker_session", mock_isolated_session):
+        result = await _async_process_open_epochs(**kwargs)
+    db_session.expire_all()
+    return result
 
 
 async def _add_report(
@@ -438,8 +449,10 @@ async def test_late_verified_trades_attributed_to_next_open_epoch(
     db_session: AsyncSession, monkeypatch
 ):
     """
-    Trades created 3 days ago but verified today (epoch_date IS NULL)
-    are processed in today's epoch without corrupting finalized past epochs.
+    Day-bounded attribution: a trade created 3 days ago but verified today
+    (epoch_date IS NULL) is NOT absorbed into yesterday's epoch. Yesterday
+    finalizes on its own (empty here), and the catch-up loop settles the
+    trade in its own day's epoch — without corrupting finalized past epochs.
     """
     monkeypatch.setenv("MIN_WELCOME_REBATE_USDT", "999999999.0")
     node = models.HubNode(node_uuid="late-node", name="Late", secret_hash="h")
@@ -447,8 +460,9 @@ async def test_late_verified_trades_attributed_to_next_open_epoch(
     db_session.add(_make_config())
     await db_session.commit()
 
+    old_day = _yesterday() - datetime.timedelta(days=2)
     three_days_ago = datetime.datetime.combine(
-        _yesterday() - datetime.timedelta(days=2),
+        old_day,
         datetime.time(12, 0),
         tzinfo=datetime.timezone.utc,
     )
@@ -462,12 +476,20 @@ async def test_late_verified_trades_attributed_to_next_open_epoch(
         verification_status="VERIFIED",
     )
 
-    # Run epoch for yesterday
+    # Run epoch for yesterday: must NOT absorb the foreign-day trade.
     await _run_epoch(db_session, force_date=_yesterday())
 
-    ledger = await _get_ledger(db_session, "late-node", epoch_date=_yesterday())
-    assert ledger is not None
-    assert ledger.base_reward == pytest.approx(100.0, rel=1e-3)
+    assert await _get_ledger(db_session, "late-node", epoch_date=_yesterday()) is None
+    yesterday_epoch = await _get_epoch(db_session, epoch_date=_yesterday())
+    assert yesterday_epoch is not None
+    assert yesterday_epoch.status == "finalized"
+    assert yesterday_epoch.total_distributed == pytest.approx(0.0)
+
+    # Catch-up loop settles the trade in its OWN day's epoch.
+    await _run_open_epochs(db_session)
+    old_ledger = await _get_ledger(db_session, "late-node", epoch_date=old_day)
+    assert old_ledger is not None
+    assert old_ledger.base_reward == pytest.approx(100.0, rel=1e-3)
 
 
 async def test_midnight_utc_boundary_trades(db_session: AsyncSession, monkeypatch):

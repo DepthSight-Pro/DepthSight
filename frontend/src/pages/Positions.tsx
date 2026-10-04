@@ -51,13 +51,13 @@ import { cn } from "@/lib/utils";
 import { useAccountStore } from "@/stores/accountStore";
 import type { PositionData } from "@/types/api";
 
-const formatOpenedAgo = (entryTime: unknown): string => {
-	if (!entryTime) return "Active";
+const formatOpenedAgo = (entryTime: unknown, fallback: string): string => {
+	if (!entryTime) return fallback;
 	const date =
 		typeof entryTime === "number"
 			? new Date(entryTime > 1_000_000_000_000 ? entryTime : entryTime * 1000)
 			: new Date(entryTime as string);
-	if (Number.isNaN(date.getTime())) return "Active";
+	if (Number.isNaN(date.getTime())) return fallback;
 	return formatDistanceToNow(date, { addSuffix: false });
 };
 
@@ -203,7 +203,7 @@ export default function Positions() {
 				strategy_name: p.strategy_name || p.strategy || "Quant Engine",
 				exchange: exKey,
 				exchange_id: p.exchange ?? p.exchange_id ?? exKey ?? null,
-				openedAgo: formatOpenedAgo(p.entry_time ?? p.entryTime),
+				openedAgo: formatOpenedAgo(p.entry_time ?? p.entryTime, t("table.openedAgoActive", "Active")),
 				entryTime: p.entry_time ?? p.entryTime ?? null,
 				entry_time: p.entry_time ?? p.entryTime ?? null,
 				liq,
@@ -212,7 +212,7 @@ export default function Positions() {
 				api_key_id: apiKeyId,
 			};
 		});
-	}, [livePositions, realPositions, apiKeysById]);
+	}, [livePositions, realPositions, apiKeysById, t]);
 
 	// Chart Modal state
 	type PositionListItem = (typeof positionsList)[number];
@@ -335,16 +335,16 @@ export default function Positions() {
 				{/* 1. Top Summary Stat Strip */}
 				<div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.4fr_auto]">
 					<Stat
-						label="Net Unrealized"
+						label={t("stats.netUnrealized", "Net Unrealized")}
 						value={
 							<span className={toneText(total)}>{fmt.usd(total, 2)}</span>
 						}
 						delta={avgRoe}
-						deltaLabel="avg ROE"
+						deltaLabel={t("stats.avgRoe", "avg ROE")}
 						accent={toneHex(total)}
 					/>
 					<Stat
-						label="Open / Max"
+						label={t("stats.openMax", "Open / Max")}
 						value={
 							<>
 								{filteredList.length}
@@ -356,9 +356,9 @@ export default function Positions() {
 					/>
 					<div className="glass rounded-2xl p-4 animate-fade-up">
 						<div className="flex justify-between text-[11px] uppercase tracking-[0.12em] text-white/40">
-							<span>Directional Bias</span>
+							<span>{t("stats.directionalBias", "Directional Bias")}</span>
 							<span className="font-mono text-white/70">
-								{(longShare * 100).toFixed(0)}% long
+								{(longShare * 100).toFixed(0)}{t("stats.longSuffix", "% long")}
 							</span>
 						</div>
 						<div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-white/5">
@@ -390,16 +390,16 @@ export default function Positions() {
 									className="group-hover:scale-110 transition-transform"
 								/>
 								<span className="text-[11px] font-bold uppercase tracking-[0.14em]">
-									Emergency Stop
+									{t("stats.emergencyStop", "Emergency Stop")}
 								</span>
 								<span className="text-[9px] text-rose-400/60 font-mono">
-									DELETE /portfolio/positions
+									{t("stats.emergencyEndpoint", "DELETE /portfolio/positions")}
 								</span>
 							</button>
 						) : (
 							<div className="flex h-full min-w-[150px] flex-col justify-center gap-2 px-1">
 								<div className="text-center text-[11px] text-white">
-									Close all {filteredList.length} positions?
+									{t("stats.closeAllConfirm", "Close all {{count}} positions?", { count: filteredList.length })}
 								</div>
 								<div className="flex gap-1.5">
 									<Btn
@@ -408,16 +408,12 @@ export default function Positions() {
 										className="flex-1"
 										onClick={handleEmergencyStop}
 										disabled={isStopping}
-									>
-										Confirm
-									</Btn>
+									>{t("common:confirm", "Confirm")}</Btn>
 									<Btn
 										variant="ghost"
 										size="xs"
 										onClick={() => setConfirmStop(false)}
-									>
-										Cancel
-									</Btn>
+									>{t("common:cancel", "Cancel")}</Btn>
 								</div>
 							</div>
 						)}
@@ -431,21 +427,21 @@ export default function Positions() {
 						value={sideF}
 						onChange={setSideF}
 						options={[
-							{ value: "all", label: "All" },
+							{ value: "all", label: t("filters.all", "All") },
 							{
 								value: "LONG",
-								label: <span className="text-emerald-400">Long</span>,
+								label: <span className="text-emerald-400">{t("filters.long", "Long")}</span>,
 							},
 							{
 								value: "SHORT",
-								label: <span className="text-rose-400">Short</span>,
+								label: <span className="text-rose-400">{t("filters.short", "Short")}</span>,
 							},
 						]}
 					/>
 					<div className="relative">
 						<input
 							type="text"
-							placeholder="Filter symbol..."
+							placeholder={t("filters.filterSymbol", "Filter symbol...")}
 							value={symbolFilter}
 							onChange={(e) => setSymbolFilter(e.target.value)}
 							className="h-7.5 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] px-2.5 text-[11px] text-foreground dark:text-white placeholder:text-muted-foreground dark:placeholder-white/30 outline-none transition-colors focus:border-border dark:focus:border-white/20"
@@ -465,9 +461,7 @@ export default function Positions() {
 						size="sm"
 						icon={<RefreshCw size={11} className={isLoading ? "animate-spin" : ""} />}
 						onClick={() => refetch()}
-					>
-						Refresh
-					</Btn>
+					>{t("filters.refresh", "Refresh")}</Btn>
 					<span
 						className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
 							wsLive
@@ -476,13 +470,13 @@ export default function Positions() {
 						}`}
 						title={
 							wsLive
-								? "Live ticks from exchange + push snapshots"
-								: "Socket down — polling every 5s"
+								? t("filters.liveTitle", "Live ticks from exchange + push snapshots")
+								: t("filters.pollingTitle", "Socket down — polling every 5s")
 						}
 					>
 						{wsLive
-							? `live${liveCount > 0 ? ` · ${liveCount}` : ""}`
-							: "polling 5s"}
+							? `${t("filters.liveSuffix", "live")}${liveCount > 0 ? ` · ${liveCount}` : ""}`
+							: t("filters.polling", "polling 5s")}
 					</span>
 
 					<div className="flex-1" />
@@ -491,8 +485,8 @@ export default function Positions() {
 						value={view}
 						onChange={setView}
 						options={[
-							{ value: "cards", label: "Cards" },
-							{ value: "table", label: "Table" },
+							{ value: "cards", label: t("filters.cards", "Cards") },
+							{ value: "table", label: t("filters.table", "Table") },
 						]}
 					/>
 				</div>
@@ -505,8 +499,8 @@ export default function Positions() {
 						{filteredList.length === 0 ? (
 							<div className="glass rounded-2xl p-8 text-center text-[12px] text-white/35 md:col-span-2 2xl:col-span-3">
 								{isLoading
-									? "Loading positions…"
-									: "No open positions — start a strategy to see live deals here."}
+									? t("filters.loadingPositions", "Loading positions…")
+									: t("filters.noOpenPositions", "No open positions — start a strategy to see live deals here.")}
 							</div>
 						) : (
 							filteredList.map((p) => {
@@ -563,10 +557,10 @@ export default function Positions() {
 															setIsChartModalOpen(true);
 														}}
 														className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-white/40 hover:text-cyan hover:bg-cyan/10 border border-white/5 hover:border-cyan/30 transition-all ml-0.5"
-														title="Open Deal Chart"
+														title={t("filters.chartTitle", "Open Deal Chart")}
 													>
 														<LineChart size={11} />
-														<span>Chart</span>
+														<span>{t("filters.chart", "Chart")}</span>
 													</button>
 												</div>
 												<div className="mt-1 flex items-center gap-1.5 text-[10.5px] text-white/40">
@@ -617,10 +611,10 @@ export default function Positions() {
 											/>
 											<div className="text-right font-mono text-[10.5px] text-white/50">
 												<div>
-													size <span className="text-white">{p.size}</span>
+													{t("table.sizeLabel", "size")} <span className="text-white">{p.size}</span>
 												</div>
 											<div>
-												liq{p.liqEstimated ? " (est.)" : ""}{" "}
+												{t("table.liqLabel", "liq")}{p.liqEstimated ? ` ${t("table.liqEst", "(est.)")}` : ""}{" "}
 												<span className="text-rose-400/80">
 													{p.liq.toLocaleString()}
 												</span>
@@ -674,15 +668,15 @@ export default function Positions() {
 								<table className="w-full">
 									<thead className="border-b border-white/5">
 										<tr>
-											<Th>Symbol</Th>
-											<Th>Side</Th>
-											<Th right>Size</Th>
-											<Th right>Entry</Th>
-											<Th right>Mark</Th>
-											<Th right>SL</Th>
-											<Th right>TP</Th>
-											<Th right>Liq</Th>
-											<Th right>P&L</Th>
+											<Th>{t("table.colSymbol", "Symbol")}</Th>
+											<Th>{t("table.colSide", "Side")}</Th>
+											<Th right>{t("table.colSize", "Size")}</Th>
+											<Th right>{t("table.colEntry", "Entry")}</Th>
+											<Th right>{t("table.colMark", "Mark")}</Th>
+											<Th right>{t("table.colSl", "SL")}</Th>
+											<Th right>{t("table.colTp", "TP")}</Th>
+											<Th right>{t("table.colLiq", "Liq")}</Th>
+											<Th right>{t("table.colPnl", "P&L")}</Th>
 											<Th />
 										</tr>
 								</thead>
@@ -692,8 +686,8 @@ export default function Positions() {
 											<td colSpan={10}>
 												<div className="flex h-[100px] items-center justify-center px-3 py-2.5 text-center text-[12px] text-white/35">
 													{isLoading
-														? "Loading positions…"
-														: "No open positions — start a strategy to see live deals here."}
+														? t("filters.loadingPositions", "Loading positions…")
+									: t("filters.noOpenPositions", "No open positions — start a strategy to see live deals here.")}
 												</div>
 											</td>
 										</tr>
@@ -761,7 +755,7 @@ export default function Positions() {
 																setIsChartModalOpen(true);
 															}}
 															className="text-white/40 hover:text-cyan transition-colors p-1.5 rounded hover:bg-white/5"
-															title="Open Deal Chart"
+															title={t("filters.chartTitle", "Open Deal Chart")}
 														>
 															<LineChart size={13} />
 														</button>
@@ -805,10 +799,10 @@ export default function Positions() {
 							>
 								<div className="grid grid-cols-2 gap-2.5">
 									{[
-										["Entry", sel.entry],
-										["Mark", sel.mark],
-										["Size", sel.size],
-										["Notional", sel.size * sel.mark],
+										[t("inspector.entryLabel", "Entry"), sel.entry],
+										[t("inspector.markLabel", "Mark"), sel.mark],
+										[t("inspector.sizeLabel", "Size"), sel.size],
+										[t("inspector.notionalLabel", "Notional"), sel.size * sel.mark],
 									].map(([l, v]) => (
 										<div
 											key={l as string}
@@ -827,10 +821,10 @@ export default function Positions() {
 								</div>
 
 								<div className="mt-4 space-y-3">
-									<SectionLabel>Risk controls</SectionLabel>
+									<SectionLabel>{t("inspector.riskControls", "Risk controls")}</SectionLabel>
 									<div>
 										<div className="mb-1 flex items-center justify-between text-[11px]">
-											<span className="text-white/60">Stop Loss</span>
+											<span className="text-white/60">{t("inspector.stopLoss", "Stop Loss")}</span>
 											<span className="font-mono text-rose-400">
 												{selSl && !Number.isNaN(Number(selSl))
 													? (((Number(selSl) - sel.mark) / sel.mark) * 100).toFixed(2) + "%"
@@ -842,7 +836,7 @@ export default function Positions() {
 											<input
 												value={selSl}
 												onChange={(e) => setSelSl(e.target.value)}
-												placeholder="not set"
+												placeholder={t("inspector.notSet", "not set")}
 												className="flex-1 bg-transparent font-mono text-[12px] text-white outline-none"
 											/>
 											<Pencil size={11} className="text-white/30 shrink-0" />
@@ -851,7 +845,7 @@ export default function Positions() {
 
 									<div>
 										<div className="mb-1 flex items-center justify-between text-[11px]">
-											<span className="text-white/60">Take Profit</span>
+											<span className="text-white/60">{t("inspector.takeProfit", "Take Profit")}</span>
 											<span className="font-mono text-emerald-400">
 												{selTp && !Number.isNaN(Number(selTp))
 													? (((Number(selTp) - sel.mark) / sel.mark) * 100).toFixed(2) + "%"
@@ -863,7 +857,7 @@ export default function Positions() {
 											<input
 												value={selTp}
 												onChange={(e) => setSelTp(e.target.value)}
-												placeholder="not set"
+												placeholder={t("inspector.notSet", "not set")}
 												className="flex-1 bg-transparent font-mono text-[12px] text-white outline-none"
 											/>
 											<Pencil size={11} className="text-white/30 shrink-0" />
@@ -877,16 +871,14 @@ export default function Positions() {
 											onClick={handleUpdateSlTp}
 											disabled={isUpdatingSlTp}
 										>
-											Update SL / TP
+											{t("inspector.updateSlTp", "Update SL / TP")}
 										</Btn>
 										<Btn
 											variant="danger"
 											icon={<X size={12} />}
 											onClick={() => handleClose(sel.symbol, sel.apiKeyId)}
 											disabled={isClosing}
-										>
-											Close
-										</Btn>
+										>{t("inspector.close", "Close")}</Btn>
 									</div>
 									<Btn
 										variant="outline"
@@ -896,19 +888,15 @@ export default function Positions() {
 											setChartModalPos(sel);
 											setIsChartModalOpen(true);
 										}}
-									>
-										Open Deal Chart
-									</Btn>
+									>{t("inspector.openDealChart", "Open Deal Chart")}</Btn>
 								</div>
 
 								<div className="mt-4 rounded-xl border border-white/5 bg-gradient-to-br from-white/[0.03] to-transparent p-3">
 								<div className="flex items-center gap-2 text-[11px] text-white/60">
 									<Flame size={12} className="text-amber-400" />
-									Liquidation buffer
+									{t("inspector.liqBuffer", "Liquidation buffer")}
 									{sel.liqEstimated ? (
-										<span className="text-[9px] text-white/30">
-											(est.)
-										</span>
+										<span className="text-[9px] text-white/30">{t("table.liqEst", "(est.)")}</span>
 									) : null}
 								</div>
 									<div className="mt-1 font-mono text-[18px] font-semibold text-white">
@@ -926,12 +914,11 @@ export default function Positions() {
 							</Panel>
 						) : null}
 
-					<Panel title="Trade Feed" subtitle="/trades · recent fills" noPad>
+					<Panel title={t("tradeFeed.title", "Trade Feed")} subtitle={t("tradeFeed.subtitle", "/trades · recent fills")} noPad>
 						<div className="divide-y divide-white/[0.03]">
 							{recentTrades.length === 0 ? (
 								<div className="flex h-[100px] items-center justify-center px-4 text-center text-[11px] text-white/35">
-									No recent fills — closed trades will show up
-									here.
+									{t("tradeFeed.empty", "No recent fills — closed trades will show up here.")}
 								</div>
 							) : (
 								recentTrades.map((t) => {

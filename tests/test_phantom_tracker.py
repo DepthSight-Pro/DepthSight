@@ -5,7 +5,13 @@ from bot_module.phantom_tracker import PhantomTracker
 
 class TestPhantomTracker:
     @pytest.fixture
-    def tracker(self):
+    def tracker(self, monkeypatch):
+        # The tracker is a no-op unless explicitly enabled. Pin it on: these
+        # tests verify tracking logic and must not depend on the ambient
+        # PHANTOM_TRACKING_ENABLED value (currently off in this tree).
+        from bot_module import config as bot_config
+
+        monkeypatch.setattr(bot_config, "PHANTOM_TRACKING_ENABLED", True)
         return PhantomTracker()
 
     def test_create_phantom(self, tracker):

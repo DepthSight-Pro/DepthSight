@@ -43,6 +43,7 @@ import ErrorLogsPage from "./pages/admin/ErrorLogsPage";
 import PlatformHealthPage from "./pages/admin/PlatformHealthPage";
 import DataPipelinePage from "./pages/admin/DataPipelinePage";
 import AdminMiningPage from "./pages/admin/AdminMiningPage";
+import AdminMiningAnalytics from "./pages/admin/AdminMiningAnalytics";
 import AdminPromoPage from "./pages/admin/AdminPromoPage";
 import BacktestViewerPage from "./pages/BacktestViewer";
 import CommunityHub from "./pages/CommunityHub";
@@ -205,6 +206,10 @@ function App() {
 															<Route
 																path="mining"
 																element={<AdminMiningPage />}
+															/>
+															<Route
+																path="mining-analytics"
+																element={<AdminMiningAnalytics />}
 															/>
 															<Route
 																path="promo"

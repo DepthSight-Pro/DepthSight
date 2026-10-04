@@ -3293,12 +3293,176 @@ def run_data_pipeline_task(self, cmd_args: List[str]):
 def process_mining_epoch_task():
     """
     Celery task to run the daily mining epoch processor logic.
+    Settles all open past days oldest-first (catch-up loop), not just
+    yesterday, so a stuck day never drags its leftovers into the next epoch.
     """
     if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
         logger.info("Skipping process_mining_epoch_task: not a central hub deployment.")
         return
     logger.info("Running periodic task: process_mining_epoch_task")
-    run_async_from_sync(_async_process_mining_epoch())
+    run_async_from_sync(_async_process_open_epochs())
+
+
+async def _acquire_epoch_lock(session, epoch_date) -> bool:
+    """Non-blocking session-level advisory lock for one epoch (B7 fix).
+
+    Without this, overlapping runs (beat redelivery, manual trigger while the
+    daily job runs) finalize the same epoch twice and double-credit mining
+    rewards via the read-modify-write on HubNode.total_mined. pg_try_advisory
+    never blocks: a contended epoch is skipped with a log, not queued.
+    Returns True when the lock is held (or when locks are unavailable, e.g.
+    SQLite in tests - single-threaded there, so proceeding preserves the old
+    behavior instead of breaking it).
+    """
+    lock_key = f"mining_epoch:{epoch_date.isoformat()}"
+    try:
+        bind = session.get_bind()
+        dialect = getattr(getattr(bind, "dialect", None), "name", "")
+    except Exception:
+        dialect = ""
+    if dialect and dialect != "postgresql":
+        # Skip cleanly instead of firing a statement that is guaranteed to
+        # fail: on PG a failed statement aborts the whole transaction, and the
+        # epoch would then silently half-process (this exact failure was
+        # observed in tests). Non-PG contexts are single-threaded anyway.
+        return True
+    try:
+        from sqlalchemy import text
+
+        res = await session.execute(
+            text("SELECT pg_try_advisory_lock(hashtext(:k))"), {"k": lock_key}
+        )
+        acquired = bool(res.scalar())
+        if not acquired:
+            logging.getLogger(__name__).warning(
+                f"[MINING] Epoch {epoch_date} is already being processed elsewhere. Skipping."
+            )
+        return acquired
+    except Exception as e:
+        # A failed lock attempt must not poison the epoch's own transaction
+        # (on PG any error aborts it). Roll back the empty transaction so the
+        # run proceeds exactly as before this guard existed, then continue.
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+        logging.getLogger(__name__).warning(
+            f"[MINING] Advisory lock attempt failed ({e}); proceeding unlocked."
+        )
+        return True
+
+
+async def _release_epoch_lock(session, epoch_date) -> None:
+    """Best-effort unlock. The isolated worker engine is disposed after the
+    task anyway (closing the connection releases session locks), so this is
+    belt-and-braces for any future engine reuse."""
+    try:
+        bind = session.get_bind()
+        dialect = getattr(getattr(bind, "dialect", None), "name", "")
+    except Exception:
+        dialect = ""
+    if dialect and dialect != "postgresql":
+        return
+    try:
+        from sqlalchemy import text
+
+        await session.execute(
+            text("SELECT pg_advisory_unlock(hashtext(:k))"),
+            {"k": f"mining_epoch:{epoch_date.isoformat()}"},
+        )
+    except Exception:
+        pass
+
+
+async def _async_process_open_epochs(
+    max_dates: int = 10,
+    lookback_days: int = 30,
+    calendar_days: int = 7,
+) -> list:
+    """Settle every open past day oldest-first (catch-up loop).
+
+    Open dates = distinct created-dates of epoch-unattributed reports
+    (≤ lookback_days old, bucketed in Python to avoid DB-timezone dependence)
+    ∪ calendar dates in [today - calendar_days, yesterday] without a
+    finalized epoch row (chart continuity for idle days). Capped at
+    max_dates per run. Steady state settles exactly one date (yesterday),
+    identical to the old beat behavior.
+    """
+    from datetime import timedelta as _td
+    from sqlalchemy.future import select as _select
+    from api.database import get_isolated_worker_session
+    from api import models as _models
+
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - _td(days=1)
+    window_start_dt = datetime.combine(
+        today - _td(days=lookback_days), datetime.min.time()
+    ).replace(tzinfo=timezone.utc)
+    today_start_dt = datetime.combine(today, datetime.min.time()).replace(
+        tzinfo=timezone.utc
+    )
+    cal_start = today - _td(days=calendar_days)
+
+    candidate_dates: set = set()
+    async with get_isolated_worker_session() as session:
+        try:
+            res = await session.execute(
+                _select(_models.HubTelemetryReport.created_at).where(
+                    _models.HubTelemetryReport.epoch_date.is_(None),
+                    _models.HubTelemetryReport.created_at >= window_start_dt,
+                    _models.HubTelemetryReport.created_at < today_start_dt,
+                )
+            )
+            for (ts,) in res.all():
+                if ts is None:
+                    continue
+                try:
+                    d = _ensure_utc_datetime(ts).date()
+                except (TypeError, ValueError):
+                    continue
+                if d < today:
+                    candidate_dates.add(d)
+        except Exception as e:
+            logger.warning(
+                f"[MINING] Open-date discovery failed ({e}); trying yesterday only."
+            )
+        try:
+            fin_res = await session.execute(
+                _select(_models.MiningEpoch.epoch_date).where(
+                    _models.MiningEpoch.epoch_date >= cal_start,
+                    _models.MiningEpoch.epoch_date <= yesterday,
+                    _models.MiningEpoch.status == "finalized",
+                )
+            )
+            finalized = set(fin_res.scalars().all())
+        except Exception as e:
+            logger.warning(
+                f"[MINING] Finalized-epoch scan failed ({e}); trying yesterday only."
+            )
+            finalized = set()
+        day = cal_start
+        while day <= yesterday:
+            if day not in finalized:
+                candidate_dates.add(day)
+            day += _td(days=1)
+
+    dates = sorted(candidate_dates)[:max_dates]
+    if not dates:
+        logger.info("[MINING] No open epochs to process.")
+        return []
+    if len(candidate_dates) > max_dates:
+        logger.warning(
+            f"[MINING] {len(candidate_dates)} open epoch dates, processing oldest "
+            f"{max_dates} this run."
+        )
+    processed = []
+    for day in dates:
+        try:
+            await _async_process_mining_epoch(force_yesterday_date=day)
+            processed.append(day)
+        except Exception as e:
+            logger.error(f"[MINING] Catch-up loop failed for {day}: {e}", exc_info=True)
+    return processed
 
 
 async def _async_process_mining_epoch(force_yesterday_date=None):
@@ -3328,7 +3492,12 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
         return
 
     async with get_isolated_worker_session() as session:
+        lock_held = False
         try:
+            # B7: single-flight per epoch. Overlapping runs double-credit.
+            lock_held = await _acquire_epoch_lock(session, yesterday)
+            if not lock_held:
+                return
             # Get active mining configuration
             config_stmt = select(models.MiningConfig).limit(1)
             config_res = await session.execute(config_stmt)
@@ -3350,9 +3519,10 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
 
             # 1. Run Hub-only closed source verification for the epoch's pending trades.
             #    This runs BEFORE the finalized-epoch check so that late-arriving PENDING
-            #    reports for an already-finalized epoch still get VERIFIED and are credited
-            #    to the next epoch (picked up below via epoch_date IS NULL) instead of
-            #    being stuck in PENDING forever.
+            #    reports for an already-finalized epoch still get VERIFIED instead of
+            #    being stuck in PENDING forever (settlement then forward-credits
+            #    them explicitly if their own day is finalized, else the
+            #    catch-up loop settles their own day first).
             try:
                 from hub_private.tasks import verify_epoch_trades
 
@@ -3385,28 +3555,87 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 return
 
             # Only pick up reports that have NOT yet been attributed to any epoch
-            # (epoch_date IS NULL). Already-attributed reports (epoch_date == yesterday) must
-            # NOT be re-included here, otherwise re-processing would double-count their
-            # rewards because MiningLedger upserts are additive.
+            # (epoch_date IS NULL) AND were created on this epoch day.
+            # Day-bounded attribution: each epoch settles only its own day's
+            # trades, so parallel epochs never dilute each other's pools.
+            # Already-attributed reports must NOT be re-included here,
+            # otherwise re-processing would double-count their rewards because
+            # MiningLedger upserts are additive.
             reports_stmt = select(models.HubTelemetryReport).where(
                 models.HubTelemetryReport.verification_status == "VERIFIED",
                 models.HubTelemetryReport.is_mining_eligible.is_(True),
+                models.HubTelemetryReport.created_at >= yesterday_start,
                 models.HubTelemetryReport.created_at <= yesterday_end,
                 models.HubTelemetryReport.epoch_date.is_(None),
             )
             reports_res = await session.execute(reports_stmt)
-            reports = reports_res.scalars().all()
+            reports = list(reports_res.scalars().all())
 
-            # The epoch waits for EVERYONE: manual (cabinet XLSX upload) and
-            # automatic (broker API) confirmations alike. Never finalize while
-            # PENDING reports for the epoch window remain — even if other
-            # trades are already VERIFIED. Pending auto-exchange reports clear
-            # by themselves (48h grace -> REJECTED); manual-exchange reports
-            # wait for the operator upload (or --reject-ids for junk).
+            # Narrow exception: VERIFIED leftovers created BEFORE this day
+            # whose own epoch is already finalized. Without this they would be
+            # orphaned forever (their day will never be settled again); with
+            # it they are forward-credited here, loudly. Leftovers whose own
+            # day is still open are left alone — the catch-up loop settles
+            # their own epoch first (oldest-first), so they never leak across.
+            old_stmt = select(models.HubTelemetryReport).where(
+                models.HubTelemetryReport.verification_status == "VERIFIED",
+                models.HubTelemetryReport.is_mining_eligible.is_(True),
+                models.HubTelemetryReport.created_at < yesterday_start,
+                models.HubTelemetryReport.epoch_date.is_(None),
+            )
+            old_reports = list((await session.execute(old_stmt)).scalars().all())
+            if old_reports:
+                old_dates = sorted(
+                    {
+                        _ensure_utc_datetime(r.created_at).date()
+                        for r in old_reports
+                        if r.created_at is not None
+                    }
+                )
+                fin_res = await session.execute(
+                    select(models.MiningEpoch.epoch_date).where(
+                        models.MiningEpoch.epoch_date.in_(old_dates),
+                        models.MiningEpoch.status == "finalized",
+                    )
+                )
+                finalized_dates = set(fin_res.scalars().all())
+                credited = [
+                    r
+                    for r in old_reports
+                    if r.created_at is not None
+                    and _ensure_utc_datetime(r.created_at).date() in finalized_dates
+                ]
+                if credited:
+                    logger.warning(
+                        "[MINING] Epoch %s forward-credits %d report(s) from "
+                        "already-finalized day(s) %s: %s",
+                        yesterday,
+                        len(credited),
+                        sorted(
+                            str(_ensure_utc_datetime(r.created_at).date())
+                            for r in credited
+                        ),
+                        ", ".join(
+                            f"{r.id[:8]}({r.exchange_id},{r.trade_volume_usdt})"
+                            for r in credited[:20]
+                        ),
+                    )
+                    reports = reports + credited
+
+            # The epoch waits only for ITS OWN day: manual (cabinet XLSX
+            # upload) and automatic (broker API) confirmations alike. PENDING
+            # reports from older days belong to older epochs' business and
+            # must not hold this epoch hostage (they are settled oldest-first
+            # by the catch-up loop). Never finalize while PENDING reports for
+            # THIS epoch window remain — even if other trades are already
+            # VERIFIED. Pending auto-exchange reports clear by themselves
+            # (48h grace -> REJECTED); manual-exchange reports wait for the
+            # operator upload (or --reject-ids for junk).
             pending_stmt = (
                 select(models.HubTelemetryReport.id)
                 .where(
                     models.HubTelemetryReport.verification_status == "PENDING",
+                    models.HubTelemetryReport.created_at >= yesterday_start,
                     models.HubTelemetryReport.created_at <= yesterday_end,
                     models.HubTelemetryReport.epoch_date.is_(None),
                 )
@@ -3990,6 +4219,11 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 }
 
             # Per-report pass: compute net reward and fees (using GROSS base_reward).
+            # NOTE: the share must be WEIGHTED by the exchange multiplier, same
+            # as in pass 4 above. Splitting by raw rebate/total_rebate here
+            # would silently drop the multiplier for mixed-exchange nodes
+            # (e.g. WEEX x1 + Bitget x2 on one node) and overwrite the
+            # correct attribution with equal shares.
             fee_by_node: dict = {}
             server_fees: dict = {}
             for report in reports:
@@ -3998,10 +4232,12 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     continue
                 reward = node_rewards[node_id]
                 node_rebate = report.estimated_rebate_usdt or 0.0
-                if reward["total_rebate"] <= 0 or node_rebate <= 0:
+                trade_weighted = node_rebate * _resolve_report_mult(report)
+                node_total_weighted = reward.get("weighted_points", 0.0)
+                if node_total_weighted <= 0 or trade_weighted <= 0:
                     report.reward_tokens = 0.0
                     continue
-                report_share = node_rebate / reward["total_rebate"]
+                report_share = trade_weighted / node_total_weighted
                 gross_base = reward["base_reward"] * report_share
                 server_share = _server_share_for(report)
                 # Commission only applies when there is an operator to pay it to
@@ -4194,6 +4430,9 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 f"[MINING] Error processing epoch {yesterday}: {e}", exc_info=True
             )
             await session.rollback()
+        finally:
+            if lock_held:
+                await _release_epoch_lock(session, yesterday)
 
 
 @celery_app.task(name="sync_pending_telemetry_task")
@@ -4202,7 +4441,18 @@ def sync_pending_telemetry_task(limit: int = 50) -> Dict[str, Any]:
     Celery task to resynchronize pending LOCAL_ONLY telemetry reports with the central hub.
     """
     import asyncio
-    from telemetry_sync import resync_pending_telemetry_reports
+
+    try:
+        from telemetry_sync import resync_pending_telemetry_reports
+    except ModuleNotFoundError:
+        # The module was added after some images were built (COPY . . layer).
+        # Fail open with a clear reason instead of crashing the periodic task
+        # on every beat tick until the image is rebuilt.
+        logger.warning(
+            "[TELEMETRY_SYNC] telemetry_sync module missing in image "
+            "(rebuild with --no-cache to include it) — skipping resync."
+        )
+        return {"synced": 0, "total": 0, "reason": "module_missing_stale_image"}
 
     return asyncio.run(resync_pending_telemetry_reports(limit=limit))
 

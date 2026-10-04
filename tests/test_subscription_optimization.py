@@ -589,7 +589,16 @@ class TestGlobalWebSocketRegistry:
     @pytest.fixture
     def reset_global_registry(self):
         """Clears the global registry before and after the test."""
-        from bot_module.data_consumer import _global_kline_cache, _global_kline_df_cache
+        from bot_module import data_consumer as _dc
+
+        def _drop_download_tasks():
+            for t in list(_dc._global_history_download_tasks.values()):
+                try:
+                    if not t.done():
+                        t.cancel()
+                except Exception:
+                    pass
+            _dc._global_history_download_tasks.clear()
 
         for entry in list(_global_ws_registry.values()):
             task = entry.get("task")
@@ -597,8 +606,12 @@ class TestGlobalWebSocketRegistry:
                 task.cancel()
         _global_ws_registry.clear()
         _global_event_queues.clear()
-        _global_kline_cache.clear()
-        _global_kline_df_cache.clear()
+        _dc._global_kline_cache.clear()
+        _dc._global_kline_df_cache.clear()
+        _dc._global_history_loaded_keys.clear()
+        _drop_download_tasks()
+        _dc._global_history_backfill_attempts.clear()
+        _dc._global_kline_last_update.clear()
         yield
         for entry in list(_global_ws_registry.values()):
             task = entry.get("task")
@@ -606,8 +619,12 @@ class TestGlobalWebSocketRegistry:
                 task.cancel()
         _global_ws_registry.clear()
         _global_event_queues.clear()
-        _global_kline_cache.clear()
-        _global_kline_df_cache.clear()
+        _dc._global_kline_cache.clear()
+        _dc._global_kline_df_cache.clear()
+        _dc._global_history_loaded_keys.clear()
+        _drop_download_tasks()
+        _dc._global_history_backfill_attempts.clear()
+        _dc._global_kline_last_update.clear()
 
     @pytest.mark.asyncio
     async def test_subscription_ref_count_increases(

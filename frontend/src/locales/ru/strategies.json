@@ -28,6 +28,12 @@
 	"copiesCount": "{{count}} копий",
 	"hedgeLegBadge": "Хедж {{leg}}",
 	"extraInstanceBadge": "2-й аккаунт",
+	"statRunning": "Запущенные боты",
+	"statUnrealized": "Нереализ. PnL",
+	"statOpenPositions": "Активные позиции",
+	"statSlots": "Сохранённые стратегии",
+	"copies": "Копии",
+	"tryChangingFilters": "Попробуйте сбросить поисковый запрос или сменить фильтр категории.",
 
 	"filters": {
 		"all": "Все",
@@ -87,12 +93,19 @@
 		"saveButton": "Сохранить конфигурацию",
 		"partialsLabel": "Использовать частичные выходы",
 		"moveToBeLabel": "Переводить СЛ в б/у",
+		"accountLabel": "Торговый счёт",
+		"selectAccountPlaceholder": "Выберите торговый счёт",
+		"noActiveKeysWarning": "Нет доступных валидных API-ключей. Добавьте и подтвердите API-ключ в Настройках.",
+		"advancedSettingsLabel": "Дополнительные настройки",
+		"useMlConfirmationLabel": "Включить ML-подтверждение",
+		"breakevenOnRegimeChangeLabel": "Безубыток при смене режима",
 		"foundationWeightLabel": "Порог веса оснований",
 		"oracleRegimeParanoiaFull": "0: Паранойя (Trend-following/Sideways)",
 		"oracleRegimeAmnesiaFull": "1: Амнезия (News/Trend)",
 		"oracleRegimeSchizophreniaFull": "2: Шизофрения (Volatile)",
 		"errors": {
 			"nameRequired": "Имя экземпляра обязательно.",
+			"apiKeyRequired": "Пожалуйста, выберите торговый счёт",
 			"modeRequired": "Пожалуйста, выберите режим выбора символов.",
 			"symbolsRequired": "Символы обязательны для статического режима",
 			"invalidJson": "Параметры должны быть валидным JSON объектом."
@@ -108,6 +121,8 @@
 		"marketTypeSpot": "Спот",
 		"dateRangeLabel": "Диапазон дат",
 		"datePlaceholder": "Выберите диапазон дат",
+		"periodLabel": "Период",
+		"selectPeriodPlaceholder": "Выберите период",
 		"runButton": "Запустить бектест",
 		"errors": {
 			"symbolRequired": "Символ обязателен.",
@@ -116,6 +131,13 @@
 			"endDateRequired": "Дата окончания обязательна.",
 			"dateOrder": "Дата начала должна быть раньше даты окончания."
 		}
+	},
+
+	"launchConfirm": {
+		"title": "Запуск: {{name}}",
+		"description": "Выберите способ запуска стратегии. Реальный режим торгует настоящими средствами, бумажный — имитирует исполнение.",
+		"liveButton": "Реальная торговля",
+		"paperButton": "Бумажная торговля"
 	},
 
 	"confirmation": {
@@ -145,7 +167,20 @@
 		"marketType": "Тип рынка",
 		"openPositions": "Открытые позиции",
 		"runningSince": "Работает с",
+		"strategyType": "Тип стратегии",
+		"unknownStrategy": "Неизвестная стратегия",
 		"parametersTitle": "Параметры"
+	},
+	"card": {
+		"statusRunning": "РАБОТАЕТ",
+		"unrealizedPnl": "Нереализ. P&L",
+		"positionsLabel": "Позиции",
+		"copiesLabel": "Копии",
+		"appearsIn": "входит в",
+		"detailsRunning": "Выполняется",
+		"exchangeUnknown": "неизвестная биржа",
+		"refreshing": "Обновление",
+		"configured": "Настроено"
 	},
 	"tradeHistoryTab": {
 		"errorTitle": "Ошибка загрузки истории сделок",
@@ -163,5 +198,20 @@
 		"waiting": "Ожидание первых событий лога...",
 		"noLogs": "Логи для этой стратегии пока не найдены.",
 		"waitingForFirstLogEvents": "Ожидание первых событий лога..."
+	},
+	"toolbar": {
+		"liveTitle": "Live-push снапшоты от движка",
+		"pollingTitle": "Сокет недоступен — опрос каждые 5с",
+		"livePush": "live-push",
+		"polling": "опрос 5с",
+		"searchPlaceholder": "Поиск стратегий, символов...",
+		"createButton": "Создать стратегию",
+		"totalCount": "всего: {{count}}",
+		"savedTitle": "Сохранённые",
+		"runningTitle": "Запущены сейчас",
+		"runningEmpty": "Запущенных конфигураций пока нет. Запустите одну из библиотеки ниже или создайте новую стратегию.",
+		"savedEmpty": "Сохранённых конфигураций пока нет.",
+		"noMatchSaved": "Сохранённые конфигурации по запросу не найдены.",
+		"noMatchRunning": "Запущенные боты по запросу не найдены."
 	}
 }

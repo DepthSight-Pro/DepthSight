@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
@@ -26,9 +27,15 @@ class PaperTradingExecutor:
         db_session: AsyncSession,
         data_consumer: DataConsumer,
         redis_client=None,
+        db_session_factory=None,
     ):
         self.user_id = user_id
         self.db = db_session
+        # Optional per-operation session factory (api.database.session_scope).
+        # When set, read paths open short sessions instead of pinning a pool
+        # connection on the long-lived session forever. When unset (tests,
+        # backtesters), methods fall back to self.db exactly as before.
+        self._db_factory = db_session_factory
         self.data_consumer = data_consumer
         self.redis_client = redis_client  # For recording equity history
         self._open_orders: Dict[str, Dict[str, Any]] = {}
@@ -43,24 +50,86 @@ class PaperTradingExecutor:
         logger.info("Closing PaperTradingExecutor.")
         pass
 
-    async def get_account_balance(self) -> Optional[Dict[str, Dict[str, str]]]:
-        logger.debug(f"Getting paper wallet balance for user_id: {self.user_id}")
-        try:
-            wallet_assets = await crud.get_paper_wallet(self.db, user_id=self.user_id)
+    @asynccontextmanager
+    async def _session(self):
+        """One short-lived session for a single logical operation.
 
-            if not wallet_assets:
+        With a factory: opens and always closes (never pins a connection).
+        Without (tests/backtests): yields the long-lived session unchanged.
+        """
+        if self._db_factory is None:
+            yield self.db
+        else:
+            async with self._db_factory() as db:
+                yield db
+
+    async def _ensure_paper_wallet(self) -> bool:
+        """Create the paper wallet if it does not exist yet.
+
+        The wallet used to be created lazily on the first balance read, i.e. from
+        inside signal processing. Every controller of a shard shared one
+        AsyncSession, so when a batch of controllers evaluated their first candle
+        together the concurrent `init_or_reset_paper_wallet` calls collided on that
+        session and raised "InvalidRequestError: Session is already flushing".
+        The caller swallowed it, returned None, and the RiskManager then treated
+        the paper balance as $0.00 - so every signal was rejected with
+        ZERO_BALANCE and no trade was ever opened.
+
+        Two changes remove the failure:
+        - initialize_equity_tracking() calls this during controller startup, which
+          bot_runner awaits once per controller, so the create path does not race.
+        - each controller now gets its own session (see bot_runner), so even a
+          concurrent call cannot corrupt a session that others depend on.
+
+        No retry loop on purpose: a session that raised "Session is already
+        flushing" stays unusable for subsequent work, so retrying only added
+        latency before the same failure.
+        """
+        try:
+            async with self._session() as db:
+                wallet_assets = await crud.get_paper_wallet(db, user_id=self.user_id)
+                if wallet_assets:
+                    return True
                 logger.info(
                     f"Paper wallet not found for user {self.user_id}. Initializing..."
                 )
-                wallet_assets = await crud.init_or_reset_paper_wallet(
-                    self.db, user_id=self.user_id
-                )
+                await crud.init_or_reset_paper_wallet(db, user_id=self.user_id)
+                # Persist the init in the same scope: previously it rode the
+                # ambient long-lived session and was only durable if some later
+                # write happened to commit. Without this, a short session would
+                # roll the wallet back on close and re-init every call.
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(
+                f"Paper wallet init failed for user {self.user_id}: {e}. Paper "
+                "trading cannot size positions until the wallet is available.",
+                exc_info=True,
+            )
+            return False
 
-            balances = {}
-            for asset in wallet_assets:
-                balances[asset.asset] = {"free": str(asset.balance), "locked": "0.0"}
-            logger.debug(f"Paper wallet balance: {balances}")
-            return balances
+    async def get_account_balance(self) -> Optional[Dict[str, Dict[str, str]]]:
+        logger.debug(f"Getting paper wallet balance for user_id: {self.user_id}")
+        try:
+            if not await self._ensure_paper_wallet():
+                return None
+            async with self._session() as db:
+                wallet_assets = await crud.get_paper_wallet(db, user_id=self.user_id)
+                if not wallet_assets:
+                    logger.error(
+                        f"Paper wallet for user {self.user_id} is still missing after "
+                        "initialization; treating balance as unavailable."
+                    )
+                    return None
+
+                balances = {}
+                for asset in wallet_assets:
+                    balances[asset.asset] = {
+                        "free": str(asset.balance),
+                        "locked": "0.0",
+                    }
+                logger.debug(f"Paper wallet balance: {balances}")
+                return balances
         except Exception as e:
             logger.error(
                 f"Error getting paper account balance for user {self.user_id}: {e}",
@@ -324,6 +393,22 @@ class PaperTradingExecutor:
                         logger.info(
                             f"{log_prefix} Trade {new_db_trade.id} successfully saved and committed."
                         )
+                        # Release the refresh pin: refresh() issues a SELECT on
+                        # the ambient long-lived session, checking out a pool
+                        # connection that reads never return. Without this every
+                        # traded controller pins 1 connection forever (~1 pin
+                        # per controller observed on a 50-user run). All writes
+                        # above are committed, so this is pure release; the
+                        # response below is built from plain values, nothing
+                        # ORM escapes this block.
+                        try:
+                            await self.db.commit()
+                        except Exception as e_release:
+                            logger.warning(
+                                f"{log_prefix} Session release commit failed "
+                                f"(trade {new_db_trade.id} is already committed): "
+                                f"{e_release}"
+                            )
 
                         try:
                             process_live_trade_analytics_task.delay(
@@ -446,7 +531,13 @@ class PaperTradingExecutor:
         symbol: str,
         orderId: Optional[int] = None,
         origClientOrderId: Optional[str] = None,
+        is_algo_order: bool = False,
     ) -> Dict[str, Any]:
+        # is_algo_order is accepted for contract parity with live executors
+        # (controller passes it when cancelling the opposite leg after a
+        # fill). The paper simulator holds no algo/live distinction: any
+        # tracked order is simply removed.
+        _ = is_algo_order
         log_prefix = "[PaperCancelOrder]"
         order_to_cancel_id = origClientOrderId
 
@@ -461,6 +552,24 @@ class PaperTradingExecutor:
             msg = f"Order with clientOrderId {order_to_cancel_id} not found in paper trading open orders."
             logger.warning(f"{log_prefix} {msg}")
             return {"error": True, "code": -2011, "msg": "Unknown order sent."}
+
+    async def cancel_all_open_orders(self, symbol: str) -> Dict[str, Any]:
+        """Contract parity with live executors (final-exit hard reset).
+
+        Marks every tracked order for the symbol CANCELED and drops it.
+        """
+        log_prefix = "[PaperCancelAllOrders]"
+        cancelled = 0
+        for client_order_id in [
+            cid
+            for cid, order in self._open_orders.items()
+            if order.get("symbol") == symbol
+        ]:
+            order = self._open_orders.pop(client_order_id)
+            order["status"] = "CANCELED"
+            cancelled += 1
+        logger.info(f"{log_prefix} Canceled {cancelled} paper order(s) for {symbol}.")
+        return {"symbol": symbol, "cancelled": cancelled}
 
     async def get_open_orders(self, symbol: Optional[str] = None) -> list:
         if symbol:
@@ -673,6 +782,11 @@ class PaperTradingExecutor:
                             side=order_side,
                             quantity=float(order["origQty"]),
                             price=current_price,
+                            # Trigger-order identity: the exit DB row is keyed
+                            # by it (unique per fill), and finalization uses
+                            # it to exclude the filled leg from cancellation.
+                            trigger_order_id=order.get("orderId"),
+                            trigger_client_order_id=order.get("clientOrderId"),
                         )
                     except Exception as e:
                         logger.error(
@@ -734,7 +848,14 @@ class PaperTradingExecutor:
         return {"symbols": symbols_data}
 
     async def _notify_controller_about_fill(
-        self, symbol: str, order_type: str, side: str, quantity: float, price: float
+        self,
+        symbol: str,
+        order_type: str,
+        side: str,
+        quantity: float,
+        price: float,
+        trigger_order_id=None,
+        trigger_client_order_id=None,
     ):
         """
         Notifies the controller about a partial position closure when TP/SL is executed.
@@ -750,6 +871,12 @@ class PaperTradingExecutor:
         logger.info(
             f"{log_prefix} Notifying controller about {order_type} {side} fill: {quantity} @ {price}"
         )
+
+        # Filled by _handle_final_exit below when the fill closes the position.
+        # Collected inside the lock, acted on outside it: finalization takes the
+        # per-symbol lock, which must never be acquired while holding the
+        # positions-dict lock.
+        finalize = None
 
         # Get the position from the controller
         async with self.controller._positions_dict_lock:
@@ -803,11 +930,46 @@ class PaperTradingExecutor:
                         logger.info(
                             f"{log_prefix} Cancelled {order_label} order {cli_id} after position close."
                         )
+
+                # Defer full finalization until after the dict lock is released.
+                finalize = {
+                    "reason": "PAPER_SL_FILLED"
+                    if order_type == "STOP_MARKET"
+                    else "PAPER_TP_FILLED",
+                    "price": price,
+                }
             elif position.remaining_quantity < 0:
                 logger.error(
                     f"{log_prefix} CRITICAL: remaining_quantity became negative! {position.remaining_quantity:.8f}"
                 )
                 position.remaining_quantity = 0.0
+
+        # A paper TP/SL fill used to end here with the controller position stuck
+        # in CLOSING forever: no POSITION_CLOSED event, no RM performance update,
+        # no re-entry, positions leaking in memory. Finalize through the same
+        # path live fills use (idempotent: no-op if already CLOSED/missing).
+        if finalize is not None:
+            try:
+                await self.controller._handle_final_exit(
+                    symbol,
+                    finalize["reason"],
+                    finalize["price"],
+                    0.0,  # commission lives in the DB trade rows, don't double count
+                    "USDT",
+                    trigger_order_id,
+                    trigger_client_order_id,
+                    realized_pnl_from_exchange=0.0,
+                    exchange_pnl_available=False,
+                    # remaining_quantity was already decremented above; pass
+                    # the actually closed quantity so PnL computes nonzero.
+                    closed_quantity=quantity,
+                )
+            except Exception as e_fin:
+                logger.error(
+                    f"{log_prefix} Paper finalization failed (position stays "
+                    f"CLOSING, will be retried by reconcile): {e_fin}",
+                    exc_info=True,
+                )
 
     async def _record_equity_point(self):
         """
@@ -822,7 +984,8 @@ class PaperTradingExecutor:
 
         try:
             # Get the current balance from the DB
-            wallet_assets = await crud.get_paper_wallet(self.db, user_id=self.user_id)
+            async with self._session() as db:
+                wallet_assets = await crud.get_paper_wallet(db, user_id=self.user_id)
             total_balance = sum(
                 asset.balance for asset in wallet_assets if asset.asset == "USDT"
             )
@@ -863,5 +1026,8 @@ class PaperTradingExecutor:
         logger.info(
             f"[EquityInit] Initializing equity tracking for user {self.user_id}"
         )
+        # Create the wallet here, while controllers are still being started one
+        # at a time, instead of lazily on the first signal (see _ensure_paper_wallet).
+        await self._ensure_paper_wallet()
         await self._record_equity_point()
         self._equity_initialized = True

@@ -69,7 +69,9 @@
 		"title24h": "Top Strategies (24h)",
 		"colPnl24h": "PnL (24h)",
 		"colTrades": "Trades",
-		"colWinRate": "Win Rate"
+		"colWinRate": "Win Rate",
+		"runningNow": "Running now",
+		"topByPnl": "Top by PnL"
 	},
 	"errors": {
 		"errorLoadingActivePositions": "Error loading active positions",
@@ -98,5 +100,77 @@
 			"redis": "Redis",
 			"postgres": "PostgreSQL"
 		}
+	},
+	"kpi": {
+		"totalEquity": "Total Equity",
+		"unrealizedPnl": "Unrealized P&L",
+		"exposure": "Exposure",
+		"ofEquity": "of equity",
+		"vsEquity": "vs eq",
+		"winRate": "Win Rate · 30d",
+		"tradesSuffix": "trades",
+		"noTradesYet": "no trades yet",
+		"sharpe": "Sharpe · 30d",
+		"need2Days": "need 2+ days"
+	},
+	"equityCurve": {
+		"title": "Equity Curve",
+		"noHistoryYet": "no equity history yet",
+		"loading": "Loading equity…",
+		"empty": "No equity history for this period yet — it appears after closed trades.",
+		"realized": "Realized",
+		"fees": "Fees",
+		"funding": "Funding",
+		"maxDd": "Max DD"
+	},
+	"allocation": {
+		"title": "Account Allocation",
+		"subtitle": "Multi-exchange · equity share",
+		"empty": "No API keys connected yet — add one in Settings to see allocation.",
+		"positionSlotsUsed": "Position slots used",
+		"exposureEquity": "Exposure / equity",
+		"maxConcurrent": "{{open}} / {{max}} max concurrent",
+		"openPositions": "{{count}} open positions",
+		"defaultSl": "default SL {{pct}}%",
+		"longSuffix": "% long",
+		"selectedAccount": "selected account",
+		"allAccounts": "all accounts",
+		"futures": "futures",
+		"spot": "spot"
+	},
+	"openPositions": {
+		"activeSuffix": "active",
+		"liveTicks": "live ticks",
+		"live": "live",
+		"polling": "polling 5s",
+		"indicative": "indicative",
+		"colTrend": "Trend",
+		"colChart": "Chart",
+		"empty": "No open positions — start a strategy to see live deals here.",
+		"chartTitle": "Open Deal Chart",
+		"subtitle": "{{count}} active · {{feed}} · indicative",
+		"sync": "sync"
+	},
+	"heatmap": {
+		"title": "Strategy Return Heatmap",
+		"subtitle": "Hourly P&L% · 30d · all bots",
+		"empty": "Not enough closed trades yet — the heatmap builds from trade history."
+	},
+	"activeBots": {
+		"title": "Active Bots",
+		"livePush": "live push",
+		"polling": "polling 5s",
+		"empty": "No running strategies — launch one from the Strategies page.",
+		"statusInPosition": "IN POSITION",
+		"statusRunning": "RUNNING",
+		"posSuffix": "pos",
+		"tradesWr": "{{trades}} trades · WR {{winRate}}",
+		"noClosedTrades": "no closed trades yet",
+		"subtitle": "/strategies · {{feed}}"
+	},
+	"eventStream": {
+		"subtitle": "/logs/history · live tail",
+		"tail": "tail",
+		"empty": "No events yet — engine logs will appear here."
 	}
 }

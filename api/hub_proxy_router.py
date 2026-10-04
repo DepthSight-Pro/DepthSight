@@ -29,6 +29,24 @@ _EXCLUDED_RESPONSE_HEADERS = {
     "keep-alive",
 }
 
+# Process-wide pooled client (B13 fix). A fresh AsyncClient per request means a
+# fresh connection pool per request: no keep-alive reuse, no TLS session reuse,
+# and a new pool object churned on the path 200 federated nodes drive.
+# httpx clients are safe to share across tasks (connection pooling is the
+# point); limits bound the pool so one burst cannot open unbounded sockets.
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or getattr(_shared_client, "is_closed", False):
+        _shared_client = httpx.AsyncClient(
+            timeout=15.0,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
+    return _shared_client
+
 
 @router.api_route(
     "",
@@ -65,28 +83,28 @@ async def proxy_hub_request(request: Request, path: str = ""):
     body = await request.body()
 
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.request(
-                method=request.method,
-                url=target_url,
-                headers=headers,
-                content=body if body else None,
-            )
+        client = _get_shared_client()
+        resp = await client.request(
+            method=request.method,
+            url=target_url,
+            headers=headers,
+            content=body if body else None,
+        )
 
-            # Filter response headers (exclude transfer/encoding headers since content is already decoded)
-            resp_headers = {
-                k: v
-                for k, v in resp.headers.items()
-                if k.lower() not in _HOP_BY_HOP_HEADERS
-                and k.lower() not in _EXCLUDED_RESPONSE_HEADERS
-            }
+        # Filter response headers (exclude transfer/encoding headers since content is already decoded)
+        resp_headers = {
+            k: v
+            for k, v in resp.headers.items()
+            if k.lower() not in _HOP_BY_HOP_HEADERS
+            and k.lower() not in _EXCLUDED_RESPONSE_HEADERS
+        }
 
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=resp_headers,
-                media_type=resp.headers.get("content-type"),
-            )
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            headers=resp_headers,
+            media_type=resp.headers.get("content-type"),
+        )
     except httpx.RequestError as exc:
         logger.warning(f"[HubProxy] Network error forwarding to {target_url}: {exc}")
         raise HTTPException(

@@ -1982,6 +1982,24 @@ async def create_trade(
         raise
 
 
+async def get_trade_by_uuid(
+    db: AsyncSession, trade_uuid: str
+) -> Optional[models.Trade]:
+    """Idempotency lookup: an exit row per triggering order must exist once.
+
+    The entry fill and the final exit used to share trade_uuid (= entry cid),
+    so every paper final-exit INSERT collided with its entry row
+    (UniqueViolation on every close). Callers check-then-insert and treat a
+    race as a duplicate, never as an error.
+    """
+    if not trade_uuid:
+        return None
+    res = await db.execute(
+        select(models.Trade).where(models.Trade.trade_uuid == str(trade_uuid))
+    )
+    return res.scalars().first()
+
+
 async def get_last_open_trade_for_symbol(
     db: AsyncSession, user_id: int, symbol: str, api_key_id: Optional[int] = None
 ) -> Optional[models.Trade]:

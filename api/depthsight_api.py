@@ -1816,8 +1816,8 @@ redis_api_client = redis.Redis(
 
 # --- API Endpoints ---
 @api_router.post("/token", response_model=schemas.LoginResponse)
-@limiter.limit(get_limit_value("5/hour"))
-# Login brute-force attack protection
+@limiter.limit(get_limit_value("login"))
+# Login brute-force attack protection (tunable via RATE_LIMIT_LOGIN)
 async def login_for_access_token(
     request: Request,  # Required for slowapi
     form_data: OAuth2PasswordRequestForm = Depends(),

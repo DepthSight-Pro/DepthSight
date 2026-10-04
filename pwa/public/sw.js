@@ -1,7 +1,23 @@
 // pwa/sw.js
 
-const CACHE_NAME = "depthsight-cache-v2";
-const urlsToCache = ["./", "index.html", "favicon.ico", "assets/icon.svg"];
+const CACHE_NAME = "depthsight-cache-v9";
+const urlsToCache = [
+	"./",
+	"index.html",
+	"favicon.ico",
+	"assets/icon.svg",
+	"assets/icon-animated.svg",
+	"assets/logo-mark.svg",
+	"assets/icon-192x192.png",
+	"assets/icon-512x512.png",
+	"logos/binance.svg",
+	"logos/bybit.svg",
+	"logos/okx.svg",
+	"logos/bitget.svg",
+	"logos/gate.svg",
+	"logos/bingx.svg",
+	"logos/weex.svg",
+];
 
 // Install event: open cache and add app shell files
 self.addEventListener("install", (event) => {
@@ -57,12 +73,30 @@ self.addEventListener("fetch", (event) => {
 		return;
 	}
 
-	// Strategy: Network First for navigation requests (HTML pages)
+	// Strategy: Network First with 2.5s timeout for navigation requests (HTML pages)
 	if (event.request.mode === "navigate") {
 		event.respondWith(
-			fetch(event.request).catch(() => {
-				// If the network fails, fall back to the cache
-				return caches.match("index.html");
+			Promise.race([
+				fetch(event.request).then((networkResponse) => {
+					if (networkResponse && networkResponse.status === 200) {
+						const responseToCache = networkResponse.clone();
+						caches.open(CACHE_NAME).then((cache) => {
+							cache.put(event.request, responseToCache);
+						});
+					}
+					return networkResponse;
+				}),
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("Navigation fetch timeout")), 2500),
+				),
+			]).catch(async () => {
+				// If network fails or takes longer than 2.5s, immediately serve cached HTML
+				const cached =
+					(await caches.match(event.request)) ||
+					(await caches.match("index.html")) ||
+					(await caches.match("./"));
+				if (cached) return cached;
+				throw new Error("No cached HTML available");
 			}),
 		);
 		return;
@@ -98,7 +132,7 @@ self.addEventListener("push", (event) => {
 	event.waitUntil(
 		self.registration.showNotification(title, {
 			body: body,
-			icon: "assets/icon.svg", // Path to your app icon
+			icon: "assets/logo-mark.svg", // Path to your app icon
 			vibrate: [200, 100, 200],
 			tag: tag,
 			renotify: true,

@@ -9,10 +9,34 @@
 	"orientation": "portrait-primary",
 	"icons": [
 		{
-			"src": "assets/icon.svg",
+			"src": "assets/icon-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "assets/icon-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png",
+			"purpose": "maskable"
+		},
+		{
+			"src": "assets/icon-512x512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "assets/icon-512x512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		},
+		{
+			"src": "assets/logo-mark.svg",
 			"sizes": "any",
 			"type": "image/svg+xml",
-			"purpose": "any maskable"
+			"purpose": "any"
 		},
 		{
 			"src": "favicon.ico",

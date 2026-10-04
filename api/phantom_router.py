@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 
 from . import models, schemas
 from .database import get_db
@@ -47,10 +47,25 @@ async def get_be_analysis_stats(
     if symbol:
         conditions.append(models.PhantomTrade.symbol == symbol)
     if strategy:
-        conditions.append(models.PhantomTrade.strategy == strategy)
+        # PhantomTrade has no `strategy` column - only strategy_config_id (UUID)
+        # plus the config's display name. Accept either so existing callers
+        # passing a config id or a name both keep working.
+        conditions.append(
+            or_(
+                models.PhantomTrade.strategy_config_id == strategy,
+                models.StrategyConfig.name == strategy,
+            )
+        )
 
-    # Query phantom trades
-    query = select(models.PhantomTrade).where(and_(*conditions))
+    # Query phantom trades (outer join only feeds the strategy-name alternative)
+    query = (
+        select(models.PhantomTrade)
+        .outerjoin(
+            models.StrategyConfig,
+            models.PhantomTrade.strategy_config_id == models.StrategyConfig.id,
+        )
+        .where(and_(*conditions))
+    )
     result = await db.execute(query)
     phantom_trades = result.scalars().all()
 
@@ -141,18 +156,37 @@ async def get_phantom_trades(
     if symbol:
         conditions.append(models.PhantomTrade.symbol == symbol)
     if strategy:
-        conditions.append(models.PhantomTrade.strategy == strategy)
+        # See the stats endpoint above: no `strategy` column exists, match the
+        # config id or the config display name via an outer join.
+        conditions.append(
+            or_(
+                models.PhantomTrade.strategy_config_id == strategy,
+                models.StrategyConfig.name == strategy,
+            )
+        )
     if phantom_status:
         conditions.append(models.PhantomTrade.phantom_status == phantom_status)
 
-    # Count total
-    count_query = select(func.count(models.PhantomTrade.id)).where(and_(*conditions))
+    # Count total (same outer join as the items query: the strategy-name
+    # alternative in `conditions` references strategy_configs)
+    count_query = (
+        select(func.count(models.PhantomTrade.id))
+        .outerjoin(
+            models.StrategyConfig,
+            models.PhantomTrade.strategy_config_id == models.StrategyConfig.id,
+        )
+        .where(and_(*conditions))
+    )
     count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
 
     # Fetch items
     query = (
         select(models.PhantomTrade)
+        .outerjoin(
+            models.StrategyConfig,
+            models.PhantomTrade.strategy_config_id == models.StrategyConfig.id,
+        )
         .where(and_(*conditions))
         .order_by(models.PhantomTrade.be_trigger_time.desc())
         .offset(skip)

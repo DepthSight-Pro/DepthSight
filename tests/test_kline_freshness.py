@@ -93,7 +93,11 @@ def clean_kline_globals():
     saved_df = dict(dc_module._global_kline_df_cache)
     saved_keys = set(dc_module._global_history_loaded_keys)
     saved_tasks = dict(dc_module._global_history_download_tasks)
+    saved_attempts = dict(dc_module._global_history_backfill_attempts)
+    saved_updates = dict(dc_module._global_kline_last_update)
     saved_pairs = dict(dc_module._global_active_pairs)
+    dc_module._global_history_backfill_attempts.clear()
+    dc_module._global_kline_last_update.clear()
     yield
     dc_module._global_kline_cache.clear()
     dc_module._global_kline_cache.update(saved_cache)
@@ -103,6 +107,10 @@ def clean_kline_globals():
     dc_module._global_history_loaded_keys.update(saved_keys)
     dc_module._global_history_download_tasks.clear()
     dc_module._global_history_download_tasks.update(saved_tasks)
+    dc_module._global_history_backfill_attempts.clear()
+    dc_module._global_history_backfill_attempts.update(saved_attempts)
+    dc_module._global_kline_last_update.clear()
+    dc_module._global_kline_last_update.update(saved_updates)
     dc_module._global_active_pairs.clear()
     dc_module._global_active_pairs.update(saved_pairs)
 

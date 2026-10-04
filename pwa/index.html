@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>DepthSight AI Trading Platform</title>
     <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="assets/logo-mark.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121518" />
     <style>
@@ -31,8 +32,8 @@
             width: 100%;
         }
         .app-loading svg {
-            width: 280px;
-            height: auto;
+            width: 96px;
+            height: 96px;
         }
 
         /* 1. Describe the rotation animation itself */
@@ -47,11 +48,9 @@
 
         /* 2. Apply the animation to our element */
         .logo-spinner-path {
-            /* Rotation center, as it was in SMIL (around point 25, 25) */
+            /* Rotation center matching local coordinates (25, 25) inside the translated group */
             transform-origin: 25px 25px; 
-            /* Start the animation: name, duration, type, infinite */
             animation: rotate-spinner 4s linear infinite;
-            /* Hint to the browser that this element will be animated (for optimization) */
             will-change: transform;
         }
 
@@ -61,23 +60,18 @@
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root">
         <div class="app-loading">
-            <svg viewBox="0 0 320 100" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility" image-rendering="optimizeQuality">
-                <style>
-                    .logo-text-depth { 
-                        fill: #FFFFFF !important;
-                    }
-                </style>
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility" image-rendering="optimizeQuality">
                 <defs>
-                    <linearGradient id="dashLogoTechGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <linearGradient id="loaderLogoTechGradient" x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stop-color="#00D4FF"></stop>
                         <stop offset="100%" stop-color="#0066FF"></stop>
                     </linearGradient>
-                    <linearGradient id="dashLogoPulseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <linearGradient id="loaderLogoPulseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                         <stop offset="0%" stop-color="#00D4FF" stop-opacity="0"></stop>
                         <stop offset="50%" stop-color="#00D4FF" stop-opacity="0.8"></stop>
                         <stop offset="100%" stop-color="#00D4FF" stop-opacity="0"></stop>
                     </linearGradient>
-                    <filter id="dashLogoGlow">
+                    <filter id="loaderLogoGlow">
                         <feGaussianBlur stdDeviation="2.5" result="coloredBlur"></feGaussianBlur>
                         <feMerge>
                             <feMergeNode in="coloredBlur"></feMergeNode>
@@ -86,22 +80,17 @@
                     </filter>
                 </defs>
                 <g transform="translate(25, 25)">
-                    <circle cx="25" cy="25" r="24" fill="none" stroke="url(#dashLogoTechGradient)" stroke-width="2" opacity="0.8"></circle>
+                    <circle cx="25" cy="25" r="24" fill="none" stroke="url(#loaderLogoTechGradient)" stroke-width="2" opacity="0.8"></circle>
                     <circle cx="25" cy="25" r="18" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.5"></circle>
                     <circle cx="25" cy="25" r="12" fill="none" stroke="#00D4FF" stroke-width="1" opacity="0.4"></circle>
                     <path d="M 25 25 L 40 15 M 25 25 L 40 35 M 25 25 L 10 15 M 25 25 L 10 35" stroke="#0066FF" stroke-width="1" opacity="0.4"></path>
-                    <circle cx="25" cy="25" r="8" fill="url(#dashLogoTechGradient)" filter="url(#dashLogoGlow)"></circle>
+                    <circle cx="25" cy="25" r="8" fill="url(#loaderLogoTechGradient)" filter="url(#loaderLogoGlow)"></circle>
                     <circle cx="25" cy="25" r="4" fill="#FFFFFF" opacity="0.9"></circle>
-                    <path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#dashLogoTechGradient)" stroke-width="2" stroke-linecap="round"></path>
-                    
-                    <path class="logo-spinner-path" d="M 25 25 L 45 5" stroke="url(#dashLogoPulseGradient)" stroke-width="2" opacity="0.7">
+                    <path d="M 25 5 L 25 10 M 25 40 L 25 45 M 5 25 L 10 25 M 40 25 L 45 25" stroke="url(#loaderLogoTechGradient)" stroke-width="2" stroke-linecap="round"></path>
+                    <path class="logo-spinner-path" d="M 25 25 L 45 5" stroke="url(#loaderLogoPulseGradient)" stroke-width="2" opacity="0.7">
+                        <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="4s" repeatCount="indefinite"></animateTransform>
                     </path>
-
                 </g>
-                <text x="110" y="54" dominant-baseline="middle" font-family="Montserrat, Helvetica, Arial, sans-serif" font-size="38">
-                    <tspan font-weight="700" class="logo-text-depth">Depth</tspan>
-                    <tspan fill="url(#dashLogoTechGradient)" font-weight="300" class="logo-text-sight">Sight</tspan>
-                </text>
             </svg>
         </div>
     </div>

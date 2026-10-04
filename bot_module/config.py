@@ -270,6 +270,37 @@ REDIS_STATE_KEY_POSITIONS = os.environ.get(
 # Ephemeral state: refreshed on every publish (see TradingController).
 # Keys of dead controllers expire instead of haunting "all accounts" views.
 REDIS_STATE_TTL_SECONDS = int(os.environ.get("REDIS_STATE_TTL_SECONDS", 30))
+# Cap on connections per Redis client. Every trading controller builds its own
+# clients (controller state, risk-manager state, market-data fan-out), and
+# redis-py defaults to 50 connections per pool - so 100+ controllers mean
+# thousands of fds and "OSError: [Errno 24] Too many open files" under burst
+# load. 5 is generous: per controller, state publishing is serialized (see
+# _publish_state_to_redis) and subscriptions use dedicated connections outside
+# the pool.
+try:
+    REDIS_POOL_MAX_CONNECTIONS = int(os.environ.get("REDIS_POOL_MAX_CONNECTIONS", 5))
+except (TypeError, ValueError):
+    REDIS_POOL_MAX_CONNECTIONS = 5
+if REDIS_POOL_MAX_CONNECTIONS < 1:
+    REDIS_POOL_MAX_CONNECTIONS = 1
+# Acknowledgement channel for bot commands (A2 fix). Pub/sub has no replay, so
+# a START_STRATEGY published while the target controller is still booting is
+# silently dropped and the API answers 202 for a strategy that never starts.
+# Every command carries a command_id; the component that applies it publishes
+# {"command_id", "status": "ok"|"error"} here, and the API waits for the ack
+# before answering. A missing ack means "not applied" - the caller retries
+# instead of assuming success.
+REDIS_COMMAND_ACK_CHANNEL = os.environ.get(
+    "REDIS_COMMAND_ACK_CHANNEL", f"{REDIS_COMMAND_CHANNEL}:ack"
+)
+try:
+    BOT_COMMAND_ACK_TIMEOUT_SECONDS = float(
+        os.environ.get("BOT_COMMAND_ACK_TIMEOUT_SECONDS", 30)
+    )
+except (TypeError, ValueError):
+    BOT_COMMAND_ACK_TIMEOUT_SECONDS = 30.0
+if BOT_COMMAND_ACK_TIMEOUT_SECONDS < 1:
+    BOT_COMMAND_ACK_TIMEOUT_SECONDS = 1.0
 
 # Market-data specific Redis (separate instance for fan-out).
 MARKET_REDIS_HOST = os.environ.get("MARKET_REDIS_HOST", REDIS_HOST)
@@ -709,6 +740,126 @@ API_RECV_WINDOW = 10000  # (was 5000 by default, can be increased to 10000-60000
 # ==============================================================================
 # Timeout for a single order (placement/cancellation) in seconds
 ORDER_TIMEOUT_SECONDS = 10
+# Random pre-entry delay, uniform(0, this), applied to LIVE entries only.
+# When hundreds of bots evaluate the same candle close, all of them would
+# otherwise place entry+TP+SL within the same second and trip per-IP rate
+# limits (Bitget 100/s, Bybit 600/5s with a 10-minute ban). A few seconds of
+# stagger is invisible on 1m+ timeframes. 0 disables. Tune without deploy:
+# 5 for mass-start ramps/promo, 0 for deterministic tests.
+try:
+    ENTRY_JITTER_MAX_SECONDS = float(os.environ.get("ENTRY_JITTER_MAX_SECONDS", 0))
+except (TypeError, ValueError):
+    ENTRY_JITTER_MAX_SECONDS = 0.0
+if ENTRY_JITTER_MAX_SECONDS < 0:
+    ENTRY_JITTER_MAX_SECONDS = 0.0
+# Private user-data streams: lazy + shared per (exchange, api_key).
+# Exchanges cap simultaneous private WS per IP (Bitget 100, WEEX spot 20) and
+# single-session exchanges kick the previous login, so one stream per
+# controller cannot scale. Streams open on first live demand and close after
+# the idle timeout; WEEX-listed exchanges never open (REST polling instead).
+# PRIVATE_WS_MODE: auto (default) | always (today's boot-open behavior) | never (poll-only).
+PRIVATE_WS_MODE = os.environ.get("PRIVATE_WS_MODE", "auto").strip().lower()
+if PRIVATE_WS_MODE not in ("auto", "always", "never"):
+    PRIVATE_WS_MODE = "auto"
+try:
+    PRIVATE_WS_IDLE_TIMEOUT_SECONDS = float(
+        os.environ.get("PRIVATE_WS_IDLE_TIMEOUT_SECONDS", 300)
+    )
+except (TypeError, ValueError):
+    PRIVATE_WS_IDLE_TIMEOUT_SECONDS = 300.0
+if PRIVATE_WS_IDLE_TIMEOUT_SECONDS < 0:
+    PRIVATE_WS_IDLE_TIMEOUT_SECONDS = 0.0
+PRIVATE_WS_POLL_ONLY_EXCHANGES = {
+    e.strip().lower()
+    for e in os.environ.get("PRIVATE_WS_POLL_ONLY_EXCHANGES", "weex").split(",")
+    if e.strip()
+}
+try:
+    PRIVATE_WS_POLL_INTERVAL_SECONDS = float(
+        os.environ.get("PRIVATE_WS_POLL_INTERVAL_SECONDS", 15)
+    )
+except (TypeError, ValueError):
+    PRIVATE_WS_POLL_INTERVAL_SECONDS = 15.0
+if PRIVATE_WS_POLL_INTERVAL_SECONDS < 5:
+    PRIVATE_WS_POLL_INTERVAL_SECONDS = 5.0
+try:
+    PRIVATE_WS_POLL_JITTER_SECONDS = float(
+        os.environ.get("PRIVATE_WS_POLL_JITTER_SECONDS", 5)
+    )
+except (TypeError, ValueError):
+    PRIVATE_WS_POLL_JITTER_SECONDS = 5.0
+if PRIVATE_WS_POLL_JITTER_SECONDS < 0:
+    PRIVATE_WS_POLL_JITTER_SECONDS = 0.0
+
+
+def _ws_int_env(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        value = int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, value)
+
+
+def _ws_float_env(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        value = float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, value)
+
+
+# Process-global connection budget per exchange (simultaneous private WS
+# loops, multiplied by conns-per-key below). Unit is connections on this
+# host/IP. When a manager raises an exchange cap, raising the matching
+# budget here is a one-line .env change (no release): e.g. Bitget 100/IP ->
+# budget 80 with headroom for reconnect overlap.
+PRIVATE_WS_CONN_BUDGET_DEFAULT = _ws_int_env("PRIVATE_WS_CONN_BUDGET_DEFAULT", 80)
+PRIVATE_WS_CONN_BUDGET = {
+    "bitget": _ws_int_env("PRIVATE_WS_CONN_BUDGET_BITGET", 80),
+    "weex": _ws_int_env("PRIVATE_WS_CONN_BUDGET_WEEX", 0),
+    "bybit": _ws_int_env("PRIVATE_WS_CONN_BUDGET_BYBIT", 400),
+    "okx": _ws_int_env("PRIVATE_WS_CONN_BUDGET_OKX", 200),
+}
+# Max stream OPEN attempts per minute per exchange (process-global sliding
+# window). Binding constraint is connect-request rate (Bitget 300/IP/5min,
+# OKX 3/s/IP): 1000 controllers retrying independently would breach it alone.
+PRIVATE_WS_CONN_RATE_PER_MIN = {
+    "bitget": _ws_int_env("PRIVATE_WS_CONN_RATE_PER_MIN_BITGET", 30, minimum=1),
+    "weex": _ws_int_env("PRIVATE_WS_CONN_RATE_PER_MIN_WEEX", 10, minimum=1),
+    "bybit": _ws_int_env("PRIVATE_WS_CONN_RATE_PER_MIN_BYBIT", 60, minimum=1),
+    "okx": _ws_int_env("PRIVATE_WS_CONN_RATE_PER_MIN_OKX", 100, minimum=1),
+}
+# Physical TCP connections opened per shared loop (Bitget runs a second
+# orders-algo channel for plan SL/TP; measure and lower to 1 if multiplexed).
+PRIVATE_WS_CONNS_PER_KEY = {
+    "bitget": _ws_int_env("PRIVATE_WS_CONNS_PER_KEY_BITGET", 2, minimum=1),
+    "weex": _ws_int_env("PRIVATE_WS_CONNS_PER_KEY_WEEX", 1, minimum=1),
+    "bybit": _ws_int_env("PRIVATE_WS_CONNS_PER_KEY_BYBIT", 1, minimum=1),
+    "okx": _ws_int_env("PRIVATE_WS_CONNS_PER_KEY_OKX", 1, minimum=1),
+}
+# Promotion hysteresis: a poll key takes a WS slot only when clearly hotter
+# (this much closer to TP/SL) and the running slot is older than min-hold.
+PRIVATE_WS_PROMOTE_MARGIN = _ws_float_env("PRIVATE_WS_PROMOTE_MARGIN", 1.5, minimum=1.0)
+PRIVATE_WS_MIN_HOLD_SECONDS = _ws_float_env("PRIVATE_WS_MIN_HOLD_SECONDS", 60)
+# Hot poll keys (positions very close to TP/SL but without a WS slot) poll
+# faster than the base interval. Heat is relative price distance (fraction).
+PRIVATE_WS_HOT_POLL_INTERVAL_SECONDS = _ws_float_env(
+    "PRIVATE_WS_HOT_POLL_INTERVAL_SECONDS", 8, minimum=5.0
+)
+PRIVATE_WS_HOT_POLL_DISTANCE = _ws_float_env("PRIVATE_WS_HOT_POLL_DISTANCE", 0.005)
+# Hot-path kline backfill: how often a stale key may hit REST (per key).
+# In redis fan-out mode the bot trusts service snapshots + live flow while
+# fresh; when stale it must REST-backfill instead of freezing forever (a
+# silently dead channel once held a strategy warmup-skipped for 3 days with
+# zero download attempts). Throttled per key so 500 controllers cannot herd.
+HISTORY_BACKFILL_MIN_INTERVAL_SECONDS = _ws_float_env(
+    "HISTORY_BACKFILL_MIN_INTERVAL_SECONDS", 300, minimum=60.0
+)
+# Freshness watchdog cadence (controller periodic loop): re-verify required
+# kline keys this often, WARNING-alert + force backfill when stale.
+HISTORY_WATCHDOG_INTERVAL_SECONDS = _ws_float_env(
+    "HISTORY_WATCHDOG_INTERVAL_SECONDS", 300, minimum=60.0
+)
 # General timeout for HTTP requests to the API in seconds
 API_REQUEST_TIMEOUT_SECONDS = 10
 # Timeout for User Data Stream (if there are no messages, a reconnection will occur)
@@ -789,7 +940,7 @@ REALTIME_ML_ORDERBOOK_DEPTH_SNAPSHOT = 10  # How many order book levels to save
 # ==============================================================================
 # Enable/disable tracking of "phantom" trades after BE is triggered
 # This allows analyzing how much potential profit is lost due to BE
-PHANTOM_TRACKING_ENABLED = True
+PHANTOM_TRACKING_ENABLED = False
 
 # Operating mode: 'live' — track in real-time, 'backtest_only' — backtest only
 PHANTOM_TRACKING_MODE = "live"  # 'live' | 'backtest_only'
@@ -1204,8 +1355,22 @@ BACKTEST_TRADES_LOG_PATH_TEMPLATE = (
 BACKTEST_MIN_STOP_DISTANCE_PCT = 0.0003  # 0.03% (was 0.0005)
 # Maximum position size in % of balance (for backtester, applied in _calculate_position_details)
 BACKTEST_MAX_POSITION_SIZE_PCT_BALANCE = (
-    10.0  # 300% (allows leverage if balance = margin) (was 0.5 = 50%)
+    10.0  # 1000% (allows leverage if balance = margin) (was 0.5 = 50%)
 )
+# Maximum position notional as a fraction of balance for LIVE trading.
+# This must never inherit the backtester cap above: backtests explore extreme
+# leverage on purpose, while live sizing with a dust stop would otherwise target
+# tens of times the balance (risk $ / tiny stop distance) and rely on the
+# exchange margin check to fail late. 2.0 preserves the observed healthy case
+# (1% risk with a 0.5% stop ~= 2x notional) and cuts the absurd tail.
+try:
+    MAX_REAL_POSITION_SIZE_PCT_BALANCE = float(
+        os.environ.get("MAX_REAL_POSITION_SIZE_PCT_BALANCE", 2.0)
+    )
+except (TypeError, ValueError):
+    MAX_REAL_POSITION_SIZE_PCT_BALANCE = 2.0
+if MAX_REAL_POSITION_SIZE_PCT_BALANCE <= 0:
+    MAX_REAL_POSITION_SIZE_PCT_BALANCE = 2.0
 
 # --- Settings for collecting data for the ML confirmation model via the backtester ---
 # Whether to log data for training the ML confirmation model during a REGULAR backtest (non-ML mode)

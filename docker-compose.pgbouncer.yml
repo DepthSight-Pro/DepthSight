@@ -1,0 +1,50 @@
+# PgBouncer overlay for DepthSight. NOT enabled by default.
+#
+# When sum(pool ceilings of all processes) exceeds Postgres max_connections -
+# i.e. from the second bot shard process on - point the app at PgBouncer
+# instead of Postgres directly:
+#
+#   1. cp docker-compose.pgbouncer.yml next to docker-compose.yml (already here).
+#   2. In .env: POSTGRES_HOST=pgbouncer, POSTGRES_PORT=6432,
+#      DB_STATEMENT_CACHE_SIZE=0, DB_DIRECT_DATABASE_URL=postgresql+asyncpg://...:5432/... (real PG!).
+#   3. docker compose --env-file .env -p depthsight \
+#        -f docker-compose.yml -f docker-compose.pgbouncer.yml up -d
+#
+# Why these three are inseparable:
+# - Transaction pooling multiplexes thousands of app connections onto tens of
+#   server connections. Our sessions are short-transaction style since the
+#   _owned_session fix, which is exactly what transaction mode wants.
+# - DB_STATEMENT_CACHE_SIZE=0 is REQUIRED: asyncpg prepared statements do not
+#   survive across pooled transactions ("prepared statement already exists").
+# - DB_DIRECT_DATABASE_URL must bypass the pooler: the mining-epoch advisory
+#   lock (B7) needs one stable server connection, which transaction pooling
+#   cannot provide. get_isolated_worker_session() uses it automatically.
+#
+# Deploy rule of thumb: DEFAULT_POOL_SIZE x bot_shards + api/ws/celery pools
+# < postgres max_connections. Start 25/600 and watch pg_stat_activity.
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:1.24.0
+    container_name: depthsight_pgbouncer
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "25"
+      RESERVE_POOL_SIZE: "5"
+      RESERVE_POOL_TIMEOUT: "3"
+      SERVER_IDLE_TIMEOUT: "60"
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "${PGBOUNCER_HOST_PORT:-6432}:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

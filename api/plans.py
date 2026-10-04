@@ -1,10 +1,25 @@
 # api/plans.py
 import logging
+import os
+import time
 from pathlib import Path
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+# How long load_from_db() trusts its in-memory copy before re-reading the DB.
+# The handler calls it on every strategy start, so without this every Start
+# pays a SELECT plus a YAML re-parse and rewrite. Admin saves still apply
+# instantly in-process via save_to_db(); other processes converge within TTL.
+try:
+    PLANS_DB_REFRESH_TTL_SECONDS = float(
+        os.environ.get("PLANS_DB_REFRESH_TTL_SECONDS", 60)
+    )
+except (TypeError, ValueError):
+    PLANS_DB_REFRESH_TTL_SECONDS = 60.0
+if PLANS_DB_REFRESH_TTL_SECONDS < 0:
+    PLANS_DB_REFRESH_TTL_SECONDS = 0.0
 
 
 class PlansConfig:
@@ -19,6 +34,7 @@ class PlansConfig:
         self._last_mtime_ns = -1
         self._last_size = -1
         self._has_db_override = False
+        self._last_db_refresh_ts = 0.0  # monotonic; 0 = never refreshed
         self._load_config(force=True)
 
     def _get_config_stat(self) -> tuple[int, int]:
@@ -335,8 +351,23 @@ class PlansConfig:
 
         return merged, changed
 
-    async def load_from_db(self, db) -> bool:
-        """Loads plans configuration from the system_settings table if present."""
+    async def load_from_db(self, db, max_age_seconds=None) -> bool:
+        """Loads plans configuration from the system_settings table if present.
+
+        The in-memory copy is trusted for PLANS_DB_REFRESH_TTL_SECONDS (default
+        60 s): request handlers call this on every strategy start, so a fresh
+        SELECT + YAML re-parse + file rewrite per call saturated the API on
+        ramps and raced concurrent rewrites of the YAML file. Pass
+        max_age_seconds=0 to force a refresh (tests, admin flows).
+        """
+        if max_age_seconds is None:
+            max_age_seconds = PLANS_DB_REFRESH_TTL_SECONDS
+        if (
+            self._last_db_refresh_ts > 0
+            and max_age_seconds > 0
+            and (time.monotonic() - self._last_db_refresh_ts) < max_age_seconds
+        ):
+            return self._has_db_override
         try:
             from sqlalchemy import select
             from sqlalchemy.orm.attributes import flag_modified
@@ -360,9 +391,15 @@ class PlansConfig:
                             f"Could not persist merged plans config to DB: {commit_err}"
                         )
                 self._has_db_override = True
-                self.update_full_config(merged_value, write_to_file=True)
+                # In-memory only: the DB row is the source of truth, and
+                # rewriting the YAML file from a request handler races
+                # concurrent starts against each other. The file is written
+                # only by explicit admin saves (save_to_db).
+                self.update_full_config(merged_value, write_to_file=False)
                 logger.info("Loaded plans configuration from system_settings DB table.")
+                self._last_db_refresh_ts = time.monotonic()
                 return True
+            self._last_db_refresh_ts = time.monotonic()
         except Exception as e:
             logger.warning(
                 "Could not load plans configuration from DB (using YAML fallback): %s",

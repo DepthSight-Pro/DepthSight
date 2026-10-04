@@ -61,8 +61,8 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 
 			{/* Top Header: Logo + Title + Status Badge */}
 			<div className="flex items-start gap-3">
-				<div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-1.5 shadow-sm dark:shadow-[0_0_15px_rgba(29,162,180,0.35)]">
-					<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(29,162,180,0.4)]" />
+				<div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-1.5 shadow-sm dark:shadow-[0_0_15px_rgba(0,240,255,0.35)]">
+					<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(0,240,255,0.4)]" />
 				</div>
 
 				<div className="min-w-0 flex-1">

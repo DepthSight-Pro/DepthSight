@@ -39,6 +39,8 @@ import type {
 	HistoricalRangeItem,
 	HubMiningConfig,
 	HubMiningConfigUpdate,
+	MiningAnalyticsSummaryResponse,
+	MiningAnalyticsTradesResponse,
 	ImpersonateToken,
 	LogEntry,
 	MarketScope,
@@ -3090,6 +3092,63 @@ export const useUpdateHubMiningConfig = () => {
 		},
 	});
 };
+
+export interface MiningAnalyticsParams {
+	dateFrom?: string;
+	dateTo?: string;
+}
+
+export const useGetMiningAnalytics = (
+	params?: MiningAnalyticsParams,
+	enabled: boolean = true,
+) => {
+	const searchParams = new URLSearchParams();
+	if (params?.dateFrom) searchParams.set("date_from", params.dateFrom);
+	if (params?.dateTo) searchParams.set("date_to", params.dateTo);
+	const queryStr = searchParams.toString() ? `?${searchParams.toString()}` : "";
+
+	return useQuery<MiningAnalyticsSummaryResponse, Error>({
+		queryKey: authScopedQueryKey("miningAnalytics", params?.dateFrom, params?.dateTo),
+		queryFn: () => apiClient<MiningAnalyticsSummaryResponse>(`/hub/mining/analytics${queryStr}`),
+		enabled,
+		staleTime: 30000,
+	});
+};
+
+export interface MiningAnalyticsTradesParams {
+	page?: number;
+	limit?: number;
+	dateFrom?: string;
+	dateTo?: string;
+	exchange?: string;
+	statusFilter?: string;
+	search?: string;
+	nodeUuid?: string;
+}
+
+export const useGetMiningAnalyticsTrades = (
+	params: MiningAnalyticsTradesParams,
+	enabled: boolean = true,
+) => {
+	const searchParams = new URLSearchParams();
+	if (params.page) searchParams.set("page", String(params.page));
+	if (params.limit) searchParams.set("limit", String(params.limit));
+	if (params.dateFrom) searchParams.set("date_from", params.dateFrom);
+	if (params.dateTo) searchParams.set("date_to", params.dateTo);
+	if (params.exchange && params.exchange !== "ALL") searchParams.set("exchange", params.exchange);
+	if (params.statusFilter && params.statusFilter !== "ALL") searchParams.set("status_filter", params.statusFilter);
+	if (params.search?.trim()) searchParams.set("search", params.search.trim());
+	if (params.nodeUuid) searchParams.set("node_uuid", params.nodeUuid);
+	const queryStr = searchParams.toString() ? `?${searchParams.toString()}` : "";
+
+	return useQuery<MiningAnalyticsTradesResponse, Error>({
+		queryKey: authScopedQueryKey("miningAnalyticsTrades", params),
+		queryFn: () => apiClient<MiningAnalyticsTradesResponse>(`/hub/mining/analytics/trades${queryStr}`),
+		enabled,
+		placeholderData: keepPreviousData,
+	});
+};
+
 
 export interface MiningReferralItem {
 	id: string;

@@ -455,3 +455,96 @@ async def test_estimate_live_reward_uses_live_config_over_stamped(db_session):
     # token/pt = 600/50 = 12 -> gross = 600, net (75% default share) = 450.
     # With the old stamped-priority logic it would be 360.
     assert reward == pytest.approx(450.0, abs=1e-3)
+
+
+@pytest.mark.asyncio
+async def test_epoch_mixed_exchange_single_node_keeps_multiplier_weight(
+    db_session, monkeypatch
+):
+    """
+    Regression: one node mines on two exchanges (WEEX x1 + Bitget x2).
+
+    The commission pass in tasks.py must split the node's base reward by
+    WEIGHTED points, not by raw rebate. With the bug it overwrote
+    report.reward_tokens using rebate/total_rebate, so both reports got
+    equal rewards (150/150) instead of 100/200.
+    """
+    monkeypatch.setenv("MIN_WELCOME_REBATE_USDT", "999999999.0")
+    yesterday = _yesterday_date()
+
+    node = models.HubNode(
+        node_uuid="node-mixed-1", name="Mixed Miner", secret_hash="hash"
+    )
+    emission = 300.0
+    cfg = models.MiningConfig(
+        id=1,
+        is_mining_enabled=True,
+        eligible_exchanges=["weex_futures", "bitget_futures"],
+        daily_emission_base=emission,
+        launch_date=yesterday - datetime.timedelta(days=1),
+        referral_mining_boost=0.0,
+        exchange_multipliers={
+            "weex": 1.0,
+            "weex_futures": 1.0,
+            "bitget": 2.0,
+            "bitget_futures": 2.0,
+        },
+    )
+    db_session.add_all([node, cfg])
+
+    # Stamped 1.0 on purpose: settlement must prefer the LIVE config (2.0).
+    rep_weex = models.HubTelemetryReport(
+        symbol="BTCUSDT",
+        direction="LONG",
+        entry_price=50000.0,
+        exit_price=50100.0,
+        trade_mode="LIVE",
+        node_uuid="node-mixed-1",
+        estimated_rebate_usdt=10.0,
+        trade_volume_usdt=20000.0,
+        is_mining_eligible=True,
+        verification_status="VERIFIED",
+        created_at=_yesterday_noon(),
+        exchange_id="weex_futures",
+        market_type="futures",
+        mining_multiplier=1.0,
+        broker_trade_id="trade-mixed-weex-1",
+    )
+    rep_bitget = models.HubTelemetryReport(
+        symbol="BTCUSDT",
+        direction="LONG",
+        entry_price=50000.0,
+        exit_price=50100.0,
+        trade_mode="LIVE",
+        node_uuid="node-mixed-1",
+        estimated_rebate_usdt=10.0,
+        trade_volume_usdt=20000.0,
+        is_mining_eligible=True,
+        verification_status="VERIFIED",
+        created_at=_yesterday_noon(),
+        exchange_id="bitget_futures",
+        market_type="futures",
+        mining_multiplier=1.0,
+        broker_trade_id="trade-mixed-bitget-1",
+    )
+    db_session.add_all([rep_weex, rep_bitget])
+    await db_session.commit()
+
+    @asynccontextmanager
+    async def mock_isolated_session():
+        yield db_session
+
+    with patch("api.database.get_isolated_worker_session", mock_isolated_session):
+        await _async_process_mining_epoch(force_yesterday_date=yesterday)
+    db_session.expire_all()
+
+    await db_session.refresh(rep_weex)
+    await db_session.refresh(rep_bitget)
+
+    # Weighted points: weex 10*1.0 + bitget 10*2.0 = 30.
+    # Node base = 300 -> weex report 100, bitget report 200.
+    assert rep_weex.reward_tokens == pytest.approx(100.0, abs=1e-3)
+    assert rep_bitget.reward_tokens == pytest.approx(200.0, abs=1e-3)
+    assert rep_bitget.reward_tokens == pytest.approx(
+        2.0 * rep_weex.reward_tokens, abs=1e-3
+    )

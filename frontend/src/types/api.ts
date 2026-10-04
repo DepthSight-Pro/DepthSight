@@ -1453,6 +1453,140 @@ export interface HubMiningConfigUpdate {
 	exchangeMultipliers?: Record<string, number>;
 }
 
+// --- Trade Mining Analytics Types ---
+export interface MiningEpochAnalyticsItem {
+	epochDate: string;
+	status: string;
+	dailyEmission: number;
+	totalRebatePool: number;
+	totalDistributed: number;
+	participatingNodes: number;
+	processedAt: string | null;
+}
+
+export interface MiningExchangeBreakdownItem {
+	exchangeId: string;
+	tradeCount: number;
+	verifiedCount: number;
+	pendingCount: number;
+	errorCount: number;
+	totalVolumeUsdt: number;
+	verifiedVolumeUsdt: number;
+	estimatedRebateUsdt: number;
+	verifiedRebateUsdt: number;
+	isNew: boolean;
+}
+
+export interface MiningNodeBreakdownItem {
+	nodeUuid: string;
+	name: string;
+	tradeCount: number;
+	verifiedCount: number;
+	errorCount: number;
+	totalVolumeUsdt: number;
+	totalMinedDepth: number;
+	lastPing: string | null;
+	isOnline: boolean;
+}
+
+export interface MiningDailyTrendItem {
+	date: string;
+	totalVolume: number;
+	tradeCount: number;
+	verifiedCount: number;
+	pendingCount: number;
+	errorCount: number;
+	volumeByExchange: Record<string, number>;
+}
+
+export interface MiningEpochTrendItem {
+	epochDate: string;
+	dailyEmission: number;
+	totalDistributed: number;
+	participatingNodes: number;
+	totalRebatePool: number;
+}
+
+export interface MiningAnalyticsSummaryResponse {
+	totalUsers: number;
+	totalNodes: number;
+	activeExchanges: string[];
+	isMiningEnabled: boolean;
+	totalTrades: number;
+	verifiedCount: number;
+	pendingCount: number;
+	errorCount: number;
+	gatedCount: number;
+	verificationRate: number;
+	totalVerifiedVolumeUsdt: number;
+	totalDistributedDepth: number;
+	epochs: MiningEpochAnalyticsItem[];
+	exchangeBreakdown: MiningExchangeBreakdownItem[];
+	nodeBreakdown: MiningNodeBreakdownItem[];
+	dailyTrends: MiningDailyTrendItem[];
+	epochTrends: MiningEpochTrendItem[];
+}
+
+export interface StrategyBlockInfo {
+	type: string;
+	params?: Record<string, unknown>;
+}
+
+export interface MarketContextInfo {
+	session?: string | null;
+	natr?: number | null;
+	adx?: number | null;
+	volume_ratio?: number | null;
+	[key: string]: unknown;
+}
+
+export interface MiningAnalyticsTradeItem {
+	id: string;
+	symbol: string;
+	direction: string;
+	entryPrice: number;
+	exitPrice: number;
+	pnlPercent: number | null;
+	tradeDurationSec: number | null;
+	exitReason: string | null;
+	tradeMode: string;
+	timeframe: string | null;
+	maxFloatingProfit: number | null;
+	maxFloatingLoss: number | null;
+	strategyBlocks: StrategyBlockInfo[];
+	marketContext: MarketContextInfo;
+	createdAt: string;
+	nodeUuid: string | null;
+	nodeName: string | null;
+	sourceNodeUuid: string | null;
+	exchangeId: string | null;
+	marketType: string | null;
+	brokerTradeId: string | null;
+	closeBrokerTradeIds: unknown;
+	entryBrokerTradeIds: unknown;
+	tradeVolumeUsdt: number | null;
+	estimatedRebateUsdt: number | null;
+	score: number | null;
+	isVerified: boolean;
+	verificationStatus: string;
+	verifiedAt: string | null;
+	verifiedVolumeUsdt: number | null;
+	verificationError: string | null;
+	isMiningEligible: boolean;
+	miningMultiplier: number;
+	rewardTokens: number;
+	epochDate: string | null;
+}
+
+export interface MiningAnalyticsTradesResponse {
+	total: number;
+	page: number;
+	limit: number;
+	totalPages: number;
+	items: MiningAnalyticsTradeItem[];
+}
+
+
 // --- Admin Plans & AI Configuration Types ---
 
 export interface PlanBillingOption {

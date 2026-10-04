@@ -109,11 +109,14 @@ if ("serviceWorker" in navigator) {
 					}
 				});
 
+				const hadController = Boolean(navigator.serviceWorker.controller);
 				let refreshing = false;
 				navigator.serviceWorker.addEventListener("controllerchange", () => {
-					if (!refreshing) {
-						window.location.reload();
+					// Only reload if this client already had a controller (i.e. update was applied),
+					// not on initial registration claim.
+					if (!refreshing && hadController) {
 						refreshing = true;
+						window.location.reload();
 					}
 				});
 			})

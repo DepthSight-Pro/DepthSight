@@ -22,7 +22,7 @@ import json
 import aiohttp
 from aiohttp import ThreadedResolver
 import multiprocessing
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 # --- Local Imports ---
 from bot_module import config
@@ -39,8 +39,8 @@ from bot_module.strategy import STRATEGIES
 STRATEGIES["CompassStrategy"] = CompassStrategy
 
 # --- API Imports for Multi-User Setup ---
-from api.database import get_db
-from bot_module.redis_handler import user_id_context
+from api.database import get_db, session_scope
+from bot_module.redis_handler import user_id_context, publish_command_ack
 from api import crud, models, security
 from api.plans import plans_config
 from api.push_sender import send_push_notification
@@ -65,6 +65,10 @@ logger = logging.getLogger("bot_module.runner")
 import threading
 
 user_controllers: Dict[int, Dict[int, TradingController]] = {}
+# Async generators backing each controller's dedicated DB session. They must stay
+# referenced for the process lifetime, otherwise the session is closed while the
+# controller is still using it. See the note at the bootstrap loop in run_bot().
+_controller_session_gens: List[Any] = []
 shutdown_event = threading.Event()
 telegram_notifier: Optional[TelegramNotifier] = None
 
@@ -211,7 +215,6 @@ def handle_signal(signum, frame):
 async def run_bot(shard_id: int = 0, num_workers: int = 1):
     global user_controllers, telegram_notifier
     session = None
-    db = None
     redis_client = None
 
     try:
@@ -258,7 +261,13 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
         timeout = aiohttp.ClientTimeout(total=config.API_REQUEST_TIMEOUT_SECONDS * 2)
         resolver = ThreadedResolver()
         connector = aiohttp.TCPConnector(
-            resolver=resolver, limit_per_host=20, use_dns_cache=False
+            # DNS cache on: 1000 bots resolving api.bitget.com etc. on every
+            # reconnect storm hammers the resolver and adds latency to every
+            # REST call. limit_per_host stays low on purpose - it is a
+            # client-side throttle protecting the exchanges (see B4).
+            resolver=resolver,
+            limit_per_host=20,
+            use_dns_cache=True,
         )
         session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         logger.info("Shared aiohttp session created.")
@@ -286,10 +295,18 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
 
         # 3. Connect to DB and initialize controllers for each user
         logger.info("Connecting to the database to set up user controllers...")
-        db_gen = get_db()
-        db = await anext(db_gen)
+        # This session is for the BOOTSTRAP loop only (listing users, reading their
+        # keys). It must never be handed to a long-lived component: every
+        # controller of the shard used to share it, so concurrent paper-wallet
+        # creation and risk/state writes collided on one session and raised
+        # "InvalidRequestError: Session is already flushing" - which the paper
+        # executor swallowed, turning every balance read into $0.00 and getting
+        # all signals rejected with ZERO_BALANCE. Each controller now gets its own
+        # session below. See _controller_session().
+        bootstrap_db_gen = get_db()
+        bootstrap_db = await anext(bootstrap_db_gen)
 
-        users = await crud.get_users(db, limit=None)
+        users = await crud.get_users(bootstrap_db, limit=None)
         controllers_to_initialize = []
         eligible_live_users = 0
 
@@ -299,7 +316,7 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
 
             eligible_live_users += 1
             my_keys = await _get_sharded_active_api_keys_for_user(
-                user, db, shard_id, num_workers
+                user, bootstrap_db, shard_id, num_workers
             )
             controllers_to_initialize.extend((user, key) for key in my_keys)
 
@@ -314,9 +331,23 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
         )
 
         for user, api_key_obj in controllers_to_initialize:
-            await _initialize_controller_for_key(
-                user, api_key_obj, db, session, redis_client, telegram_notifier
+            # One session per controller, kept alive for the controller's whole
+            # lifetime. See _init_controller_with_own_session().
+            await _init_controller_with_own_session(
+                user,
+                api_key_obj,
+                session,
+                redis_client,
+                telegram_notifier,
             )
+
+        # Release the bootstrap pin (same mechanism as the per-controller pin
+        # above: bootstrap reads checked out a connection this session never
+        # returns until commit). Reads only, so committing is pure release.
+        try:
+            await bootstrap_db.commit()
+        except Exception as e_commit:
+            logger.warning(f"Bootstrap session release commit failed: {e_commit}")
 
         # 4. Start the command listener and wait for shutdown
         logger.info(
@@ -326,25 +357,45 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
             shard_id,
         )
 
-        # Create the command listener task
+        # Create the command listener task. The listener gets its own session: it is
+        # the single sequential consumer of Redis commands on this shard, so one
+        # session is safe here, and it must not be the bootstrap session (that one is
+        # closed on shutdown) nor any controller's session.
+        listener_db_gen = get_db()
+        listener_db = await anext(listener_db_gen)
+        _controller_session_gens.append(listener_db_gen)
         command_listener_task = asyncio.create_task(
             _run_command_listener(
-                db, session, redis_client, telegram_notifier, shard_id, num_workers
+                listener_db,
+                session,
+                redis_client,
+                telegram_notifier,
+                shard_id,
+                num_workers,
             ),
             name=f"BotRunnerCommandListener_S{shard_id}",
         )
 
         logger.info("Command listener started. Waiting for shutdown signal...")
+        telemetry_task = asyncio.create_task(
+            _pool_telemetry_loop(shard_id),
+            name=f"BotRunnerPoolTelemetry_S{shard_id}",
+        )
         while not shutdown_event.is_set():
             await asyncio.sleep(1)
         logger.info("Shutdown event received.")
 
         # Clean up the command listener
         command_listener_task.cancel()
+        telemetry_task.cancel()
         try:
             await command_listener_task
         except asyncio.CancelledError:
             logger.info("Command listener task cancelled.")
+        try:
+            await telemetry_task
+        except asyncio.CancelledError:
+            logger.info("Pool telemetry task cancelled.")
 
     except Exception as e:
         logger.critical(
@@ -360,6 +411,25 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
         if redis_client:
             await redis_client.close()
             logger.info("Redis client closed.")
+
+        # Release the per-controller DB sessions. Without this the pool would be
+        # drained one connection per controller on every restart, and the shard
+        # would eventually fail to reach the database at all.
+        closed = 0
+        for gen in list(_controller_session_gens):
+            try:
+                await gen.aclose()
+                closed += 1
+            except Exception as e_close:
+                logger.warning(f"Error closing controller DB session: {e_close}")
+        _controller_session_gens.clear()
+        if closed:
+            logger.info(f"Closed {closed} controller DB session(s).")
+
+        try:
+            await bootstrap_db_gen.aclose()
+        except Exception:
+            pass
 
 
 async def _initialize_user_controllers(
@@ -400,9 +470,33 @@ async def _initialize_user_controllers(
         return
 
     for api_key_obj in active_keys:
-        await _initialize_controller_for_key(
-            user, api_key_obj, db, session, redis_client, telegram_notifier_instance
+        await _init_controller_with_own_session(
+            user, api_key_obj, session, redis_client, telegram_notifier_instance
         )
+
+
+async def _init_controller_with_own_session(
+    user, api_key_obj, session, redis_client, telegram_notifier_instance
+):
+    """Give this controller its own DB session, then initialize it.
+
+    Centralised so every entry point (startup loop, per-user init, and the
+    dynamic path that reacts to ACTIVATE_API_KEY) gets an isolated session.
+    Sharing one session across a shard's controllers caused concurrent writes to
+    collide ("Session is already flushing"), which silently zeroed paper balances
+    and rejected every signal.
+    """
+    controller_db_gen = get_db()
+    controller_db = await anext(controller_db_gen)
+    _controller_session_gens.append(controller_db_gen)
+    return await _initialize_controller_for_key(
+        user,
+        api_key_obj,
+        controller_db,
+        session,
+        redis_client,
+        telegram_notifier_instance,
+    )
 
 
 async def _initialize_controller_for_key(
@@ -461,12 +555,15 @@ async def _initialize_controller_for_key(
             loop=asyncio.get_running_loop(), executor=live_executor, event_queue=None
         )
 
-        # Create PaperTradingExecutor
+        # Create PaperTradingExecutor. db_session_factory gives its read paths
+        # short-lived sessions (never pins a pool connection); the long-lived
+        # session stays for write paths that commit (and release) themselves.
         paper_executor = PaperTradingExecutor(
             user_id=user.id,
             db_session=db,
             data_consumer=data_consumer,
             redis_client=redis_client,
+            db_session_factory=session_scope,
         )
 
         # Initialize equity tracking
@@ -487,6 +584,7 @@ async def _initialize_controller_for_key(
             db_session=db,
             user_settings=user_settings,
             api_key_name=api_key_obj.name,
+            db_session_factory=session_scope,
         )
         await user_risk_manager.initialize()
 
@@ -516,6 +614,17 @@ async def _initialize_controller_for_key(
         logger.info(
             f"Controller for user '{user.username}', key '{api_key_obj.name}' started successfully."
         )
+        # Release the bootstrap pin: the first read on this session checked out
+        # a pool connection that reads never return (only commit/rollback/close
+        # do). With ~1 pinned connection per controller the pool silently fills
+        # as the fleet grows and dies at ~350 controllers. All bootstrap writes
+        # already commit themselves, so this only releases the connection.
+        try:
+            await db.commit()
+        except Exception as e_commit:
+            logger.warning(
+                f"Bootstrap session release commit failed for user {user.username}: {e_commit}"
+            )
         return True
 
     except Exception as e_user_init:
@@ -527,6 +636,49 @@ async def _initialize_controller_for_key(
     finally:
         if token:
             user_id_context.reset(token)
+
+
+async def _log_pool_telemetry_once(shard_id) -> None:
+    """Single pool/loop telemetry sample for fleet forensics.
+
+    Names the pool holder class on the next load run instead of post-hoc log
+    archaeology: checkedout rising with idle PG means client-side pinning;
+    checkedout tracking task/controller counts means congestion. Import of the
+    engine is deferred so module import never touches the database.
+    """
+    from api.database import engine as _telemetry_engine
+
+    pool = _telemetry_engine.pool
+    try:
+        import resource as _resource
+
+        rss_mb = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss / 1024
+        rss_str = f"{rss_mb:.0f}MB"
+    except Exception:
+        rss_str = "n/a"
+    logger.info(
+        "[PoolTelemetry] shard=%s pool checkedout=%s checkedin=%s overflow=%s "
+        "size=%s tasks=%s controllers=%s rss=%s",
+        shard_id,
+        pool.checkedout(),
+        pool.checkedin(),
+        pool.overflow(),
+        pool.size(),
+        len(asyncio.all_tasks()),
+        _count_active_controllers(),
+        rss_str,
+    )
+
+
+async def _pool_telemetry_loop(shard_id, interval_seconds: float = 60.0) -> None:
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await _log_pool_telemetry_once(shard_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("[PoolTelemetry] sample failed: %s", e)
 
 
 async def _run_command_listener(
@@ -558,6 +710,10 @@ async def _run_command_listener(
                     if command_type == "ACTIVATE_API_KEY":
                         user_id = _coerce_int(payload.get("user_id"))
                         api_key_id = _coerce_int(payload.get("api_key_id"))
+                        # A2 fix: acknowledge the command so the API can tell
+                        # "applied" apart from "silently dropped". A missing
+                        # command_id means an old sender - apply without ack.
+                        activate_command_id = command_data.get("command_id")
                         if user_id and api_key_id:
                             if not _api_key_belongs_to_shard(
                                 api_key_id, shard_id, num_workers
@@ -577,6 +733,12 @@ async def _run_command_listener(
                             ):
                                 logger.info(
                                     f"Controller for user_id {user_id}, key_id {api_key_id} already exists. Ignoring."
+                                )
+                                await publish_command_ack(
+                                    redis_client,
+                                    activate_command_id,
+                                    status="ok",
+                                    detail="already_active",
                                 )
                                 continue
 
@@ -631,6 +793,12 @@ async def _run_command_listener(
                                                 api_key_id,
                                                 user.plan,
                                             )
+                                            await publish_command_ack(
+                                                redis_client,
+                                                activate_command_id,
+                                                status="error",
+                                                detail="plan_exchange_not_allowed",
+                                            )
                                             continue
 
                                 if not _user_is_live_eligible(user):
@@ -641,12 +809,17 @@ async def _run_command_listener(
                                         api_key_id,
                                         user.plan,
                                     )
+                                    await publish_command_ack(
+                                        redis_client,
+                                        activate_command_id,
+                                        status="error",
+                                        detail="plan_not_live_eligible",
+                                    )
                                     continue
 
-                                success = await _initialize_controller_for_key(
+                                success = await _init_controller_with_own_session(
                                     user,
                                     api_key_obj,
-                                    db,
                                     session,
                                     redis_client,
                                     telegram_notifier_instance,
@@ -655,16 +828,39 @@ async def _run_command_listener(
                                     logger.info(
                                         f"Successfully activated controller for key {api_key_id}"
                                     )
+                                    await publish_command_ack(
+                                        redis_client,
+                                        activate_command_id,
+                                        status="ok",
+                                    )
                                 else:
                                     logger.error(
                                         f"Failed to activate controller for key {api_key_id}"
+                                    )
+                                    await publish_command_ack(
+                                        redis_client,
+                                        activate_command_id,
+                                        status="error",
+                                        detail="controller_init_failed",
                                     )
                             else:
                                 logger.error(
                                     f"User {user_id} or Key {api_key_id} not found."
                                 )
+                                await publish_command_ack(
+                                    redis_client,
+                                    activate_command_id,
+                                    status="error",
+                                    detail="user_or_key_not_found",
+                                )
                         else:
                             logger.error(f"Invalid ACTIVATE_API_KEY payload: {payload}")
+                            await publish_command_ack(
+                                redis_client,
+                                command_data.get("command_id"),
+                                status="error",
+                                detail="invalid_payload",
+                            )
 
                     elif command_type == "DEACTIVATE_API_KEY":
                         user_id = _coerce_int(payload.get("user_id"))

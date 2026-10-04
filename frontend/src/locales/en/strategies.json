@@ -28,6 +28,12 @@
 	"copiesCount": "{{count}} copies",
 	"hedgeLegBadge": "Hedge {{leg}}",
 	"extraInstanceBadge": "2nd account",
+	"statRunning": "Running Bots",
+	"statUnrealized": "Unrealized P&L",
+	"statOpenPositions": "Active Positions",
+	"statSlots": "Saved Strategies",
+	"copies": "Copies",
+	"tryChangingFilters": "Try resetting your search query or switching the category filter.",
 
 	"filters": {
 		"all": "All",
@@ -87,12 +93,19 @@
 		"saveButton": "Save Configuration",
 		"partialsLabel": "Use Partial Exits",
 		"moveToBeLabel": "Move SL to Breakeven",
+		"accountLabel": "Trading Account",
+		"selectAccountPlaceholder": "Select trading account",
+		"noActiveKeysWarning": "No valid API keys available. Please add and verify an API key in Settings.",
+		"advancedSettingsLabel": "Advanced Settings",
+		"useMlConfirmationLabel": "Enable ML Confirmation",
+		"breakevenOnRegimeChangeLabel": "Breakeven on Regime Change",
 		"foundationWeightLabel": "Foundation Weight Threshold",
 		"oracleRegimeParanoiaFull": "0: Paranoia (Trend-following/Sideways)",
 		"oracleRegimeAmnesiaFull": "1: Amnesia (News/Trend)",
 		"oracleRegimeSchizophreniaFull": "2: Schizophrenia (Volatile)",
 		"errors": {
 			"nameRequired": "Instance name is required.",
+			"apiKeyRequired": "Please select a trading account",
 			"modeRequired": "Please select a symbol mode.",
 			"symbolsRequired": "Symbols are required for Static mode",
 			"invalidJson": "Parameters must be a valid JSON object."
@@ -108,6 +121,8 @@
 		"marketTypeSpot": "Spot",
 		"dateRangeLabel": "Date Range",
 		"datePlaceholder": "Select a date range",
+		"periodLabel": "Period",
+		"selectPeriodPlaceholder": "Select period",
 		"runButton": "Run Backtest",
 		"errors": {
 			"symbolRequired": "Symbol is required.",
@@ -116,6 +131,13 @@
 			"endDateRequired": "End date is required.",
 			"dateOrder": "Start date must be before end date."
 		}
+	},
+
+	"launchConfirm": {
+		"title": "Launch: {{name}}",
+		"description": "Choose how to launch this strategy. Live mode trades with real funds; paper mode simulates execution.",
+		"liveButton": "Live Trading",
+		"paperButton": "Paper Trading"
 	},
 
 	"confirmation": {
@@ -145,7 +167,20 @@
 		"marketType": "Market Type",
 		"openPositions": "Open Positions",
 		"runningSince": "Running Since",
+		"strategyType": "Strategy Type",
+		"unknownStrategy": "Unknown Strategy",
 		"parametersTitle": "Parameters"
+	},
+	"card": {
+		"statusRunning": "RUNNING",
+		"unrealizedPnl": "Unrealized P&L",
+		"positionsLabel": "Positions",
+		"copiesLabel": "Copies",
+		"appearsIn": "appears in",
+		"detailsRunning": "Running",
+		"exchangeUnknown": "unknown exchange",
+		"refreshing": "Refreshing",
+		"configured": "Configured"
 	},
 	"tradeHistoryTab": {
 		"errorTitle": "Error Loading Trade History",
@@ -163,5 +198,20 @@
 		"waiting": "Waiting for first log events...",
 		"noLogs": "No logs found for this strategy yet.",
 		"waitingForFirstLogEvents": "Waiting for first log events..."
+	},
+	"toolbar": {
+		"liveTitle": "Live push snapshots from engine",
+		"pollingTitle": "Socket down — polling every 5s",
+		"livePush": "live push",
+		"polling": "polling 5s",
+		"searchPlaceholder": "Search strategies, symbols...",
+		"createButton": "Deploy Strategy",
+		"totalCount": "{{count}} total",
+		"savedTitle": "Saved",
+		"runningTitle": "Running now",
+		"runningEmpty": "No running configurations yet. Launch one from the library below or Deploy a new strategy.",
+		"savedEmpty": "No saved configurations yet.",
+		"noMatchSaved": "No saved configurations match your search.",
+		"noMatchRunning": "No running bots match your search."
 	}
 }

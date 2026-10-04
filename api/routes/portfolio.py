@@ -440,7 +440,8 @@ async def get_portfolio_status(
 )
 async def emergency_stop(
     api_key_id: Optional[int] = Query(
-        None, description="Optional API key ID to restrict emergency stop to a specific subaccount"
+        None,
+        description="Optional API key ID to restrict emergency stop to a specific subaccount",
     ),
     redis_client: redis.Redis = Depends(get_redis_client),
     current_user: models.User = Depends(get_current_user),

@@ -153,12 +153,12 @@ const Index = () => {
 		(selectedScopeKey?.exchange || "").toLowerCase() || null;
 	const scopeActive = !!selectedScopeKey || scopeMarket !== "all";
 	const scopeLabel = selectedScopeKey
-		? selectedScopeKey.name || scopeExchange || "selected account"
+		? selectedScopeKey.name || scopeExchange || t("index:allocation.selectedAccount", "selected account")
 		: scopeMarket === "all"
-			? "all accounts"
+			? t("index:allocation.allAccounts", "all accounts")
 			: scopeMarket === "spot"
-				? "spot"
-				: "futures";
+				? t("index:allocation.spot", "spot")
+				: t("index:allocation.futures", "futures");
 	// True when a trade/balance belongs to the selected exchange + market scope.
 	const matchesScope = useCallback(
 		(item: {
@@ -799,7 +799,7 @@ const Index = () => {
 				{/* 1. Top KPI Stat Strip */}
 				<div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
 					<Stat
-						label={t("index:portfolioOverview.equity", "Total Equity")}
+						label={t("index:kpi.totalEquity", "Total Equity")}
 						value={fmt.usd(totalEquity, 2)}
 						delta={hasEquity ? chg : undefined}
 						deltaLabel={hasEquity ? period : undefined}
@@ -808,40 +808,40 @@ const Index = () => {
 						icon={<Wallet size={14} />}
 					/>
 					<Stat
-						label={t("index:portfolioOverview.unrealizedPnl", "Unrealized P&L")}
+						label={t("index:kpi.unrealizedPnl", "Unrealized P&L")}
 						value={
 							<span className={toneText(totalPnl)}>
 								{fmt.usd(totalPnl, 2)}
 							</span>
 						}
 						delta={(totalPnl / (totalEquity || 1)) * 100}
-						deltaLabel="of equity"
+						deltaLabel={t("index:kpi.ofEquity", "of equity")}
 						accent={toneHex(totalPnl)}
 						icon={<Target size={14} />}
 					/>
 					<Stat
-						label={t("index:portfolioOverview.marginUsage", "Exposure")}
+						label={t("index:kpi.exposure", "Exposure")}
 						value={fmt.usd(totalExposure, 2)}
 						delta={(totalExposure / (totalEquity || 1)) * 100 - 100}
-						deltaLabel="vs eq"
+						deltaLabel={t("index:kpi.vsEquity", "vs eq")}
 						accent="#0066ff"
 						icon={<Layers size={14} />}
 					/>
 					<Stat
-						label="Win Rate · 30d"
+						label={t("index:kpi.winRate", "Win Rate · 30d")}
 						value={
 							winRate !== null
-								? `${winRate}% · ${statsSummary.totalTrades} trades`
-								: "no trades yet"
+								? `${winRate}% · ${statsSummary.totalTrades} ${t("index:kpi.tradesSuffix", "trades")}`
+								: t("index:kpi.noTradesYet", "no trades yet")
 						}
 						accent="#10e0a0"
 						icon={<Percent size={14} />}
 					/>
 					<Stat
-						label="Sharpe · 30d"
+						label={t("index:kpi.sharpe", "Sharpe · 30d")}
 						value={
 							statsSummary.sharpeInsufficient
-								? "need 2+ days"
+								? t("index:kpi.need2Days", "need 2+ days")
 								: statsSummary.sharpeRatio.toFixed(2)
 						}
 						accent="#00d4ff"
@@ -857,7 +857,7 @@ const Index = () => {
 						bodyClassName="overflow-visible"
 						title={
 							<span className="flex items-center gap-2">
-								Equity Curve{" "}
+								{t("index:equityCurve.title", "Equity Curve")}{" "}
 								<Badge tone={mode === "live" ? "loss" : "cyan"} dot pulse>
 									{mode}
 								</Badge>
@@ -866,7 +866,7 @@ const Index = () => {
 						subtitle={
 							hasEquity
 								? `${fmt.usd(last, 2)} · ${fmt.pct(chg)} over ${period.toUpperCase()} · ${scopeLabel}`
-								: "no equity history yet"
+								: t("index:equityCurve.noHistoryYet", "no equity history yet")
 						}
 						actions={
 							<Segmented
@@ -884,7 +884,7 @@ const Index = () => {
 					>
 						{isEquityLoading ? (
 							<div className="flex h-[240px] items-center justify-center text-[12px] text-white/35">
-								Loading equity…
+								{t("index:equityCurve.loading", "Loading equity…")}
 							</div>
 						) : hasEquity ? (
 							<AreaChart
@@ -894,29 +894,28 @@ const Index = () => {
 							/>
 						) : (
 							<div className="flex h-[240px] items-center justify-center text-[12px] text-white/35">
-								No equity history for this period yet — it appears
-								after closed trades.
+								{t("index:equityCurve.empty", "No equity history for this period yet — it appears after closed trades.")}
 							</div>
 						)}
 						<div className="mt-3 grid grid-cols-4 gap-3 border-t border-white/5 pt-3">
 							{[
 								[
-									"Realized",
+									t("index:equityCurve.realized", "Realized"),
 									fmt.signed(periodSummary.totalPnl, 2),
 									periodSummary.totalPnl >= 0
 										? "text-emerald-400"
 										: "text-rose-400",
 								],
 								[
-									"Fees",
+									t("index:equityCurve.fees", "Fees"),
 									periodSummary.totalCommission > 0
 										? `-${fmt.usd(periodSummary.totalCommission, 2)}`
 										: fmt.usd(0, 2),
 									"text-white/60",
 								],
-								["Funding", "—", "text-white/35"],
+								[t("index:equityCurve.funding", "Funding"), "—", "text-white/35"],
 								[
-									"Max DD",
+									t("index:equityCurve.maxDd", "Max DD"),
 									maxDdPct !== null
 										? `${maxDdPct.toFixed(1)}%`
 										: "—",
@@ -937,13 +936,12 @@ const Index = () => {
 
 					{/* Account Allocation Panel */}
 					<Panel
-						title="Account Allocation"
-						subtitle="Multi-exchange · equity share"
+						title={t("index:allocation.title", "Account Allocation")}
+						subtitle={t("index:allocation.subtitle", "Multi-exchange · equity share")}
 					>
 						{accountList.length === 0 ? (
 							<div className="flex h-[120px] items-center justify-center text-center text-[12px] text-white/35">
-								No API keys connected yet — add one in Settings
-								to see allocation.
+								{t("index:allocation.empty", "No API keys connected yet — add one in Settings to see allocation.")}
 							</div>
 						) : (
 							<div className="space-y-3">
@@ -996,8 +994,8 @@ const Index = () => {
 							<div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-cyan/80">
 								<span>
 									{slotUsage !== null
-										? "Position slots used"
-										: "Exposure / equity"}
+										? t("index:allocation.positionSlotsUsed", "Position slots used")
+										: t("index:allocation.exposureEquity", "Exposure / equity")}
 								</span>
 								<span className="font-mono">
 									{slotUsage !== null
@@ -1014,10 +1012,10 @@ const Index = () => {
 							/>
 							<div className="mt-1.5 text-[10px] text-white/40">
 								{slotUsage !== null
-									? `${visiblePositions.length} / ${maxConcurrent} max concurrent`
-									: `${visiblePositions.length} open positions`}
+									? t("index:allocation.maxConcurrent", "{{open}} / {{max}} max concurrent", { open: visiblePositions.length, max: maxConcurrent })
+									: t("index:allocation.openPositions", "{{count}} open positions", { count: visiblePositions.length })}
 								{defaultSlPct !== undefined && defaultSlPct !== null
-									? ` · default SL ${defaultSlPct}%`
+									? ` · ${t("index:allocation.defaultSl", "default SL {{pct}}%", { pct: defaultSlPct })}`
 									: ""}
 							</div>
 						</div>
@@ -1029,7 +1027,7 @@ const Index = () => {
 					{/* Open Positions Panel */}
 					<Panel
 						title={t("index:activePositions.title", "Open Positions")}
-						subtitle={`${visiblePositions.length} active · ${wsLive ? (liveCount > 0 ? "live ticks" : "live") : "polling 5s"} · indicative`}
+						subtitle={t("index:openPositions.subtitle", "{{count}} active · {{feed}} · indicative", { count: visiblePositions.length, feed: wsLive ? (liveCount > 0 ? t("index:openPositions.liveTicks", "live ticks") : t("index:openPositions.live", "live")) : t("index:openPositions.polling", "polling 5s") })}
 						className="xl:col-span-2"
 						noPad
 						actions={
@@ -1037,10 +1035,9 @@ const Index = () => {
 								size="xs"
 								variant="ghost"
 								icon={<RefreshCw size={11} />}
-								onClick={() => refetchPositions()}
-							>
-								sync
-							</Btn>
+								onClick={() => refetchPositions()}>
+									{t("index:openPositions.sync", "sync")}
+								</Btn>
 						}
 					>
 						<div className="overflow-x-auto">
@@ -1054,12 +1051,12 @@ const Index = () => {
 											{t("index:activePositions.colEntry", "Entry")} /{" "}
 											{t("index:activePositions.colMark", "Mark")}
 										</Th>
-										<Th>Trend</Th>
+										<Th>{t("index:openPositions.colTrend", "Trend")}</Th>
 										<Th right>{t("index:activePositions.colPnlUsd", "P&L")}</Th>
 										<Th>
 											{t("index:activePositions.colStrategy", "Strategy")}
 										</Th>
-										<Th right className="w-10">Chart</Th>
+										<Th right className="w-10">{t("index:openPositions.colChart", "Chart")}</Th>
 									</tr>
 								</thead>
 								<tbody>
@@ -1067,8 +1064,7 @@ const Index = () => {
 										<tr>
 											<td colSpan={8}>
 												<div className="flex h-[120px] items-center justify-center px-3 py-2.5 text-center text-[12px] text-white/35">
-													No open positions — start a
-													strategy to see live deals here.
+													{t("index:openPositions.empty", "No open positions — start a strategy to see live deals here.")}
 												</div>
 											</td>
 										</tr>
@@ -1144,7 +1140,7 @@ const Index = () => {
 														setIsChartOpen(true);
 													}}
 													className="text-white/40 hover:text-cyan p-1.5 rounded-md hover:bg-white/5 transition-all inline-flex items-center justify-center"
-													title="Open Deal Chart"
+													title={t("index:openPositions.chartTitle", "Open Deal Chart")}
 												>
 													<LineChart size={14} />
 												</button>
@@ -1160,18 +1156,18 @@ const Index = () => {
 					{/* Event Stream Panel */}
 					<Panel
 						title={t("index:liveEventFeed.title", "Event Stream")}
-						subtitle="/logs/history · live tail"
+						subtitle={t("index:eventStream.subtitle", "/logs/history · live tail")}
 						noPad
 						actions={
 							<Badge tone="profit" dot pulse>
-								tail
+								{t("index:eventStream.tail", "tail")}
 							</Badge>
 						}
 					>
 						<div className="max-h-[320px] overflow-y-auto font-mono text-[10.5px]">
 							{displayedEvents.length === 0 ? (
 								<div className="flex h-[120px] items-center justify-center px-4 text-center text-[11px] text-muted-foreground/60 dark:text-white/35">
-									No events yet — engine logs will appear here.
+									{t("index:eventStream.empty", "No events yet — engine logs will appear here.")}
 								</div>
 							) : (
 								displayedEvents.map((e, i) => (
@@ -1211,14 +1207,13 @@ const Index = () => {
 				<div className="grid gap-4 xl:grid-cols-3">
 					{/* Strategy Return Heatmap */}
 					<Panel
-						title="Strategy Return Heatmap"
-						subtitle="Hourly P&L% · 30d · all bots"
+						title={t("index:heatmap.title", "Strategy Return Heatmap")}
+						subtitle={t("index:heatmap.subtitle", "Hourly P&L% · 30d · all bots")}
 						className="xl:col-span-2"
 					>
 						{heatmapRows.length === 0 ? (
 							<div className="flex h-[160px] items-center justify-center text-center text-[12px] text-white/35">
-								Not enough closed trades yet — the heatmap
-								builds from trade history.
+								{t("index:heatmap.empty", "Not enough closed trades yet — the heatmap builds from trade history.")}
 							</div>
 						) : (
 							<Heatmap rows={heatmapRows} />
@@ -1227,13 +1222,12 @@ const Index = () => {
 
 					{/* Active Bots List */}
 					<Panel
-						title={t("index:topStrategies.title", "Active Bots")}
-						subtitle={`/strategies · ${wsLive ? "live push" : "polling 5s"}`}
+						title={t("index:activeBots.title", "Active Bots")}
+						subtitle={t("index:activeBots.subtitle", "/strategies · {{feed}}", { feed: wsLive ? t("index:activeBots.livePush", "live push") : t("index:activeBots.polling", "polling 5s") })}
 					>
 						{visibleStrategies.length === 0 ? (
 							<div className="flex h-[120px] items-center justify-center text-center text-[12px] text-white/35">
-								No running strategies — launch one from the
-								Strategies page.
+								{t("index:activeBots.empty", "No running strategies — launch one from the Strategies page.")}
 							</div>
 						) : (
 							<div className="space-y-2">
@@ -1259,19 +1253,17 @@ const Index = () => {
 											>
 												{s.name}{" "}
 												<span className="text-[9px] uppercase text-emerald-400/80">
-													{s.status === "IN_POSITION" ? "IN POSITION" : "RUNNING"}
+													{s.status === "IN_POSITION" ? t("index:activeBots.statusInPosition", "IN POSITION") : t("index:activeBots.statusRunning", "RUNNING")}
 													{s.openPositions > 0
-														? ` · ${s.openPositions} pos`
+														? ` · ${s.openPositions} ${t("index:activeBots.posSuffix", "pos")}`
 														: ""}
 												</span>
 											</div>
 											<div className="text-[10px] text-white/40">
 												{s.timeframe} ·{" "}
 												{s.trades > 0
-													? `${s.trades} trades · WR ${
-															s.winRate !== null ? `${s.winRate}%` : "—"
-														}`
-													: "no closed trades yet"}
+													? t("index:activeBots.tradesWr", "{{trades}} trades · WR {{winRate}}", { trades: s.trades, winRate: s.winRate !== null ? `${s.winRate}%` : "—" })
+													: t("index:activeBots.noClosedTrades", "no closed trades yet")}
 											</div>
 										</div>
 									{s.equity.length >= 2 ? (

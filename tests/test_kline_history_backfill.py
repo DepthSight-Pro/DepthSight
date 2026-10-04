@@ -27,6 +27,8 @@ async def clear_global_data_consumer_state():
     data_consumer._global_agg_trade_deques.clear()
     data_consumer._global_history_loaded_keys.clear()
     data_consumer._global_history_download_tasks.clear()
+    data_consumer._global_history_backfill_attempts.clear()
+    data_consumer._global_kline_last_update.clear()
     data_consumer._global_active_pairs.clear()
     yield
     data_consumer._global_ws_registry.clear()
@@ -37,6 +39,8 @@ async def clear_global_data_consumer_state():
     data_consumer._global_agg_trade_deques.clear()
     data_consumer._global_history_loaded_keys.clear()
     data_consumer._global_history_download_tasks.clear()
+    data_consumer._global_history_backfill_attempts.clear()
+    data_consumer._global_kline_last_update.clear()
     data_consumer._global_active_pairs.clear()
 
 

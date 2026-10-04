@@ -1983,6 +1983,38 @@ class CcxtExecutor:
             )
             return {}
 
+    async def fetch_order_event(self, symbol: str, order_id: Any) -> Dict[str, Any]:
+        """Fetch one order and normalize it to the execution-report event shape.
+
+        Used by the streamless REST poller: the result feeds straight into
+        TradingController._handle_order_update, exactly like a WS fill event.
+        Returns {} when the order cannot be fetched (cleaned up, unsupported).
+        """
+        if not hasattr(self, "_exchange") or self._exchange is None:
+            return {}
+        if not hasattr(self._exchange, "fetch_order"):
+            return {}
+        try:
+            ccxt_symbol = self._normalize_symbol(symbol)
+            params: Dict[str, Any] = {}
+            if self.exchange_id == "bitget" and self.supports_positions:
+                params["productType"] = "USDT-FUTURES"
+            if self.exchange_id == "gateio" and self.supports_positions:
+                params["type"] = "swap"
+                params["settle"] = "usdt"
+            if self.exchange_id in {"bingx", "weex"}:
+                params["type"] = "swap" if self.supports_positions else "spot"
+            raw = await self._exchange.fetch_order(str(order_id), ccxt_symbol, params)
+            if not raw:
+                return {}
+            return self._to_execution_report(raw)
+        except Exception as e:
+            logger.debug(
+                f"Could not fetch order event {order_id} for {symbol} "
+                f"on {self.exchange_id}: {e}"
+            )
+            return {}
+
     async def get_my_trades(self, symbol: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Fetches recent user trades from exchange via CCXT."""
         if not hasattr(self, "_exchange") or self._exchange is None:

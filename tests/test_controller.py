@@ -551,13 +551,27 @@ async def test_controller_start_stop(
     mock_trade_logger.start.assert_called_once()
     mock_risk_manager.initialize_balance.assert_called_once()
     mock_consumer.start.assert_called_once()
-    assert controller.executors["live"].start_user_data_stream.called
+    # Lazy streams (auto default): boot opens nothing without live demand.
+    # The shared loop opens on first live entry instead (see
+    # test_private_streams.py). PRIVATE_WS_MODE=always restores boot-open.
+    assert not controller.executors["live"].start_user_data_stream.called
     controller.executors["live"].fetch_exchange_info.assert_called()
 
     mock_consumer.clear_all_subscriptions.assert_called_once()
     assert controller.executors["live"].stop_user_data_stream.called
     mock_consumer.stop.assert_called_once()
     mock_trade_logger.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_controller_start_opens_stream_in_always_mode(
+    controller, mock_executor, monkeypatch
+):
+    """PRIVATE_WS_MODE=always preserves the legacy boot-open behavior."""
+    monkeypatch.setattr(config, "PRIVATE_WS_MODE", "always")
+    await controller.start()
+    assert controller.executors["live"].start_user_data_stream.called
+    await controller.stop()
 
 
 @pytest.mark.asyncio
@@ -2776,3 +2790,357 @@ async def test_handle_start_strategy_refreshes_risk_manager_when_disabled(contro
         await controller._handle_start_strategy_command(payload)
 
     controller.rm.refresh_balance_and_limits.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_spawn_paper_order_check_serialized(controller):
+    """A tick arriving while a paper check is in flight must be skipped.
+
+    Regression: the 1s periodic loop spawned check_open_orders fire-and-forget,
+    so a saturated event loop stacked one task per tick per controller without
+    bound (task objects + order/price copies piling into memory).
+    """
+    release = asyncio.Event()
+    calls = 0
+
+    async def slow_check():
+        nonlocal calls
+        calls += 1
+        await release.wait()
+
+    paper = MagicMock()
+    paper.check_open_orders = slow_check
+    controller.executors = {"paper": paper}
+
+    t1 = controller._spawn_paper_order_check()
+    assert t1 is not None
+    for _ in range(200):
+        if calls == 1:
+            break
+        await asyncio.sleep(0.01)
+    assert calls == 1
+
+    # Second tick while the first check runs: skipped, not stacked.
+    t2 = controller._spawn_paper_order_check()
+    assert t2 is None
+    await asyncio.sleep(0.05)
+    assert calls == 1
+
+    release.set()
+    await t1
+    assert controller._paper_order_check_in_flight is False
+
+    # After completion the next tick runs again.
+    t3 = controller._spawn_paper_order_check()
+    assert t3 is not None
+    await t3
+    assert calls == 2
+
+
+def test_spawn_paper_order_check_without_paper_executor(controller):
+    controller.executors = {}
+    assert controller._spawn_paper_order_check() is None
+
+
+def _live_pos(symbol="BTCUSDT", entry=50000.0, tp=50150.0, sl=49850.0):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        mode="live",
+        status="OPEN",
+        symbol=symbol,
+        entry_price=entry,
+        initial_take_profit=tp,
+        current_sl_price=sl,
+        partial_tp_orders=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_private_stream_heat_ranks_tp_sl_distance(controller):
+    """Heat is the hottest relative distance to TP/SL (smaller = hotter)."""
+    controller._active_positions = {
+        "near": _live_pos(entry=50000.0, tp=50150.0, sl=49850.0),
+        "far": _live_pos(entry=50000.0, tp=51000.0, sl=49000.0),
+    }
+    heat = await controller._private_stream_heat()
+    assert heat == pytest.approx(150.0 / 50000.0)
+
+
+@pytest.mark.asyncio
+async def test_private_stream_heat_none_without_live_demand(controller):
+    controller._active_positions = {}
+    assert await controller._private_stream_heat() is None
+
+
+@pytest.mark.asyncio
+async def test_tp_fill_cancels_sl_leg_and_finalizes(controller, db_session, test_user):
+    """Production path that crashed 50/50 on a load run (A16).
+
+    TP touch -> MARKET fill -> _notify_controller_about_fill ->
+    _handle_final_exit cancels the opposite SL leg via
+    cancel_order(..., is_algo_order=...) -> TypeError on the paper executor
+    (no such kwarg) -> no POSITION_CLOSED, no RM update, stale SL leg.
+    After the signature fix the whole chain must complete: SL gone,
+    position CLOSED and popped, POSITION_CLOSED emitted, RM updated.
+    """
+    from bot_module.paper_executor import PaperTradingExecutor
+
+    prices = {"BTCUSDT": 50000.0}
+    consumer = AsyncMock()
+    consumer.get_latest_depth = AsyncMock(return_value=None)
+    consumer.get_latest_price = AsyncMock(side_effect=lambda s: prices.get(s))
+    ex = PaperTradingExecutor(
+        user_id=test_user.id,
+        db_session=db_session,
+        data_consumer=consumer,
+        redis_client=None,
+    )
+    assert await ex._ensure_paper_wallet() is True
+
+    controller.executors = {"paper": ex}
+    ex.controller = controller
+
+    entry = await ex.place_order(
+        symbol="BTCUSDT", side="BUY", order_type="MARKET", quantity=0.1
+    )
+    assert entry.get("status") == "FILLED"
+    await ex.place_order(
+        symbol="BTCUSDT",
+        side="SELL",
+        order_type="LIMIT",
+        quantity=0.1,
+        price="50150.0",
+    )
+    sl = await ex.place_order(
+        symbol="BTCUSDT",
+        side="SELL",
+        order_type="STOP_MARKET",
+        quantity=0.1,
+        stopPrice="49850.0",
+    )
+    assert len(ex._open_orders) == 2
+
+    position = Position(
+        symbol="BTCUSDT",
+        direction=SignalDirection.LONG,
+        entry_price=50000.0,
+        initial_quantity=0.1,
+        remaining_quantity=0.1,
+        entry_time=1000,
+        strategy="MockStrategyA",
+        initial_stop_loss=49850.0,
+        current_sl_price=49850.0,
+        initial_take_profit=50150.0,
+        config_id="test-config",
+        mode="paper",
+        market_type="futures_usdtm",
+        entry_client_order_id=entry["clientOrderId"],
+        initial_risk_usd_planned=100.0,
+    )
+    position.status = "OPEN"
+    position.current_sl_order_id = sl["orderId"]
+    position.current_sl_client_order_id = sl["clientOrderId"]
+    async with controller._positions_dict_lock:
+        controller._active_position_set(position)
+
+    prices["BTCUSDT"] = 50160.0
+    await ex.check_open_orders()
+
+    assert len(ex._open_orders) == 0, "TP filled, SL leg must be cancelled"
+    remaining = controller._active_position_get("BTCUSDT", "futures_usdtm")
+    assert remaining is None, "finalized position must be popped"
+    assert position.status == "CLOSED"
+    assert position.pnl > 0, f"TP fill must record positive PnL, got {position.pnl}"
+    closed_events = [
+        call
+        for call in controller.trade_logger.log_event.call_args_list
+        if call.kwargs.get("event_type") == "POSITION_CLOSED"
+        or (call.args and call.args[0] == "POSITION_CLOSED")
+    ]
+    assert closed_events, "POSITION_CLOSED must be emitted after the fix"
+    controller.rm.update_trade_result.assert_awaited()
+    rm_pnl = controller.rm.update_trade_result.await_args.args[1]
+    assert rm_pnl > 0, "RM must see the real (positive) PnL, not 0.0"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_final_exit_skips_second_insert(
+    controller, db_session, test_user
+):
+    """A repeated finalize for the same fill must not crash on the exit-row
+    unique constraint (prod: 220 UniqueViolation tracebacks) and must not
+    duplicate the row: check-then-insert plus race guard."""
+    from sqlalchemy import func, select
+
+    from api import models
+    from bot_module.paper_executor import PaperTradingExecutor
+
+    prices = {"BTCUSDT": 50000.0}
+    consumer = AsyncMock()
+    consumer.get_latest_depth = AsyncMock(return_value=None)
+    consumer.get_latest_price = AsyncMock(side_effect=lambda s: prices.get(s))
+    ex = PaperTradingExecutor(
+        user_id=test_user.id,
+        db_session=db_session,
+        data_consumer=consumer,
+        redis_client=None,
+    )
+    assert await ex._ensure_paper_wallet() is True
+    controller.executors = {"paper": ex}
+    ex.controller = controller
+
+    async def _test_get_db():
+        yield db_session
+
+    controller.get_db_session = _test_get_db
+
+    entry = await ex.place_order(
+        symbol="BTCUSDT", side="BUY", order_type="MARKET", quantity=0.1
+    )
+    await ex.place_order(
+        symbol="BTCUSDT",
+        side="SELL",
+        order_type="LIMIT",
+        quantity=0.1,
+        price="50150.0",
+    )
+    position = Position(
+        symbol="BTCUSDT",
+        direction=SignalDirection.LONG,
+        entry_price=50000.0,
+        initial_quantity=0.1,
+        remaining_quantity=0.1,
+        entry_time=1000,
+        strategy="MockStrategyA",
+        initial_stop_loss=49850.0,
+        current_sl_price=49850.0,
+        initial_take_profit=50150.0,
+        config_id="test-config",
+        mode="paper",
+        market_type="futures_usdtm",
+        entry_client_order_id=entry["clientOrderId"],
+        initial_risk_usd_planned=100.0,
+    )
+    position.status = "OPEN"
+    async with controller._positions_dict_lock:
+        controller._active_position_set(position)
+
+    prices["BTCUSDT"] = 50160.0
+    await ex.check_open_orders()
+    assert controller._active_position_get("BTCUSDT", "futures_usdtm") is None
+
+    async def _exit_rows():
+        res = await db_session.execute(
+            select(func.count())
+            .select_from(models.Trade)
+            .where(models.Trade.exit_reason == "PAPER_TP_FILLED")
+        )
+        return res.scalar_one()
+
+    assert await _exit_rows() == 1
+
+    # Same fill delivered again (duplicate WS event / retry): re-register an
+    # OPEN position and finalize with the same triggering order ids.
+    position2 = Position(
+        symbol="BTCUSDT",
+        direction=SignalDirection.LONG,
+        entry_price=50000.0,
+        initial_quantity=0.1,
+        remaining_quantity=0.1,
+        entry_time=1000,
+        strategy="MockStrategyA",
+        initial_stop_loss=49850.0,
+        current_sl_price=49850.0,
+        initial_take_profit=50150.0,
+        config_id="test-config",
+        mode="paper",
+        market_type="futures_usdtm",
+        entry_client_order_id=entry["clientOrderId"],
+        initial_risk_usd_planned=100.0,
+    )
+    position2.status = "OPEN"
+    async with controller._positions_dict_lock:
+        controller._active_position_set(position2)
+
+    await controller._handle_final_exit(
+        "BTCUSDT",
+        "PAPER_TP_FILLED",
+        50160.0,
+        0.0,
+        "USDT",
+        999999,
+        "x-fill-dup-test",
+        market_type="futures_usdtm",
+        closed_quantity=0.1,
+    )
+    # Different trigger cid -> recorded as its own row, no crash.
+    assert await _exit_rows() == 2
+
+    position3 = Position(
+        symbol="BTCUSDT",
+        direction=SignalDirection.LONG,
+        entry_price=50000.0,
+        initial_quantity=0.1,
+        remaining_quantity=0.1,
+        entry_time=1000,
+        strategy="MockStrategyA",
+        initial_stop_loss=49850.0,
+        current_sl_price=49850.0,
+        initial_take_profit=50150.0,
+        config_id="test-config",
+        mode="paper",
+        market_type="futures_usdtm",
+        entry_client_order_id=entry["clientOrderId"],
+        initial_risk_usd_planned=100.0,
+    )
+    position3.status = "OPEN"
+    async with controller._positions_dict_lock:
+        controller._active_position_set(position3)
+
+    # Exact same trigger ids again -> pre-check skip, no crash, still 2 rows.
+    await controller._handle_final_exit(
+        "BTCUSDT",
+        "PAPER_TP_FILLED",
+        50160.0,
+        0.0,
+        "USDT",
+        999999,
+        "x-fill-dup-test",
+        market_type="futures_usdtm",
+        closed_quantity=0.1,
+    )
+    assert await _exit_rows() == 2
+
+
+@pytest.mark.asyncio
+async def test_streamless_poll_tick_skips_sibling_polled_key(controller, monkeypatch):
+    """Per-key poll sharing: one poll covers all sibling controllers."""
+    from types import SimpleNamespace
+
+    from bot_module import private_stream_registry as reg
+
+    reg.reset_registry()
+    live = SimpleNamespace(
+        exchange_id="bitget",
+        api_key="test-key-1",
+        start_user_data_stream=AsyncMock(),
+        stop_user_data_stream=AsyncMock(),
+    )
+    controller.executors = {"live": live}
+    controller.market_executors = {}
+    controller._active_positions = {"p": _live_pos()}
+    poll_once = AsyncMock()
+    monkeypatch.setattr(controller, "_streamless_poll_once", poll_once)
+
+    needed = {(ex, key) for ex, key, _e in controller._stream_executors()}
+    assert needed == {("bitget", "test-key-1")}
+    for ex, key in needed:
+        assert reg.should_poll(ex, key, 3600.0) is True
+
+    await controller._streamless_poll_tick(time.monotonic())
+    poll_once.assert_not_awaited()
+
+    reg.reset_registry()
+    await controller._streamless_poll_tick(time.monotonic())
+    assert poll_once.await_count == 1

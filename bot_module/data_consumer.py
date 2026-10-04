@@ -85,6 +85,37 @@ _global_agg_trade_deques: Dict[str, deque] = defaultdict(lambda: deque())
 _global_cache_lock = asyncio.Lock()
 _global_history_loaded_keys: Set[str] = set()
 _global_history_download_tasks: Dict[str, asyncio.Task] = {}
+# Last REST backfill attempt per (cache key, min_candles need) as monotonic
+# seconds. Bounds how often a stale key may hit the exchange: without this,
+# 500 controllers evaluating stale candles would herd onto REST every candle
+# close.
+_global_history_backfill_attempts: Dict[str, float] = {}
+# Last observed update per kline cache key (monotonic seconds), any source
+# (snapshot, live payload, download). Powers the freshness watchdog and the
+# silent-key diagnostics.
+_global_kline_last_update: Dict[str, float] = {}
+
+
+def _note_kline_update(cache_key: str) -> None:
+    """Record an observed update for a kline cache key. Never raises."""
+    try:
+        _global_kline_last_update[cache_key] = time.monotonic()
+    except Exception:
+        pass
+
+
+def _task_is_foreign(task: Any) -> bool:
+    """True when a task belongs to a different event loop than ours.
+
+    Stale references happen when global task maps outlive their loop. Awaiting
+    such a task raises "attached to a different loop" - drop it instead and
+    schedule fresh. Never raises.
+    """
+    try:
+        return task.get_loop() is not asyncio.get_running_loop()
+    except Exception:
+        return False
+
 
 # Global cache of indicators and pair data
 # All DataConsumers will read/write here to see the same indicators (ATR, SMA, etc.)
@@ -354,12 +385,20 @@ class DataConsumer:
         self._binance_market_data_ws_lock = asyncio.Lock()
         self._requested_binance_streams: Set[str] = set()
 
-        # Raw data caches
+        # Raw data caches. NOTE (shared-DC phase 1): depth snapshots are the
+        # heaviest per-symbol blob (full L2 ladders) and identical for every
+        # controller on the same symbol, so all instances alias ONE process-wide
+        # dict instead of keeping N copies. Readers copy on read; writers
+        # replace whole entries (idempotent - same input, same output), and
+        # there is deliberately NO eviction path, so sharing needs no refcount.
+        # Kline/aggTrade/indicators were already global (_global_kline_cache,
+        # _global_agg_trade_deques, _global_active_pairs); the instance dicts
+        # for those below are legacy dead weight, kept for shape only.
         self.kline_deque_maxlen = DEFAULT_KLINE_CACHE_SIZE_CONFIG
         self._kline_cache: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=self.kline_deque_maxlen)
         )
-        self._latest_depth_cache: Dict[str, Dict[str, Any]] = {}
+        self._latest_depth_cache: Dict[str, Dict[str, Any]] = _global_depth_cache
         self._aggtrade_cache_df: Dict[
             str, pd.DataFrame
         ] = {}  # Leave for backward compatibility if someone is using it
@@ -1234,6 +1273,11 @@ class DataConsumer:
             return False
         async with self._redis_market_lock:
             if self._redis_market_client is None:
+                # max_connections is capped (see config.REDIS_POOL_MAX_CONNECTIONS):
+                # one pool per DataConsumer (i.e. per controller) with the
+                # redis-py default of 50 means thousands of fds past ~100
+                # controllers and EMFILE under burst load. The subscription
+                # itself uses a dedicated connection outside the pool.
                 self._redis_market_client = redis_asyncio.Redis(
                     host=config.MARKET_REDIS_HOST,
                     port=config.MARKET_REDIS_PORT,
@@ -1241,6 +1285,7 @@ class DataConsumer:
                     username=config.REDIS_USERNAME,
                     password=config.REDIS_PASSWORD,
                     decode_responses=True,
+                    max_connections=config.REDIS_POOL_MAX_CONNECTIONS,
                 )
                 self._redis_market_pubsub = self._redis_market_client.pubsub()
                 # Verify Redis connectivity immediately
@@ -1553,6 +1598,7 @@ class DataConsumer:
                 _global_kline_df_cache[cache_key] = (
                     _build_kline_dataframe_from_cache_rows(rows)
                 )
+                _note_kline_update(cache_key)
                 legacy_cache_key = f"{exchange_id}:{symbol}:{timeframe}"
                 if legacy_cache_key != cache_key:
                     legacy_deque = _global_kline_cache[legacy_cache_key]
@@ -2031,11 +2077,38 @@ class DataConsumer:
         Returns:
             bool: True if history was successfully loaded (or was loaded previously), False in case of error.
         """
-        if self._market_data_mode == "redis":
-            logger.debug(
-                f"DataConsumer is in REDIS mode. Skipping local history download for {data_type_key}:{symbol_uc}."
-            )
-            return True
+        if self._market_data_mode == "redis" and not force:
+            # Verified fast path (NOT a blind skip): service snapshots + live
+            # flow own freshness. A stale or thin cache falls through to REST
+            # backfill below (throttled per key). The old code returned True
+            # unconditionally here, so a silently dead channel froze the cache
+            # forever with zero download attempts (observed: 14h, 0 backfills,
+            # strategy warmup-skipped for 3 days).
+            if data_type_key.startswith("kline_"):
+                probe_keys = {
+                    _kline_cache_key(symbol_uc, timeframe, exchange_id, market_type),
+                    f"{exchange_id}:{symbol_uc}:{timeframe}",
+                    f"{symbol_uc}:{timeframe}",
+                }
+                for probe_key in probe_keys:
+                    probe_df = _global_kline_df_cache.get(probe_key)
+                    if probe_df is None:
+                        continue
+                    probe_fresh, _probe_age = is_kline_fresh(probe_df, timeframe)
+                    if not probe_fresh:
+                        continue
+                    if min_candles is not None and len(probe_df) < min_candles:
+                        continue
+                    return True
+                logger.info(
+                    f"[HistLoadEnsure:{symbol_uc}:{timeframe}] REDIS mode but cache "
+                    f"stale/missing - falling through to REST backfill (throttled)."
+                )
+            else:
+                logger.debug(
+                    f"DataConsumer is in REDIS mode. Skipping local history download for {data_type_key}:{symbol_uc}."
+                )
+                return True
 
         if (exchange_id == "binance" or not exchange_id) and hasattr(
             self, "_executor_for_market"
@@ -2112,6 +2185,22 @@ class DataConsumer:
             active_download_task = _global_history_download_tasks.get(cache_key)
 
         # Step 3: If the task is already running, wait for its completion
+        if active_download_task is not None and (
+            active_download_task.done() or _task_is_foreign(active_download_task)
+        ):
+            # Stale reference, not a running download: finished tasks are
+            # reaped here, and foreign-loop tasks (global map outliving its
+            # loop) must never be awaited. Drop and fall through to
+            # scheduling fresh below.
+            if not active_download_task.done():
+                logger.debug(
+                    f"{log_prefix} Dropping download task bound to a foreign event loop."
+                )
+            async with _global_cache_lock:
+                _global_history_download_tasks.pop(cache_key, None)
+            active_download_task = None
+
+        # Step 3: If the task is already running, wait for its completion
         if active_download_task and not active_download_task.done():
             logger.debug(
                 f"{log_prefix} History download task already active. Awaiting..."
@@ -2133,6 +2222,28 @@ class DataConsumer:
                     f"{log_prefix} Existing download task awaited. History loaded: {is_loaded_after_wait}."
                 )
                 return is_loaded_after_wait
+
+        # Attempt throttle (both modes, force included): at most one REST
+        # backfill per (key, need) per HISTORY_BACKFILL_MIN_INTERVAL_SECONDS.
+        # Signal evaluation runs every candle close per controller; without
+        # this a fleet-wide stale key would herd onto REST. The bucket
+        # includes min_candles so a genuinely bigger need (20 -> 50 rows)
+        # still downloads immediately. Failed attempts count too, so a broken
+        # loader cannot hot-loop (it retries after the interval instead).
+        now_mono = time.monotonic()
+        min_interval = float(
+            getattr(config, "HISTORY_BACKFILL_MIN_INTERVAL_SECONDS", 300) or 300
+        )
+        attempt_bucket = (cache_key, min_candles)
+        async with _global_cache_lock:
+            last_attempt = _global_history_backfill_attempts.get(attempt_bucket, 0.0)
+            if now_mono - last_attempt < min_interval:
+                logger.debug(
+                    f"{log_prefix} Backfill throttled "
+                    f"({now_mono - last_attempt:.0f}s < {min_interval:.0f}s since last attempt)."
+                )
+                return False
+            _global_history_backfill_attempts[attempt_bucket] = now_mono
 
         # Step 4: If we are here, it means the history needs to be loaded
         logger.info(
@@ -2354,6 +2465,7 @@ class DataConsumer:
                         )
                         cache_deque.clear()
                         cache_deque.extend(sorted_merged_candles)
+                        _note_kline_update(cache_key)
                         _global_kline_df_cache[cache_key] = (
                             _build_kline_dataframe_from_cache_rows(
                                 sorted_merged_candles
@@ -3731,6 +3843,7 @@ class DataConsumer:
                                 _global_kline_df_cache.get(cache_key), candle_tuple
                             )
                         )
+                        _note_kline_update(cache_key)
                         legacy_cache_key = f"{exchange_id}:{uc_symbol}:{timeframe}"
                         if legacy_cache_key != cache_key:
                             legacy_deque = _global_kline_cache[legacy_cache_key]

@@ -69,7 +69,9 @@
 		"title24h": "Лучшие стратегии (24ч)",
 		"colPnl24h": "PnL (24ч)",
 		"colTrades": "Сделки",
-		"colWinRate": "Проц. побед"
+		"colWinRate": "Проц. побед",
+		"runningNow": "Работают сейчас",
+		"topByPnl": "Топ по PnL"
 	},
 	"errors": {
 		"errorLoadingActivePositions": "Ошибка загрузки активных позиций",
@@ -83,6 +85,92 @@
 	"systemHealth": {
 		"title": "Состояние системы",
 		"failedToLoadSystemStatus": "Не удалось загрузить состояние системы",
-		"noSystemComponentsStatusAvailable": "Нет доступных статусов компонентов системы."
+		"noSystemComponentsStatusAvailable": "Нет доступных статусов компонентов системы.",
+		"status": {
+			"ok": "OK",
+			"error": "Ошибка",
+			"unknown": "Неизвестно"
+		},
+		"componentStatus": "Статус компонента {{component}}: {{status}}",
+		"components": {
+			"api": "API-сервер",
+			"websocket": "WebSocket-сервер",
+			"bot": "Торговый бот",
+			"celery_worker": "Celery-воркер",
+			"redis": "Redis",
+			"postgres": "PostgreSQL"
+		}
+	},
+	"kpi": {
+		"totalEquity": "Общий капитал",
+		"unrealizedPnl": "Нереализ. PnL",
+		"exposure": "Экспозиция",
+		"ofEquity": "от капитала",
+		"vsEquity": "к кап.",
+		"winRate": "Винрейт",
+		"tradesSuffix": "сделок",
+		"noTradesYet": "пока нет сделок",
+		"sharpe": "Шарп",
+		"need2Days": "нужно 2+ дня"
+	},
+	"equityCurve": {
+		"title": "Кривая капитала",
+		"noHistoryYet": "истории капитала пока нет",
+		"loading": "Загрузка капитала…",
+		"empty": "Истории капитала за этот период пока нет — она появится после закрытых сделок.",
+		"realized": "Реализовано",
+		"fees": "Комиссии",
+		"funding": "Фандинг",
+		"maxDd": "Макс. просадка"
+	},
+	"allocation": {
+		"title": "Распределение по счетам",
+		"subtitle": "Мультибиржа · доля капитала",
+		"empty": "API-ключи пока не подключены — добавьте ключ в Настройках, чтобы увидеть распределение.",
+		"positionSlotsUsed": "Использовано слотов позиций",
+		"exposureEquity": "Экспозиция / капитал",
+		"maxConcurrent": "{{open}} / {{max}} макс. одновременно",
+		"openPositions": "{{count}} откр. позиций",
+		"defaultSl": "SL по умолч. {{pct}}%",
+		"longSuffix": "% в лонг",
+		"selectedAccount": "выбранный счёт",
+		"allAccounts": "все счета",
+		"futures": "фьючерсы",
+		"spot": "спот"
+	},
+	"openPositions": {
+		"activeSuffix": "активно",
+		"liveTicks": "live-тики",
+		"live": "live",
+		"polling": "опрос 5с",
+		"indicative": "индикативно",
+		"colTrend": "Тренд",
+		"colChart": "График",
+		"empty": "Нет открытых позиций — запустите стратегию, чтобы увидеть сделки здесь.",
+		"chartTitle": "Открыть график сделки",
+		"subtitle": "{{count}} активно · {{feed}} · индикативно",
+		"sync": "синхр."
+	},
+	"heatmap": {
+		"title": "Тепловая карта доходности",
+		"subtitle": "PnL% по часам · 30д · все боты",
+		"empty": "Закрытых сделок пока мало — тепловая карта строится по истории сделок."
+	},
+	"activeBots": {
+		"title": "Активные боты",
+		"livePush": "live-push",
+		"polling": "опрос 5с",
+		"empty": "Нет запущенных стратегий — запустите одну со страницы Стратегий.",
+		"statusInPosition": "В ПОЗИЦИИ",
+		"statusRunning": "РАБОТАЕТ",
+		"posSuffix": "поз.",
+		"tradesWr": "{{trades}} сделок · WR {{winRate}}",
+		"noClosedTrades": "закрытых сделок пока нет",
+		"subtitle": "/strategies · {{feed}}"
+	},
+	"eventStream": {
+		"subtitle": "/logs/history · live-лента",
+		"tail": "лента",
+		"empty": "Событий пока нет — здесь появятся логи движка."
 	}
 }

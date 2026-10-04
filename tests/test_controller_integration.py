@@ -187,7 +187,9 @@ async def test_emergency_stop_closes_all_active_positions(controller_with_fake_r
     controller._active_positions["BTCUSDT"] = fake_pos_1
     controller._active_positions["ETHUSDT"] = fake_pos_2
 
-    with patch.object(controller, "close_position", new_callable=AsyncMock) as mock_close:
+    with patch.object(
+        controller, "close_position", new_callable=AsyncMock
+    ) as mock_close:
         command = {
             "command": "EMERGENCY_STOP",
             "type": "EMERGENCY_STOP",
@@ -201,4 +203,3 @@ async def test_emergency_stop_closes_all_active_positions(controller_with_fake_r
         assert mock_close.call_count == 2
         closed_symbols = {call.args[0] for call in mock_close.call_args_list}
         assert closed_symbols == {"BTCUSDT", "ETHUSDT"}
-

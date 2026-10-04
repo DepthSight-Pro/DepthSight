@@ -23,8 +23,11 @@ __pycache__/
 /extracted_strategies/
 data/
 found_strategies_mtf/
+performance_tests/
+logs_loadtest/
 
 # Security and local configs
+.env.loadtest
 gcp_key.json
 .vscode/
 docker-compose.legacy.yml

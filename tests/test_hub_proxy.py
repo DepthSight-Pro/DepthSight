@@ -10,6 +10,18 @@ from api.hub_proxy_router import router as hub_proxy_router
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+async def _reset_hub_proxy_client():
+    hub_proxy_module._shared_client = None
+    yield
+    client, hub_proxy_module._shared_client = hub_proxy_module._shared_client, None
+    if client is not None and hasattr(client, "aclose"):
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+
+
 @pytest.fixture
 def proxy_app():
     test_app = FastAPI()
@@ -30,6 +42,9 @@ class _MockProxyClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    async def aclose(self):
         pass
 
     async def request(self, method, url, **kwargs):

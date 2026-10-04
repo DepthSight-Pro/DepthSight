@@ -1329,11 +1329,11 @@ const MiningHub: React.FC = () => {
                         const isBybit = exItem.baseKey === "bybit";
 
                         const tooltipExtra = isBitget
-                          ? t("rebateRateTooltipBitget", "Base broker rate (35%) + 2.0x Mining Multiplier! Trading on Bitget earns 2x $DEPTH token yield per USDT rebate.")
+                          ? t("rebateRateTooltipBitget", "Base broker rate from clean accounts is 35%, if the account is under a referral — 8%. Active 2.0x Mining Multiplier earns 2x $DEPTH token yield per USDT rebate.")
                           : isOkx
-                          ? t("rebateRateTooltipOkx", "Base broker rate (30%). When trading under our affiliate link, rebates stack (30% + 7.5% = 37.5%), earning up to 5x more tokens compared to third-party referrals.")
+                          ? t("rebateRateTooltipOkx", "Base broker rate from clean accounts is 30%; if the account is under a referral, it is 7.5%.")
                           : isBybit
-                          ? t("rebateRateTooltipBybit", "Base broker rate (40-50%). Trading under our affiliate link maximizes your effective rebate and token mining yield.")
+                          ? t("rebateRateTooltipBybit", "Base broker rate from clean accounts is 50%; if the account is under a referral, it is 10%.")
                           : exItem.isBoosted
                           ? `${exItem.multiplier}x Trade Mining Reward Multiplier active for ${exItem.label}.`
                           : t("rebateRateTooltipDefault", "Base broker rebate rate. Mining rewards are distributed proportionally to verified trading volume and fees.");

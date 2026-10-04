@@ -1527,3 +1527,57 @@ async def test_is_symbol_trading_allowed_throttled_recovery(
     assert allowed is True
     assert risk_manager._is_trading_allowed is True
     assert risk_manager.stats.current_balance == 100.0
+
+
+@pytest.mark.asyncio
+async def test_live_position_size_bounded_by_real_cap_not_backtest(
+    risk_manager, monkeypatch
+):
+    """A7: live sizing must obey MAX_REAL_POSITION_SIZE_PCT_BALANCE.
+
+    With 1% risk on a 10000 balance and a 0.05% stop, raw risk sizing targets
+    $100 / $25 = 4 BTC ~= $200k = 20x the balance. The live cap (2.0) must
+    clamp it to $20k = 0.4 BTC even when the backtest cap is set absurdly high.
+    """
+    from bot_module import config as bot_config
+
+    monkeypatch.setattr(bot_config, "BACKTEST_MAX_POSITION_SIZE_PCT_BALANCE", 100.0)
+    monkeypatch.setattr(bot_config, "MAX_REAL_POSITION_SIZE_PCT_BALANCE", 2.0)
+
+    tight_signal = StrategySignal(
+        strategy_name="TestStrat",
+        symbol="BTCUSDT",
+        direction=SignalDirection.LONG,
+        trigger_price=50000.0,
+        stop_loss=49975.0,  # 0.05% stop -> raw sizing aims at 20x balance
+        take_profit=51000.0,
+        mode=OrderMode.MARKET,
+    )
+    lot_params = {"minQty": 0.0001, "maxQty": 9000.0, "stepSize": 0.00001}
+
+    approved, quantity, _, _ = await risk_manager.assess_signal(
+        tight_signal, lot_params, 10.0
+    )
+
+    assert approved is True
+    assert quantity is not None
+    assert math.isclose(quantity, 0.4, rel_tol=1e-9)
+    assert quantity * 50000.0 <= 10000.0 * 2.0 + 1e-6
+    assert quantity < 4.0  # proves the clamp engaged, not raw risk sizing
+
+
+async def test_disable_reason_recorded_and_cleared(risk_manager):
+    """_last_disable_reason must explain global blocks (prod walls of
+    SIGNAL_REJECTED_RISK_BLOCK carried no reason) and clear on re-enable."""
+    assert risk_manager._last_disable_reason is None
+
+    risk_manager.stats.consecutive_losses = risk_manager.max_consecutive_losses
+    risk_manager._check_risk_limits()
+    assert risk_manager._is_trading_allowed is False
+    assert risk_manager._last_disable_reason is not None
+    assert "consec" in risk_manager._last_disable_reason.lower()
+
+    risk_manager.stats.consecutive_losses = 0
+    risk_manager._check_risk_limits()
+    assert risk_manager._is_trading_allowed is True
+    assert risk_manager._last_disable_reason is None

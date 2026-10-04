@@ -151,7 +151,14 @@ async def resync_pending_telemetry_reports(
             return {"synced": 0, "total": 0, "reason": "queue_empty"}
 
         synced_count = 0
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        # Bounded pool, reused across the whole batch: 50 sequential POSTs share
+        # keep-alive connections instead of churning a pool per request. Kept
+        # per-invocation (not process-global) on purpose - resync runs inside
+        # Celery tasks where a shared client would cross fork/loop boundaries.
+        async with httpx.AsyncClient(
+            timeout=10.0,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+        ) as client:
             for report in pending_reports:
                 payload = format_report_payload(report)
                 body_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
@@ -187,7 +194,11 @@ async def resync_pending_telemetry_reports(
                     logger.error(
                         f"[telemetry_sync] Error dispatching report {report.id}: {exc}"
                     )
-                    break  # Stop batch processing if connection failed
+                    # B5 fix: NEVER break the batch on one report's failure.
+                    # A single flaky POST used to halt all 50 and leave the rest
+                    # in LOCAL_ONLY forever, silently stalling mining accounting.
+                    # Skip the failed report; it stays LOCAL_ONLY for the next run.
+                    continue
 
         return {"synced": synced_count, "total": len(pending_reports)}
 

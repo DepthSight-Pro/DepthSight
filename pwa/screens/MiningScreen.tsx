@@ -789,11 +789,11 @@ const MiningScreen: React.FC = () => {
             {/* Detail tooltip / description text */}
             <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
               {selectedExchangeDetail.baseKey === "bitget"
-                ? t("mining.bitgetRebateTip", "Base rate (35%) + 2.0x Mining Multiplier! Stacks under our affiliate link for 2x $DEPTH token yield.")
+                ? t("mining.bitgetRebateTip", "Base rate from clean accounts: 35%, if under referral: 8%. 2.0x Mining Multiplier for $DEPTH tokens!")
                 : selectedExchangeDetail.baseKey === "okx"
-                ? t("mining.okxRebateTip", "Base rate (30%). Stacks with affiliate link (+7.5%) up to 5x rewards.")
+                ? t("mining.okxRebateTip", "Base rate from clean accounts: 30%, if under referral: 7.5%.")
                 : selectedExchangeDetail.baseKey === "bybit"
-                ? t("mining.bybitRebateTip", "Base rate (50%), under third-party referral only 10%. Stacks under our link (+10%) for maximum yield.")
+                ? t("mining.bybitRebateTip", "Base rate from clean accounts: 50%, if under referral: 10%.")
                 : selectedExchangeDetail.isBoosted
                 ? `${selectedExchangeDetail.multiplier}x Trade Mining Reward Multiplier active for ${selectedExchangeDetail.label}.`
                 : t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly.")}

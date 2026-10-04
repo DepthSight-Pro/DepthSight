@@ -1,11 +1,22 @@
 import React from "react";
 
 export const BitgetLogoSvg: React.FC<{ className?: string }> = ({ className = "w-full h-full" }) => (
-	<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2500 2500" className={className}>
-		<circle fill="#1DA2B4" cx="1250" cy="1250" r="1250" />
-		<g fill="#FFFFFF" fillRule="evenodd" clipRule="evenodd">
-			<path d="M925,415c22-24,54-37,86-37h212c27,0,41,32,22,51L826,876h231l235,249H826l466,499h-282c-33,0-64-14-86-37 l-473-506c-42-45-42-115,0-160l473-506H925z" />
-			<path d="M1575,2085c-22,24-54,37-86,37h-212c-27,0-41-32-22-51l419-447h-231l-235-249h466l-466-499h282 c33,0,64,14,86,37l473,506c42,45,42,115,0,160l-473,506H1575z" />
+	<svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+		<g clipPath="url(#clip0_bitget_logo_pwa)">
+			<circle cx="100" cy="100" r="100" fill="#00F0FF" />
+			<path
+				d="M93.1911 80.4883H128.212L164.039 116.086C166.37 118.402 166.382 122.168 164.063 124.496L118.117 170.674H82.0405L92.9473 160.07L132.992 120.278L93.4556 80.4854"
+				fill="black"
+			/>
+			<path
+				d="M107.585 120.188H72.5635L36.7367 84.5904C34.4061 82.2747 34.3942 78.5083 36.7129 76.1807L82.6588 30H118.735L107.829 40.6036L67.7835 80.396L107.32 120.188"
+				fill="black"
+			/>
 		</g>
+		<defs>
+			<clipPath id="clip0_bitget_logo_pwa">
+				<rect width="200" height="200" fill="white" />
+			</clipPath>
+		</defs>
 	</svg>
 );

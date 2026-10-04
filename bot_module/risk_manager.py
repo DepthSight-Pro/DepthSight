@@ -4,6 +4,7 @@ import logging
 import time
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import timedelta, datetime, time as dt_time, timezone
 from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
@@ -91,11 +92,16 @@ class RiskManager:
         db_session: Optional[AsyncSession],
         user_settings: Dict[str, Any],
         api_key_name: Optional[str] = None,
+        db_session_factory=None,
     ):
         self.executor = executor
         self.paper_executor = paper_executor
         self.user_id = user_id
         self.db_session = db_session
+        # Optional per-operation session factory (api.database.session_scope).
+        # Read paths use short sessions instead of pinning a pool connection on
+        # the long-lived session forever. Unset (tests) = legacy self.db_session.
+        self._db_factory = db_session_factory
         self.api_key_name = api_key_name
         self.stats = TradeStats()
         self.trade_history: List[Dict[str, Any]] = []
@@ -243,6 +249,7 @@ class RiskManager:
             )
 
         self._is_trading_allowed = True
+        self._last_disable_reason: Optional[str] = None
         self._last_disabled_balance_check_ts: float = 0.0
         self._balance_lock = asyncio.Lock()
         # Per-symbol cache of the DB-backed blacklist verdict:
@@ -274,7 +281,9 @@ class RiskManager:
             f"RiskManager initialized with {len(self._auto_blacklist_rules)} auto-blacklist rules"
         )
 
-        # Redis (no changes)
+        # Redis. max_connections is capped (see config.REDIS_POOL_MAX_CONNECTIONS):
+        # one pool per controller with the redis-py default of 50 means
+        # thousands of fds past ~100 controllers and EMFILE under burst load.
         try:
             self.redis_client = redis_asyncio.Redis(
                 host=config.REDIS_HOST,
@@ -283,6 +292,7 @@ class RiskManager:
                 username=config.REDIS_USERNAME,
                 password=config.REDIS_PASSWORD,
                 decode_responses=True,
+                max_connections=config.REDIS_POOL_MAX_CONNECTIONS,
             )
             self.redis_state_key = config.REDIS_STATE_KEY_PORTFOLIO
             logger.info("RiskManager initialized Redis client for state publishing.")
@@ -293,6 +303,37 @@ class RiskManager:
         logger.info(f"RiskManager initialized for user_id: {self.user_id}.")
         if self._strategy_symbol_adjustment_enabled:
             logger.info("Strategy-Symbol dynamic risk adjustment ENABLED.")
+
+    @asynccontextmanager
+    async def _session(self):
+        """One short-lived session for a single logical operation.
+
+        With a factory: opens and always closes (never pins a connection).
+        Without (tests): yields the long-lived session unchanged.
+        """
+        if self._db_factory is None:
+            yield self.db_session
+        else:
+            async with self._db_factory() as db:
+                yield db
+
+    async def _load_risk_config(self):
+        """Fresh risk config via a short session (never pins a connection).
+
+        Extracted from is_symbol_trading_allowed: that hot path reads the
+        config on every signal, and doing it on the long-lived session pinned
+        one pool connection per controller forever.
+        """
+        if not crud or not self.user_id:
+            return None
+        try:
+            async with self._session() as db:
+                if db is None:
+                    return None
+                return await crud.get_config(db, user_id=self.user_id)
+        except Exception as e:
+            logger.debug(f"Risk config load failed for user {self.user_id}: {e}")
+            return None
 
     def apply_user_settings(self, user_settings: Dict[str, Any]) -> None:
         """Applies fresh user settings in-place without recreating RiskManager."""
@@ -1000,15 +1041,15 @@ class RiskManager:
                     f"[Blacklist:{symbol}] Using cached verdict={_bl_verdict} (age={_bl_now - _bl_ts:.1f}s)."
                 )
                 return _bl_verdict
-        if self.db_session and crud and self.user_id:
+        if crud and self.user_id:
             try:
-                # CRITICAL: Reset the SQLAlchemy session cache before the query.
-                # Without this, the bot will see a cached version of the config,
-                # and blacklist changes via API will not be applied until the bot is restarted.
-                self.db_session.expire_all()
-
-                # Get the config from the DB (now the data is guaranteed to be fresh)
-                config = await crud.get_config(self.db_session, user_id=self.user_id)
+                # Fresh read via short session (per-op, never pins). A new
+                # session is inherently fresher than expire_all() on a stale
+                # long-lived one, so the explicit reset is no longer needed.
+                # NOTE: `config` below is detached after the scope closes;
+                # only loaded COLUMN values (e.g. .risk_management) are safe
+                # to touch - never relationships here.
+                config = await self._load_risk_config()
                 if config and config.risk_management:
                     rm_settings = ensure_dict(config.risk_management)
 
@@ -1363,6 +1404,7 @@ class RiskManager:
         if not should_be_allowed and self._is_trading_allowed:
             logger.critical(f"Trading disabled globally! Reason: {disable_reason}")
             self._is_trading_allowed = False
+            self._last_disable_reason = disable_reason
             # Added check for self.loop_from_controller
             if self.telegram_notifier and self.loop_from_controller:
                 try:
@@ -1385,6 +1427,7 @@ class RiskManager:
                 "Global risk limits are now within acceptable range. Re-enabling trading globally."
             )
             self._is_trading_allowed = True
+            self._last_disable_reason = None
 
     async def assess_signal(
         self,
@@ -1420,12 +1463,32 @@ class RiskManager:
         if mode == "paper":
             try:
                 paper_balances = await self.paper_executor.get_account_balance()
-                usdt_balance_data = (
-                    paper_balances.get("USDT") if paper_balances else None
-                )
-                current_balance_val = (
-                    float(usdt_balance_data["free"]) if usdt_balance_data else 0.0
-                )
+                if not paper_balances:
+                    # The executor returns None when it could not read/create the
+                    # wallet. Treating that as a $0 balance marked the fetch as
+                    # successful and every signal was then rejected with the
+                    # misleading ZERO_BALANCE (and, in the controller, with the
+                    # generic "invalid quantity (None)"). Report the real cause.
+                    logger.error(
+                        f"{log_prefix} Paper wallet balance is UNAVAILABLE for user "
+                        f"{self.user_id} - see the executor error above. Rejecting "
+                        "the signal instead of sizing it against a zero balance."
+                    )
+                    return False, None, 0.0, "PAPER_BALANCE_FETCH_FAILED"
+                usdt_balance_data = paper_balances.get("USDT")
+                if not usdt_balance_data:
+                    logger.error(
+                        f"{log_prefix} Paper wallet has no USDT entry for user "
+                        f"{self.user_id} (assets: {sorted(paper_balances)})."
+                    )
+                    return False, None, 0.0, "PAPER_BALANCE_FETCH_FAILED"
+                current_balance_val = float(usdt_balance_data["free"])
+                if current_balance_val <= 1e-9:
+                    logger.warning(
+                        f"{log_prefix} Paper wallet balance is $0.00 for user "
+                        f"{self.user_id} - cannot size a position."
+                    )
+                    return False, None, 0.0, "PAPER_ZERO_BALANCE"
                 risk_per_trade_base = self.paper_risk_per_trade
                 max_stop_distance_pct_to_use = self.paper_max_stop_distance_pct
                 balance_updated_successfully = True
@@ -1523,9 +1586,27 @@ class RiskManager:
         # 1. Maximum allowable risk per trade in USD (including S/S multiplier)
         target_max_risk_usd = initial_base_risk_usd_planned
         current_risk_multiplier_ss = 1.0  # By default
+        # Hedge legs with a fixed USD notional promise an exact volume
+        # ($20 must stay $20). The adaptive S/S multiplier would inflate
+        # that promise (up to 1.5x), so it is bypassed for hedge-sized
+        # signals — the notional override in hedge_mirror is authoritative.
+        _hedge_details = (
+            getattr(signal, "details", None)
+            if isinstance(getattr(signal, "details", None), dict)
+            else {}
+        )
+        _hedge_size_mode = str(_hedge_details.get("hedge_size_mode") or "").upper()
+        _is_hedge_sized = _hedge_size_mode in (
+            "FIXED_NOTIONAL",
+            "SYNC_STEP",
+        ) or (
+            _hedge_details.get("hedge_notional_usd") is not None
+            and _hedge_details.get("hedge_group_id") is not None
+        )
         if (
             self._strategy_symbol_adjustment_enabled
             and self._strategy_symbol_risk_multipliers
+            and not _is_hedge_sized
         ):
             perf_key = (signal.symbol, signal.strategy_name)
             # defaultdict will create SymbolStrategyPerformanceStats with a default index if the key is missing
@@ -1550,6 +1631,11 @@ class RiskManager:
                 f"{log_prefix} Strategy/Symbol Risk Multiplier: {current_risk_multiplier_ss:.2f} (Index: {perf_stats.current_risk_multiplier_index}). "
                 f"Target Max Risk USD for sizing (after S/S): ${target_max_risk_usd:.2f}"
             )
+        elif _is_hedge_sized and self._strategy_symbol_adjustment_enabled:
+            logger.info(
+                f"{log_prefix} Hedge-sized leg ({_hedge_size_mode or 'FIXED'}): "
+                "S/S risk multiplier bypassed to honor notional_usd."
+            )
 
         if target_max_risk_usd <= 1e-9:
             logger.warning(
@@ -1559,12 +1645,13 @@ class RiskManager:
             return False, None, initial_base_risk_usd_planned, "ZERO_RISK"
 
         # 2. Maximum position nominal in USD
-        # Use a parameter from config (may be specific to the backtester or live trading)
+        # Live trading uses its own cap (MAX_REAL_POSITION_SIZE_PCT_BALANCE);
+        # the backtester cap is only a fallback for contexts without one.
         max_pos_size_pct_cfg = getattr(
             config,
-            "MAX_REAL_POSITION_SIZE_PCT_BALANCE",  # Searching first for real-specific
+            "MAX_REAL_POSITION_SIZE_PCT_BALANCE",
             getattr(config, "BACKTEST_MAX_POSITION_SIZE_PCT_BALANCE", 0.50),
-        )  # Fallback to backtester one
+        )
         max_notional_for_position_usd = current_balance_val * max_pos_size_pct_cfg
         logger.debug(
             f"{log_prefix} Max Position Notional (config {max_pos_size_pct_cfg * 100:.2f}% of balance ${current_balance_val:.2f}): ${max_notional_for_position_usd:.2f}"
@@ -1922,7 +2009,7 @@ class RiskManager:
         return True, final_quantity_float, initial_base_risk_usd_planned, None
 
     async def _load_performance_from_db(self):
-        if not crud or not self.db_session:
+        if not crud or (not self.db_session and self._db_factory is None):
             logger.warning(
                 "CRUD or DB session not available, skipping loading performance state from DB."
             )
@@ -1932,9 +2019,15 @@ class RiskManager:
             logger.info(
                 f"Loading symbol-strategy performance state from DB for user_id: {self.user_id}"
             )
-            performance_records = await crud.get_all_symbol_strategy_performance(
-                db=self.db_session, user_id=self.user_id
-            )
+            # Short session: this read runs often enough that pinning a pool
+            # connection on the long-lived session is what exhausted pools.
+            # Column values are materialized below; detached access is safe.
+            async with self._session() as db:
+                if db is None:
+                    return
+                performance_records = await crud.get_all_symbol_strategy_performance(
+                    db=db, user_id=self.user_id
+                )
 
             count = 0
             for record in performance_records:
@@ -1983,7 +2076,7 @@ class RiskManager:
     async def _save_performance_to_db(
         self, symbol: str, strategy_name: str, stats: SymbolStrategyPerformanceStats
     ):
-        if not crud or not self.db_session:
+        if not crud or (not self.db_session and self._db_factory is None):
             logger.warning(
                 "CRUD or DB session not available, skipping saving performance state to DB."
             )
@@ -2004,11 +2097,18 @@ class RiskManager:
             }
 
             # Call the CRUD function to create or update a record
-            await crud.update_or_create_symbol_strategy_performance(
-                db=self.db_session,
-                user_id=self.user_id,
-                performance_data=performance_data,
-            )
+            async with self._session() as db:
+                if db is None:
+                    return
+                await crud.update_or_create_symbol_strategy_performance(
+                    db=db,
+                    user_id=self.user_id,
+                    performance_data=performance_data,
+                )
+                # Commit here: previously this flush-only write rode the ambient
+                # long-lived session and was durable only if some later write
+                # happened to commit - usually never (save_state is pass).
+                await db.commit()
             logger.debug(
                 f"Saved performance for {symbol}-{strategy_name} to DB for user_id: {self.user_id}"
             )

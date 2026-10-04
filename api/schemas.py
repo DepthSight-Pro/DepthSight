@@ -3025,6 +3025,8 @@ class TelemetryMarketContext(BaseModel):
     adx: Optional[float] = None
     volume_ratio: Optional[float] = None
 
+    model_config = ConfigDict(extra="allow")
+
 
 class TelemetryReportCreate(BaseModel):
     symbol: str
@@ -3291,6 +3293,166 @@ class MiningTradesResponse(BaseModel):
     limit: int
     total_pages: int
     items: List[MiningTradeItem]
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+# --- Trade Mining Analytics Schemas ---
+class MiningEpochAnalyticsItem(BaseModel):
+    epoch_date: date
+    status: str
+    daily_emission: float
+    total_rebate_pool: float
+    total_distributed: float
+    participating_nodes: int
+    processed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningExchangeBreakdownItem(BaseModel):
+    exchange_id: str
+    trade_count: int
+    verified_count: int
+    pending_count: int
+    error_count: int
+    total_volume_usdt: float
+    verified_volume_usdt: float = 0.0
+    estimated_rebate_usdt: float
+    verified_rebate_usdt: float
+    is_new: bool = False
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningNodeBreakdownItem(BaseModel):
+    node_uuid: str
+    name: str
+    trade_count: int
+    verified_count: int
+    error_count: int
+    total_volume_usdt: float
+    total_mined_depth: float
+    last_ping: Optional[datetime] = None
+    is_online: bool = False
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningDailyTrendItem(BaseModel):
+    date: str
+    total_volume: float
+    trade_count: int
+    verified_count: int
+    pending_count: int
+    error_count: int
+    volume_by_exchange: Dict[str, float] = Field(default_factory=dict)
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningEpochTrendItem(BaseModel):
+    epoch_date: str
+    daily_emission: float
+    total_distributed: float
+    participating_nodes: int
+    total_rebate_pool: float
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningAnalyticsSummaryResponse(BaseModel):
+    total_users: int
+    total_nodes: int
+    active_exchanges: List[str]
+    is_mining_enabled: bool
+    total_trades: int
+    verified_count: int
+    pending_count: int
+    error_count: int
+    gated_count: int
+    verification_rate: float
+    total_verified_volume_usdt: float
+    total_distributed_depth: float
+    epochs: List[MiningEpochAnalyticsItem] = Field(default_factory=list)
+    exchange_breakdown: List[MiningExchangeBreakdownItem] = Field(default_factory=list)
+    node_breakdown: List[MiningNodeBreakdownItem] = Field(default_factory=list)
+    daily_trends: List[MiningDailyTrendItem] = Field(default_factory=list)
+    epoch_trends: List[MiningEpochTrendItem] = Field(default_factory=list)
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningAnalyticsTradeItem(BaseModel):
+    id: str
+    symbol: str
+    direction: str
+    entry_price: float
+    exit_price: float
+    pnl_percent: Optional[float] = None
+    trade_duration_sec: Optional[int] = None
+    exit_reason: Optional[str] = None
+    trade_mode: str
+    timeframe: Optional[str] = None
+    max_floating_profit: Optional[float] = None
+    max_floating_loss: Optional[float] = None
+    strategy_blocks: Any = Field(default_factory=list)
+    market_context: Any = Field(default_factory=dict)
+    created_at: datetime
+    node_uuid: Optional[str] = None
+    node_name: Optional[str] = None
+    source_node_uuid: Optional[str] = None
+    exchange_id: Optional[str] = None
+    market_type: Optional[str] = None
+    broker_trade_id: Optional[str] = None
+    close_broker_trade_ids: Any = None
+    entry_broker_trade_ids: Any = None
+    trade_volume_usdt: Optional[float] = None
+    estimated_rebate_usdt: Optional[float] = None
+    score: Optional[float] = None
+    is_verified: bool = False
+    verification_status: str = "PENDING"
+    verified_at: Optional[datetime] = None
+    verified_volume_usdt: Optional[float] = None
+    verification_error: Optional[str] = None
+    is_mining_eligible: bool = False
+    mining_multiplier: float = 1.0
+    reward_tokens: float = 0.0
+    epoch_date: Optional[date] = None
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MiningAnalyticsTradesResponse(BaseModel):
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    items: List[MiningAnalyticsTradeItem]
 
     model_config = ConfigDict(
         alias_generator=to_camel,

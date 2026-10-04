@@ -944,11 +944,11 @@ export default function Strategies() {
 						}`}
 						title={
 							wsLive
-								? "Live push snapshots from engine"
-								: "Socket down — polling every 5s"
+								? t("toolbar.liveTitle", "Live push snapshots from engine")
+								: t("toolbar.pollingTitle", "Socket down — polling every 5s")
 						}
 					>
-						{wsLive ? "live push" : "polling 5s"}
+						{wsLive ? t("toolbar.livePush", "live push") : t("toolbar.polling", "polling 5s")}
 					</span>
 
 					<div className="flex-1" />
@@ -1165,7 +1165,7 @@ export default function Strategies() {
 														dot
 														pulse={isRunning}
 													>
-														{isRunning ? "RUNNING" : s.status || "STOPPED"}
+														{isRunning ? t("card.statusRunning", "RUNNING") : s.status || "STOPPED"}
 													</Badge>
 													{primary && (
 														<Badge
@@ -1246,7 +1246,7 @@ export default function Strategies() {
 										<div className="mt-3 grid grid-cols-3 gap-1.5 rounded-xl border border-white/5 bg-white/[0.02] p-2 text-center">
 											<div>
 												<div className="text-[9.5px] uppercase tracking-wider text-white/35">
-													{t("openPositions", "Positions")}
+													{t("card.positionsLabel", "Positions")}
 												</div>
 												<div className="font-mono text-[11.5px] font-medium text-white">
 													{openPositions}

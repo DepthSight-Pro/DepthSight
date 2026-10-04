@@ -599,6 +599,43 @@ async def _fetch_hedge_lot_specs(exchange: str, symbols: List[str]) -> Dict[str,
                 pass
 
 
+async def _wait_for_command_ack(pubsub, command_id, timeout_seconds):
+    """Wait for a bot-command ack with our command_id (A2 fix).
+
+    Returns (confirmed: bool, detail). Timeout is NOT an error - it means the
+    bot has not applied the command (still booting, wrong shard, or down) and
+    the caller must retry instead of assuming success. CancelledError is never
+    swallowed.
+    """
+    deadline = time.monotonic() + max(1.0, timeout_seconds)
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False, "ack timeout: bot did not confirm in time"
+            try:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=min(1.0, remaining)
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                return False, f"ack channel error: {e}"
+            if not message or message.get("type") != "message":
+                continue
+            try:
+                ack = json.loads(message["data"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if ack.get("command_id") != command_id:
+                continue  # ack for somebody else's command
+            if ack.get("status") == "ok":
+                return True, ack.get("detail")
+            return False, ack.get("detail") or "bot reported an error"
+    except asyncio.CancelledError:
+        raise
+
+
 @strategies_router.post(
     "",
     status_code=status.HTTP_202_ACCEPTED,
@@ -953,7 +990,12 @@ async def start_strategy_instance(
         "api_key_id": target_api_key_id,  # Multi-account support
     }
 
-    command = {"command": "START_STRATEGY", "payload": payload}
+    command_id = uuid.uuid4().hex
+    command = {
+        "command": "START_STRATEGY",
+        "command_id": command_id,
+        "payload": payload,
+    }
 
     # Hedge leg B payload: same strategy/symbols, mirrored role.
     leg_b_instance_id: Optional[str] = None
@@ -966,14 +1008,34 @@ async def start_strategy_instance(
             "config_data": leg_b_config_data,
             "api_key_id": int(leg_b_key.id),
         }
-        leg_b_command = {"command": "START_STRATEGY", "payload": leg_b_payload}
+        leg_b_command = {
+            "command": "START_STRATEGY",
+            "command_id": uuid.uuid4().hex,
+            "payload": leg_b_payload,
+        }
 
     # 5. Publish the command(s) to Redis
 
+    # A2 fix: subscribe to the ack channel BEFORE publishing - an ack that
+    # arrives between publish and subscribe is lost forever (pub/sub backlog).
+    # The endpoint then waits for the bot to confirm it actually applied
+    # START_STRATEGY instead of answering 202 for a strategy that never starts.
+    # Leg B stays fire-and-forget (rare path); only the main command is awaited.
+    confirmed = False
+    ack_detail = None
+    ack_pubsub = None
     try:
+        try:
+            ack_pubsub = redis_client.pubsub()
+            await ack_pubsub.subscribe(bot_config.REDIS_COMMAND_ACK_CHANNEL)
+        except Exception as e_sub:
+            logger.warning(f"Could not subscribe to command ack channel: {e_sub}")
+            ack_pubsub = None
+
         if target_api_key_id:
             activate_cmd = {
                 "command": "ACTIVATE_API_KEY",
+                "command_id": uuid.uuid4().hex,
                 "payload": {
                     "user_id": current_user.id,
                     "api_key_id": target_api_key_id,
@@ -987,12 +1049,13 @@ async def start_strategy_instance(
             bot_config.REDIS_COMMAND_CHANNEL, json.dumps(command)
         )
         logger.info(
-            f"START_STRATEGY command published for config_id {config_id} in mode {mode} (api_key_id: {target_api_key_id})."
+            f"START_STRATEGY command {command_id} published for config_id {config_id} in mode {mode} (api_key_id: {target_api_key_id})."
         )
 
         if leg_b_command is not None and leg_b_instance_id is not None:
             leg_b_activate_cmd = {
                 "command": "ACTIVATE_API_KEY",
+                "command_id": uuid.uuid4().hex,
                 "payload": {
                     "user_id": current_user.id,
                     "api_key_id": int(leg_b_key.id),
@@ -1009,6 +1072,22 @@ async def start_strategy_instance(
                 f"in mode {mode} (api_key_id: {leg_b_key.id}, "
                 f"group: {hedge_group_id})."
             )
+
+        if ack_pubsub is not None:
+            confirmed, ack_detail = await _wait_for_command_ack(
+                ack_pubsub, command_id, bot_config.BOT_COMMAND_ACK_TIMEOUT_SECONDS
+            )
+            if confirmed:
+                logger.info(
+                    f"START_STRATEGY command {command_id} confirmed by the bot."
+                )
+            else:
+                logger.warning(
+                    f"START_STRATEGY command {command_id} NOT confirmed: {ack_detail}. "
+                    "The caller must retry."
+                )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
             f"Failed to publish START_STRATEGY for config {config_id}. Error: {e}",
@@ -1017,12 +1096,23 @@ async def start_strategy_instance(
         raise HTTPException(
             status_code=503, detail="Failed to send start strategy command to the bot."
         )
+    finally:
+        if ack_pubsub is not None:
+            try:
+                await ack_pubsub.unsubscribe(bot_config.REDIS_COMMAND_ACK_CHANNEL)
+                await ack_pubsub.close()
+            except Exception:
+                pass
 
     response_data = {
         "message": f"START_STRATEGY command sent for config {config_id}.",
         "mode": mode,
         "instance_id": instance_id,
+        "command_id": command_id,
+        "confirmed": confirmed,
     }
+    if not confirmed:
+        response_data["ack_detail"] = ack_detail
     if hedge_group_id is not None:
         response_data["hedge_group_id"] = hedge_group_id
         response_data["leg_b_instance_id"] = leg_b_instance_id

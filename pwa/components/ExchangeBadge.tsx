@@ -1,5 +1,4 @@
-// pwa/components/ExchangeBadge.tsx
-import React from "react";
+import React, { useState } from "react";
 
 const normalizeExchangeKey = (raw?: string | null): string => {
 	if (!raw) return "";
@@ -10,15 +9,23 @@ const normalizeExchangeKey = (raw?: string | null): string => {
 		.replace(/_testnet$/, "");
 };
 
+const getBaseUrl = (): string => {
+	const base = import.meta.env.BASE_URL || "/";
+	return base.endsWith("/") ? base : `${base}/`;
+};
+
+const BASE_PATH = getBaseUrl();
+
 const exchangeLogos: Record<string, string> = {
-	binance: "/logos/binance.svg",
-	bybit: "/logos/bybit.svg",
-	okx: "/logos/okx.svg",
-	bitget: "/logos/bitget.svg",
-	gate: "/logos/gate.svg",
-	gateio: "/logos/gate.svg",
-	bingx: "/logos/bingx.svg",
-	weex: "/logos/weex.svg",
+	binance: `${BASE_PATH}logos/binance.svg`,
+	bybit: `${BASE_PATH}logos/bybit.svg`,
+	okx: `${BASE_PATH}logos/okx.svg`,
+	bitget: `${BASE_PATH}logos/bitget.svg`,
+	gate: `${BASE_PATH}logos/gate.svg`,
+	gateio: `${BASE_PATH}logos/gate.svg`,
+	gate_io: `${BASE_PATH}logos/gate.svg`,
+	bingx: `${BASE_PATH}logos/bingx.svg`,
+	weex: `${BASE_PATH}logos/weex.svg`,
 };
 
 const exchangeLabels: Record<string, string> = {
@@ -28,6 +35,7 @@ const exchangeLabels: Record<string, string> = {
 	bitget: "Bitget",
 	gate: "Gate.io",
 	gateio: "Gate.io",
+	gate_io: "Gate.io",
 	bingx: "BingX",
 	weex: "WEEX",
 };
@@ -40,6 +48,7 @@ export const ExchangeBadge: React.FC<{
 	const ex = normalizeExchangeKey(exchange);
 	const logo = ex ? exchangeLogos[ex] : undefined;
 	const label = (ex ? exchangeLabels[ex] : null) || exchange || "?";
+	const [failedLogo, setFailedLogo] = useState<string | null>(null);
 
 	const sizeClasses = {
 		xs: "h-5 w-5 min-w-5 min-h-5",
@@ -55,22 +64,23 @@ export const ExchangeBadge: React.FC<{
 		lg: "h-6 w-6 max-h-6 max-w-6",
 	}[size];
 
+	const showImage = Boolean(logo && failedLogo !== logo);
+
 	return (
 		<span
 			className={`relative inline-grid place-items-center rounded-full bg-white shrink-0 shadow-sm border border-black/10 overflow-hidden select-none leading-none ${sizeClasses} ${className || ""}`}
 			title={label}
 		>
-			{logo ? (
+			{showImage && logo ? (
 				<img
 					src={logo}
 					alt={label}
 					className={`m-auto block object-contain object-center pointer-events-none select-none shrink-0 ${imgSizes}`}
-					onError={(e) => {
-						(e.currentTarget as HTMLElement).style.display = "none";
-					}}
+					onError={() => setFailedLogo(logo)}
+					draggable={false}
 				/>
 			) : (
-				<span className="text-[10px] font-bold text-slate-800">
+				<span className="text-[10px] font-bold text-slate-800 leading-none">
 					{label.slice(0, 2).toUpperCase()}
 				</span>
 			)}

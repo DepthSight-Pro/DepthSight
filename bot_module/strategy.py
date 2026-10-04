@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Set, Type, Tuple, Literal, Callable
 from enum import Enum
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 from collections import defaultdict
 from decimal import Decimal, ROUND_DOWN, ROUND_UP, ROUND_HALF_UP
@@ -5167,6 +5167,53 @@ class BaseStrategy:
             # PARITY FIX: Store signal ATR and other context in details
             final_details["signal_atr"] = atr
             final_details["signal_last_price"] = last_price
+
+            # Market context snapshot at signal creation
+            natr_val = (
+                pair_info.get("natr")
+                or pair_info.get("NATR")
+                or pair_info.get("NATR_14")
+                or pair_info.get("NATR_30")
+            )
+            if natr_val is None and atr and last_price and last_price > 0:
+                try:
+                    natr_val = round((float(atr) / float(last_price)) * 100.0, 4)
+                except Exception:
+                    pass
+            adx_val = (
+                pair_info.get("adx") or pair_info.get("ADX") or pair_info.get("ADX_14")
+            )
+            vol_ratio = (
+                pair_info.get("volume_ratio")
+                or pair_info.get("relative_volume")
+                or pair_info.get("vol_ratio")
+            )
+
+            # Determine trading session at signal time
+            current_hour = datetime.now(timezone.utc).hour
+            if 7 <= current_hour < 16:
+                detected_session = "london"
+            elif 12 <= current_hour < 21:
+                detected_session = "new_york"
+            elif 0 <= current_hour < 9:
+                detected_session = "asia"
+            else:
+                detected_session = "sydney"
+
+            final_details["market_context"] = {
+                "session": detected_session,
+                "natr": natr_val,
+                "adx": adx_val,
+                "volume_ratio": vol_ratio,
+            }
+            if "session" not in final_details:
+                final_details["session"] = detected_session
+            if natr_val is not None and "natr" not in final_details:
+                final_details["natr"] = natr_val
+            if adx_val is not None and "adx" not in final_details:
+                final_details["adx"] = adx_val
+            if vol_ratio is not None and "volume_ratio" not in final_details:
+                final_details["volume_ratio"] = vol_ratio
 
             move_sl_to_be_on_first_tp = action_params.get(
                 "move_sl_to_be", action_params.get("move_sl_to_be_on_first_tp", False)
