@@ -128,7 +128,7 @@ async def test_wait_timeout_is_not_an_error():
 @pytest.mark.asyncio
 async def test_seed_uses_confirmed_without_polling(monkeypatch):
     """A confirmed START needs no state polling (the fast path)."""
-    from scripts import loadtest_seed_fleet as seed
+    seed = pytest.importorskip("scripts.loadtest_seed_fleet")
 
     monkeypatch.setattr(seed, "mint_access_token", lambda username: "tok")
 

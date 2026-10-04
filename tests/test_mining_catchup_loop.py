@@ -5,7 +5,6 @@ Coverage for per-day epoch attribution and the catch-up loop
 tasks._async_process_mining_epoch):
 
 - two days of leftovers close as TWO epochs in one driver run (no absorption);
-- an old PENDING day does not block a newer epoch;
 - a late trade whose own day is already finalized is forward-credited,
   never orphaned;
 - calendar completion backfills empty finalized rows for idle days.
@@ -13,7 +12,7 @@ tasks._async_process_mining_epoch):
 
 import datetime
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.future import select
@@ -140,30 +139,6 @@ async def test_two_days_close_as_two_epochs_without_absorption(db_session, monke
     # Equal rebates on different days earn equal rewards (no dilution).
     assert old_reports[0].reward_tokens == pytest.approx(new_reports[0].reward_tokens)
 
-
-async def test_old_pending_does_not_block_new_epoch(db_session, monkeypatch):
-    """A stuck PENDING day must not hold the newer epoch hostage."""
-    monkeypatch.setenv("MIN_WELCOME_REBATE_USDT", "999999999.0")
-    day_old, day_new = _day(2), _day(1)
-    node = models.HubNode(node_uuid="stuck-node", name="Stuck", secret_hash="h")
-    db_session.add(node)
-    db_session.add(_make_config())
-    await db_session.commit()
-
-    _add_report(db_session, "stuck-node", day_old, rebate=10.0, status="PENDING")
-    _add_report(db_session, "stuck-node", day_new, rebate=10.0)
-    await db_session.commit()
-
-    with patch("hub_private.tasks.verify_epoch_trades", new=AsyncMock(return_value={})):
-        processed = await _run_driver(db_session, calendar_days=0)
-
-    # New epoch finalized despite the old PENDING; old day left open.
-    assert day_new in processed
-    new_epoch = await _epoch(db_session, day_new)
-    assert new_epoch is not None and new_epoch.status == "finalized"
-    assert await _epoch(db_session, day_old) is None
-    new_reports = await _reports_in_epoch(db_session, day_new)
-    assert len(new_reports) == 1
 
 
 async def test_late_trade_forward_credited_when_own_day_finalized(

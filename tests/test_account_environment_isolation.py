@@ -158,13 +158,15 @@ async def test_data_consumer_subscription_isolation(mock_session, mock_data_load
         loop=loop, executor=mock_executor_test, market_data_mode="direct"
     )
 
-    # Mock methods to avoid running real WS
+    # Mock methods to avoid running real WS and history backfill throttling
     consumer_main._get_valid_symbols_from_exchange_info = AsyncMock(
         return_value={"BTCUSDT"}
     )
     consumer_test._get_valid_symbols_from_exchange_info = AsyncMock(
         return_value={"BTCUSDT"}
     )
+    consumer_main._ensure_history_loaded = AsyncMock(return_value=True)
+    consumer_test._ensure_history_loaded = AsyncMock(return_value=True)
 
     with (
         patch("bot_module.data_consumer._global_ws_registry", {}) as registry,

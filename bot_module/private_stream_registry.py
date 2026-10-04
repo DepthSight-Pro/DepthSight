@@ -401,7 +401,8 @@ def should_poll(exchange_id: str, api_key_id: Any, interval_seconds: float) -> b
         if api_key_id is None:
             return True
         now = time.monotonic()
-        if now - _last_poll.get(key, 0.0) < interval_seconds:
+        last = _last_poll.get(key)
+        if last is not None and (now - last) < interval_seconds:
             return False
         _last_poll[key] = now
         return True
