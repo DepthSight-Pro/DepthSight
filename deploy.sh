@@ -38,6 +38,17 @@ spinner() {
     printf "    \b\b\b\b"
 }
 
+# Appends a KEY=VALUE line to .env, guaranteeing the file ends with a newline
+# first. A bare `echo "..." >> .env` glues onto the previous line when it
+# lacks a trailing newline — this once merged CORS_ORIGINS into
+# VITE_HUB_API_URL and broke every Federation Hub call with 404s.
+append_env() {
+    if [ -f .env ] && [ -s .env ] && [ -n "$(tail -c 1 .env)" ]; then
+        printf '\n' >> .env
+    fi
+    echo "$1" >> .env
+}
+
 run_with_progress() {
     local message=$1
     shift
@@ -222,7 +233,7 @@ WS_PROTO="ws"
 sed -i "s|VITE_WS_URL=.*|VITE_WS_URL=$WS_PROTO://$DOMAIN/ws|g" .env
 CORS_VAL="http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:8765,http://127.0.0.1:8765,$PROTOCOL://$DOMAIN"
 sed -i "/CORS_ORIGINS=/d" .env
-echo "CORS_ORIGINS=$CORS_VAL" >> .env
+append_env "CORS_ORIGINS=$CORS_VAL"
 
 # Force Docker internal names and Production settings
 sed -i "s|POSTGRES_HOST=.*|POSTGRES_HOST=postgres|g" .env
@@ -235,20 +246,20 @@ sed -i "/DOMAIN=/d" .env
 sed -i "/ADMIN_EMAIL=/d" .env
 sed -i "/EMAIL_CONFIRMATION_ENABLED=/d" .env
 sed -i "/IS_CENTRAL_HUB=/d" .env
-echo "DOMAIN=$SITE_ADDRESS" >> .env
-echo "ADMIN_EMAIL=$EMAIL" >> .env
-echo "EMAIL_CONFIRMATION_ENABLED=false" >> .env
-echo "IS_CENTRAL_HUB=false" >> .env
+append_env "DOMAIN=$SITE_ADDRESS"
+append_env "ADMIN_EMAIL=$EMAIL"
+append_env "EMAIL_CONFIRMATION_ENABLED=false"
+append_env "IS_CENTRAL_HUB=false"
 if [ -n "$NODE_REFERRER_CODE" ]; then
     sed -i "/NODE_REFERRER_CODE=/d" .env
-    echo "NODE_REFERRER_CODE=$NODE_REFERRER_CODE" >> .env
+    append_env "NODE_REFERRER_CODE=$NODE_REFERRER_CODE"
 fi
 
 # Sync VITE_GOOGLE_CLIENT_ID with GOOGLE_CLIENT_ID for Vite build args
 GC_ID=$(grep "^GOOGLE_CLIENT_ID=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '\r' | xargs)
 if [ -n "$GC_ID" ]; then
     sed -i "/VITE_GOOGLE_CLIENT_ID=/d" .env
-    echo "VITE_GOOGLE_CLIENT_ID=$GC_ID" >> .env
+    append_env "VITE_GOOGLE_CLIENT_ID=$GC_ID"
 fi
 
 # Ensure bind-mounted dirs are writable by the non-root container user (uid 1000)

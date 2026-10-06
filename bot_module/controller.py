@@ -5265,6 +5265,16 @@ class TradingController:
         """Periodically checks and reloads optimized parameters and symbol selection settings."""
         reload_interval = self._config_reload_interval
         logger.info(f"Config reloader task started (Interval: {reload_interval}s).")
+        # Desynchronize fleet-wide DB bursts: controllers started in the same
+        # ramp bunch would otherwise fire their config reloads in lockstep
+        # every interval (observed: pool exhaustion from synchronized
+        # checkouts). A single random initial offset spreads phases
+        # permanently since the interval itself stays constant.
+        try:
+            await asyncio.sleep(random.uniform(0, reload_interval))
+        except asyncio.CancelledError:
+            logger.info("Config reloader task cancelled during initial stagger.")
+            return
         while self._running:
             try:
                 await asyncio.sleep(reload_interval)

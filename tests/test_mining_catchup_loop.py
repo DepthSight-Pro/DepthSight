@@ -12,7 +12,7 @@ tasks._async_process_mining_epoch):
 
 import datetime
 from contextlib import asynccontextmanager
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.future import select
@@ -140,6 +140,30 @@ async def test_two_days_close_as_two_epochs_without_absorption(db_session, monke
     assert old_reports[0].reward_tokens == pytest.approx(new_reports[0].reward_tokens)
 
 
+async def test_old_pending_does_not_block_new_epoch(db_session, monkeypatch):
+    """A stuck PENDING day must not hold the newer epoch hostage."""
+    monkeypatch.setenv("MIN_WELCOME_REBATE_USDT", "999999999.0")
+    day_old, day_new = _day(2), _day(1)
+    node = models.HubNode(node_uuid="stuck-node", name="Stuck", secret_hash="h")
+    db_session.add(node)
+    db_session.add(_make_config())
+    await db_session.commit()
+
+    _add_report(db_session, "stuck-node", day_old, rebate=10.0, status="PENDING")
+    _add_report(db_session, "stuck-node", day_new, rebate=10.0)
+    await db_session.commit()
+
+    with patch("hub_private.tasks.verify_epoch_trades", new=AsyncMock(return_value={})):
+        processed = await _run_driver(db_session, calendar_days=0)
+
+    # New epoch finalized despite the old PENDING; old day left open.
+    assert day_new in processed
+    new_epoch = await _epoch(db_session, day_new)
+    assert new_epoch is not None and new_epoch.status == "finalized"
+    assert await _epoch(db_session, day_old) is None
+    new_reports = await _reports_in_epoch(db_session, day_new)
+    assert len(new_reports) == 1
+
 
 async def test_late_trade_forward_credited_when_own_day_finalized(
     db_session, monkeypatch
@@ -185,3 +209,45 @@ async def test_calendar_backfills_empty_row(db_session, monkeypatch):
         epoch = await _epoch(db_session, day)
         assert epoch is not None and epoch.status == "finalized"
         assert epoch.total_distributed == pytest.approx(0.0)
+
+
+async def test_terminal_status_ghosts_do_not_starve_new_dates(db_session, monkeypatch):
+    """SKIPPED/REJECTED rows (epoch NULL forever) must not consume the
+    per-run cap with their dates — otherwise genuinely open dates starve."""
+    monkeypatch.setenv("MIN_WELCOME_REBATE_USDT", "999999999.0")
+    day_new = _day(1)
+    ghost_day = _day(10)
+    node = models.HubNode(node_uuid="ghost-node", name="Ghost", secret_hash="h")
+    db_session.add(node)
+    db_session.add(_make_config())
+    await db_session.commit()
+
+    # Terminal rows: never attributable, must be invisible to the driver.
+    _add_report(
+        db_session,
+        "ghost-node",
+        ghost_day,
+        rebate=10.0,
+        status="SKIPPED",
+        eligible=False,
+        broker_id="ghost-skipped-1",
+    )
+    _add_report(
+        db_session,
+        "ghost-node",
+        ghost_day,
+        rebate=10.0,
+        status="REJECTED",
+        eligible=False,
+        broker_id="ghost-rejected-1",
+    )
+    # Live report for yesterday.
+    _add_report(db_session, "ghost-node", day_new, rebate=10.0)
+    await db_session.commit()
+
+    processed = await _run_driver(db_session, calendar_days=0)
+
+    assert ghost_day not in processed
+    assert day_new in processed
+    new_epoch = await _epoch(db_session, day_new)
+    assert new_epoch is not None and new_epoch.status == "finalized"

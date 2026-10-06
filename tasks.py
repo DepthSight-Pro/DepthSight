@@ -3406,9 +3406,15 @@ async def _async_process_open_epochs(
     candidate_dates: set = set()
     async with get_isolated_worker_session() as session:
         try:
+            # Only live statuses: SKIPPED/REJECTED rows keep epoch NULL
+            # forever and would otherwise anchor their dates in every run,
+            # starving genuinely open dates under the per-run cap.
             res = await session.execute(
                 _select(_models.HubTelemetryReport.created_at).where(
                     _models.HubTelemetryReport.epoch_date.is_(None),
+                    _models.HubTelemetryReport.verification_status.in_(
+                        ["PENDING", "VERIFIED"]
+                    ),
                     _models.HubTelemetryReport.created_at >= window_start_dt,
                     _models.HubTelemetryReport.created_at < today_start_dt,
                 )

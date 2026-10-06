@@ -3144,3 +3144,46 @@ async def test_streamless_poll_tick_skips_sibling_polled_key(controller, monkeyp
     reg.reset_registry()
     await controller._streamless_poll_tick(time.monotonic())
     assert poll_once.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_config_reloader_staggers_startup(controller, monkeypatch):
+    """Ramp-bunched controllers must not fire reloads in lockstep.
+
+    The first reload cycle waits random.uniform(0, interval); without it,
+    controllers started in the same ramp bunch hit the DB simultaneously
+    every 60 s (observed pool exhaustion from synchronized checkouts).
+    """
+    from bot_module import config as _controller_config
+
+    seen = []
+
+    def fake_uniform(a, b):
+        seen.append((a, b))
+        return 0.0
+
+    monkeypatch.setattr("random.uniform", fake_uniform)
+    monkeypatch.setattr(
+        _controller_config, "load_optimized_params", MagicMock(return_value=None)
+    )
+    controller._config_reload_interval = 0.05
+    controller.load_symbol_selection_config = AsyncMock(return_value=False)
+    controller._apply_symbol_selection_config_change = AsyncMock()
+    controller.reload_user_app_config = AsyncMock()
+    controller._running = True
+
+    task = asyncio.create_task(controller._run_config_reloader())
+    try:
+        for _ in range(200):
+            if controller.reload_user_app_config.await_count >= 1:
+                break
+            await asyncio.sleep(0.01)
+        assert controller.reload_user_app_config.await_count >= 1
+        assert seen and seen[0] == (0, controller._config_reload_interval)
+    finally:
+        controller._running = False
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
