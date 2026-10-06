@@ -1530,14 +1530,14 @@ const MiningHub: React.FC = () => {
                       </Label>
                       <div className="flex items-center gap-2 bg-white/[0.03] border border-white/10 rounded-xl p-1.5 pl-4 max-w-full overflow-hidden focus-within:border-cyan-500/50 transition-colors">
                         <span className="font-mono text-[11px] truncate min-w-0 flex-1 text-emerald-400 font-medium select-all">
-                          {`curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | NODE_REFERRER_CODE=${status.nodeReferralCode} sudo bash`}
+                          {`curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | sudo bash -s -- --referrer ${status.nodeReferralCode}`}
                         </span>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 hover:bg-white/10 hover:text-cyan-400 rounded-lg shrink-0 transition-colors"
                           onClick={() => {
-                            const cmd = `curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | NODE_REFERRER_CODE=${status.nodeReferralCode} sudo bash`;
+                            const cmd = `curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | sudo bash -s -- --referrer ${status.nodeReferralCode}`;
                             navigator.clipboard.writeText(cmd);
                             toast({ description: t("commandCopied", "Deploy command copied to clipboard!") });
                           }}

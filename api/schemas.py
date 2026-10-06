@@ -3242,6 +3242,8 @@ class MiningReferralItem(BaseModel):
     referral_bonus_earned: float
     has_welcome_bonus: bool
     status: str
+    node_uuid: Optional[str] = None
+    node_linked: bool = False
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -3650,5 +3652,22 @@ class PromoCampaignCreateOrUpdate(BaseModel):
     is_active: bool = False
     quests: List[Dict[str, Any]]
     ui_config: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoNodeRelinkRequest(BaseModel):
+    node_uuid: str
+    referrer_code: str
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoNodeRelinkResponse(BaseModel):
+    success: bool
+    message: str
+    node_uuid: str
+    referrer_node_uuid: str
+    previous_referrer_node_uuid: Optional[str] = None
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)

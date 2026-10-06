@@ -23,6 +23,40 @@ echo "/_____/\___/ .___/\__/_/ /_/____/_/\__, /_/ /_/\__/  "
 echo "          /_/                     /____/             "
 echo -e "------------------------------------------------${NC}"
 
+# 0. CLI arguments.
+# NOTE: `VAR=... sudo bash` does NOT deliver env vars — sudo strips them by
+# default (env_reset). CLI flags always survive sudo, so the node referrer
+# code is accepted both ways (env still works with `sudo -E` or root shell):
+#   curl ... | sudo bash -s -- --referrer DSN-REF-XXXX-XXXX
+CLI_REFERRER_CODE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --referrer|--referral|--node-referrer)
+            shift
+            if [ $# -gt 0 ]; then
+                CLI_REFERRER_CODE="$1"
+                shift
+            fi
+            ;;
+        --referrer=*|--referral=*|--node-referrer=*)
+            CLI_REFERRER_CODE="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+if [ -z "${NODE_REFERRER_CODE:-}" ] && [ -n "$CLI_REFERRER_CODE" ]; then
+    NODE_REFERRER_CODE="$CLI_REFERRER_CODE"
+fi
+# Normalize once (CRLF/whitespace) no matter the source (env, flag, prompt).
+NODE_REFERRER_CODE="$(echo "${NODE_REFERRER_CODE:-}" | tr -d '\r' | xargs)"
+if [ -n "$NODE_REFERRER_CODE" ]; then
+    echo -e "${GREEN}[+] Using node referrer code: $NODE_REFERRER_CODE (prompt skipped)${NC}"
+fi
+# --- end CLI arguments ---
+
 # UI Helpers
 spinner() {
     local pid=$1

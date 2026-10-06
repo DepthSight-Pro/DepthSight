@@ -128,6 +128,12 @@ Deploy a fully configured instance on any Ubuntu 22.04+ server with a single com
 curl -sL "https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh" | sudo bash
 ```
 
+To attach the node to a referrer right away (skips the interactive prompt — note that `VAR=... sudo bash` does not survive `sudo`, so pass it as a flag):
+
+```bash
+curl -sL "https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh" | sudo bash -s -- --referrer DSN-REF-XXXX-XXXX
+```
+
 The interactive installer will ask for your domain (or default to `<IP>.sslip.io` with auto-SSL via Caddy), and optionally enable Bitcart crypto billing.
 
 ### Updating

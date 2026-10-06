@@ -27,6 +27,7 @@ from .database import get_db
 from . import schemas, crud, models
 from .depthsight_api import limiter, get_limit_value, APP_VERSION
 from .plans import plans_config
+from .audit_logger import audit_logger, AuditEventType, get_client_ip as audit_client_ip
 
 import hmac
 
@@ -2373,6 +2374,15 @@ async def get_mining_referrals_impl(
                     referral_bonus_earned=bonus,
                     has_welcome_bonus=has_welcome,
                     status="active" if is_active else "idle",
+                    node_uuid=u_hub_node.node_uuid if u_hub_node else None,
+                    # Mining rewards flow ONLY through the node-level link.
+                    # A user-level invite without this link earns nothing —
+                    # surface it so "listed but not counting" is visible.
+                    node_linked=bool(
+                        u_hub_node
+                        and u_hub_node.referrer_node_uuid
+                        and u_hub_node.referrer_node_uuid in possible_node_uuids
+                    ),
                 )
             )
 
@@ -2426,6 +2436,11 @@ async def get_mining_referrals_impl(
                     referral_bonus_earned=bonus,
                     has_welcome_bonus=r_node.has_welcome_bonus,
                     status="active" if is_active else "idle",
+                    node_uuid=r_node.node_uuid,
+                    node_linked=bool(
+                        r_node.referrer_node_uuid
+                        and r_node.referrer_node_uuid in possible_node_uuids
+                    ),
                 )
             )
 
@@ -4978,8 +4993,9 @@ async def get_promo_status(
     central_total, central_verified = await _sum_volumes(central_uuids)
     physical_total, physical_verified = await _sum_volumes(physical_uuids)
 
-    # Quest 2 activity: verified trade on a physical node in the last 7 days
-    # (same verified set the claim enforces — no PENDING optimism here).
+    # Quest 2 activity: ANY non-rejected trade on a physical node in the last
+    # 7 days proves the server is live and mining. Broker verification gates
+    # the VOLUME threshold separately — activity must not wait for it.
     recent_trade_exists = False
     if physical_uuids:
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
@@ -4988,12 +5004,7 @@ async def get_promo_status(
             .where(
                 models.HubTelemetryReport.node_uuid.in_(physical_uuids),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
-                (
-                    models.HubTelemetryReport.verification_status.in_(
-                        ["VERIFIED", "ACCEPTED", "SKIPPED"]
-                    )
-                    | (models.HubTelemetryReport.is_verified == True)  # noqa: E712
-                ),
+                models.HubTelemetryReport.verification_status != "REJECTED",
                 models.HubTelemetryReport.created_at >= seven_days_ago,
             )
             .limit(1)
@@ -5402,7 +5413,9 @@ async def claim_promo_quest(
 
     if payload.quest_type == "node_runner":
         # Physical presence + age already verified above; here only the
-        # 7-day verified activity on physical nodes remains.
+        # 7-day activity on physical nodes remains. Any non-rejected trade
+        # counts (liveness proof); broker verification gates the volume
+        # threshold separately with its own message.
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
         trade_stmt = (
@@ -5410,12 +5423,7 @@ async def claim_promo_quest(
             .where(
                 models.HubTelemetryReport.node_uuid.in_(physical_uuids),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
-                (
-                    models.HubTelemetryReport.verification_status.in_(
-                        ["VERIFIED", "ACCEPTED", "SKIPPED"]
-                    )
-                    | (models.HubTelemetryReport.is_verified == True)  # noqa: E712
-                ),
+                models.HubTelemetryReport.verification_status != "REJECTED",
                 models.HubTelemetryReport.created_at >= seven_days_ago,
             )
             .limit(1)
@@ -5424,7 +5432,7 @@ async def claim_promo_quest(
         if not trade_res.scalars().first():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Active trade mining requirement not met: no verified trades in the last 7 days.",
+                detail="Active trade mining requirement not met: no trades in the last 7 days.",
             )
 
     # Anti-fraud compound check (per quest_type): any of the user's UIDs
@@ -5611,3 +5619,120 @@ async def create_or_update_promo_campaign_admin(
     await db.commit()
     await db.refresh(campaign)
     return campaign
+
+
+@router.post(
+    "/promo/admin/relink-node",
+    response_model=schemas.PromoNodeRelinkResponse,
+)
+async def relink_promo_node_admin(
+    payload: schemas.PromoNodeRelinkRequest,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: (re)bind a HubNode to a referrer, overriding the one-time rule.
+
+    Needed when the referral was attached retroactively (heartbeat pings only
+    carry the code for their own physical identity, never for the volume
+    wallet node) or was bound to the wrong referrer. Every override is
+    audit-logged. Past finalized epochs are NOT rewritten; the live estimate
+    and future epochs pick the new link up immediately.
+
+    Strictly restricted to Central Federation Hub (IS_CENTRAL_HUB=true).
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Node referral links can only be managed on the Central Federation Hub.",
+        )
+    await _verify_admin_access_async(authorization, db)
+
+    admin_label = "hub_admin_key"
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from .auth import get_current_user_from_token
+
+            admin_user = await get_current_user_from_token(
+                authorization.split(" ")[1], db
+            )
+            if admin_user:
+                admin_label = getattr(admin_user, "username", None) or str(
+                    getattr(admin_user, "id", "admin")
+                )
+        except Exception:
+            pass
+
+    node_stmt = select(models.HubNode).where(
+        models.HubNode.node_uuid == payload.node_uuid
+    )
+    node = (await db.execute(node_stmt)).scalars().first()
+    if not node:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Node '{payload.node_uuid}' not found.",
+        )
+
+    target_uuid = await _resolve_referrer_node(db, payload.referrer_code)
+    if not target_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Referrer code '{payload.referrer_code}' does not resolve to "
+                "any node or user. The link was not changed."
+            ),
+        )
+    if target_uuid == node.node_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A node cannot refer itself.",
+        )
+    if await crud.referrer_link_creates_cycle(db, node.node_uuid, target_uuid):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Referral cycle detected: this link would close a referral ring.",
+        )
+
+    previous = node.referrer_node_uuid
+    if previous == target_uuid:
+        return schemas.PromoNodeRelinkResponse(
+            success=True,
+            message="Node is already linked to this referrer. No changes made.",
+            node_uuid=node.node_uuid,
+            referrer_node_uuid=target_uuid,
+            previous_referrer_node_uuid=previous,
+        )
+
+    node.referrer_node_uuid = target_uuid
+    await db.commit()
+
+    try:
+        audit_logger.log_event(
+            event_type=AuditEventType.NODE_REFERRER_RELINKED,
+            username=admin_label,
+            ip_address=audit_client_ip(request),
+            success=True,
+            details={
+                "node_uuid": node.node_uuid,
+                "referrer_code": payload.referrer_code,
+                "previous_referrer_node_uuid": previous,
+                "new_referrer_node_uuid": target_uuid,
+            },
+            severity="WARNING",
+        )
+    except Exception as audit_err:
+        logger.debug(f"Failed to write relink audit entry: {audit_err}")
+
+    return schemas.PromoNodeRelinkResponse(
+        success=True,
+        message=(
+            "Node referral link updated. Live estimates and future epochs "
+            "use the new link immediately; past finalized epochs are unchanged."
+            if previous
+            else "Node linked to referrer. Live estimates and future epochs "
+            "use the new link immediately."
+        ),
+        node_uuid=node.node_uuid,
+        referrer_node_uuid=target_uuid,
+        previous_referrer_node_uuid=previous,
+    )

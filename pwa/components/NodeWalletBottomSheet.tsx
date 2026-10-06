@@ -66,6 +66,21 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
     walletConfigured: boolean;
   }>({ walletConfigured: false });
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  // Referral code bound to the wallet node at verify time (same sources as
+  // the web MiningHub referral field).
+  const [referrerCode, setReferrerCode] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get("ref") ||
+      params.get("ref_code") ||
+      params.get("referrer_code") ||
+      localStorage.getItem("ref_code") ||
+      localStorage.getItem("referrer_code") ||
+      localStorage.getItem("ref") ||
+      ""
+    );
+  });
 
   const fetchStatus = () => {
     setIsLoadingStatus(true);
@@ -151,8 +166,17 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
         params: [message, address],
       })) as string;
 
-      // 4. Verify signature & bind node
-      await api.verifyWalletSignature(address, signature, nonce, message);
+      // 4. Verify signature & bind node (with referral code so the wallet
+      // node is linked to the inviter from the start).
+      const cleanRef = referrerCode.trim() || undefined;
+      if (cleanRef) {
+        try {
+          localStorage.setItem("referrer_code", cleanRef);
+        } catch {
+          /* storage unavailable - non-fatal */
+        }
+      }
+      await api.verifyWalletSignature(address, signature, nonce, message, cleanRef);
 
       onWalletActivated();
       fetchStatus();
@@ -317,7 +341,24 @@ export const NodeWalletBottomSheet: React.FC<NodeWalletBottomSheetProps> = ({
               </div>
             </div>
           ) : (
-            <div className="pt-2">
+            <div className="pt-2 space-y-3">
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-[hsl(var(--muted-foreground))] uppercase tracking-wider block">
+                  {t("mining.referrerCodeLabel", "Referral code (optional)")}
+                </span>
+                <input
+                  value={referrerCode}
+                  onChange={(e) => setReferrerCode(e.target.value)}
+                  placeholder={t("mining.referrerCodePlaceholder", "DSN-REF-XXXX-XXXX")}
+                  className="w-full rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2.5 font-mono text-xs outline-none"
+                />
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))] leading-snug">
+                  {t(
+                    "mining.referrerCodeHint",
+                    "Binds your node to the inviter so referral mining rewards flow. Can only be set at wallet bind time."
+                  )}
+                </p>
+              </div>
               <button
                 onClick={handleConnectWallet}
                 disabled={isConnecting}

@@ -683,11 +683,11 @@ const MiningScreen: React.FC = () => {
               </span>
               <div className="flex items-center justify-between gap-2 rounded-lg bg-[hsl(var(--background))] border border-[hsl(var(--border))] p-2 pl-3 overflow-hidden max-w-full">
                 <span className="font-mono text-[11px] text-emerald-500 truncate min-w-0 flex-1">
-                  {`curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | NODE_REFERRER_CODE=${miningStatus.nodeReferralCode} sudo bash`}
+                  {`curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | sudo bash -s -- --referrer ${miningStatus.nodeReferralCode}`}
                 </span>
                 <button
                   onClick={() => {
-                    const cmd = `curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | NODE_REFERRER_CODE=${miningStatus.nodeReferralCode} sudo bash`;
+                    const cmd = `curl -sL https://raw.githubusercontent.com/DepthSight-Pro/DepthSight/main/deploy.sh | sudo bash -s -- --referrer ${miningStatus.nodeReferralCode}`;
                     navigator.clipboard.writeText(cmd);
                     setCopiedLink(true);
                     setTimeout(() => setCopiedLink(false), 2000);

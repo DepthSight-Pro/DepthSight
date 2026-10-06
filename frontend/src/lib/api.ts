@@ -2967,6 +2967,7 @@ export interface WalletVerifyPayload {
 	signature: string;
 	nonce: string;
 	message?: string;
+	referrer_code?: string;
 }
 
 export interface WalletVerifyResponse {

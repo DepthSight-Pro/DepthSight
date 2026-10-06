@@ -859,11 +859,12 @@ export const api = {
 		address: string,
 		signature: string,
 		nonce: string,
-		message?: string
+		message?: string,
+		referrerCode?: string
 	): Promise<{ walletAddress: string; nodeUuid: string; status: string }> =>
 		apiFetch<{ walletAddress: string; nodeUuid: string; status: string }>("/node/wallet/verify", {
 			method: "POST",
-			body: JSON.stringify({ address, signature, nonce, message }),
+			body: JSON.stringify({ address, signature, nonce, message, referrer_code: referrerCode || undefined }),
 		}),
 	getWalletStatus: (): Promise<{ walletAddress?: string; nodeUuid?: string; walletConfigured: boolean }> =>
 		apiFetch<{ walletAddress?: string; nodeUuid?: string; walletConfigured: boolean }>("/node/wallet/status"),

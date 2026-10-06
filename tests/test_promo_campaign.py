@@ -997,3 +997,309 @@ async def test_unverified_pending_volume_cannot_be_claimed(
     )
     assert res_claim_success.status_code == 200
     assert res_claim_success.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_promo_admin_relink_node(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    promo_admin_user: models.User,
+    free_user: models.User,
+    monkeypatch,
+):
+    """Admin relink binds an unlinked volume node to a referrer, is
+    idempotent, and rejects unknown/self/cycle targets + non-admins."""
+    admin_client: AsyncClient = await authenticated_client_factory(promo_admin_user)
+    user_client: AsyncClient = await authenticated_client_factory(free_user)
+
+    inviter = models.HubNode(
+        node_uuid="relink-inviter-node",
+        name="RelinkInviter",
+        secret_hash="secret",
+        node_referral_code="DSN-REF-RELINK-01",
+        total_mined=0.0,
+    )
+    volume_node = models.HubNode(
+        node_uuid="relink-volume-node",
+        name="RelinkVolume",
+        secret_hash="secret",
+        bitget_uid="uid_relink",
+        wallet_address="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        node_referral_code="DSN-REF-VOL-01",
+        total_mined=0.0,
+    )
+    db_session.add_all([inviter, volume_node])
+    await db_session.commit()
+
+    # Non-central hub rejected
+    monkeypatch.setenv("IS_CENTRAL_HUB", "false")
+    res_hub = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-RELINK-01"},
+    )
+    assert res_hub.status_code == 403
+    monkeypatch.setenv("IS_CENTRAL_HUB", "true")
+
+    # Non-admin rejected
+    res_user = await user_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-RELINK-01"},
+    )
+    assert res_user.status_code == 403
+
+    # Unknown node -> 404
+    res_404 = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "no-such-node", "referrer_code": "DSN-REF-RELINK-01"},
+    )
+    assert res_404.status_code == 404
+
+    # Unknown code -> 400, link unchanged
+    res_bad_code = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-NOPE-00"},
+    )
+    assert res_bad_code.status_code == 400
+
+    # Self link -> 400 (node pointing at its own code)
+    db_session.add(
+        models.HubNode(
+            node_uuid="relink-self-node",
+            name="RelinkSelf",
+            secret_hash="secret",
+            node_referral_code="DSN-REF-SELF-01",
+            total_mined=0.0,
+        )
+    )
+    await db_session.commit()
+    res_self2 = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-self-node", "referrer_code": "DSN-REF-SELF-01"},
+    )
+    assert res_self2.status_code == 400
+
+    # Success: unlinked volume node -> inviter, previous None
+    res_ok = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-RELINK-01"},
+    )
+    assert res_ok.status_code == 200
+    assert res_ok.json()["referrerNodeUuid"] == "relink-inviter-node"
+    assert res_ok.json()["previousReferrerNodeUuid"] is None
+
+    db_session.expire_all()
+    linked = (
+        (
+            await db_session.execute(
+                select(models.HubNode).where(
+                    models.HubNode.node_uuid == "relink-volume-node"
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert linked.referrer_node_uuid == "relink-inviter-node"
+
+    # Idempotent repeat
+    res_repeat = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-RELINK-01"},
+    )
+    assert res_repeat.status_code == 200
+    assert "already linked" in res_repeat.json()["message"].lower()
+
+    # Admin override: relink to a different referrer records previous link
+    db_session.add(
+        models.HubNode(
+            node_uuid="relink-third-node",
+            name="RelinkThird",
+            secret_hash="secret",
+            node_referral_code="DSN-REF-THIRD-01",
+            total_mined=0.0,
+        )
+    )
+    await db_session.commit()
+    res_override = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-THIRD-01"},
+    )
+    assert res_override.status_code == 200
+    assert res_override.json()["referrerNodeUuid"] == "relink-third-node"
+    assert res_override.json()["previousReferrerNodeUuid"] == "relink-inviter-node"
+
+    # Cycle: volume -> third exists, so third -> volume must fail.
+    # Re-link volume back to inviter first to set up volume -> inviter.
+    res_back = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-volume-node", "referrer_code": "DSN-REF-RELINK-01"},
+    )
+    assert res_back.status_code == 200
+    res_cycle = await admin_client.post(
+        "/api/v1/hub/promo/admin/relink-node",
+        json={"node_uuid": "relink-inviter-node", "referrer_code": "DSN-REF-VOL-01"},
+    )
+    assert res_cycle.status_code == 400
+    assert "cycle" in res_cycle.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_promo_referrals_node_linked_flag(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+):
+    """Referrals expose nodeUuid + nodeLinked: True only when the referral's
+    node-level link points at the inviter (user-level invite alone = False)."""
+    inviter = models.User(
+        username="ref_inviter",
+        email="ref_inviter@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-INV-001",
+    )
+    linked_user = models.User(
+        username="ref_linked",
+        email="ref_linked@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-LINKED-001",
+        referred_by_user_id=None,
+    )
+    unlinked_user = models.User(
+        username="ref_unlinked",
+        email="ref_unlinked@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-UNLINKED-001",
+    )
+    db_session.add_all([inviter, linked_user, unlinked_user])
+    await db_session.commit()
+    await db_session.refresh(inviter)
+    await db_session.refresh(linked_user)
+    await db_session.refresh(unlinked_user)
+    linked_user.referred_by_user_id = inviter.id
+    unlinked_user.referred_by_user_id = inviter.id
+
+    inviter_node = models.HubNode(
+        node_uuid="ref-inviter-node",
+        name="RefInviter",
+        secret_hash="secret",
+        node_referral_code="REF-INV-001",
+        total_mined=0.0,
+    )
+    # Linked referral: node-level link points at inviter's node
+    linked_node = models.HubNode(
+        node_uuid="ref-linked-node",
+        name="RefLinked",
+        secret_hash="secret",
+        node_referral_code="REF-LINKED-001",
+        referrer_node_uuid="ref-inviter-node",
+        total_mined=0.0,
+    )
+    # Unlinked referral: user-level invite only, node link missing
+    unlinked_node = models.HubNode(
+        node_uuid="ref-unlinked-node",
+        name="RefUnlinked",
+        secret_hash="secret",
+        node_referral_code="REF-UNLINKED-001",
+        total_mined=0.0,
+    )
+    db_session.add_all([inviter_node, linked_node, unlinked_node])
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(inviter)
+    res = await client.get("/api/v1/hub/mining/referrals")
+    assert res.status_code == 200
+    by_name = {r["name"]: r for r in res.json()["referrals"]}
+    assert by_name["ref_linked"]["nodeUuid"] == "ref-linked-node"
+    assert by_name["ref_linked"]["nodeLinked"] is True
+    assert by_name["ref_unlinked"]["nodeUuid"] == "ref-unlinked-node"
+    assert by_name["ref_unlinked"]["nodeLinked"] is False
+
+
+@pytest.mark.asyncio
+async def test_promo_pending_trade_counts_as_activity_not_volume(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """A PENDING trade on an owned physical node sets hasActiveMining (liveness)
+    but cannot satisfy the verified volume threshold (value gate)."""
+    wallet = "0xdddddddddddddddddddddddddddddddddddddddd"
+    user = models.User(
+        username="promo_pending_activity",
+        email="promo_pending_activity@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-PENDING-ACT",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    sample_campaign.admin_only = False
+    await db_session.commit()
+
+    db_session.add(
+        models.ApiKey(
+            user_id=user.id,
+            name="Pending Bitget Key",
+            encrypted_api_key="enc_key",
+            encrypted_api_secret="enc_secret",
+            key_prefix="bg...dddd",
+            exchange="bitget",
+            is_active=True,
+        )
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        models.HubNode(
+            node_uuid="pending-physical-node",
+            name="PendingPhysical",
+            secret_hash="secret",
+            bitget_uid="uid_pending_act",
+            wallet_address=wallet,
+            node_referral_code="REF-PENDING-ACT",
+            ip_address="198.51.100.88",
+            last_ping=now,
+            created_at=now - timedelta(days=20),
+            total_mined=0.0,
+        )
+    )
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=60000.0,
+            exit_price=61200.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="pending-physical-node",
+            verification_status="PENDING",
+            is_verified=False,
+            created_at=now - timedelta(days=1),
+        )
+    )
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(user)
+    res = await client.get("/api/v1/hub/promo/status")
+    assert res.status_code == 200
+    quest = next(q for q in res.json()["quests"] if q["questType"] == "node_runner")
+    assert quest["requirements"]["totalVolume"] == 1500.0
+    assert quest["requirements"]["verifiedVolume"] == 0.0
+    assert quest["requirements"]["isVolumeVerifying"] is True
+    assert quest["requirements"]["hasActiveMining"] is True
+    assert quest["allRequirementsMet"] is False
+
+    res_claim = await client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "node_runner"},
+    )
+    assert res_claim.status_code == 400
+    assert "broker verification" in res_claim.json()["detail"].lower()

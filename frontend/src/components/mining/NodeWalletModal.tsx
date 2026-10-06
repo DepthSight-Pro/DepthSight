@@ -82,6 +82,23 @@ export const NodeWalletModal: React.FC<NodeWalletModalProps> = ({
   const isWalletConfigured = walletStatus?.walletConfigured;
   const currentAddress = walletStatus?.walletAddress;
 
+  // Referral code is bound to the wallet node at verify time (backend binds
+  // the hub node referrer on registration). Prefilled from invite link /
+  // previous input, same sources as the MiningHub referral field.
+  const [referrerCode, setReferrerCode] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get("ref") ||
+      params.get("ref_code") ||
+      params.get("referrer_code") ||
+      localStorage.getItem("ref_code") ||
+      localStorage.getItem("referrer_code") ||
+      localStorage.getItem("ref") ||
+      ""
+    );
+  });
+
   const handleConnectWallet = async () => {
     const ethereum = getEthereumProvider();
     if (!ethereum) {
@@ -119,12 +136,22 @@ export const NodeWalletModal: React.FC<NodeWalletModalProps> = ({
         params: [message, address],
       })) as string;
 
-      // 4. Verify signature on backend & bind identity
+      // 4. Verify signature on backend & bind identity (with referral code
+      // so the wallet node is linked to the inviter from the start).
+      const cleanRef = referrerCode.trim() || undefined;
+      if (cleanRef) {
+        try {
+          localStorage.setItem("referrer_code", cleanRef);
+        } catch {
+          /* storage unavailable - non-fatal */
+        }
+      }
       await verifyWalletMutation.mutateAsync({
         address,
         signature,
         nonce,
         message,
+        referrer_code: cleanRef,
       });
 
       toast.success(
@@ -283,6 +310,30 @@ export const NodeWalletModal: React.FC<NodeWalletModalProps> = ({
             </div>
           ) : (
             <div className="pt-2 space-y-3">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="wallet-referrer-code"
+                  className="text-[11px] font-semibold text-white/50 uppercase tracking-wider"
+                >
+                  {t("referrerCodeLabel", "Referral code (optional)")}
+                </label>
+                <input
+                  id="wallet-referrer-code"
+                  value={referrerCode}
+                  onChange={(e) => setReferrerCode(e.target.value)}
+                  placeholder={t(
+                    "referrerCodePlaceholder",
+                    "DSN-REF-XXXX-XXXX"
+                  )}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 font-mono text-xs text-white placeholder:text-white/25 outline-none focus:border-cyan-500/50 transition-colors"
+                />
+                <p className="text-[10px] text-white/35 leading-snug">
+                  {t(
+                    "referrerCodeHint",
+                    "Binds your node to the inviter so referral mining rewards flow. Can only be set at wallet bind time."
+                  )}
+                </p>
+              </div>
               <Button
                 onClick={handleConnectWallet}
                 disabled={isConnecting}
