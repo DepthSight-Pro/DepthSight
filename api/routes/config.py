@@ -27,6 +27,13 @@ from ..federation import get_federation_hub_url
 from ..redis_client import get_redis_client
 from ..plans import plans_config
 from ..gamification import grant_achievement
+from bot_module.node_identity import (
+    collect_wallet_addresses,
+    find_identity_pair,
+    iter_identity_sections,
+    primary_mining_node_uuid,
+    primary_wallet_address,
+)
 
 try:
     from bot_module import config as bot_config
@@ -1624,13 +1631,7 @@ async def format_mining_status_response(
         config_model = await crud.get_config_model(db, current_user.id)
         if config_model:
             c_settings = dict(config_model.exchange_settings or {})
-            wallet_node_uuid = (
-                (c_settings.get("bybit") or {}).get("mining_node_uuid")
-                or (c_settings.get("okx") or {}).get("mining_node_uuid")
-                or (c_settings.get("weex") or {}).get("mining_node_uuid")
-                or (c_settings.get("binance") or {}).get("mining_node_uuid")
-                or c_settings.get("mining_node_uuid")
-            )
+            wallet_node_uuid = primary_mining_node_uuid(c_settings)
         target_node = wallet_node_uuid
     else:
         target_node = node_uuid
@@ -1641,13 +1642,7 @@ async def format_mining_status_response(
     config_model = await crud.get_config_model(db, current_user.id)
     if config_model:
         c_settings = dict(config_model.exchange_settings or {})
-        if (
-            (c_settings.get("bybit") or {}).get("mining_node_uuid")
-            or (c_settings.get("okx") or {}).get("mining_node_uuid")
-            or (c_settings.get("weex") or {}).get("mining_node_uuid")
-            or (c_settings.get("binance") or {}).get("mining_node_uuid")
-            or c_settings.get("mining_node_uuid")
-        ):
+        if primary_mining_node_uuid(c_settings):
             has_subnode = True
 
     # 1. All-time volume for the user
@@ -2147,13 +2142,9 @@ async def get_local_mining_status(
     # 1. Fetch user's AppConfig to see if mining is enabled
     config = await crud.get_config_model(db, current_user.id)
     settings = dict(config.exchange_settings or {}) if config else {}
-    wallet_node_uuid = (
-        (settings.get("bybit") or {}).get("mining_node_uuid")
-        or (settings.get("okx") or {}).get("mining_node_uuid")
-        or (settings.get("weex") or {}).get("mining_node_uuid")
-        or (settings.get("binance") or {}).get("mining_node_uuid")
-        or settings.get("mining_node_uuid")
-    )
+    # Mining identity is resolved across ALL exchange sections (shared
+    # collectors, no hardcoded exchange list).
+    wallet_node_uuid = primary_mining_node_uuid(settings)
     if not wallet_node_uuid and current_user.referral_code:
         hn_res = await db.execute(
             select(models.HubNode.node_uuid)
@@ -2173,6 +2164,9 @@ async def get_local_mining_status(
         or (settings.get("weex") or {}).get("wallet_address")
         or (settings.get("binance") or {}).get("wallet_address")
         or settings.get("wallet_address")
+        # Any exchange section (shared collectors, no hardcoded list):
+        # a bound wallet in e.g. the bitget section also means configured.
+        or primary_wallet_address(settings)
         or wallet_node_uuid
     )
     is_enabled = bool(
@@ -2202,13 +2196,7 @@ async def get_local_mining_status(
     is_mining_active = is_enabled and node_config.is_global_mining_enabled
 
     if is_central:
-        wallet_node_uuid = (
-            (settings.get("bybit") or {}).get("mining_node_uuid")
-            or (settings.get("okx") or {}).get("mining_node_uuid")
-            or (settings.get("weex") or {}).get("mining_node_uuid")
-            or (settings.get("binance") or {}).get("mining_node_uuid")
-            or settings.get("mining_node_uuid")
-        )
+        wallet_node_uuid = primary_mining_node_uuid(settings)
         if not wallet_node_uuid:
             return await format_mining_status_response(
                 db=db,
@@ -2356,17 +2344,7 @@ async def get_local_mining_status(
                 for nu in ref_res.scalars().all():
                     if nu and nu not in aggregated_uuids:
                         aggregated_uuids.append(nu)
-            mm_wallets: list = []
-            for _section in (settings.get("weex") or {}, settings):
-                _w = (
-                    _section.get("wallet_address")
-                    if isinstance(_section, dict)
-                    else None
-                )
-                if _w and str(_w).strip().lower() not in [
-                    w.lower() for w in mm_wallets
-                ]:
-                    mm_wallets.append(str(_w).strip())
+            mm_wallets: list = collect_wallet_addresses(settings)
             for _sw in mm_wallets:
                 wal_res = await db.execute(
                     select(models.HubNode.node_uuid).where(
@@ -2505,21 +2483,10 @@ async def get_local_mining_status(
 
     if config:
         settings = dict(config.exchange_settings or {})
-        node_uuid = (
-            (settings.get("bybit") or {}).get("mining_node_uuid")
-            or (settings.get("okx") or {}).get("mining_node_uuid")
-            or (settings.get("weex") or {}).get("mining_node_uuid")
-            or (settings.get("binance") or {}).get("mining_node_uuid")
-            or settings.get("mining_node_uuid")
-        )
+        # UUID + secret paired from the SAME section (shared collectors):
+        # mixed-section pairs fail hub auth.
+        node_uuid, raw_sec = find_identity_pair(settings)
         if node_uuid:
-            raw_sec = (
-                (settings.get("bybit") or {}).get("mining_node_secret")
-                or (settings.get("okx") or {}).get("mining_node_secret")
-                or (settings.get("weex") or {}).get("mining_node_secret")
-                or (settings.get("binance") or {}).get("mining_node_secret")
-                or settings.get("mining_node_secret")
-            )
             node_secret = security.decrypt_node_secret(raw_sec)
             node_name = f"DepthSightNode-{node_uuid[:8]}"
 
@@ -2612,15 +2579,17 @@ async def _resolve_proxy_node_identity(
     config = await crud.get_config_model(db, current_user.id)
     if config:
         settings = dict(config.exchange_settings or {})
-        for ex_key in ("bybit", "okx", "weex", "binance", None):
-            d = settings.get(ex_key) if ex_key else settings
-            if isinstance(d, dict) and d.get("mining_node_uuid"):
-                node_uuid = d.get("mining_node_uuid")
-                raw_sec = d.get("mining_node_secret")
-                if raw_sec:
-                    node_secret = security.decrypt_node_secret(raw_sec)
-                    if node_uuid and node_secret:
-                        return node_uuid, node_secret
+        # Same-section uuid+secret pairs across ALL exchange sections
+        # (shared collectors, no hardcoded exchange list).
+        for _section_name, d in iter_identity_sections(settings):
+            if not isinstance(d, dict) or not d.get("mining_node_uuid"):
+                continue
+            node_uuid = d.get("mining_node_uuid")
+            raw_sec = d.get("mining_node_secret")
+            if raw_sec:
+                node_secret = security.decrypt_node_secret(raw_sec)
+                if node_uuid and node_secret:
+                    return node_uuid, node_secret
 
     for identity_path in (
         Path("/app/data/node_identity.json"),
@@ -2762,13 +2731,7 @@ async def get_local_mining_trades(
     cfg = await crud.get_config_model(db, current_user.id)
     if cfg and cfg.exchange_settings:
         c_settings = dict(cfg.exchange_settings)
-        w_uuid = (
-            (c_settings.get("bybit") or {}).get("mining_node_uuid")
-            or (c_settings.get("okx") or {}).get("mining_node_uuid")
-            or (c_settings.get("weex") or {}).get("mining_node_uuid")
-            or (c_settings.get("binance") or {}).get("mining_node_uuid")
-            or c_settings.get("mining_node_uuid")
-        )
+        w_uuid = primary_mining_node_uuid(c_settings)
         if w_uuid and w_uuid not in my_node_uuids:
             my_node_uuids.append(w_uuid)
 
@@ -3489,20 +3452,8 @@ async def get_evm_wallet_status(
             detail="User configuration not found.",
         )
     settings = dict(config.exchange_settings or {})
-    wallet_address = (
-        (settings.get("bybit") or {}).get("wallet_address")
-        or (settings.get("okx") or {}).get("wallet_address")
-        or (settings.get("weex") or {}).get("wallet_address")
-        or (settings.get("binance") or {}).get("wallet_address")
-        or settings.get("wallet_address")
-    )
-    node_uuid = (
-        (settings.get("bybit") or {}).get("mining_node_uuid")
-        or (settings.get("okx") or {}).get("mining_node_uuid")
-        or (settings.get("weex") or {}).get("mining_node_uuid")
-        or (settings.get("binance") or {}).get("mining_node_uuid")
-        or settings.get("mining_node_uuid")
-    )
+    wallet_address = primary_wallet_address(settings)
+    node_uuid = primary_mining_node_uuid(settings)
     wallet_configured = (
         (settings.get("bybit") or {}).get("wallet_configured", False)
         or (settings.get("okx") or {}).get("wallet_configured", False)
@@ -3534,13 +3485,18 @@ async def disconnect_evm_wallet(
     config = await crud.get_config_model(db, current_user.id)
     if config and config.exchange_settings:
         settings = dict(config.exchange_settings)
-        for ex_key in ("weex", "bybit", "okx", "binance"):
-            ex_settings = dict(settings.get(ex_key) or {})
-            ex_settings.pop("wallet_address", None)
-            ex_settings.pop("wallet_configured", None)
-            ex_settings.pop("mining_node_uuid", None)
-            ex_settings.pop("mining_node_secret", None)
-            settings[ex_key] = ex_settings
+        # Purge identity keys from EVERY exchange section (shared iteration,
+        # no hardcoded list) so no bound wallet survives disconnect.
+        for _section_name, ex_settings in iter_identity_sections(settings):
+            if not isinstance(ex_settings, dict):
+                continue
+            for _id_key in (
+                "wallet_address",
+                "wallet_configured",
+                "mining_node_uuid",
+                "mining_node_secret",
+            ):
+                ex_settings.pop(_id_key, None)
         settings.pop("wallet_address", None)
         settings.pop("wallet_configured", None)
         settings.pop("mining_node_uuid", None)
@@ -3594,20 +3550,9 @@ async def activate_local_mining(
 
     # Check if wallet is configured (required for ALL users on central or local nodes)
     settings = dict(config.exchange_settings or {})
-    mining_node_uuid = (
-        (settings.get("bybit") or {}).get("mining_node_uuid")
-        or (settings.get("okx") or {}).get("mining_node_uuid")
-        or (settings.get("weex") or {}).get("mining_node_uuid")
-        or (settings.get("binance") or {}).get("mining_node_uuid")
-        or settings.get("mining_node_uuid")
-    )
-    raw_sec = (
-        (settings.get("bybit") or {}).get("mining_node_secret")
-        or (settings.get("okx") or {}).get("mining_node_secret")
-        or (settings.get("weex") or {}).get("mining_node_secret")
-        or (settings.get("binance") or {}).get("mining_node_secret")
-        or settings.get("mining_node_secret")
-    )
+    # UUID + secret paired from the SAME section (shared collectors):
+    # mixed-section pairs fail hub auth.
+    mining_node_uuid, raw_sec = find_identity_pair(settings)
     mining_node_secret = security.decrypt_node_secret(raw_sec)
     wallet_configured = (
         (settings.get("bybit") or {}).get("wallet_configured", False)

@@ -8,6 +8,7 @@ import {
 	CalendarIcon,
 	Copy,
 	Cpu,
+	FlaskConical,
 	HelpCircle,
 	Loader2,
 	Play,
@@ -58,6 +59,7 @@ import {
 	updateSymbolSelectionSettings as updateSymbolSelectionSettingsApi,
 	useConfig,
 	useMultiAccountBalances,
+	usePaperWallet,
 	useRunBacktest,
 	useSaveStrategyConfig,
 	useSendTradingViewTestSignal,
@@ -148,9 +150,14 @@ export const ConfigAndLaunchPanel = memo(
 			useUpdateStrategyConfig();
 		const { data: config } = useConfig();
 		const { data: balances } = useMultiAccountBalances();
+		const { data: paperWallet } = usePaperWallet();
 		const [selectedApiKeyId, setSelectedApiKeyId] = useState<number | null>(
 			null,
 		);
+		// Deployment target: "paper" (single virtual account, default) or a live api key id.
+		// Rendered as one menu: Paper, Binance, Bybit, ... — like the header account menu.
+		const [deployTarget, setDeployTarget] = useState<string>("paper");
+		const isPaperDeploy = deployTarget === "paper";
 
 		const balanceForKey = (keyId: number | null) => {
 			if (keyId === null) return null;
@@ -161,6 +168,8 @@ export const ConfigAndLaunchPanel = memo(
 			value === null
 				? null
 				: `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+		const paperUsdtBalance =
+			paperWallet?.find((a) => a.asset === "USDT")?.balance ?? null;
 
 		// Hedge (mirror) launch state: one strategy on two exchanges at once.
 		// Launch-time only — never persisted into the saved strategy config.
@@ -189,12 +198,17 @@ export const ConfigAndLaunchPanel = memo(
 			(exchange || "").trim().toLowerCase().replace(/_testnet$/, "");
 
 		const legAKey = useMemo(
-			() => activeApiKeys.find((k) => k.id === selectedApiKeyId) ?? null,
-			[activeApiKeys, selectedApiKeyId],
+			() =>
+				isPaperDeploy
+					? null
+					: (activeApiKeys.find((k) => k.id === selectedApiKeyId) ?? null),
+			[activeApiKeys, selectedApiKeyId, isPaperDeploy],
 		);
 
 		// Leg B candidates: different account AND different exchange.
+		// Hedge is live-only: paper is a single virtual account.
 		const eligibleLegBKeys = useMemo(() => {
+			if (isPaperDeploy) return [];
 			if (!legAKey) return activeApiKeys;
 			const baseA = normalizeBaseExchange(legAKey.exchange);
 			return activeApiKeys.filter(
@@ -202,7 +216,7 @@ export const ConfigAndLaunchPanel = memo(
 					k.id !== legAKey.id &&
 					normalizeBaseExchange(k.exchange) !== baseA,
 			);
-		}, [activeApiKeys, legAKey]);
+		}, [activeApiKeys, legAKey, isPaperDeploy]);
 
 		// The stored leg B id may become invalid when leg A changes.
 		const effectiveLegBId =
@@ -213,7 +227,7 @@ export const ConfigAndLaunchPanel = memo(
 				? hedgeLegBId
 				: null;
 
-		const canEnableHedge = activeApiKeys.length >= 2;
+		const canEnableHedge = activeApiKeys.length >= 2 && !isPaperDeploy;
 		const hedgeSpotBlocked =
 			hedgeEnabled && (marketType || "FUTURES") !== "FUTURES";
 		const parsedHedgeNotional = Number.parseFloat(hedgeNotional);
@@ -233,6 +247,7 @@ export const ConfigAndLaunchPanel = memo(
 				parsedSpreadThreshold > 0 &&
 				parsedSpreadThreshold <= 10);
 		const hedgeReady =
+			isPaperDeploy ||
 			!hedgeEnabled ||
 			(canEnableHedge &&
 				effectiveLegBId !== null &&
@@ -324,7 +339,7 @@ export const ConfigAndLaunchPanel = memo(
 		// TradingView Webhook Logic
 		const { data: tradingViewWebhookInfo } = useTradingViewWebhookInfo(
 			shouldShowWebhookInfo ? (strategyIdFromParams ?? null) : null,
-			selectedApiKeyId,
+			isPaperDeploy ? null : selectedApiKeyId,
 		);
 		const {
 			data: tradingViewWebhookStatus,
@@ -527,12 +542,14 @@ export const ConfigAndLaunchPanel = memo(
 				startStrategy(
 					{
 						configId,
-						mode: "live",
+						mode: isPaperDeploy ? "paper" : "live",
 						symbol_selection_mode: getPaymode(),
 						symbols: getPaymode() === "STATIC" ? [symbol] : [],
-						apiKeyId: selectedApiKeyId ?? undefined,
+						apiKeyId: isPaperDeploy
+							? undefined
+							: (selectedApiKeyId ?? undefined),
 						hedge:
-							hedgeEnabled && effectiveLegBId !== null
+							!isPaperDeploy && hedgeEnabled && effectiveLegBId !== null
 								? {
 										enabled: true,
 										leg_b_api_key_id: effectiveLegBId,
@@ -1265,42 +1282,76 @@ export const ConfigAndLaunchPanel = memo(
 								</CardTitle>
 							</CardHeader>
 							<CardContent className="space-y-4 p-4 pt-2">
-								{activeApiKeys.length > 0 && (
-									<Select
-										value={
-											selectedApiKeyId !== null ? String(selectedApiKeyId) : ""
+								<Select
+									value={deployTarget}
+									onValueChange={(v) => {
+										setDeployTarget(v);
+										if (v === "paper") {
+											setHedgeEnabled(false);
+										} else {
+											setSelectedApiKeyId(Number(v));
 										}
-										onValueChange={(v) => setSelectedApiKeyId(Number(v))}
-									>
-										<SelectTrigger className="bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white text-xs">
-											<SelectValue
-												placeholder={t(
-													"configPanel.selectAccountPlaceholder",
-													"Select Account",
-												)}
-											/>
-										</SelectTrigger>
-										<SelectContent className="bg-popover dark:bg-[#0c0d12] border-border dark:border-white/10 text-popover-foreground dark:text-white">
-											{activeApiKeys.map((k) => (
-												<SelectItem key={k.id} value={String(k.id) as string} className="text-xs">
-													<span className="flex items-center gap-2">
-														<ExchangeBadge exchange={k.exchange} size="xs" />
-														<span>{k.name}</span>
-														{hedgeEnabled && (
-															<span className="text-[10px] text-white/40">
-																· {t("configPanel.hedgeLegALabel", "Leg A (as-is)")}
-															</span>
-														)}
-														{formatBalance(balanceForKey(k.id)) && (
-															<span className="ml-auto text-[11px] font-mono text-white/40">
-																{formatBalance(balanceForKey(k.id))}
-															</span>
-														)}
+									}}
+								>
+									<SelectTrigger className="bg-card dark:bg-white/[0.03] border-border dark:border-white/10 text-foreground dark:text-white text-xs">
+										<SelectValue
+											placeholder={t(
+												"configPanel.selectAccountPlaceholder",
+												"Select Account",
+											)}
+										/>
+									</SelectTrigger>
+									<SelectContent className="bg-popover dark:bg-[#0c0d12] border-border dark:border-white/10 text-popover-foreground dark:text-white">
+										<SelectItem value="paper" className="text-xs">
+											<span className="flex items-center gap-2">
+												<span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan/10 border border-cyan/30 text-cyan shrink-0">
+													<FlaskConical size={11} />
+												</span>
+												<span className="font-semibold">
+													{t("configPanel.paperAccountLabel", "Paper — virtual funds")}
+												</span>
+												{formatBalance(paperUsdtBalance) && (
+													<span className="ml-auto text-[11px] font-mono text-white/40">
+														{formatBalance(paperUsdtBalance)}
 													</span>
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+												)}
+											</span>
+										</SelectItem>
+										{activeApiKeys.map((k) => (
+											<SelectItem key={k.id} value={String(k.id) as string} className="text-xs">
+												<span className="flex items-center gap-2">
+													<ExchangeBadge exchange={k.exchange} size="xs" />
+													<span>{k.name}</span>
+													{hedgeEnabled && (
+														<span className="text-[10px] text-white/40">
+															· {t("configPanel.hedgeLegALabel", "Leg A (as-is)")}
+														</span>
+													)}
+													{formatBalance(balanceForKey(k.id)) && (
+														<span className="ml-auto text-[11px] font-mono text-white/40">
+															{formatBalance(balanceForKey(k.id))}
+														</span>
+													)}
+												</span>
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								{activeApiKeys.length === 0 && (
+									<div className="text-[11px] text-amber-500 dark:text-amber-200/80 leading-tight">
+										{t(
+											"configPanel.noActiveKeysWarning",
+											"No active API keys. Add and verify a key in Settings.",
+										)}
+									</div>
+								)}
+								{isPaperDeploy && hedgeEnabled && (
+									<div className="text-[11px] text-amber-500 dark:text-amber-200/80 leading-tight">
+										{t(
+											"configPanel.hedgePaperDisabled",
+											"Hedge mode is live-only and is ignored for paper deployment.",
+										)}
+									</div>
 								)}
 								{/* ── Hedge mode ── */}
 								<div className="rounded-xl border border-border dark:border-white/[0.06] p-3 space-y-3">
@@ -1553,19 +1604,32 @@ export const ConfigAndLaunchPanel = memo(
 									)}
 								</div>
 								<Button
-									className="w-full bg-rose-500 hover:bg-rose-600 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/20"
-									variant="destructive"
+									className={
+										isPaperDeploy
+											? "w-full bg-cyan hover:bg-cyan/90 text-black font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-cyan/20"
+											: "w-full bg-rose-500 hover:bg-rose-600 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/20"
+									}
+									variant={isPaperDeploy ? "default" : "destructive"}
 									onClick={handleDeploy}
-									disabled={isAnythingLoading || activeApiKeys.length === 0 || !hedgeReady}
+									disabled={
+										isAnythingLoading ||
+										activeApiKeys.length === 0 ||
+										!hedgeReady ||
+										(!isPaperDeploy && selectedApiKeyId === null)
+									}
 								>
 									{isStarting ? (
 										<Loader2 className="animate-spin mr-2 w-4 h-4" />
+									) : isPaperDeploy ? (
+										<FlaskConical className="mr-2 w-4 h-4" />
 									) : (
 										<Rocket className="mr-2 w-4 h-4" />
 									)}
-									{hedgeEnabled
+									{!isPaperDeploy && hedgeEnabled
 										? t("configPanel.deployHedgeButton", "Deploy Hedge Pair")
-										: t("configPanel.deployButton", "Deploy Strategy")}
+										: isPaperDeploy
+											? t("configPanel.deployPaperButton", "Deploy to Paper")
+											: t("configPanel.deployButton", "Deploy to Live")}
 								</Button>
 							</CardContent>
 						</Card>

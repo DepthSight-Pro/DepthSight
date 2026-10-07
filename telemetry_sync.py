@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api import crud, models
 from api.database import AsyncSessionLocal
+from bot_module.node_identity import find_identity_pair
 
 logger = logging.getLogger(__name__)
 
@@ -74,20 +75,10 @@ async def _identity_from_db(
         settings = (
             cfg.exchange_settings if isinstance(cfg.exchange_settings, dict) else {}
         )
-        uuid_val = (
-            (settings.get("bybit") or {}).get("mining_node_uuid")
-            or (settings.get("okx") or {}).get("mining_node_uuid")
-            or (settings.get("weex") or {}).get("mining_node_uuid")
-            or (settings.get("binance") or {}).get("mining_node_uuid")
-            or settings.get("mining_node_uuid")
-        )
-        raw_secret = (
-            (settings.get("bybit") or {}).get("mining_node_secret")
-            or (settings.get("okx") or {}).get("mining_node_secret")
-            or (settings.get("weex") or {}).get("mining_node_secret")
-            or (settings.get("binance") or {}).get("mining_node_secret")
-            or settings.get("mining_node_secret")
-        )
+        # Identity pair across ALL exchange sections (shared collectors,
+        # no hardcoded exchange list) — paired from the same section so
+        # hub auth cannot mix uuid/secret across sections.
+        uuid_val, raw_secret = find_identity_pair(settings)
         secret_val = decrypt_node_secret(raw_secret)
         if uuid_val and secret_val:
             return str(uuid_val), str(secret_val)

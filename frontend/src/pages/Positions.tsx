@@ -153,7 +153,21 @@ export default function Positions() {
 	const positionsList = useMemo(() => {
 		const src = livePositions ?? realPositions;
 		if (!src || src.length === 0) return [];
-		return src.map((p: RawPosition, idx: number) => {
+		// Dedupe: REST + WS snapshots can deliver the same position twice
+		// (same exchange position under one id). Collapse by raw identity
+		// before assigning fallback `real-${idx}` ids.
+		const seen = new Set<string>();
+		const deduped = (src as RawPosition[]).filter((p: RawPosition) => {
+			const rawId = (p as { id?: unknown }).id;
+			const key =
+				rawId !== null && rawId !== undefined && String(rawId) !== ""
+					? `id:${String(rawId)}`
+					: `sym:${String(p.symbol ?? "")}|${String(p.api_key_id ?? p.apiKeyId ?? "")}|${String(p.side ?? p.direction ?? "").toUpperCase()}|${String(p.strategy_name ?? p.strategy ?? "")}`;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+		return deduped.map((p: RawPosition, idx: number) => {
 			const entry = Number(p.entry_price || p.entryPrice || 0);
 			const mark = Number(p.mark_price || p.markPrice || entry);
 			const size = Number(p.size || 0);

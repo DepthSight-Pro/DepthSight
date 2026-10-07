@@ -1236,6 +1236,7 @@ class PositionResponseItem(BaseModel):
     market_type: Optional[str] = None
     api_key_id: Optional[int] = None
     exchange: Optional[str] = None
+    mode: Optional[str] = Field(None, description="Trading mode: live or paper")
     config_id: Optional[str] = Field(
         None, description="Source strategy config id (position attribution)"
     )

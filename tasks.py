@@ -3733,28 +3733,29 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 return
 
             # --- Referrer / operator resolution helpers (mirror api/hub_router) ---
+            # Exchange sections are read via shared collectors
+            # (bot_module.node_identity): no hardcoded exchange list, so a new
+            # exchange works here with zero changes.
             async def _user_wallet_node(user_id):
+                from bot_module.node_identity import collect_mining_node_uuids
+
                 cfg_stmt = select(models.AppConfig).where(
                     models.AppConfig.user_id == user_id
                 )
                 cfg_res = await session.execute(cfg_stmt)
                 cfg = cfg_res.scalars().first()
-                _settings = cfg.exchange_settings or {}
-                wallet_uuid = (
-                    (_settings.get("bybit") or {}).get("mining_node_uuid")
-                    or (_settings.get("okx") or {}).get("mining_node_uuid")
-                    or (_settings.get("weex") or {}).get("mining_node_uuid")
-                    or (_settings.get("binance") or {}).get("mining_node_uuid")
-                    or _settings.get("mining_node_uuid")
-                )
-                if not wallet_uuid:
+                if not cfg:
                     return None
-                n_res = await session.execute(
-                    select(models.HubNode.node_uuid).where(
-                        models.HubNode.node_uuid == wallet_uuid
+                _settings = cfg.exchange_settings or {}
+                for wallet_uuid in collect_mining_node_uuids(_settings):
+                    n_res = await session.execute(
+                        select(models.HubNode.node_uuid).where(
+                            models.HubNode.node_uuid == wallet_uuid
+                        )
                     )
-                )
-                return n_res.scalar() or None
+                    if n_res.scalar():
+                        return wallet_uuid
+                return None
 
             async def _resolve_user_node(user_id):
                 wallet_uuid = await _user_wallet_node(user_id)
@@ -3782,6 +3783,9 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 return wallet_owner_by_node.get(node_id)
 
             # One full scan instead of N: map mining_node_uuid -> owner user_id.
+            # Exchange sections via shared collectors (no hardcoded list).
+            from bot_module.node_identity import collect_mining_node_uuids
+
             wallet_owner_by_node = {}
             _wcfg_res = await session.execute(
                 select(models.AppConfig).where(
@@ -3789,15 +3793,7 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 )
             )
             for _cfg in _wcfg_res.scalars().all():
-                _settings = _cfg.exchange_settings or {}
-                _muuid = (
-                    (_settings.get("bybit") or {}).get("mining_node_uuid")
-                    or (_settings.get("okx") or {}).get("mining_node_uuid")
-                    or (_settings.get("weex") or {}).get("mining_node_uuid")
-                    or (_settings.get("binance") or {}).get("mining_node_uuid")
-                    or _settings.get("mining_node_uuid")
-                )
-                if _muuid:
+                for _muuid in collect_mining_node_uuids(_cfg.exchange_settings or {}):
                     wallet_owner_by_node[_muuid] = _cfg.user_id
 
             async def _resolve_referrer(node_id):

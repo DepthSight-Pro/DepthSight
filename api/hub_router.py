@@ -2268,9 +2268,10 @@ async def get_mining_referrals_impl(
 
             config = await crud.get_config_model(db, current_user_obj.id)
             if config and config.exchange_settings:
+                from bot_module.node_identity import iter_identity_sections
+
                 settings = dict(config.exchange_settings)
-                for ex_key in ("bybit", "okx", "weex", "binance", None):
-                    d = settings.get(ex_key) if ex_key else settings
+                for _section_name, d in iter_identity_sections(settings):
                     if isinstance(d, dict):
                         w_uuid = d.get("mining_node_uuid")
                         if w_uuid and w_uuid not in possible_node_uuids:
@@ -2709,10 +2710,12 @@ async def _find_user_id_by_wallet(
 ) -> Optional[int]:
     """Return the user_id whose AppConfig has this wallet bound as their mining wallet.
 
-    Mirrors ``_resolve_wallet_node_owner`` but resolves by the wallet address stored
-    in ``exchange_settings.weex.wallet_address`` (written by /node/wallet/verify),
-    so a legacy account can be linked to a wallet even before a HubNode carries it.
+    Exchange-agnostic: scans every exchange section (plus top level) via
+    shared collectors, so a legacy account is linked no matter which
+    exchange section the wallet was bound through.
     """
+    from bot_module.node_identity import collect_wallet_addresses
+
     if not wallet_addr:
         return None
     clean = wallet_addr.strip().lower()
@@ -2720,34 +2723,35 @@ async def _find_user_id_by_wallet(
         select(models.AppConfig).where(models.AppConfig.exchange_settings.isnot(None))
     )
     for cfg in cfg_res.scalars().all():
-        weex = (cfg.exchange_settings or {}).get("weex") or {}
-        bound = (weex.get("wallet_address") or "").strip().lower()
-        if bound == clean:
-            return cfg.user_id
+        for bound in collect_wallet_addresses(cfg.exchange_settings or {}):
+            if bound.lower() == clean:
+                return cfg.user_id
     return None
 
 
 async def _resolve_user_wallet_node(db: AsyncSession, user_id: int) -> Optional[str]:
     """Return the user's wallet-bound mining node UUID if it exists as a HubNode.
 
-    The node identity is read from the user's AppConfig (exchange_settings.weex),
-    which is what the wallet activation flow writes.
+    The node identity is read from the user's AppConfig across ALL exchange
+    sections (shared collectors) — historically only the weex section was
+    consulted, which orphaned bitget/bybit/okx users.
     """
+    from bot_module.node_identity import collect_mining_node_uuids
+
     cfg_res = await db.execute(
         select(models.AppConfig).where(models.AppConfig.user_id == user_id)
     )
     cfg = cfg_res.scalars().first()
     if not cfg or not cfg.exchange_settings:
         return None
-    weex = (cfg.exchange_settings or {}).get("weex") or {}
-    wallet_uuid = weex.get("mining_node_uuid")
-    if not wallet_uuid:
-        return None
-    node_res = await db.execute(
-        select(models.HubNode.node_uuid).where(models.HubNode.node_uuid == wallet_uuid)
-    )
-    if node_res.scalar():
-        return wallet_uuid
+    for wallet_uuid in collect_mining_node_uuids(cfg.exchange_settings):
+        node_res = await db.execute(
+            select(models.HubNode.node_uuid).where(
+                models.HubNode.node_uuid == wallet_uuid
+            )
+        )
+        if node_res.scalar():
+            return wallet_uuid
     return None
 
 
@@ -2757,18 +2761,19 @@ async def _resolve_wallet_node_owner(
     """Return the user_id who owns the given wallet mining node.
 
     Inverse of ``_resolve_user_wallet_node``: scans AppConfig rows whose
-    exchange_settings.weex.mining_node_uuid matches the node. Used because
-    wallet-registered nodes carry a generated DSN-REF-* code that does not
-    match ``User.referral_code``.
+    exchange_settings (ANY exchange section, shared collectors) reference
+    the node as mining_node_uuid. Historically only the weex section was
+    scanned, which orphaned bitget/bybit/okx users.
     """
+    from bot_module.node_identity import collect_mining_node_uuids
+
     if not node_id:
         return None
     cfg_res = await db.execute(
         select(models.AppConfig).where(models.AppConfig.exchange_settings.isnot(None))
     )
     for cfg in cfg_res.scalars().all():
-        weex = (cfg.exchange_settings or {}).get("weex") or {}
-        if weex.get("mining_node_uuid") == node_id:
+        if node_id in collect_mining_node_uuids(cfg.exchange_settings or {}):
             return cfg.user_id
     return None
 
@@ -4548,15 +4553,10 @@ async def _resolve_requesting_node(
         cfg_res = await db.execute(cfg_stmt)
         cfg = cfg_res.scalars().first()
         if cfg and cfg.exchange_settings:
+            from bot_module.node_identity import primary_mining_node_uuid
+
             settings = cfg.exchange_settings
-            m_uuid = (
-                (settings.get("bybit") or {}).get("mining_node_uuid")
-                or (settings.get("okx") or {}).get("mining_node_uuid")
-                or (settings.get("weex") or {}).get("mining_node_uuid")
-                or (settings.get("bitget") or {}).get("mining_node_uuid")
-                or (settings.get("binance") or {}).get("mining_node_uuid")
-                or settings.get("mining_node_uuid")
-            )
+            m_uuid = primary_mining_node_uuid(settings)
             if m_uuid:
                 stmt = select(models.HubNode).where(models.HubNode.node_uuid == m_uuid)
                 res = await db.execute(stmt)

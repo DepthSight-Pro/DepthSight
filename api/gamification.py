@@ -4,6 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from . import models, crud
 from .push_sender import send_push_notification
+from bot_module.node_identity import (
+    primary_mining_node_uuid,
+    primary_wallet_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -529,19 +533,16 @@ async def check_and_grant_mining_achievements(
             return
 
         exchange_settings = dict(config.exchange_settings or {})
-        mining_node_uuid = (
-            (exchange_settings.get("bybit") or {}).get("mining_node_uuid")
-            or (exchange_settings.get("okx") or {}).get("mining_node_uuid")
-            or (exchange_settings.get("weex") or {}).get("mining_node_uuid")
-            or (exchange_settings.get("binance") or {}).get("mining_node_uuid")
-            or exchange_settings.get("mining_node_uuid")
-        )
+        # Mining identity across ALL exchange sections (shared collectors,
+        # no hardcoded exchange list).
+        mining_node_uuid = primary_mining_node_uuid(exchange_settings)
         wallet_configured = (
             (exchange_settings.get("bybit") or {}).get("wallet_configured", False)
             or (exchange_settings.get("okx") or {}).get("wallet_configured", False)
             or (exchange_settings.get("weex") or {}).get("wallet_configured", False)
             or (exchange_settings.get("binance") or {}).get("wallet_configured", False)
             or exchange_settings.get("wallet_configured", False)
+            or primary_wallet_address(exchange_settings)
         )
 
         # 1. Onboarding & Web3

@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/context/AuthContext";
 import { usePortfolioMode } from "@/context/PortfolioModeContext";
+import { useAccountStore } from "@/stores/accountStore";
 import {
 	useAccountStatus,
 	useGetMiningStatus,
@@ -110,23 +111,56 @@ export function AppSidebar() {
 	const { data: miningStatus } = useGetMiningStatus();
 	const { data: resources } = useSystemResources();
 	const { mode } = usePortfolioMode();
-	const { data: positions } = usePositions({ mode });
-	const { data: strategies } = useStrategies({ mode });
+	// Mirror the Positions/Strategies pages scope: live follows the header
+	// account + market, paper is a single unscoped virtual account.
+	const { selectedApiKeyId, selectedMarketType } = useAccountStore();
+	const { data: positions } = usePositions({
+		mode,
+		apiKeyId: mode === "live" ? selectedApiKeyId : undefined,
+		marketType: mode === "live" ? selectedMarketType : undefined,
+	});
+	const { data: strategies } = useStrategies({
+		mode,
+		apiKeyId: mode === "live" ? selectedApiKeyId : undefined,
+	});
 
-	const openPositionsCount = positions?.length ?? 0;
+	const openPositionsCount = useMemo(() => {
+		if (!positions) return 0;
+		const seen = new Set<string>();
+		let n = 0;
+		for (const p of (positions as unknown as Array<Record<string, unknown>>)) {
+			const pid = p.id;
+			const key =
+				pid !== null && pid !== undefined && String(pid) !== ""
+					? `id:${String(pid)}`
+					: `sym:${String(p.symbol ?? "")}|${String(p.api_key_id ?? p.apiKeyId ?? "")}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			n += 1;
+		}
+		return n;
+	}, [positions]);
 	const runningStrategiesCount = useMemo(() => {
 		if (!strategies) return 0;
-		return strategies.filter((s: StrategyData) => {
+		const seen = new Set<string>();
+		let n = 0;
+		for (const s of strategies as StrategyData[]) {
+			const key = String(
+				s.id ?? `${s.config_id}-${s.mode}-${s.api_key_id}`,
+			);
+			if (seen.has(key)) continue;
 			const st = String(s.status || "").toUpperCase();
-			if (
+			const running =
 				st === "RUNNING" ||
 				st === "ACTIVE" ||
 				st === "IN_POSITION" ||
-				st === "IN-POSITION"
-			)
-				return true;
-			return Number(s.open_positions ?? 0) > 0;
-		}).length;
+				st === "IN-POSITION" ||
+				Number(s.open_positions ?? 0) > 0;
+			if (!running) continue;
+			seen.add(key);
+			n += 1;
+		}
+		return n;
 	}, [strategies]);
 
 	// Promo fire dot next to Mining — same visibility as the Quests sub-tab:

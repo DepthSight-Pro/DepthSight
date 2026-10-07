@@ -658,12 +658,16 @@ export default function Strategies() {
 					use_ml_confirmation: formData.useMlConfirmation ?? false,
 					breakeven_on_regime_change: formData.breakevenOnRegimeChange ?? false,
 				},
-				apiKeyId:
-					typeof formData.apiKeyId === "number"
-						? formData.apiKeyId
-						: typeof selectedApiKeyId === "number"
-							? selectedApiKeyId
-							: undefined,
+				// Paper is a single virtual account: never bind it to the
+			// header live key, let the backend resolve its paper key.
+			apiKeyId:
+					formData.mode === "paper"
+						? undefined
+						: typeof formData.apiKeyId === "number"
+							? formData.apiKeyId
+							: typeof selectedApiKeyId === "number"
+								? selectedApiKeyId
+								: undefined,
 			},
 			{
 				onSettled: () => {

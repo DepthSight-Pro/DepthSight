@@ -399,13 +399,15 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 				) {
 					continue;
 				}
+				// Strict per-mode filtering: a snapshot from one controller
+				// carries both modes, each query bucket takes only its own.
+				// Never fall back to the unfiltered payload — that leaked
+				// paper rows into the live bucket and vice versa.
 				let incoming = rows;
 				if (qMode) {
-					const filtered = rows.filter(
+					incoming = rows.filter(
 						(r) => !r.mode || normMode(r.mode) === normMode(qMode),
 					);
-					// Never wipe on mode mismatch — keep payload as-is.
-					if (filtered.length > 0 || rows.length === 0) incoming = filtered;
 				}
 				queryClient.setQueryData(key as readonly unknown[], (old: unknown) => {
 					if (!Array.isArray(old)) return incoming;

@@ -18762,8 +18762,9 @@ class TradingController:
                     app_config = await crud.get_config(session, user_id=self.user_id)
                     settings = app_config.exchange_settings if app_config else None
                     if settings and isinstance(settings, dict):
-                        for ex_key in ("bybit", "okx", "weex", "binance", None):
-                            d = settings.get(ex_key) if ex_key else settings
+                        from bot_module.node_identity import iter_identity_sections
+
+                        for _section_name, d in iter_identity_sections(settings):
                             if isinstance(d, dict) and d.get("mining_node_uuid"):
                                 wallet_node_uuid = d.get("mining_node_uuid")
                                 raw_node_secret = d.get("mining_node_secret")

@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { useAuth } from "@/context/AuthContext";
+import { usePortfolioMode } from "@/context/PortfolioModeContext";
 import { useConfig, useMultiAccountBalances } from "@/lib/api";
 import { ExchangeBadge } from "@/components/layout/AccountSelector";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 }) => {
 	const { t } = useTranslation(["strategies", "common"]);
 	const { user } = useAuth();
+	const { mode: headerMode } = usePortfolioMode();
 	const { data: config } = useConfig();
 	const { data: balances } = useMultiAccountBalances();
 	const isAdmin = user?.role === "admin";
@@ -142,8 +144,13 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 		},
 	});
 
-	// Reset form values when strategy prop changes (e.g. reopening modal for different strategy)
+	// Reset form values when strategy prop changes (e.g. reopening modal for different strategy).
+	// Trading mode always starts from the header portfolio mode so a stale
+	// live/paper pick from a previous launch can't leak into another regime.
 	useEffect(() => {
+		if (isOpen) {
+			setValue("mode", headerMode);
+		}
 		if (isOpen && strategy) {
 			const dMode = strategy.config_data?.natr_settings
 				? "DYNAMIC_NATR"
@@ -195,7 +202,7 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 				setValue("symbols", strategy.config_data.symbols.join(", "));
 			}
 		}
-	}, [isOpen, strategy, setValue, currentMode, canUseOracle]);
+	}, [isOpen, strategy, setValue, currentMode, canUseOracle, headerMode]);
 
 	const tradingMode = useWatch({ control, name: "mode" });
 	const symbolSelectionMode = useWatch({

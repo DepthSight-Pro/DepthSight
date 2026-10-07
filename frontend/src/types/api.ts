@@ -250,6 +250,7 @@ export interface PositionData {
 	signal_details_json?: Record<string, unknown>; // Decision trace for foundation analytics
 	api_key_id?: number;
 	exchange?: string | null;
+	mode?: "live" | "paper" | string;
 	/** Source strategy config id — the only unambiguous link between a
 	 * position and its strategy card (strategy names are class names shared
 	 * by many VisualBuilder strategies). */
