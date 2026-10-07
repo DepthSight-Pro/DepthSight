@@ -33,6 +33,7 @@ export const AICoPilot: React.FC<AICoPilotProps> = ({
 
 	return (
 		<div
+			data-tutorial-id="ai-copilot-card"
 			className={cn(
 				"relative overflow-hidden p-6 w-full rounded-2xl border border-white/10 glass shadow-2xl",
 				className,

@@ -270,6 +270,7 @@ export const StrategyCanvas = () => {
 				</div>
 				<div
 					ref={filtersDropRef}
+					data-tutorial-id="filters-dropzone"
 					className={cn(
 						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isFiltersTarget
@@ -414,7 +415,10 @@ export const StrategyCanvas = () => {
 						</p>
 					</div>
 				</div>
-				<div className="rounded-xl border border-border/60 dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md p-4">
+				<div
+					data-tutorial-id="initialization-section"
+					className="rounded-xl border border-border/60 dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md p-4"
+				>
 					<InitializationEditor />
 				</div>
 			</section>
@@ -435,6 +439,7 @@ export const StrategyCanvas = () => {
 				</div>
 				<div
 					ref={managementDropRef}
+					data-tutorial-id="management-section"
 					className={cn(
 						"drop-zone border-2 border-dashed rounded-xl p-4 space-y-3 transition-all",
 						isManagementTarget

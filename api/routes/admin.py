@@ -16,7 +16,7 @@ from ..database import get_db
 from ..dependencies import require_admin_role
 from ..redis_client import get_redis_client
 from ..plans import plans_config
-from ..audit_logger import audit_logger, get_client_ip
+from ..audit_logger import AuditEventType, audit_logger, get_client_ip
 
 from celery.result import AsyncResult
 from api.celery_app import celery_app
@@ -320,18 +320,93 @@ async def get_system_metrics(
 
 @admin_router.post("/system/update")
 async def trigger_system_update(
+    request: Request,
     current_user: models.User = Depends(require_admin_role),
 ):
     """
-    Creates .update_trigger file inside /app/data to trigger a host-side git pull and docker rebuild.
-    Admin only.
+    Creates .update_trigger file inside the shared data volume to trigger
+    a host-side git pull and docker rebuild (host cron polls every minute).
+    Admin only. Idempotent: returns already_updating if one is in progress.
     """
-    trigger_file = Path("data/.update_trigger")
-    trigger_file.touch(exist_ok=True)
+    # Absolute path inside the container (/app/data); fall back to relative
+    # path for local dev / tests where /app does not exist.
+    data_dir = Path("/app/data") if Path("/app/data").is_dir() else Path("data")
+    trigger_file = data_dir / ".update_trigger"
+    running_file = data_dir / ".update_running"
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        if trigger_file.exists() or running_file.exists():
+            return {
+                "status": "already_updating",
+                "message": "Update already in progress. The system will restart shortly.",
+            }
+        # Remove stale outcome markers so the new run starts from a clean state
+        for stale in (data_dir / ".update_done", data_dir / ".update_failed"):
+            try:
+                stale.unlink()
+            except FileNotFoundError:
+                pass
+        trigger_file.touch(exist_ok=True)
+    except OSError as e:
+        logger.error(f"Failed to create update trigger file: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not trigger update (data volume not writable).",
+        )
+    audit_logger.log_event(
+        event_type=AuditEventType.SYSTEM_UPDATE_TRIGGERED,
+        user_id=current_user.id,
+        username=current_user.username,
+        ip_address=get_client_ip(request),
+        success=True,
+        severity="WARNING",
+    )
     return {
         "status": "updating",
         "message": "Update triggered. The system will restart in a few seconds.",
     }
+
+
+@admin_router.get("/system/update/status")
+async def get_system_update_status():
+    """
+    Pollable update status for the admin UI. Reads marker files from the
+    shared data volume (written by the host-side update.sh):
+    pending (.update_trigger) -> running (.update_running) ->
+    done (.update_done) / failed (.update_failed).
+    Admin only.
+    """
+    data_dir = Path("/app/data") if Path("/app/data").is_dir() else Path("data")
+
+    def _marker(name: str) -> Optional[dict]:
+        p = data_dir / name
+        try:
+            st = p.stat()
+        except OSError:
+            return None
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace").strip() or None
+        except OSError:
+            content = None
+        return {
+            "updated_at": datetime.fromtimestamp(st.st_mtime).isoformat(),
+            "detail": content,
+        }
+
+    running = _marker(".update_running")
+    if running is not None:
+        return {"state": "running", **running}
+    pending = _marker(".update_trigger")
+    if pending is not None:
+        # Trigger seen by cron within a minute; treat as pending
+        return {"state": "pending", **pending}
+    failed = _marker(".update_failed")
+    if failed is not None:
+        return {"state": "failed", **failed}
+    done = _marker(".update_done")
+    if done is not None:
+        return {"state": "done", **done}
+    return {"state": "idle", "updated_at": None, "detail": None}
 
 
 @admin_router.get("/logs/errors")

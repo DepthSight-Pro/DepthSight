@@ -156,14 +156,27 @@ const StrategyEditorPage = () => {
 		start: startOnboarding,
 		end: endOnboarding,
 		isActive: isOnboardingActive,
+		currentStep: onboardingCurrentStep,
 	} = useOnboardingStore();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const [openPaletteGroups, setOpenPaletteGroups] = useState(PALETTE_GROUPS);
 
 	useEffect(() => {
-		setOpenPaletteGroups(isOnboardingActive ? [] : PALETTE_GROUPS);
-	}, [isOnboardingActive]);
+		if (isOnboardingActive) {
+			if (onboardingCurrentStep === 3) {
+				setOpenPaletteGroups(["foundations"]);
+			} else if (onboardingCurrentStep === 5) {
+				setOpenPaletteGroups(["filters"]);
+			} else if (onboardingCurrentStep === 7) {
+				setOpenPaletteGroups(["management"]);
+			} else if (onboardingCurrentStep >= 4) {
+				setOpenPaletteGroups(["indicators"]);
+			}
+		} else {
+			setOpenPaletteGroups(PALETTE_GROUPS);
+		}
+	}, [isOnboardingActive, onboardingCurrentStep]);
 
 	const { data: fetchedStrategy, isLoading: isLoadingStrategy } =
 		useGetStrategy(id || null);
@@ -231,12 +244,19 @@ const StrategyEditorPage = () => {
 	}, [id]);
 
 	const handleDragStart = (event: DragStartEvent) => {
+		document.body.dataset.dndDragging = "true";
 		setActiveDragItem(
 			(event.active.data.current as DragOverlayItem) || null,
 		);
 	};
 
+	const handleDragCancel = () => {
+		delete document.body.dataset.dndDragging;
+		setActiveDragItem(null);
+	};
+
 	const handleDragEnd = (event: DragEndEvent) => {
+		delete document.body.dataset.dndDragging;
 		const { active, over } = event;
 		setActiveDragItem(null);
 
@@ -392,19 +412,6 @@ const StrategyEditorPage = () => {
 					title: t("dnd.invalidDropTitle"),
 					description: t("dnd.invalidDropDesc", { category, zone: overId }),
 				});
-			}
-
-			// Onboarding logic
-			const { isActive, currentStep, nextStep } = useOnboardingStore.getState();
-			if (
-				isActive &&
-				currentStep === 3 &&
-				(over?.id as string)?.startsWith("entry-conditions")
-			) {
-				const componentType = active.data.current?.componentType;
-				if (componentType === "rsi_condition") {
-					setTimeout(() => nextStep(), 300);
-				}
 			}
 		} else {
 			// --- LOGIC FOR MOVING AN EXISTING BLOCK ---
@@ -680,6 +687,19 @@ const StrategyEditorPage = () => {
 				)}
 				{viewMode === "visual" ? t("jsonView") : t("visualView")}
 			</Btn>
+
+			<div className="h-5 w-[1px] bg-white/10 mx-1 hidden sm:block" />
+
+			<Btn
+				variant="subtle"
+				size="sm"
+				onClick={() => startOnboarding()}
+				className="text-cyan hover:text-white hover:bg-cyan/15 border border-cyan/30 hover:border-cyan/50 shadow-[0_0_12px_rgba(0,212,255,0.15)] transition-all font-medium"
+				title={t("onboarding.startTourButton", "Пройти обучение")}
+			>
+				<Sparkles className="w-4 h-4 mr-1.5 text-cyan animate-pulse" />
+				{t("onboarding.tourBtn", "Обучение")}
+			</Btn>
 		</div>
 	);
 
@@ -761,6 +781,7 @@ const StrategyEditorPage = () => {
 					sensors={sensors}
 					onDragStart={handleDragStart}
 					onDragEnd={handleDragEnd}
+					onDragCancel={handleDragCancel}
 					collisionDetection={closestCenter}
 				>
 					<div className="w-full h-[calc(100vh-215px)] min-h-[520px]">
@@ -811,19 +832,39 @@ const StrategyEditorPage = () => {
 				</DndContext>
 			</div>
 			<Dialog open={showOnboardingModal} onOpenChange={setShowOnboardingModal}>
-				<DialogContent className="glass border border-white/10 text-white shadow-2xl rounded-2xl sm:max-w-md">
+				<DialogContent className="glass border border-white/10 bg-[#0e131f]/85 text-white shadow-2xl rounded-3xl sm:max-w-md backdrop-blur-2xl p-6 overflow-hidden">
+					<div className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 w-48 h-48 rounded-full bg-cyan/15 blur-3xl" />
 					<DialogHeader>
-						<DialogTitle className="flex items-center text-lg font-semibold text-white">
-							<Sparkles className="w-5 h-5 mr-2 text-cyan" />
+						<div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-cyan/10 border border-cyan/30 text-cyan mx-auto mb-3 shadow-[0_0_20px_rgba(0,212,255,0.3)]">
+							<Sparkles className="w-6 h-6 text-cyan animate-pulse" />
+						</div>
+						<DialogTitle className="text-center text-lg font-bold text-white tracking-tight">
 							{t("welcomeDialog.title")}
 						</DialogTitle>
-						<DialogDescription className="text-white/60 text-sm mt-2">
+						<DialogDescription className="text-center text-white/60 text-xs sm:text-sm mt-1.5 leading-relaxed">
 							{t("welcomeDialog.description")}
 						</DialogDescription>
 					</DialogHeader>
-					<DialogFooter className="gap-2 sm:gap-0 mt-4">
+
+					<div className="my-4 space-y-2.5 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-xs text-white/70">
+						<div className="flex items-center gap-2">
+							<div className="w-1.5 h-1.5 rounded-full bg-cyan" />
+							<span>{t("welcomeDialog.feature1", "9 наглядных шагов по всем функциям редактора")}</span>
+						</div>
+						<div className="flex items-center gap-2">
+							<div className="w-1.5 h-1.5 rounded-full bg-cyan" />
+							<span>{t("welcomeDialog.feature2", "AI Co-Pilot для генерации стратегий текстом")}</span>
+						</div>
+						<div className="flex items-center gap-2">
+							<div className="w-1.5 h-1.5 rounded-full bg-cyan" />
+							<span>{t("welcomeDialog.feature3", "Мгновенное тестирование на истории рынка")}</span>
+						</div>
+					</div>
+
+					<DialogFooter className="gap-2 sm:gap-2 mt-2 flex flex-col sm:flex-row">
 						<Btn
 							variant="ghost"
+							className="text-white/50 hover:text-white hover:bg-white/5"
 							onClick={() => {
 								setShowOnboardingModal(false);
 								endOnboarding();
@@ -833,6 +874,7 @@ const StrategyEditorPage = () => {
 						</Btn>
 						<Btn
 							variant="primary"
+							className="bg-gradient-to-r from-cyan to-azure hover:brightness-110 text-black font-semibold shadow-[0_0_20px_rgba(0,212,255,0.35)]"
 							onClick={() => {
 								setShowOnboardingModal(false);
 								startOnboarding();

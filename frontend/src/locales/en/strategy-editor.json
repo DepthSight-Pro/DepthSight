@@ -52,7 +52,7 @@
 		"timeframeLabel": "Timeframe",
 		"actionDirectionLabel": "Direction",
 		"actionDirectionBoth": "Both",
-		"actionPositionSizeLabel": "Position Size",
+		"actionPositionSizeLabel": "Risk Per Trade",
 		"actionRiskTypePercent": "% of balance",
 		"actionRiskTypeFixedUsd": "Fixed USD",
 		"actionRiskTypeFixedAmount": "Fixed Amount",
@@ -1304,55 +1304,87 @@
 		"description": "Describe your trading idea in plain language. The AI will build the foundation of your strategy.",
 		"placeholders": [
 			"Create a simple RSI strategy on the 5-minute chart.",
-			"Build a breakout strategy for ETHUSDT that uses an ATR-based trailing stop.",
+			"Build a daily high breakout strategy for ETHUSDT.",
 			"I need a trend-following strategy with a 200 EMA filter on the hourly chart."
 		],
 		"generateButton": "Generate",
 		"shortcutHint": "Press ⌘ + Enter to submit",
-		"compactPlaceholder": "e.g., 'add a trailing stop by ATR'",
+		"compactPlaceholder": "e.g., 'add volume filter'",
 		"successToast": "Strategy generated successfully!",
 		"unsupportedTitle": "Unsupported Features",
 		"disclaimer": "AI Assistant can make mistakes. Verify the generated output. This is not financial advice."
 	},
 	"onboarding": {
+		"catConfig": "Configuration",
+		"catAi": "AI Assistant",
+		"catPalette": "Block Library",
+		"catCanvas": "Entry Conditions",
+		"catFilters": "Market Filters",
+		"catRisk": "Risk & Direction",
+		"catManagement": "Position Lifecycle",
+		"catLaunch": "Backtest",
+		"catDeploy": "Deployment",
 		"step1": {
-			"title": "Welcome to the Editor!",
-			"content": "This is your canvas for creating trading strategies. Let's start by naming your strategy in the panel on the right."
+			"title": "📝 Name & Market Parameters",
+			"content": "Give your strategy a clear name, select a trading pair (e.g. BTCUSDT), and choose market type — Futures or Spot. This forms the foundation of your configuration."
 		},
 		"step2": {
-			"title": "Component Palette",
-			"content": "On the left is the palette with all the building blocks. Open the 'Indicators' section to find the block we need."
+			"title": "🤖 AI Co-Pilot",
+			"content": "Describe your strategy in plain words (e.g., 'Create a daily high breakout strategy for ETHUSDT'), and our neural network will automatically construct the complete block hierarchy!"
 		},
 		"step3": {
-			"title": "Adding Logic",
-			"content": "Great! Now drag the 'RSI' block onto the entry canvas. This will be the condition for our purchase."
+			"title": "🧩 Component Library",
+			"content": "The left panel holds building blocks: indicators (RSI, MACD, EMA), order book depth, tape analysis, price levels, and logical combinators (AND / OR)."
 		},
 		"step4": {
-			"title": "Configuring the Condition",
-			"content": "Let's set up the buy rule. We want to buy when the market is 'oversold'. Set the condition: RSI less than 30."
+			"title": "🎯 Trade Entry Triggers",
+			"content": "The central canvas zone defines entry conditions. Drag indicators from the palette or add a block in 1 click using the button below to trigger trades."
 		},
 		"step5": {
-			"title": "Entry Foundation",
-			"content": "Now let's add a 'Foundation'. Drag the 'Local Level' block to the dedicated area for foundations."
+			"title": "🛡️ Market Regime Filters",
+			"content": "Top-level filters safeguard against false breakouts: they verify global trend direction, market volatility (ATR), or active trading sessions."
 		},
 		"step6": {
-			"title": "Running a Backtest",
-			"content": "Your first strategy is ready! Let's test it on historical data. Click 'Run Backtest'."
+			"title": "🚀 Direction & Risk Management",
+			"content": "Choose trade direction (LONG / SHORT), leverage, and acceptable risk per trade (% of balance). Order size will be calculated automatically."
 		},
 		"step7": {
-			"title": "Congratulations!",
-			"content": "You have created and tested your first strategy! You can now continue to refine it or proceed to analyze the results."
+			"title": "⚖️ Position Lifecycle Management",
+			"content": "Set up multi-stage Take Profits, breakeven triggers, trailing stops following moving averages, or Dollar-Cost Averaging (DCA) safety orders."
+		},
+		"step8": {
+			"title": "⚡ Backtest & Simulation",
+			"content": "Simulate your strategy on historical market data: choose your testing period (1M, 3M, 1Y, or custom date range) and click 'Run Backtest'. Review profitability, drawdown, and win rate before deploying to live execution!"
+		},
+		"step9": {
+			"title": "🚀 Deployment: Paper, Live & Hedge ×2",
+			"content": "Deploy your strategy risk-free in Paper Trading (virtual balance) or connect a live exchange account. For market-neutral trading, enable 'Hedge ×2' to mirror positions across two exchanges to harvest funding and spread arbitrage!"
 		},
 		"finalDialog": {
-			"title": "Congratulations! Your first backtest is running!",
-			"description": "You will be redirected to the 'Research' page to view the results. If you have any questions about creating more complex strategies, feel free to ask our AI assistant!",
-			"button": "Great, got it!"
-		}
+			"title": "🎉 Congratulations! Tutorial Complete!",
+			"description": "You now know all key capabilities of the DepthSight Visual Editor. Build your custom strategy right away or use AI Co-Pilot for a fast start!",
+			"button": "🚀 Build My First Strategy"
+		},
+		"actionHint": "You can change settings right now or click 'Next'",
+		"quickAddRsi": "Add RSI block to Canvas",
+		"rsiAddedToast": "RSI block added to entry conditions!",
+		"stepBadge": "Step {{current}} of {{total}}",
+		"nextButton": "Next",
+		"prevButton": "Back",
+		"finishButton": "Finish",
+		"skipButton": "Skip",
+		"tourBtn": "Tutorial",
+		"startTourButton": "Start Tutorial",
+		"keyboardHint": "← → navigate • Esc exit",
+		"waitingForElement": "Locating interface element..."
 	},
 	"welcomeDialog": {
-		"title": "Welcome to the Strategy Editor!",
-		"description": "Let's create your first trading strategy together. It will only take a couple of minutes.",
-		"confirmButton": "Start Tutorial",
+		"title": "👋 Welcome to the Strategy Editor!",
+		"description": "Take a quick 2-minute tour: learn how to build visual trading strategies, configure risk rules, and run instant backtests.",
+		"feature1": "9 interactive steps covering all editor features",
+		"feature2": "AI Co-Pilot to generate strategies from text prompts",
+		"feature3": "One-click backtesting against historical market data",
+		"confirmButton": "🎓 Start Tutorial",
 		"cancelButton": "Skip"
 	},
 	"calculator": {

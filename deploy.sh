@@ -312,9 +312,11 @@ fi
 
 # 7. Setup Auto-Updater Cron Job on Host
 echo -e "${BLUE}[*] Configuring host-side cron job for auto-updates...${NC}"
-CRON_JOB="* * * * * root if [ -f $PROJECT_DIR/data/.update_trigger ]; then rm $PROJECT_DIR/data/.update_trigger && bash $PROJECT_DIR/update.sh >> $PROJECT_DIR/logs/update.log 2>&1; fi"
+CRON_JOB="* * * * * root if [ -f $PROJECT_DIR/data/.update_trigger ]; then mv $PROJECT_DIR/data/.update_trigger $PROJECT_DIR/data/.update_running && echo \"--- update run \$(date -u +%FT%TZ) ---\" >> $PROJECT_DIR/logs/update.log 2>&1 && bash $PROJECT_DIR/update.sh >> $PROJECT_DIR/logs/update.log 2>&1; fi"
 
-if ! grep -q "update_trigger" /etc/crontab; then
+# Match the exact project path: a stale entry from a previous install location
+# must not block installing the cron job for the current one.
+if ! grep -qF "$PROJECT_DIR/data/.update_trigger" /etc/crontab; then
     echo "$CRON_JOB" >> /etc/crontab
     # Restart cron daemon to apply changes immediately
     if systemctl is-active --quiet cron; then

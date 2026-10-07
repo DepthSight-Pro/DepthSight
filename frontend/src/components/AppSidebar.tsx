@@ -200,17 +200,82 @@ export function AppSidebar() {
 
 	const isOutdated = masterVersion !== null && localVersion !== masterVersion;
 	const [isUpdating, setIsUpdating] = React.useState(false);
+	const updatePollRef = React.useRef<number | null>(null);
+
+	React.useEffect(() => {
+		return () => {
+			if (updatePollRef.current !== null) {
+				window.clearInterval(updatePollRef.current);
+				updatePollRef.current = null;
+			}
+		};
+	}, []);
+
+	const stopUpdatePolling = () => {
+		if (updatePollRef.current !== null) {
+			window.clearInterval(updatePollRef.current);
+			updatePollRef.current = null;
+		}
+	};
+
+	// Poll GET /admin/system/update/status until the host-side update.sh
+	// reports done/failed (markers in the shared data/ volume). The API
+	// container restarts mid-update, so fetch errors are expected — keep polling.
+	const pollUpdateStatus = () => {
+		let attempts = 0;
+		stopUpdatePolling();
+		updatePollRef.current = window.setInterval(async () => {
+			attempts += 1;
+			try {
+				const st = await apiClient<{ state: string }>(
+					"/admin/system/update/status",
+				);
+				if (st.state === "done") {
+					stopUpdatePolling();
+					setIsUpdating(false);
+					toast.success(
+						t(
+							"common:systemUpdate.updateDoneToast",
+							"Platform updated successfully.",
+						),
+					);
+				} else if (st.state === "failed") {
+					stopUpdatePolling();
+					setIsUpdating(false);
+					toast.error(
+						t("common:systemUpdate.updateFailedStatusToast", {
+							defaultValue:
+								"Update failed. Check logs/update.log on the host.",
+						}),
+					);
+				} else if (attempts >= 90) {
+					stopUpdatePolling();
+					setIsUpdating(false);
+				}
+			} catch {
+				if (attempts >= 90) {
+					stopUpdatePolling();
+					setIsUpdating(false);
+				}
+			}
+		}, 10000);
+	};
 
 	const handleTriggerUpdate = async () => {
 		setIsUpdating(true);
-		const updatePromise = apiClient("/admin/system/update", { method: "POST" });
+		const updatePromise = apiClient<{ status: string }>(
+			"/admin/system/update",
+			{ method: "POST" },
+		);
 		toast.promise(updatePromise, {
 			loading: t("common:systemUpdate.startUpdateToast", "Starting platform update..."),
-			success: () =>
-				t(
+			success: () => {
+				pollUpdateStatus();
+				return t(
 					"common:systemUpdate.updateTriggeredToast",
 					"Update triggered. The system will restart within a minute.",
-				),
+				);
+			},
 			error: (err: unknown) => {
 				setIsUpdating(false);
 				const errMsg = err instanceof Error ? err.message : String(err);

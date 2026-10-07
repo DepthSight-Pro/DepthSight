@@ -496,7 +496,10 @@ export const ComponentPalette = ({
 	}, [restrictions?.proOnly, restrictions?.klineOnly]);
 
 	return (
-		<div className="flex flex-col h-full bg-transparent border-r border-white/10">
+		<div
+			data-tutorial-id="palette-panel"
+			className="flex flex-col h-full bg-transparent border-r border-white/10"
+		>
 			<div className="flex items-center gap-2 p-4 pb-2 px-5 flex-shrink-0 border-b border-white/5">
 				<Globe className="w-5 h-5 text-cyan" />
 				<h3 className="text-sm font-semibold tracking-wide text-white">{t("palette.title")}</h3>

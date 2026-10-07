@@ -1,4 +1,4 @@
-// src/pages/onboardingStore.ts
+// src/stores/onboardingStore.ts
 
 import { create } from "zustand";
 import { useStrategyEditorStore } from "./strategyEditorStore";
@@ -11,6 +11,7 @@ type OnboardingState = {
 type OnboardingActions = {
 	start: () => void;
 	nextStep: () => void;
+	prevStep: () => void;
 	goToStep: (step: number) => void;
 	end: () => void;
 	reset: () => void;
@@ -30,6 +31,10 @@ export const useOnboardingStore = create<OnboardingState & OnboardingActions>(
 			set({ isActive: true, currentStep: 1 });
 		},
 		nextStep: () => set((state) => ({ currentStep: state.currentStep + 1 })),
+		prevStep: () =>
+			set((state) => ({
+				currentStep: Math.max(1, state.currentStep - 1),
+			})),
 		goToStep: (step) => set({ currentStep: step }),
 		end: () => {
 			localStorage.setItem("onboardingCompleted", "true");

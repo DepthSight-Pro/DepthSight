@@ -636,12 +636,12 @@ export const ConfigAndLaunchPanel = memo(
 						isOpen={isWeightsModalOpen}
 						onClose={() => setIsWeightsModalOpen(false)}
 					/>
-					<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+					<Card data-tutorial-id="strategy-params-card" className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
 							<CardHeader className="p-4 pb-2">
 								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">{t("configPanel.paramsTitle")}</CardTitle>
 							</CardHeader>
 							<CardContent className="space-y-4 p-4 pt-2">
-								<div>
+								<div data-tutorial-id="strategy-name-input">
 									<Label>{t("configPanel.nameLabel")}</Label>
 									<Input
 										value={name}
@@ -1043,7 +1043,7 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
+						<Card data-tutorial-id="backtest-panel" className="rounded-xl border-white/10 bg-white/[0.02] backdrop-blur-md">
 							<CardHeader className="p-4 pb-2">
 								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-white/90 font-mono">{t("configPanel.backtestTitle")}</CardTitle>
 							</CardHeader>
@@ -1214,6 +1214,7 @@ export const ConfigAndLaunchPanel = memo(
 								</div>
 
 								<Button
+									data-tutorial-id="run-backtest-button"
 									className="w-full bg-cyan hover:bg-cyan/90 text-black font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-cyan/20"
 									onClick={handleRunBacktest}
 									disabled={isAnythingLoading}
@@ -1275,7 +1276,7 @@ export const ConfigAndLaunchPanel = memo(
 							</CardContent>
 						</Card>
 
-						<Card className="rounded-xl border border-border dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md">
+						<Card data-tutorial-id="deploy-panel" className="rounded-xl border border-border dark:border-white/10 bg-card/60 dark:bg-white/[0.02] backdrop-blur-md">
 							<CardHeader className="p-4 pb-2">
 								<CardTitle className="text-xs font-semibold tracking-wider uppercase text-foreground/90 dark:text-white/90 font-mono">
 									{t("configPanel.deployTitle", "Deployment")}
