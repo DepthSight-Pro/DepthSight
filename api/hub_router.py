@@ -4845,17 +4845,23 @@ async def _resolve_user_promo_identity(
     }
 
 
-def _is_physical_node(node: Optional[models.HubNode]) -> bool:
-    """Checks whether a HubNode represents a real physical server node.
+def _is_physical_node(
+    node: Optional[models.HubNode], max_ping_age_hours: int = 48
+) -> bool:
+    """Checks whether a HubNode represents a real running physical server node in the network.
 
-    STICKY by design (promo continuity): once a node has proven it is a
-    real server — a valid IP address recorded (not empty, not
-    localhost/127.0.0.1/::1) plus ANY heartbeat ping history (last_ping is
-    not None) — it stays physical forever. A reboot / downtime must move
-    the node to "offline", never reclassify its earned volume into the
-    central context (that was the quest-2 "$0 after 48h" bug).
+    A physical node:
+    1. Must exist.
+    2. Must have an IP address recorded (not empty, not localhost/127.0.0.1/::1).
+    3. Must have an active heartbeat ping history (last_ping is not None).
+    4. Must have been active recently (last_ping within max_ping_age_hours).
 
-    Use :func:`_is_node_online` for liveness ("server online now").
+    The freshness gate is load-bearing for the central/physical volume
+    split: every registered node (including plain wallet nodes) carries an
+    IP + registration ping, so "ever pinged" would classify the whole
+    network as physical and drain quest 1. A silent server is central
+    until its next heartbeat — its earned volume waits in quest 1 instead
+    of vanishing.
     """
     if not node:
         return False
@@ -4863,6 +4869,12 @@ def _is_physical_node(node: Optional[models.HubNode]) -> bool:
     if not ip or ip in ("127.0.0.1", "localhost", "none", "::1"):
         return False
     if not node.last_ping:
+        return False
+    now = datetime.now(timezone.utc)
+    last_ping = node.last_ping
+    if last_ping.tzinfo is None:
+        last_ping = last_ping.replace(tzinfo=timezone.utc)
+    if (now - last_ping).total_seconds() > max_ping_age_hours * 3600:
         return False
     return True
 
@@ -4996,12 +5008,28 @@ async def get_promo_status(
         if nu not in physical_uuids and nu not in central_uuids:
             central_uuids.append(nu)
 
-    async def _sum_volumes(uuids: List[str]) -> tuple:
+    async def _sum_volumes(
+        uuids: List[str], exclude_source_uuids: Optional[List[str]] = None
+    ) -> tuple:
         # Volume mined THROUGH one of these nodes counts too: a trade
         # attributed to the wallet node but sourced from the physical server
         # (source_node_uuid) is physical-server volume, not central.
+        # Conversely the central context excludes trades sourced from the
+        # excluded (physical) nodes so one trade never feeds both quests.
         if not uuids:
             return 0.0, 0.0
+        source_guard = (
+            [
+                or_(
+                    models.HubTelemetryReport.source_node_uuid.is_(None),
+                    models.HubTelemetryReport.source_node_uuid.not_in(
+                        exclude_source_uuids
+                    ),
+                )
+            ]
+            if exclude_source_uuids
+            else []
+        )
         total_stmt = select(
             func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
         ).where(
@@ -5011,6 +5039,7 @@ async def get_promo_status(
             ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status != "REJECTED",
+            *source_guard,
         )
         verified_stmt = select(
             func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
@@ -5021,12 +5050,15 @@ async def get_promo_status(
             ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status == "VERIFIED",
+            *source_guard,
         )
         total_r = await db.execute(total_stmt)
         verified_r = await db.execute(verified_stmt)
         return float(total_r.scalar() or 0.0), float(verified_r.scalar() or 0.0)
 
-    central_total, central_verified = await _sum_volumes(central_uuids)
+    central_total, central_verified = await _sum_volumes(
+        central_uuids, exclude_source_uuids=physical_uuids
+    )
     physical_total, physical_verified = await _sum_volumes(physical_uuids)
 
     async def _has_recent_trade(window_days: int) -> bool:
@@ -5409,6 +5441,18 @@ async def claim_promo_quest(
         )
 
     # Verify trading volume (strictly broker-verified) in quest context.
+    # The central context excludes trades sourced from physical servers so
+    # one trade never feeds both quests (mirrors get_promo_status).
+    central_source_guard = (
+        [
+            or_(
+                models.HubTelemetryReport.source_node_uuid.is_(None),
+                models.HubTelemetryReport.source_node_uuid.not_in(physical_uuids),
+            )
+        ]
+        if payload.quest_type != "node_runner" and physical_uuids
+        else []
+    )
     verified_volume = 0.0
     if quest_uuids:
         verified_vol_stmt = select(
@@ -5420,6 +5464,7 @@ async def claim_promo_quest(
             ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status == "VERIFIED",
+            *central_source_guard,
         )
         vol_res = await db.execute(verified_vol_stmt)
         verified_volume = float(vol_res.scalar() or 0.0)
@@ -5439,6 +5484,7 @@ async def claim_promo_quest(
                 ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
+                *central_source_guard,
             )
             total_vol_res = await db.execute(total_vol_stmt)
             total_volume = float(total_vol_res.scalar() or 0.0)

@@ -413,11 +413,9 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 														</span>
 													</div>
 												<span className="font-mono text-[11px] text-foreground dark:text-white">
-													{!reqs.isPhysicalNode
-														? t("mining.questStatusNotRunning", "Not running")
-														: (reqs.isOnlineNow ?? reqs.isPhysicalNode)
+													{reqs.isPhysicalNode
 														? t("mining.questNodeAgeDays", "{{days}} days", { days: reqs.nodeAgeDays || 0 })
-														: t("mining.questStatusOffline", "Offline")}
+														: t("mining.questStatusNotRunning", "Not running")}
 												</span>
 												</div>
 

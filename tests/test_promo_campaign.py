@@ -1306,22 +1306,24 @@ async def test_promo_pending_trade_counts_as_activity_not_volume(
 
 
 @pytest.mark.asyncio
-async def test_sticky_physical_keeps_volume_after_48h(
+async def test_stale_server_volume_returns_to_central(
     db_session: AsyncSession,
     authenticated_client_factory,
     sample_campaign: models.PromoCampaign,
 ):
-    """Regression (quest-2 '$0 after 48h'): a physical server that went
-    offline keeps its sticky server state and volume. The card reports
-    'offline' via isOnlineNow instead of zeroing into the central context."""
+    """Regression: the 48h freshness gate is load-bearing for the
+    central/physical split. A server silent for 3 days is central again —
+    its volume shows in quest 1 (never vanishes), quest 2 is empty with
+    'not running'. (An 'ever pinged' rule would classify the whole network
+    as physical since every registered node carries IP + ping.)"""
     wallet = "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
     user = models.User(
-        username="promo_sticky_offline",
-        email="promo_sticky_offline@example.com",
+        username="promo_stale_offline",
+        email="promo_stale_offline@example.com",
         hashed_password="somehashedpassword",
         is_active=True,
         role="user",
-        referral_code="REF-STICKY-001",
+        referral_code="REF-STALE-001",
     )
     db_session.add(user)
     await db_session.commit()
@@ -1333,10 +1335,10 @@ async def test_sticky_physical_keeps_volume_after_48h(
     db_session.add(
         models.ApiKey(
             user_id=user.id,
-            name="Sticky Bitget Key",
+            name="Stale Bitget Key",
             encrypted_api_key="enc_key",
             encrypted_api_secret="enc_secret",
-            key_prefix="bg...stic",
+            key_prefix="bg...stal",
             exchange="bitget",
             is_active=True,
         )
@@ -1344,14 +1346,14 @@ async def test_sticky_physical_keeps_volume_after_48h(
     now = datetime.now(timezone.utc)
     db_session.add(
         models.HubNode(
-            node_uuid="sticky-offline-server",
-            name="StickyOfflineServer",
+            node_uuid="stale-offline-server",
+            name="StaleOfflineServer",
             secret_hash="secret",
-            bitget_uid="uid_sticky_off",
+            bitget_uid="uid_stale_off",
             wallet_address=wallet,
-            node_referral_code="REF-STICKY-001",
+            node_referral_code="REF-STALE-001",
             ip_address="203.0.113.45",
-            # Last ping 3 days ago: offline, but EVER pinged -> sticky physical.
+            # Last ping 3 days ago: offline -> central context again.
             last_ping=now - timedelta(days=3),
             created_at=now - timedelta(days=20),
             total_mined=0.0,
@@ -1366,7 +1368,7 @@ async def test_sticky_physical_keeps_volume_after_48h(
             trade_mode="live",
             trade_volume_usdt=1500.0,
             exchange_id="bitget_futures",
-            node_uuid="sticky-offline-server",
+            node_uuid="stale-offline-server",
             verification_status="VERIFIED",
             is_verified=True,
             created_at=now - timedelta(days=1),
@@ -1377,19 +1379,15 @@ async def test_sticky_physical_keeps_volume_after_48h(
     client: AsyncClient = await authenticated_client_factory(user)
     res = await client.get("/api/v1/hub/promo/status")
     assert res.status_code == 200
-    quest = next(q for q in res.json()["quests"] if q["questType"] == "node_runner")
-    reqs = quest["requirements"]
-    # Volume stays in the physical context despite the stale heartbeat.
-    assert reqs["totalVolume"] == 1500.0
-    assert reqs["verifiedVolume"] == 1500.0
-    assert reqs["isPhysicalNode"] is True
-    # ...while liveness is reported honestly instead of "running".
-    assert reqs["isOnlineNow"] is False
-    # A 1-day-old trade is inside the default 7-day window.
-    assert reqs["hasActiveMining"] is True
-    # Offline-but-recently-mining stays claimable: trades are the liveness
-    # proof, the heartbeat only drives the UI badge.
-    assert quest["allRequirementsMet"] is True
+    data = res.json()
+    quest1 = next(q for q in data["quests"] if q["questType"] == "api_volume")
+    assert quest1["requirements"]["totalVolume"] == 1500.0
+    assert quest1["requirements"]["verifiedVolume"] == 1500.0
+    quest2 = next(q for q in data["quests"] if q["questType"] == "node_runner")
+    reqs = quest2["requirements"]
+    assert reqs["totalVolume"] == 0.0
+    assert reqs["isPhysicalNode"] is False
+    assert quest2["allRequirementsMet"] is False
 
 
 @pytest.mark.asyncio

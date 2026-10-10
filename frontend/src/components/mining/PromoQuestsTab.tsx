@@ -110,12 +110,6 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 				const nodeAgeDays = toNumber(reqs.nodeAgeDays, 0);
 				const minNodeAgeDays = toNumber(reqs.minNodeAgeDays, 14);
 				const tradeWindowDays = toNumber(reqs.tradeWindowDays ?? reqs.trade_window_days, 7);
-				// Sticky physicality (backend): the node keeps its server state even
-				// when offline. Online is reported separately so an offline server
-				// shows "Offline" with its volume/age intact instead of "$0".
-				// Fallback to isPhysicalNode for responses from older backends.
-				const rawOnline = reqs.isOnlineNow ?? reqs.is_online_now;
-				const isOnlineNow = rawOnline === undefined ? Boolean(reqs.isPhysicalNode) : Boolean(rawOnline);
 				const isPhysicalNodeOldEnough = Boolean(reqs.isPhysicalNode) && nodeAgeDays >= minNodeAgeDays;
 					const volumeThreshold = toNumber(reqs.volumeThreshold, 1000);
 					const totalVolume = toNumber(reqs.totalVolume ?? reqs.currentVolume ?? reqs.verifiedVolume, 0);
@@ -316,11 +310,9 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 													</span>
 												</div>
 											<span className="font-mono text-[11px] text-white">
-												{!reqs.isPhysicalNode
-													? t("questStatusNotRunning", "Not running")
-													: !isOnlineNow
-													? t("questStatusOffline", "Offline")
-													: t("questNodeAgeDays", "{{days}} days", { days: nodeAgeDays })}
+												{reqs.isPhysicalNode
+													? t("questNodeAgeDays", "{{days}} days", { days: nodeAgeDays })
+													: t("questStatusNotRunning", "Not running")}
 											</span>
 											</div>
 
