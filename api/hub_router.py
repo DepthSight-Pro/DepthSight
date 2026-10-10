@@ -2576,15 +2576,18 @@ def _node_owner_keys(node: Optional[models.HubNode]) -> set:
 
     These are used to decide whether telemetry may be attributed to a node:
     a node may only attribute trades to itself or to another node owned by the
-    same account (same user referral code, same Weex UID or same bound EVM wallet).
+    same account (same user referral code, same exchange UID on ANY supported
+    exchange, or same bound EVM wallet).
     """
     keys = set()
     if not node:
         return keys
     if node.node_referral_code:
         keys.add(f"ref:{node.node_referral_code}")
-    if node.weex_uid:
-        keys.add(f"weex:{node.weex_uid}")
+    for uid_attr in ("weex_uid", "bitget_uid", "bybit_uid", "okx_uid"):
+        uid_val = getattr(node, uid_attr, None)
+        if uid_val:
+            keys.add(f"uid:{str(uid_val).strip()}")
     if node.wallet_address:
         keys.add(f"wallet:{node.wallet_address.strip().lower()}")
     return keys
@@ -2600,7 +2603,8 @@ async def _verify_attribution(
 
     A node may attribute telemetry only to:
       * itself, or
-      * a node owned by the same account (referral code / Weex UID / EVM wallet).
+      * a node owned by the same account (referral code / exchange UID on any
+        supported exchange / EVM wallet).
 
     Prevents clients from spoofing attribution to arbitrary other nodes.
     """
@@ -4841,21 +4845,38 @@ async def _resolve_user_promo_identity(
     }
 
 
-def _is_physical_node(
-    node: Optional[models.HubNode], max_ping_age_hours: int = 48
-) -> bool:
-    """Checks whether a HubNode represents a real running physical server node in the network.
+def _is_physical_node(node: Optional[models.HubNode]) -> bool:
+    """Checks whether a HubNode represents a real physical server node.
 
-    A physical node:
-    1. Must exist.
-    2. Must have an IP address recorded (not empty, not localhost/127.0.0.1/::1).
-    3. Must have an active heartbeat ping history (last_ping is not None).
-    4. Must have been active recently (last_ping within max_ping_age_hours).
+    STICKY by design (promo continuity): once a node has proven it is a
+    real server — a valid IP address recorded (not empty, not
+    localhost/127.0.0.1/::1) plus ANY heartbeat ping history (last_ping is
+    not None) — it stays physical forever. A reboot / downtime must move
+    the node to "offline", never reclassify its earned volume into the
+    central context (that was the quest-2 "$0 after 48h" bug).
+
+    Use :func:`_is_node_online` for liveness ("server online now").
     """
     if not node:
         return False
     ip = (node.ip_address or "").strip().lower()
     if not ip or ip in ("127.0.0.1", "localhost", "none", "::1"):
+        return False
+    if not node.last_ping:
+        return False
+    return True
+
+
+def _is_node_online(
+    node: Optional[models.HubNode], max_ping_age_hours: int = 48
+) -> bool:
+    """Checks whether a physical node is online RIGHT NOW.
+
+    Freshness gate only: last_ping within max_ping_age_hours. Never used
+    for volume classification — only for honest UI ("server offline N
+    days") and for the claim-time liveness requirement.
+    """
+    if not node:
         return False
     if not node.last_ping:
         return False
@@ -4943,8 +4964,14 @@ async def get_promo_status(
     # 3. Volumes are split by context:
     #  - non-physical nodes (central hub, personal wallet node) feed quest 1,
     #  - physical server nodes feed quest 2.
-    # Volume earned in one context does NOT count toward the other quest.
+    # A trade mined THROUGH a physical server (source_node_uuid) counts as
+    # physical-server volume even when attributed to the wallet node, so the
+    # split never strands volume earned on the user's own server.
     from sqlalchemy import func
+
+    quests_cfg = campaign.quests or []
+    if isinstance(quests_cfg, dict):
+        quests_cfg = [quests_cfg]
 
     owned_nodes: List[models.HubNode] = []
     if user_node_uuids:
@@ -4970,19 +4997,28 @@ async def get_promo_status(
             central_uuids.append(nu)
 
     async def _sum_volumes(uuids: List[str]) -> tuple:
+        # Volume mined THROUGH one of these nodes counts too: a trade
+        # attributed to the wallet node but sourced from the physical server
+        # (source_node_uuid) is physical-server volume, not central.
         if not uuids:
             return 0.0, 0.0
         total_stmt = select(
             func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
         ).where(
-            models.HubTelemetryReport.node_uuid.in_(uuids),
+            or_(
+                models.HubTelemetryReport.node_uuid.in_(uuids),
+                models.HubTelemetryReport.source_node_uuid.in_(uuids),
+            ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status != "REJECTED",
         )
         verified_stmt = select(
             func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
         ).where(
-            models.HubTelemetryReport.node_uuid.in_(uuids),
+            or_(
+                models.HubTelemetryReport.node_uuid.in_(uuids),
+                models.HubTelemetryReport.source_node_uuid.in_(uuids),
+            ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status == "VERIFIED",
         )
@@ -4993,24 +5029,33 @@ async def get_promo_status(
     central_total, central_verified = await _sum_volumes(central_uuids)
     physical_total, physical_verified = await _sum_volumes(physical_uuids)
 
-    # Quest 2 activity: ANY non-rejected trade on a physical node in the last
-    # 7 days proves the server is live and mining. Broker verification gates
-    # the VOLUME threshold separately — activity must not wait for it.
-    recent_trade_exists = False
-    if physical_uuids:
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    async def _has_recent_trade(window_days: int) -> bool:
+        # Activity = ANY non-rejected trade attributed to OR sourced from a
+        # physical node inside the quest's own window. Broker verification
+        # gates the VOLUME threshold separately — activity must not wait
+        # for it.
+        if not physical_uuids:
+            return False
+        try:
+            window_days = max(1, int(window_days))
+        except (TypeError, ValueError):
+            window_days = 7
+        window_ago = datetime.now(timezone.utc) - timedelta(days=window_days)
         trade_stmt = (
             select(models.HubTelemetryReport.id)
             .where(
-                models.HubTelemetryReport.node_uuid.in_(physical_uuids),
+                or_(
+                    models.HubTelemetryReport.node_uuid.in_(physical_uuids),
+                    models.HubTelemetryReport.source_node_uuid.in_(physical_uuids),
+                ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
-                models.HubTelemetryReport.created_at >= seven_days_ago,
+                models.HubTelemetryReport.created_at >= window_ago,
             )
             .limit(1)
         )
         trade_res = await db.execute(trade_stmt)
-        recent_trade_exists = trade_res.scalars().first() is not None
+        return trade_res.scalars().first() is not None
 
     # Owned physical nodes (for node_runner quest): oldest physical wins,
     # so quest 1 done on central hub doesn't block quest 2 from own server.
@@ -5025,9 +5070,6 @@ async def get_promo_status(
 
     # 4. Compute per-quest progress
     quests_progress = []
-    quests_cfg = campaign.quests or []
-    if isinstance(quests_cfg, dict):
-        quests_cfg = [quests_cfg]
 
     for q in quests_cfg:
         q_type = q.get("quest_type", "api_volume")
@@ -5060,8 +5102,6 @@ async def get_promo_status(
             legacy_wallet = getattr(node, "wallet_address", None) or None
         claim_wallet = identity["wallet"] or legacy_wallet
         if user_uids or claim_wallet:
-            from sqlalchemy import or_
-
             claim_filters = []
             for u in user_uids:
                 claim_filters.append(models.PromoClaim.exchange_uid == str(u))
@@ -5136,19 +5176,36 @@ async def get_promo_status(
             )
         elif q_type == "node_runner":
             min_age = int(q.get("min_node_age_days", 14))
+            try:
+                trade_window = max(1, int(q.get("trade_window_days", 7)))
+            except (TypeError, ValueError):
+                trade_window = 7
             is_physical = physical_node is not None
+            # Liveness is reported separately from sticky physicality: an
+            # offline server keeps its volume/Age state, the UI shows
+            # "offline" instead of zeroing the card (quest-2 "$0" bug).
+            is_online = _is_node_online(physical_node) if physical_node else False
             physical_node_age = (
                 _datetime_diff_days(physical_node.created_at) if physical_node else 0
             )
             reqs["is_physical_node"] = is_physical
             reqs["isPhysicalNode"] = is_physical
+            reqs["is_online_now"] = is_online
+            reqs["isOnlineNow"] = is_online
             reqs["node_age_days"] = physical_node_age
             reqs["nodeAgeDays"] = physical_node_age
             reqs["min_node_age_days"] = min_age
             reqs["minNodeAgeDays"] = min_age
+            reqs["trade_window_days"] = trade_window
+            reqs["tradeWindowDays"] = trade_window
+            recent_trade_exists = await _has_recent_trade(trade_window)
             reqs["has_active_mining"] = recent_trade_exists
             reqs["hasActiveMining"] = recent_trade_exists
 
+            # Note: liveness for CLAIM stays on the activity window
+            # (recent_trade_exists), not on the heartbeat — trades are the
+            # proof of mining. is_online is UI-only honesty ("offline" badge
+            # instead of a zeroed card).
             all_met = (
                 has_key
                 and vol_met
@@ -5290,8 +5347,9 @@ async def claim_promo_quest(
     master_uid = str(exchange_uid)
 
     # Quest volume context: api_volume counts central (non-physical) volume
-    # only, node_runner counts physical-server volume only. Volume earned in
-    # one context does NOT count toward the other quest.
+    # only, node_runner counts physical-server volume only — including trades
+    # mined THROUGH the physical server (source_node_uuid), even when
+    # attributed to the wallet node.
     from sqlalchemy import func
 
     owned_claim_nodes: List[models.HubNode] = []
@@ -5356,7 +5414,10 @@ async def claim_promo_quest(
         verified_vol_stmt = select(
             func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
         ).where(
-            models.HubTelemetryReport.node_uuid.in_(quest_uuids),
+            or_(
+                models.HubTelemetryReport.node_uuid.in_(quest_uuids),
+                models.HubTelemetryReport.source_node_uuid.in_(quest_uuids),
+            ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status == "VERIFIED",
         )
@@ -5372,7 +5433,10 @@ async def claim_promo_quest(
                     func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0
                 )
             ).where(
-                models.HubTelemetryReport.node_uuid.in_(quest_uuids),
+                or_(
+                    models.HubTelemetryReport.node_uuid.in_(quest_uuids),
+                    models.HubTelemetryReport.source_node_uuid.in_(quest_uuids),
+                ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
             )
@@ -5413,18 +5477,27 @@ async def claim_promo_quest(
 
     if payload.quest_type == "node_runner":
         # Physical presence + age already verified above; here only the
-        # 7-day activity on physical nodes remains. Any non-rejected trade
-        # counts (liveness proof); broker verification gates the volume
-        # threshold separately with its own message.
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        # activity window on physical nodes remains (trade_window_days from
+        # the quest config, default 7). Any non-rejected trade attributed to
+        # OR sourced from a physical node counts (liveness proof); broker
+        # verification gates the volume threshold separately with its own
+        # message.
+        try:
+            claim_window_days = max(1, int(target_quest.get("trade_window_days", 7)))
+        except (TypeError, ValueError):
+            claim_window_days = 7
+        window_ago = datetime.now(timezone.utc) - timedelta(days=claim_window_days)
 
         trade_stmt = (
             select(models.HubTelemetryReport.id)
             .where(
-                models.HubTelemetryReport.node_uuid.in_(physical_uuids),
+                or_(
+                    models.HubTelemetryReport.node_uuid.in_(physical_uuids),
+                    models.HubTelemetryReport.source_node_uuid.in_(physical_uuids),
+                ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
-                models.HubTelemetryReport.created_at >= seven_days_ago,
+                models.HubTelemetryReport.created_at >= window_ago,
             )
             .limit(1)
         )
@@ -5432,14 +5505,12 @@ async def claim_promo_quest(
         if not trade_res.scalars().first():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Active trade mining requirement not met: no trades in the last 7 days.",
+                detail=f"Active trade mining requirement not met: no trades in the last {claim_window_days} days.",
             )
 
     # Anti-fraud compound check (per quest_type): any of the user's UIDs
     # or wallet already claimed -> 409. Node uuid is intentionally NOT
     # used: one user = many nodes, one claim per (UID, wallet).
-    from sqlalchemy import or_
-
     anti_fraud_filters = [models.PromoClaim.exchange_uid.in_(user_uids)]
     if wallet_addr_to_check:
         anti_fraud_filters.append(
@@ -5587,6 +5658,15 @@ async def create_or_update_promo_campaign_admin(
             detail="Promo campaigns can only be managed on the Central Federation Hub.",
         )
     await _verify_admin_access_async(authorization, db)
+
+    # Guard against accidental campaign wipes: an upsert with an empty quest
+    # list would silently delete every quest card for all users (and the
+    # status endpoint would return zero quests). Such payloads are rejected.
+    if not payload.quests:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Campaign must contain at least one quest. Refusing to wipe all quests.",
+        )
 
     stmt = select(models.PromoCampaign).where(models.PromoCampaign.id == payload.id)
     res = await db.execute(stmt)

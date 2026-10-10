@@ -412,11 +412,13 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 															})}
 														</span>
 													</div>
-													<span className="font-mono text-[11px] text-foreground dark:text-white">
-														{reqs.isPhysicalNode
-															? t("mining.questNodeAgeDays", "{{days}} days", { days: reqs.nodeAgeDays || 0 })
-															: t("mining.questStatusNotRunning", "Not running")}
-													</span>
+												<span className="font-mono text-[11px] text-foreground dark:text-white">
+													{!reqs.isPhysicalNode
+														? t("mining.questStatusNotRunning", "Not running")
+														: (reqs.isOnlineNow ?? reqs.isPhysicalNode)
+														? t("mining.questNodeAgeDays", "{{days}} days", { days: reqs.nodeAgeDays || 0 })
+														: t("mining.questStatusOffline", "Offline")}
+												</span>
 												</div>
 
 												<div className="flex items-center justify-between gap-2">
@@ -430,9 +432,11 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 														>
 															{reqs.hasActiveMining ? "✓" : "○"}
 														</span>
-														<span>
-															{t("mining.questReqActiveMining", "Active mining (trade in last 7 days)")}
-														</span>
+													<span>
+														{t("mining.questReqActiveMining", "Active mining (trade in last {{days}} days)", {
+															days: (reqs.tradeWindowDays as number) || 7,
+														})}
+													</span>
 													</div>
 													<span className="font-mono text-[11px] text-foreground dark:text-white">
 														{reqs.hasActiveMining

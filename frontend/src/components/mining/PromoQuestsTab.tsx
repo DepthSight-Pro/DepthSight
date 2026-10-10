@@ -107,9 +107,16 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 					const claimedPercent =
 						quest.totalSlots > 0 ? Math.min(100, (quest.claimedSlots / quest.totalSlots) * 100) : 0;
 
-					const nodeAgeDays = toNumber(reqs.nodeAgeDays, 0);
-					const minNodeAgeDays = toNumber(reqs.minNodeAgeDays, 14);
-					const isPhysicalNodeOldEnough = Boolean(reqs.isPhysicalNode) && nodeAgeDays >= minNodeAgeDays;
+				const nodeAgeDays = toNumber(reqs.nodeAgeDays, 0);
+				const minNodeAgeDays = toNumber(reqs.minNodeAgeDays, 14);
+				const tradeWindowDays = toNumber(reqs.tradeWindowDays ?? reqs.trade_window_days, 7);
+				// Sticky physicality (backend): the node keeps its server state even
+				// when offline. Online is reported separately so an offline server
+				// shows "Offline" with its volume/age intact instead of "$0".
+				// Fallback to isPhysicalNode for responses from older backends.
+				const rawOnline = reqs.isOnlineNow ?? reqs.is_online_now;
+				const isOnlineNow = rawOnline === undefined ? Boolean(reqs.isPhysicalNode) : Boolean(rawOnline);
+				const isPhysicalNodeOldEnough = Boolean(reqs.isPhysicalNode) && nodeAgeDays >= minNodeAgeDays;
 					const volumeThreshold = toNumber(reqs.volumeThreshold, 1000);
 					const totalVolume = toNumber(reqs.totalVolume ?? reqs.currentVolume ?? reqs.verifiedVolume, 0);
 					const verifiedVolume = toNumber(reqs.verifiedVolume, 0);
@@ -308,11 +315,13 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 														})}
 													</span>
 												</div>
-												<span className="font-mono text-[11px] text-white">
-													{reqs.isPhysicalNode
-														? t("questNodeAgeDays", "{{days}} days", { days: nodeAgeDays })
-														: t("questStatusNotRunning", "Not running")}
-												</span>
+											<span className="font-mono text-[11px] text-white">
+												{!reqs.isPhysicalNode
+													? t("questStatusNotRunning", "Not running")
+													: !isOnlineNow
+													? t("questStatusOffline", "Offline")
+													: t("questNodeAgeDays", "{{days}} days", { days: nodeAgeDays })}
+											</span>
 											</div>
 
 											<div className="flex items-center justify-between gap-2">
@@ -326,9 +335,11 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 													>
 														{reqs.hasActiveMining ? "✓" : "○"}
 													</span>
-													<span>
-														{t("questReqActiveMining", "Active mining (trade in last 7 days)")}
-													</span>
+												<span>
+													{t("questReqActiveMining", "Active mining (trade in last {{days}} days)", {
+														days: tradeWindowDays,
+													})}
+												</span>
 												</div>
 												<span className="font-mono text-[11px] text-white">
 													{reqs.hasActiveMining

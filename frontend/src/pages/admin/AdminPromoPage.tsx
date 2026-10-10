@@ -212,6 +212,18 @@ const AdminPromoPage: React.FC = () => {
 			ui_config: null,
 		};
 
+		// Guard against accidental quest wipes: saving with zero quests would
+		// delete every quest card for all users (backend also rejects this).
+		if (questsList.length === 0) {
+			toast({
+				title: "Validation Error",
+				description:
+					"At least one quest must be enabled. Both quest sections are empty — refusing to wipe the campaign.",
+				variant: "destructive",
+			});
+			return;
+		}
+
 		saveCampaign(apiPayload, {
 			onSuccess: () => {
 				toast({

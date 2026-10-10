@@ -1303,3 +1303,282 @@ async def test_promo_pending_trade_counts_as_activity_not_volume(
     )
     assert res_claim.status_code == 400
     assert "broker verification" in res_claim.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_sticky_physical_keeps_volume_after_48h(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """Regression (quest-2 '$0 after 48h'): a physical server that went
+    offline keeps its sticky server state and volume. The card reports
+    'offline' via isOnlineNow instead of zeroing into the central context."""
+    wallet = "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+    user = models.User(
+        username="promo_sticky_offline",
+        email="promo_sticky_offline@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-STICKY-001",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    sample_campaign.admin_only = False
+    await db_session.commit()
+
+    db_session.add(
+        models.ApiKey(
+            user_id=user.id,
+            name="Sticky Bitget Key",
+            encrypted_api_key="enc_key",
+            encrypted_api_secret="enc_secret",
+            key_prefix="bg...stic",
+            exchange="bitget",
+            is_active=True,
+        )
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        models.HubNode(
+            node_uuid="sticky-offline-server",
+            name="StickyOfflineServer",
+            secret_hash="secret",
+            bitget_uid="uid_sticky_off",
+            wallet_address=wallet,
+            node_referral_code="REF-STICKY-001",
+            ip_address="203.0.113.45",
+            # Last ping 3 days ago: offline, but EVER pinged -> sticky physical.
+            last_ping=now - timedelta(days=3),
+            created_at=now - timedelta(days=20),
+            total_mined=0.0,
+        )
+    )
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=60000.0,
+            exit_price=61200.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="sticky-offline-server",
+            verification_status="VERIFIED",
+            is_verified=True,
+            created_at=now - timedelta(days=1),
+        )
+    )
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(user)
+    res = await client.get("/api/v1/hub/promo/status")
+    assert res.status_code == 200
+    quest = next(q for q in res.json()["quests"] if q["questType"] == "node_runner")
+    reqs = quest["requirements"]
+    # Volume stays in the physical context despite the stale heartbeat.
+    assert reqs["totalVolume"] == 1500.0
+    assert reqs["verifiedVolume"] == 1500.0
+    assert reqs["isPhysicalNode"] is True
+    # ...while liveness is reported honestly instead of "running".
+    assert reqs["isOnlineNow"] is False
+    # A 1-day-old trade is inside the default 7-day window.
+    assert reqs["hasActiveMining"] is True
+    # Offline-but-recently-mining stays claimable: trades are the liveness
+    # proof, the heartbeat only drives the UI badge.
+    assert quest["allRequirementsMet"] is True
+
+
+@pytest.mark.asyncio
+async def test_source_node_volume_counts_as_physical(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """Volume mined THROUGH the physical server (source_node_uuid) counts for
+    quest 2 even when attributed to the wallet node."""
+    wallet = "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    user = models.User(
+        username="promo_source_ctx",
+        email="promo_source_ctx@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-SOURCE-001",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    sample_campaign.admin_only = False
+    await db_session.commit()
+
+    db_session.add(
+        models.ApiKey(
+            user_id=user.id,
+            name="Source Bitget Key",
+            encrypted_api_key="enc_key",
+            encrypted_api_secret="enc_secret",
+            key_prefix="bg...srce",
+            exchange="bitget",
+            is_active=True,
+        )
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        models.HubNode(
+            node_uuid="source-wallet-node",
+            name="SourceWallet",
+            secret_hash="secret",
+            bitget_uid="uid_source_ctx",
+            wallet_address=wallet,
+            total_mined=0.0,
+        )
+    )
+    db_session.add(
+        models.HubNode(
+            node_uuid="source-physical-server",
+            name="SourcePhysical",
+            secret_hash="secret",
+            bitget_uid="uid_source_ctx",
+            node_referral_code="REF-SOURCE-001",
+            ip_address="198.51.100.99",
+            last_ping=now,
+            created_at=now - timedelta(days=20),
+            total_mined=0.0,
+        )
+    )
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=60000.0,
+            exit_price=61200.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="source-wallet-node",
+            source_node_uuid="source-physical-server",
+            verification_status="VERIFIED",
+            is_verified=True,
+            created_at=now - timedelta(hours=12),
+        )
+    )
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(user)
+    res = await client.get("/api/v1/hub/promo/status")
+    assert res.status_code == 200
+    quest2 = next(q for q in res.json()["quests"] if q["questType"] == "node_runner")
+    assert quest2["requirements"]["totalVolume"] == 1500.0
+    assert quest2["requirements"]["verifiedVolume"] == 1500.0
+    assert quest2["requirements"]["hasActiveMining"] is True
+
+
+@pytest.mark.asyncio
+async def test_trade_window_days_is_respected(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """trade_window_days from the quest config gates activity (not a hardcoded
+    7 days): a 2-day-old trade is inactive under window=1."""
+    quests = [dict(q) for q in (sample_campaign.quests or [])]
+    for q in quests:
+        if q.get("quest_type") == "node_runner":
+            q["trade_window_days"] = 1
+    sample_campaign.quests = quests
+    sample_campaign.admin_only = False
+    await db_session.commit()
+
+    wallet = "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+    user = models.User(
+        username="promo_window_cfg",
+        email="promo_window_cfg@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-WINDOW-001",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    db_session.add(
+        models.ApiKey(
+            user_id=user.id,
+            name="Window Bitget Key",
+            encrypted_api_key="enc_key",
+            encrypted_api_secret="enc_secret",
+            key_prefix="bg...wind",
+            exchange="bitget",
+            is_active=True,
+        )
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        models.HubNode(
+            node_uuid="window-physical-node",
+            name="WindowPhysical",
+            secret_hash="secret",
+            bitget_uid="uid_window_cfg",
+            wallet_address=wallet,
+            node_referral_code="REF-WINDOW-001",
+            ip_address="203.0.113.77",
+            last_ping=now,
+            created_at=now - timedelta(days=20),
+            total_mined=0.0,
+        )
+    )
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=60000.0,
+            exit_price=61200.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="window-physical-node",
+            verification_status="VERIFIED",
+            is_verified=True,
+            created_at=now - timedelta(days=2),
+        )
+    )
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(user)
+    res = await client.get("/api/v1/hub/promo/status")
+    assert res.status_code == 200
+    quest = next(q for q in res.json()["quests"] if q["questType"] == "node_runner")
+    assert quest["requirements"]["tradeWindowDays"] == 1
+    # 2-day-old trade is outside the 1-day window.
+    assert quest["requirements"]["hasActiveMining"] is False
+    assert quest["allRequirementsMet"] is False
+
+
+@pytest.mark.asyncio
+async def test_admin_upsert_rejects_empty_quests(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    promo_admin_user: models.User,
+):
+    """Guard against accidental campaign wipes: an upsert with zero quests is
+    rejected instead of deleting every quest card for all users."""
+    admin_client: AsyncClient = await authenticated_client_factory(promo_admin_user)
+    res = await admin_client.post(
+        "/api/v1/hub/promo/admin/campaigns",
+        json={
+            "id": "wipe_attempt",
+            "name": "Wipe Attempt",
+            "exchangeId": "bitget",
+            "totalPool": 1000.0,
+            "adminOnly": True,
+            "isActive": False,
+            "quests": [],
+        },
+    )
+    assert res.status_code == 400

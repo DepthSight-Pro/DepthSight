@@ -143,8 +143,10 @@ interface PwaPromoQuestRequirements {
 	isVolumeVerifying?: boolean;
 	isVolumeVerified?: boolean;
 	isPhysicalNode?: boolean;
+	isOnlineNow?: boolean;
 	nodeAgeDays?: number;
 	minNodeAgeDays?: number;
+	tradeWindowDays?: number;
 	hasWallet?: boolean;
 	hasActiveMining?: boolean;
 	[key: string]: unknown;

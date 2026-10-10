@@ -969,6 +969,59 @@ async def test_attribution_to_own_wallet_node_allowed(
     assert resp.status_code == 201
 
 
+async def test_attribution_to_same_bitget_uid_allowed(
+    test_client: AsyncClient, db_session: AsyncSession
+):
+    """A node may attribute to another node sharing its Bitget UID.
+
+    Same-exchange UID identifies the same broker account, exactly like the
+    Weex-UID precedent: a physical server without a bound wallet can report
+    volume for the wallet node of the same user instead of 403-looping.
+    """
+    node1 = models.HubNode(
+        node_uuid="bg-node-physical",
+        name="BitgetPhysical",
+        secret_hash=hashlib.sha256("secret-bg1".encode()).hexdigest(),
+        bitget_uid="755001122",
+    )
+    node2 = models.HubNode(
+        node_uuid="bg-node-wallet",
+        name="BitgetWallet",
+        secret_hash=hashlib.sha256("secret-bg2".encode()).hexdigest(),
+        bitget_uid="755001122",
+        wallet_address="0x1234567890abcdef1234567890abcdef12345678",
+    )
+    db_session.add_all([node1, node2])
+    await db_session.commit()
+
+    payload = {
+        "symbol": "BTCUSDT",
+        "direction": "LONG",
+        "entryPrice": 67000.0,
+        "exitPrice": 67500.0,
+        "tradeMode": "LIVE",
+        "strategyBlocks": [],
+        "marketContext": {},
+        "exchangeId": "bitget",
+        "marketType": "futures",
+        "brokerTradeId": "bitget-attr-1",
+        "tradeVolumeUsdt": 750.0,
+        "attributionNodeUuid": "bg-node-wallet",
+    }
+    body_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+    sig = hmac.new("secret-bg1".encode(), body_bytes, hashlib.sha256).hexdigest()
+    headers = {
+        "X-Node-UUID": "bg-node-physical",
+        "X-Node-Secret": "secret-bg1",
+        "X-Node-Signature": sig,
+        "Content-Type": "application/json",
+    }
+    resp = await test_client.post(
+        "/api/v1/hub/telemetry/report", content=body_bytes, headers=headers
+    )
+    assert resp.status_code == 201
+
+
 async def test_welcome_bonus_pool_cap(db_session: AsyncSession, monkeypatch):
     """P.7: Welcome bonuses stop once the welcome pool is exhausted."""
     from contextlib import asynccontextmanager
