@@ -1,6 +1,7 @@
 # tests/test_risk_manager.py
 import pytest
 import pytest_asyncio
+import time
 from unittest.mock import MagicMock, AsyncMock, patch
 import math
 import logging
@@ -1581,3 +1582,87 @@ async def test_disable_reason_recorded_and_cleared(risk_manager):
     risk_manager._check_risk_limits()
     assert risk_manager._is_trading_allowed is True
     assert risk_manager._last_disable_reason is None
+
+
+@pytest.mark.asyncio
+async def test_paper_loss_trips_only_paper(risk_manager):
+    """Regression (paper phantom block): a paper daily loss trips the paper
+    sandbox only — live counters and the live flag stay untouched."""
+    rm = risk_manager
+    rm.paper_stats.current_balance = 10000.0
+    rm.paper_stats.start_of_day_balance = 10000.0
+
+    await rm.update_trade_result("XRPUSDT", -600.0, mode="paper")
+
+    assert rm.paper_stats.today_pnl == -600.0
+    assert rm.paper_stats.consecutive_losses == 1
+    assert rm._paper_is_trading_allowed is False
+    assert "[PAPER]" in (rm._paper_last_disable_reason or "")
+    # Live sandbox untouched.
+    assert rm.stats.today_pnl == 0.0
+    assert rm.stats.consecutive_losses == 0
+    assert rm._is_trading_allowed is True
+    assert rm._last_disable_reason is None
+
+
+@pytest.mark.asyncio
+async def test_live_loss_trips_only_live(risk_manager):
+    """Mirror: a live daily loss must not block the paper sandbox."""
+    rm = risk_manager
+    rm.paper_stats.current_balance = 10000.0
+    rm.paper_stats.start_of_day_balance = 10000.0
+
+    await rm.update_trade_result("XRPUSDT", -600.0, mode="live")
+
+    assert rm.stats.today_pnl == -600.0
+    assert rm._is_trading_allowed is False
+    assert rm.paper_stats.today_pnl == 0.0
+    assert rm.paper_stats.consecutive_losses == 0
+    assert rm._paper_is_trading_allowed is True
+    assert rm._paper_last_disable_reason is None
+
+
+@pytest.mark.asyncio
+async def test_symbol_gate_is_per_mode(risk_manager):
+    """is_symbol_trading_allowed gates each sandbox by its own flag; the
+    symbol blacklist itself stays shared."""
+    rm = risk_manager
+    rm._last_disabled_balance_check_ts = time.time()  # skip self-heal fetch
+    rm.paper_stats.current_balance = 10000.0
+    rm.paper_stats.start_of_day_balance = 10000.0
+    rm._paper_is_trading_allowed = False
+
+    assert await rm.is_symbol_trading_allowed("XRPUSDT", mode="paper") is False
+    assert await rm.is_symbol_trading_allowed("XRPUSDT", mode="live") is True
+
+
+def test_reset_daily_counters_per_mode(risk_manager):
+    """Manual reset zeroes the selected sandbox only and re-anchors start."""
+    rm = risk_manager
+    rm.stats.today_pnl = -600.0
+    rm.stats.consecutive_losses = 3
+    rm.stats.current_balance = 9400.0
+    rm.stats.start_of_day_balance = 10000.0
+    rm._is_trading_allowed = False
+    rm._last_disable_reason = "Daily loss"
+    rm.paper_stats.today_pnl = -100.0
+    rm.paper_stats.consecutive_losses = 1
+    rm._paper_is_trading_allowed = False
+    rm._paper_last_disable_reason = "[PAPER] Daily loss"
+
+    out = rm.reset_daily_counters(mode="live")
+
+    assert out["live"]["today_pnl"] == 0.0
+    assert rm.stats.today_pnl == 0.0
+    assert rm.stats.consecutive_losses == 0
+    assert rm.stats.start_of_day_balance == 9400.0
+    assert rm._is_trading_allowed is True
+    assert rm._last_disable_reason is None
+    # Paper sandbox untouched.
+    assert rm.paper_stats.today_pnl == -100.0
+    assert rm._paper_is_trading_allowed is False
+
+    out = rm.reset_daily_counters(mode="all")
+    assert rm.paper_stats.today_pnl == 0.0
+    assert rm._paper_is_trading_allowed is True
+    assert rm._is_trading_allowed is True

@@ -189,7 +189,12 @@ async def test_referrer_and_mining_flag_gated_for_wallet_node(test_client, db_se
     assert resp.status_code == 201
 
     # Re-register with the SAME secret, an is_mining_server flag and a referrer,
-    # but NO owner signature -> sensitive changes must be ignored (metadata-only).
+    # but NO owner signature -> the referrer stays gated (one-time binding),
+    # while the mining-server flag IS applied: presenting the current
+    # telemetry secret proves operatorship, the flag is monotonic (only ever
+    # set True, never unset), and commissions route to the node's own wallet,
+    # so there is no theft vector (this is what lets a plain mining
+    # activation promote its server without a fresh wallet signature).
     changed = dict(base)
     changed["is_mining_server"] = True
     changed["referrer_code"] = "DSN-REF-ATTACK"
@@ -199,7 +204,7 @@ async def test_referrer_and_mining_flag_gated_for_wallet_node(test_client, db_se
     assert resp.status_code in (200, 201)
 
     node = await _get_node(db_session, node_uuid)
-    assert node.is_mining_server is False
+    assert node.is_mining_server is True
     assert node.referrer_node_uuid is None
 
 

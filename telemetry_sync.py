@@ -67,9 +67,27 @@ async def _identity_from_db(
     mining identity of any configured user. Keeps offline delivery working
     after a wallet re-key, when env/file identities hold an outdated secret.
     """
+    pairs = await _all_identities_from_db(session)
+    if pairs:
+        return pairs[0]
+    return None, None
+
+
+async def _all_identities_from_db(
+    session: AsyncSession,
+) -> list[Tuple[str, str]]:
+    """All wallet-derived mining identities in the local DB.
+
+    Used for per-report auth selection: a pending report is always
+    submittable by the identity of the node it is attributed to
+    (self-attribution never trips the attribution gate), while the legacy
+    file identity may belong to a different node entirely (e.g. the
+    physical node vs the wallet node) and loop on 403 forever.
+    """
     from sqlalchemy.future import select
     from api.security import decrypt_node_secret
 
+    found: list[Tuple[str, str]] = []
     res = await session.execute(select(models.AppConfig).limit(200))
     for cfg in res.scalars().all():
         settings = (
@@ -81,8 +99,10 @@ async def _identity_from_db(
         uuid_val, raw_secret = find_identity_pair(settings)
         secret_val = decrypt_node_secret(raw_secret)
         if uuid_val and secret_val:
-            return str(uuid_val), str(secret_val)
-    return None, None
+            pair = (str(uuid_val), str(secret_val))
+            if pair not in found:
+                found.append(pair)
+    return found
 
 
 def format_report_payload(report: models.HubTelemetryReport) -> Dict[str, Any]:
@@ -121,16 +141,7 @@ async def resync_pending_telemetry_reports(
     if os.getenv("IS_CENTRAL_HUB", "false").lower() == "true":
         return {"synced": 0, "total": 0, "reason": "is_central_hub"}
 
-    auth_node_uuid, node_secret = get_node_identity()
-    if (not auth_node_uuid or not node_secret) and db is not None:
-        # env/file identity missing or stale -> wallet identity from the DB.
-        auth_node_uuid, node_secret = await _identity_from_db(db)
-    if (not auth_node_uuid or not node_secret) and db is None:
-        async with AsyncSessionLocal() as ident_session:
-            auth_node_uuid, node_secret = await _identity_from_db(ident_session)
-    if not auth_node_uuid or not node_secret:
-        logger.warning("[telemetry_sync] Node identity not found. Resync skipped.")
-        return {"synced": 0, "total": 0, "reason": "no_node_identity"}
+    file_uuid, file_secret = get_node_identity()
 
     report_url = get_hub_report_url()
 
@@ -140,6 +151,26 @@ async def resync_pending_telemetry_reports(
         )
         if not pending_reports:
             return {"synced": 0, "total": 0, "reason": "queue_empty"}
+
+        # Candidate auth identities: every wallet identity from the DB plus
+        # the legacy file/env identity. Each report is submitted as the
+        # identity of the node it is attributed to — self-attribution never
+        # trips the hub attribution gate, while the file identity may belong
+        # to a different node (physical vs wallet) and loop on 403 forever.
+        candidates = await _all_identities_from_db(session)
+        if file_uuid and file_secret:
+            file_pair = (file_uuid, file_secret)
+            if file_pair not in candidates:
+                candidates.append(file_pair)
+        if not candidates:
+            logger.warning("[telemetry_sync] Node identity not found. Resync skipped.")
+            return {"synced": 0, "total": 0, "reason": "no_node_identity"}
+
+        def _auth_for(report_node_uuid: Optional[str]) -> Tuple[str, str]:
+            for uuid_val, secret_val in candidates:
+                if report_node_uuid and uuid_val == report_node_uuid:
+                    return uuid_val, secret_val
+            return candidates[0]
 
         synced_count = 0
         # Bounded pool, reused across the whole batch: 50 sequential POSTs share
@@ -151,6 +182,7 @@ async def resync_pending_telemetry_reports(
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
         ) as client:
             for report in pending_reports:
+                auth_node_uuid, node_secret = _auth_for(report.node_uuid)
                 payload = format_report_payload(report)
                 body_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
                 signature = hmac.new(

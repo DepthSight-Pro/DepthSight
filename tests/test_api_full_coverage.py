@@ -408,6 +408,38 @@ class TestPortfolioAndPositions:
         # Compare user_id as strings, since a string comes from JSON
         assert str(message_data["payload"]["user_id"]) == str(pro_user.id)
 
+    async def test_risk_reset_publishes_command(
+        self,
+        authenticated_client: AsyncClient,
+        override_redis_client: MagicMock,
+        pro_user: models.User,
+    ):
+        response = await authenticated_client.post(
+            "/api/v1/portfolio/risk/reset", params={"mode": "paper"}
+        )
+        assert response.status_code == 202
+        override_redis_client.publish.assert_called_once()
+        channel, message_str = override_redis_client.publish.call_args[0]
+        message_data = json.loads(message_str)
+        assert (
+            message_data.get("command") == "RESET_RISK_COUNTERS"
+            or message_data.get("type") == "RESET_RISK_COUNTERS"
+        )
+        assert str(message_data["payload"]["user_id"]) == str(pro_user.id)
+        assert message_data["payload"]["mode"] == "paper"
+
+    async def test_risk_reset_rejects_bad_mode(
+        self,
+        authenticated_client: AsyncClient,
+        override_redis_client: MagicMock,
+        pro_user: models.User,
+    ):
+        response = await authenticated_client.post(
+            "/api/v1/portfolio/risk/reset", params={"mode": "nonsense"}
+        )
+        assert response.status_code == 400
+        override_redis_client.publish.assert_not_called()
+
 
 class TestLiveStrategyEndpoints:
     """Tests for strategy lifecycle management (via Redis)."""

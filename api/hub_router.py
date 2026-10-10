@@ -1242,6 +1242,19 @@ async def _register_hub_node_impl(
         secret_hash = hashlib.sha256(node_in.node_secret.encode()).hexdigest()
         ip = get_client_ip(request)
 
+        # Operator proof via the current telemetry secret: whoever presents
+        # the stored secret operates the node (a mismatched secret is
+        # rejected below for existing nodes). This authorizes the
+        # mining-server flag — but nothing else sensitive — so a plain
+        # mining activation (no fresh wallet signature at hand) can still
+        # promote its own server. Wallet/UID/referrer changes still require
+        # a wallet ownership signature (allow_sensitive).
+        secret_match = (
+            existing is not None
+            and bool(existing.secret_hash)
+            and existing.secret_hash == secret_hash
+        )
+
         geo = await geolocate_ip(ip)
         if not geo:
             geo = get_random_test_coordinates()
@@ -1474,8 +1487,18 @@ async def _register_hub_node_impl(
         if not db_node.node_referral_code:
             db_node.node_referral_code = f"DSN-REF-{node_in.node_uuid[:6].upper()}-{secrets.token_hex(3)[:4].upper()}"
 
-        if allow_sensitive and node_in.is_mining_server:
+        if node_in.is_mining_server and (allow_sensitive or secret_match):
             db_node.is_mining_server = True
+        elif node_in.is_mining_server and not db_node.is_mining_server:
+            # Loud instead of silent: this exact drop stranded nodes with
+            # "registered but never a mining server" (telemetry then fails
+            # the source-server gate). Operators see it in hub logs.
+            logger.warning(
+                f"is_mining_server NOT applied for node {node_in.node_uuid}: "
+                "neither a wallet ownership signature nor the current node "
+                "secret was presented. Re-run mining activation from the "
+                "server or sign the wallet again."
+            )
 
         # Binding/changing the Bybit UID is an ownership-sensitive operation:
         # it anchors broker verification to a specific exchange account, so it
@@ -2636,11 +2659,21 @@ async def _verify_attribution(
 
 
 async def _verify_source_server(
-    db: AsyncSession, source_node_uuid: Optional[str]
+    db: AsyncSession,
+    source_node_uuid: Optional[str],
+    attribution_node_uuid: Optional[str] = None,
 ) -> Optional[str]:
-    """Only nodes flagged as mining servers may act as a telemetry source."""
+    """Only nodes flagged as mining servers may act as a telemetry source.
+
+    Exception: a report sourced from the very node it is attributed to
+    (self-source, the common single-node case) needs no server privilege —
+    the commission recipient is the node itself, so there is nothing to
+    gate. Cross-node sourcing still requires the mining-server flag.
+    """
     if not source_node_uuid:
         return None
+    if attribution_node_uuid and source_node_uuid == attribution_node_uuid:
+        return source_node_uuid
     stmt = select(models.HubNode).where(models.HubNode.node_uuid == source_node_uuid)
     res = await db.execute(stmt)
     node = res.scalars().first()
@@ -3362,7 +3395,11 @@ async def post_telemetry_report(
 
     # The source server is client-controlled too; only nodes flagged as mining
     # servers may be used (commission for this trade routes to that server).
-    resolved_source = await _verify_source_server(db, report.source_node_uuid)
+    # Self-sourced reports (source == attribution) are exempt: the recipient
+    # is the node itself.
+    resolved_source = await _verify_source_server(
+        db, report.source_node_uuid, resolved_attribution
+    )
 
     mining_cfg = await _get_active_mining_config(db)
     is_mining_eligible = False

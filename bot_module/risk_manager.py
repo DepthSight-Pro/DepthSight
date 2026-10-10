@@ -172,6 +172,45 @@ class RiskManager:
             rm_settings, "maxConsecutiveLosses", config.DEFAULT_MAX_CONSECUTIVE_LOSSES
         )
 
+        # PAPER daily-loss limits: same settings keys, read from the paper
+        # section first (backtest_risk_management), falling back to the live
+        # values above. The paper sandbox is realistic (limits apply) but
+        # fully isolated: paper PnL is measured against the paper deposit and
+        # can never trip live trading (and vice versa).
+        def _pfloat(*keys: str, default: float) -> float:
+            for key in keys:
+                if key in paper_rm_settings and paper_rm_settings.get(key) is not None:
+                    return float(paper_rm_settings.get(key))
+            return float(default)
+
+        def _pint(*keys: str, default: int) -> int:
+            for key in keys:
+                if key in paper_rm_settings and paper_rm_settings.get(key) is not None:
+                    return int(paper_rm_settings.get(key))
+            return int(default)
+
+        self.paper_max_drawdown_threshold: float = (
+            _pfloat(
+                "maxDrawdown",
+                "max_drawdown",
+                default=self.max_drawdown_threshold * 100.0,
+            )
+            / 100.0
+        )
+        self.paper_daily_max_loss_threshold: float = (
+            _pfloat(
+                "dailyMaxLossPercent",
+                "daily_max_loss_percent",
+                default=self.daily_max_loss_threshold * 100.0,
+            )
+            / 100.0
+        )
+        self.paper_max_consecutive_losses: int = _pint(
+            "maxConsecutiveLosses",
+            "max_consecutive_losses",
+            default=self.max_consecutive_losses,
+        )
+
         # Maximum number of simultaneous trades
         self.max_concurrent_trades: int = get_ival(
             rm_settings,
@@ -250,6 +289,11 @@ class RiskManager:
 
         self._is_trading_allowed = True
         self._last_disable_reason: Optional[str] = None
+        # PAPER sandbox counters: fully isolated from the live ones above.
+        # A paper loss (even a phantom one) must never block live trading.
+        self.paper_stats = TradeStats()
+        self._paper_is_trading_allowed = True
+        self._paper_last_disable_reason: Optional[str] = None
         self._last_disabled_balance_check_ts: float = 0.0
         self._balance_lock = asyncio.Lock()
         # Per-symbol cache of the DB-backed blacklist verdict:
@@ -303,6 +347,72 @@ class RiskManager:
         logger.info(f"RiskManager initialized for user_id: {self.user_id}.")
         if self._strategy_symbol_adjustment_enabled:
             logger.info("Strategy-Symbol dynamic risk adjustment ENABLED.")
+
+    @staticmethod
+    def _normalize_mode(mode: Optional[str]) -> str:
+        """Trading-mode gate selector: anything but an explicit 'paper' is live."""
+        return "paper" if str(mode or "live").lower() == "paper" else "live"
+
+    def _mode_stats(self, mode: str) -> TradeStats:
+        return self.paper_stats if self._normalize_mode(mode) == "paper" else self.stats
+
+    def _mode_thresholds(self, mode: str) -> Tuple[float, float, int]:
+        """(max_drawdown, daily_max_loss, max_consecutive_losses) for the mode."""
+        if self._normalize_mode(mode) == "paper":
+            return (
+                self.paper_max_drawdown_threshold,
+                self.paper_daily_max_loss_threshold,
+                self.paper_max_consecutive_losses,
+            )
+        return (
+            self.max_drawdown_threshold,
+            self.daily_max_loss_threshold,
+            self.max_consecutive_losses,
+        )
+
+    def _is_mode_trading_allowed(self, mode: str) -> bool:
+        if self._normalize_mode(mode) == "paper":
+            return self._paper_is_trading_allowed
+        return self._is_trading_allowed
+
+    def _mode_disable_reason(self, mode: str) -> Optional[str]:
+        if self._normalize_mode(mode) == "paper":
+            return self._paper_last_disable_reason
+        return self._last_disable_reason
+
+    def reset_daily_counters(self, mode: str = "all") -> Dict[str, Any]:
+        """Manually resets daily PnL counters (e.g. after a phantom block).
+
+        mode: 'live', 'paper', or 'all'. Resets today_pnl, consecutive
+        losses and re-enables trading for the selected sandbox(es); the
+        start-of-day balance is re-anchored to the current known balance.
+        Intended for the RESET_RISK_COUNTERS bot command / manual reset API.
+        """
+        normalized = str(mode or "all").lower()
+        reset: Dict[str, Any] = {}
+        for candidate in ("live", "paper"):
+            if normalized not in ("all", candidate):
+                continue
+            stats = self._mode_stats(candidate)
+            if stats.current_balance > 1e-9:
+                stats.start_of_day_balance = stats.current_balance
+            stats.today_pnl = 0.0
+            stats.consecutive_losses = 0
+            if candidate == "paper":
+                self._paper_is_trading_allowed = True
+                self._paper_last_disable_reason = None
+            else:
+                self._is_trading_allowed = True
+                self._last_disable_reason = None
+            reset[candidate] = {
+                "today_pnl": stats.today_pnl,
+                "start_of_day_balance": stats.start_of_day_balance,
+                "trading_allowed": True,
+            }
+            logger.info(
+                f"[RiskManager] Daily counters manually reset for mode '{candidate}'."
+            )
+        return reset
 
     @asynccontextmanager
     async def _session(self):
@@ -432,6 +542,34 @@ class RiskManager:
             "maxConsecutiveLosses",
             "max_consecutive_losses",
             default=config.DEFAULT_MAX_CONSECUTIVE_LOSSES,
+        )
+        # PAPER daily-loss limits mirror the live ones above but read from the
+        # paper section first (backtest_risk_management), falling back to the
+        # just-resolved live values. The paper sandbox stays realistic yet
+        # isolated: paper PnL is measured against the paper deposit only.
+        self.paper_max_drawdown_threshold = (
+            _get_float(
+                paper_rm_settings,
+                "maxDrawdown",
+                "max_drawdown",
+                default=self.max_drawdown_threshold * 100.0,
+            )
+            / 100.0
+        )
+        self.paper_daily_max_loss_threshold = (
+            _get_float(
+                paper_rm_settings,
+                "dailyMaxLossPercent",
+                "daily_max_loss_percent",
+                default=self.daily_max_loss_threshold * 100.0,
+            )
+            / 100.0
+        )
+        self.paper_max_consecutive_losses = _get_int(
+            paper_rm_settings,
+            "maxConsecutiveLosses",
+            "max_consecutive_losses",
+            default=self.max_consecutive_losses,
         )
         self.max_concurrent_trades = _get_int(
             rm_settings,
@@ -598,6 +736,13 @@ class RiskManager:
             )
             self.stats.last_known_day_str = current_trading_day_str_utc_actual
             self._is_trading_allowed = True
+            # Fresh process: the isolated paper sandbox starts clean too (its
+            # start-of-day anchors on the first paper balance read).
+            self.paper_stats.today_pnl = 0.0
+            self.paper_stats.consecutive_losses = 0
+            self.paper_stats.last_known_day_str = current_trading_day_str_utc_actual
+            self._paper_is_trading_allowed = True
+            self._paper_last_disable_reason = None
 
             logger.info(
                 f"Daily stats reset for new day {current_trading_day_str_utc_actual}. Start of day balance: ${self.stats.start_of_day_balance:.2f}."
@@ -735,42 +880,59 @@ class RiskManager:
 
     def _check_and_reset_daily_stats(self):
         current_start_ts_float, current_day_str_utc = self._get_current_day_start_info()
-        if self.stats.last_known_day_str != current_day_str_utc:
-            logger.info(
-                f"New trading day detected (UTC): {current_day_str_utc}. Previous day: {self.stats.last_known_day_str}"
-            )
-            self.stats.start_of_day_balance = self.stats.current_balance
-            self.stats.today_pnl = 0.0
-            self.stats.consecutive_losses = 0
-            self.stats.current_trading_day_start_ts = current_start_ts_float
-            self.stats.last_known_day_str = current_day_str_utc
-            if not self._is_trading_allowed:
+        for stats, is_paper in ((self.stats, False), (self.paper_stats, True)):
+            if stats.last_known_day_str != current_day_str_utc:
+                scope = "paper" if is_paper else "live"
                 logger.info(
-                    "Global risk limits have been reset. Resuming trading capability for a new day."
+                    f"New trading day detected (UTC): {current_day_str_utc}. Previous day: {stats.last_known_day_str} (mode: {scope})"
                 )
-            self._is_trading_allowed = True
-            logger.info(
-                f"Balance at the start of a new day set: ${self.stats.start_of_day_balance:.2f}"
-            )
-            if self._strategy_symbol_adjustment_enabled:
+                if stats.current_balance > 1e-9:
+                    stats.start_of_day_balance = stats.current_balance
+                stats.today_pnl = 0.0
+                stats.consecutive_losses = 0
+                stats.current_trading_day_start_ts = current_start_ts_float
+                stats.last_known_day_str = current_day_str_utc
+                if is_paper:
+                    if not self._paper_is_trading_allowed:
+                        logger.info(
+                            "Global paper risk limits have been reset. Resuming paper trading capability for a new day."
+                        )
+                    self._paper_is_trading_allowed = True
+                    self._paper_last_disable_reason = None
+                else:
+                    if not self._is_trading_allowed:
+                        logger.info(
+                            "Global risk limits have been reset. Resuming trading capability for a new day."
+                        )
+                    self._is_trading_allowed = True
                 logger.info(
-                    "Trading day change. Cooldowns for 'strategy-symbol' pairs may be revised."
+                    f"Balance at the start of a new day set: ${stats.start_of_day_balance:.2f} (mode: {scope})."
                 )
+                if self._strategy_symbol_adjustment_enabled:
+                    logger.info(
+                        "Trading day change. Cooldowns for 'strategy-symbol' pairs may be revised."
+                    )
 
     async def update_trade_result(
-        self, symbol: str, pnl: float, exit_reason: Optional[str] = None
+        self,
+        symbol: str,
+        pnl: float,
+        exit_reason: Optional[str] = None,
+        mode: str = "live",
     ):
+        mode = self._normalize_mode(mode)
+        stats = self.paper_stats if mode == "paper" else self.stats
         self._check_and_reset_daily_stats()
-        self.stats.today_pnl += pnl
-        self.stats.last_trade_time = time.time()
+        stats.today_pnl += pnl
+        stats.last_trade_time = time.time()
         if pnl <= 0:
-            self.stats.consecutive_losses += 1
+            stats.consecutive_losses += 1
         else:
-            self.stats.consecutive_losses = 0
+            stats.consecutive_losses = 0
         logger.info(
-            f"Global PnL Updated: PnL={pnl:.2f}, GlobalTodayPnL={self.stats.today_pnl:.2f}, GlobalConsecLosses={self.stats.consecutive_losses}"
+            f"Global PnL Updated: PnL={pnl:.2f}, GlobalTodayPnL={stats.today_pnl:.2f}, GlobalConsecLosses={stats.consecutive_losses} (mode: {mode})"
         )
-        self._check_risk_limits()
+        self._check_risk_limits(mode=mode)
 
         # AUTO-BLACKLIST: Tracking consecutive stops by symbols
         # Excluding BE (Break-Even) from stop count for blacklist
@@ -998,14 +1160,16 @@ class RiskManager:
                     f"{log_prefix} Improvement check: Cooldown period not yet passed for index {stats.current_risk_multiplier_index}."
                 )
 
-    async def is_symbol_trading_allowed(self, symbol: str) -> bool:
+    async def is_symbol_trading_allowed(self, symbol: str, mode: str = "live") -> bool:
         """
         Checks if trading is allowed for the given symbol.
-        Includes checking the global flag and the user's blacklist.
+        Includes checking the per-mode flag and the user's blacklist.
         The blacklist is checked "on the fly" from the DB - changes are applied without a restart.
+        Live and paper sandboxes gate independently: a paper block never
+        stops live trading and vice versa. The symbol blacklist stays shared.
         """
-        # 1. Check global flag (drawdown, consecutive losses, etc.)
-        if not self._is_trading_allowed:
+        # 1. Check per-mode flag (drawdown, consecutive losses, etc.)
+        if not self._is_mode_trading_allowed(mode):
             # Self-healing: if trading was disabled (e.g. balance was 0 on startup, but topped up later),
             # attempt to refresh balance and re-evaluate limits (throttled to at most once every 30 seconds).
             now = time.time()
@@ -1015,13 +1179,16 @@ class RiskManager:
                     f"[Blacklist:{symbol}] Trading is currently disabled. Checking if balance has been replenished..."
                 )
                 try:
-                    await self.refresh_balance_and_limits()
+                    if self._normalize_mode(mode) == "paper":
+                        self._check_risk_limits(mode="paper")
+                    else:
+                        await self.refresh_balance_and_limits()
                 except Exception as e:
                     logger.error(
                         f"[Blacklist:{symbol}] Error during balance refresh check: {e}"
                     )
 
-            if not self._is_trading_allowed:
+            if not self._is_mode_trading_allowed(mode):
                 logger.debug(f"[Blacklist:{symbol}] Trading globally disabled")
                 return False
 
@@ -1369,38 +1536,69 @@ class RiskManager:
                 exc_info=True,
             )
 
-    def _check_risk_limits(self):  # Global limits
+    def _check_risk_limits(self, mode: str = "live"):  # Global limits
+        mode = self._normalize_mode(mode)
+        stats = self.paper_stats if mode == "paper" else self.stats
+        max_dd, max_daily_loss, max_consec = self._mode_thresholds(mode)
+        scope_tag = "[PAPER] " if mode == "paper" else ""
         should_be_allowed = True
         disable_reason = ""
-        if self.stats.current_balance < self.min_balance_threshold:
+        if stats.current_balance < self.min_balance_threshold:
             should_be_allowed = False
-            disable_reason = f"Balance (${self.stats.current_balance:.2f}) < min (${self.min_balance_threshold:.2f})"
+            disable_reason = f"{scope_tag}Balance (${stats.current_balance:.2f}) < min (${self.min_balance_threshold:.2f})"
         else:
-            if self.stats.start_of_day_balance > 1e-9:
+            if stats.start_of_day_balance > 1e-9:
                 drawdown_pct = (
-                    abs(self.stats.today_pnl / self.stats.start_of_day_balance)
-                    if self.stats.today_pnl < 0
+                    abs(stats.today_pnl / stats.start_of_day_balance)
+                    if stats.today_pnl < 0
                     else 0
                 )
-                if drawdown_pct >= self.max_drawdown_threshold:
+                if drawdown_pct >= max_dd:
                     should_be_allowed = False
-                    disable_reason = f"Max drawdown ({drawdown_pct * 100:.2f}%) >= limit ({self.max_drawdown_threshold * 100:.2f}%)"
+                    disable_reason = f"{scope_tag}Max drawdown ({drawdown_pct * 100:.2f}%) >= limit ({max_dd * 100:.2f}%)"
                 daily_loss_pct = (
-                    abs(self.stats.today_pnl / self.stats.start_of_day_balance)
-                    if self.stats.today_pnl < 0
+                    abs(stats.today_pnl / stats.start_of_day_balance)
+                    if stats.today_pnl < 0
                     else 0
                 )
-                if daily_loss_pct >= self.daily_max_loss_threshold:
+                if daily_loss_pct >= max_daily_loss:
                     should_be_allowed = False
-                    disable_reason = f"Daily loss ({daily_loss_pct * 100:.2f}%) >= limit ({self.daily_max_loss_threshold * 100:.2f}%)"
+                    disable_reason = f"{scope_tag}Daily loss ({daily_loss_pct * 100:.2f}%) >= limit ({max_daily_loss * 100:.2f}%)"
             else:
-                self.stats.start_of_day_balance = self.stats.current_balance
+                stats.start_of_day_balance = stats.current_balance
                 logger.info(
-                    f"Initialized start_of_day_balance to ${self.stats.current_balance:.2f} after balance deposit."
+                    f"Initialized start_of_day_balance to ${stats.current_balance:.2f} after balance deposit (mode: {mode})."
                 )
-            if self.stats.consecutive_losses >= self.max_consecutive_losses:
+            if stats.consecutive_losses >= max_consec:
                 should_be_allowed = False
-                disable_reason = f"Max consec losses ({self.stats.consecutive_losses}) >= limit ({self.max_consecutive_losses})"
+                disable_reason = f"{scope_tag}Max consec losses ({stats.consecutive_losses}) >= limit ({max_consec})"
+        if mode == "paper":
+            if not should_be_allowed and self._paper_is_trading_allowed:
+                logger.critical(f"Paper trading disabled! Reason: {disable_reason}")
+                self._paper_is_trading_allowed = False
+                self._paper_last_disable_reason = disable_reason
+                if self.telegram_notifier and self.loop_from_controller:
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            self.telegram_notifier.risk_manager_alert(
+                                reason=disable_reason,
+                                alert_type="TRADE_DISABLED",
+                                current_balance=stats.current_balance,
+                                daily_pnl=stats.today_pnl,
+                                chat_id=self.user_telegram_chat_id,
+                                api_key_name=self.api_key_name,
+                            ),
+                            self.loop_from_controller,
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to schedule Telegram notification: {e}")
+            elif should_be_allowed and not self._paper_is_trading_allowed:
+                logger.info(
+                    "Paper risk limits are now within acceptable range. Re-enabling paper trading."
+                )
+                self._paper_is_trading_allowed = True
+                self._paper_last_disable_reason = None
+            return
         if not should_be_allowed and self._is_trading_allowed:
             logger.critical(f"Trading disabled globally! Reason: {disable_reason}")
             self._is_trading_allowed = False
@@ -1412,8 +1610,8 @@ class RiskManager:
                         self.telegram_notifier.risk_manager_alert(
                             reason=disable_reason,
                             alert_type="TRADE_DISABLED",
-                            current_balance=self.stats.current_balance,
-                            daily_pnl=self.stats.today_pnl,
+                            current_balance=stats.current_balance,
+                            daily_pnl=stats.today_pnl,
                             chat_id=self.user_telegram_chat_id,
                             api_key_name=self.api_key_name,
                         ),
@@ -1446,7 +1644,7 @@ class RiskManager:
         # BLACKLIST CHECK (on-the-fly)
         # Check the blacklist at an early stage to avoid wasting resources on further checks
         t_blacklist = time.monotonic()
-        if not await self.is_symbol_trading_allowed(signal.symbol):
+        if not await self.is_symbol_trading_allowed(signal.symbol, mode=mode):
             logger.warning(
                 f"{log_prefix} Signal REJECTED. Reason: Symbol is in blacklist or trading globally disabled."
             )
@@ -1492,6 +1690,14 @@ class RiskManager:
                 risk_per_trade_base = self.paper_risk_per_trade
                 max_stop_distance_pct_to_use = self.paper_max_stop_distance_pct
                 balance_updated_successfully = True
+                # Anchor the isolated paper sandbox to the paper deposit and
+                # evaluate paper limits (paper PnL can never trip live).
+                self.paper_stats.current_balance = current_balance_val
+                self.paper_stats.current_balance_ts = time.time()
+                if self.paper_stats.start_of_day_balance <= 1e-9:
+                    self.paper_stats.start_of_day_balance = current_balance_val
+                self._check_and_reset_daily_stats()
+                self._check_risk_limits(mode="paper")
                 logger.info(
                     f"{log_prefix} Using PAPER settings. Balance: ${current_balance_val:.2f}, Risk/Trade: {risk_per_trade_base * 100:.2f}%"
                 )
@@ -1571,7 +1777,8 @@ class RiskManager:
             f"{log_prefix} Initial Base Risk Planned (before S/S): ${initial_base_risk_usd_planned:.2f}"
         )
 
-        if not self._is_trading_allowed:
+        assess_mode = self._normalize_mode(mode)
+        if not self._is_mode_trading_allowed(assess_mode):
             logger.warning(
                 f"{log_prefix} Signal REJECTED. Reason: Trading disabled globally by portfolio risk limits."
             )

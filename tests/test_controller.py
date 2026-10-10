@@ -1939,6 +1939,27 @@ async def test_reconcile_futures_does_not_remove_same_symbol_spot_position(
     assert controller._active_position_get(symbol, "spot") is spot_position
 
 
+@pytest.mark.asyncio
+async def test_reconcile_skips_paper_positions(controller, mock_executor):
+    """Regression (paper phantom block): the live-exchange reconciler must
+    never finalize emulated paper positions missing on the real exchange."""
+    symbol = "XRPUSDT"
+    controller._active_positions.clear()
+    paper_position = make_position_for_market(symbol, "futures_usdtm")
+    paper_position.mode = "paper"
+    controller._active_position_set(paper_position)
+    mock_executor.market_type = "futures_usdtm"
+    mock_executor.get_open_positions.return_value = []
+
+    with patch.object(
+        controller, "_handle_final_exit", new_callable=AsyncMock
+    ) as mock_final_exit:
+        await controller._reconcile_positions_with_exchange()
+
+    assert controller._active_position_get(symbol, "futures_usdtm") is paper_position
+    mock_final_exit.assert_not_called()
+
+
 def test_restore_coerces_active_positions_to_market_aware_map(controller):
     futures_position = make_position_for_market("BTCUSDT", "futures_usdtm")
     spot_position = make_position_for_market("BTCUSDT", "spot")

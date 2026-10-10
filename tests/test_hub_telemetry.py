@@ -1548,6 +1548,24 @@ async def test_telemetry_source_server_stored_and_validated(
     )
     assert resp2.status_code == 403
 
+    # 3. Self-source (source == attribution) needs no server privilege: the
+    # commission recipient is the node itself, so there is nothing to gate.
+    # This is the common single-node case (own trades via own server).
+    p3 = _make_payload("src-self-1", "src-miner")
+    b3 = json.dumps(p3, sort_keys=True).encode("utf-8")
+    h3 = {
+        "X-Node-UUID": "src-miner",
+        "X-Node-Secret": "secret-miner",
+        "X-Node-Signature": hmac.new(
+            "secret-miner".encode(), b3, hashlib.sha256
+        ).hexdigest(),
+        "Content-Type": "application/json",
+    }
+    resp3 = await test_client.post(
+        "/api/v1/hub/telemetry/report", content=b3, headers=h3
+    )
+    assert resp3.status_code == 201
+
 
 async def test_hub_server_config_upsert_via_ping(
     test_client: AsyncClient, db_session: AsyncSession

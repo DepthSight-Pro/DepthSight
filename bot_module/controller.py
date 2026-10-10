@@ -1731,6 +1731,38 @@ class TradingController:
                                 name=f"EmergencyStop_{user_id}",
                             )
 
+                        elif command_type == "RESET_RISK_COUNTERS":
+                            user_id = payload.get("user_id")
+                            if str(user_id) != str(self.user_id):
+                                continue
+
+                            cmd_api_key_id = payload.get("api_key_id")
+                            if (
+                                cmd_api_key_id is not None
+                                and self.api_key_id is not None
+                                and int(cmd_api_key_id) != self.api_key_id
+                            ):
+                                continue
+
+                            reset_mode = str(payload.get("mode", "all")).lower()
+                            if reset_mode not in ("live", "paper", "all"):
+                                reset_mode = "all"
+                            logger.warning(
+                                f"Handling RESET_RISK_COUNTERS for user_id: {user_id} (api_key_id={self.api_key_id}, mode={reset_mode}). Resetting daily risk counters."
+                            )
+                            try:
+                                reset_result = self.rm.reset_daily_counters(
+                                    mode=reset_mode
+                                )
+                                logger.info(
+                                    f"RESET_RISK_COUNTERS done for user_id: {user_id} (mode={reset_mode}): {reset_result}"
+                                )
+                            except Exception as reset_e:
+                                logger.error(
+                                    f"RESET_RISK_COUNTERS failed for user_id: {user_id}: {reset_e}",
+                                    exc_info=True,
+                                )
+
                         # NOTE: TEST_NOTIFICATION is handled centrally by the bot
                         # runner command listener (shard 0), so it works even
                         # without an active controller and is never duplicated
@@ -3887,6 +3919,12 @@ class TradingController:
             to_update = []  # (symbol, exch_data) pairs to update
 
             for position_key, internal_pos in internal_snapshot.items():
+                # Paper positions are emulated: they never exist on the real
+                # exchange, so "missing on exchange" must NOT finalize them
+                # (that phantom-closed paper trades with ticker-fallback PnL
+                # booked into daily limits). The paper emulator owns them.
+                if getattr(internal_pos, "mode", "live") == "paper":
+                    continue
                 sym_upper = str(internal_pos.symbol).upper()
                 if sym_upper not in exchange_positions_map:
                     to_close.append((position_key, internal_pos.symbol))
@@ -8663,8 +8701,38 @@ class TradingController:
                     logger.warning(f"{log_prefix} Placeholder position lost. Aborting.")
                     return
 
-                if not await self.rm.is_symbol_trading_allowed(signal.symbol):
-                    last_reason = getattr(self.rm, "_last_disable_reason", None)
+                # Pre-gate on the instance's own sandbox: live and paper risk
+                # limits are independent — a paper block must not stop live
+                # trading and vice versa. The symbol blacklist stays shared.
+                gate_mode = "live"
+                try:
+                    _gate_instance_id = (
+                        signal.details.get("instance_id")
+                        if isinstance(signal.details, dict)
+                        else None
+                    )
+                    async with self.instances_lock:
+                        _gate_inst = self.running_strategy_instances.get(
+                            _gate_instance_id
+                        )
+                    if _gate_inst:
+                        _gate_cfg = (
+                            _gate_inst[1]
+                            if isinstance(_gate_inst, (list, tuple))
+                            else getattr(_gate_inst, "config", None)
+                        )
+                        if isinstance(_gate_cfg, dict):
+                            gate_mode = str(_gate_cfg.get("mode", "live"))
+                except Exception:
+                    gate_mode = "live"
+                if not await self.rm.is_symbol_trading_allowed(
+                    signal.symbol, mode=gate_mode
+                ):
+                    last_reason = (
+                        getattr(self.rm, "_paper_last_disable_reason", None)
+                        if str(gate_mode).lower() == "paper"
+                        else getattr(self.rm, "_last_disable_reason", None)
+                    )
                     logger.warning(
                         f"{log_prefix} Signal REJECTED by rm.is_symbol_trading_allowed (general block)."
                         + (f" Reason: {last_reason}" if last_reason else "")
@@ -11128,9 +11196,15 @@ class TradingController:
                 )
 
         if position_to_process_copy:
+            # Route the close into the position's own sandbox: paper closes
+            # feed paper counters only and can never trip live limits.
+            close_mode = getattr(position_to_process_copy, "mode", "live") or "live"
             await self.rm.update_trade_result(
-                symbol, position_to_process_copy.pnl, exit_reason=reason
-            )  # Global risk update
+                symbol,
+                position_to_process_copy.pnl,
+                exit_reason=reason,
+                mode=close_mode,
+            )  # Per-mode risk update
 
             # NEW: CREATE PHANTOM TRADE FOR BE ANALYSIS
             # When exiting by STOP_LOSS_BE, create a phantom trade for tracking

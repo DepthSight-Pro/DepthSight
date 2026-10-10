@@ -162,3 +162,66 @@ async def test_resync_pending_telemetry_hub_offline(
     refreshed_res = await db_session.execute(refreshed_stmt)
     refreshed_report = refreshed_res.scalar_one()
     assert refreshed_report.verification_status == "LOCAL_ONLY"
+
+
+async def test_resync_prefers_attribution_identity(
+    monkeypatch, db_session: AsyncSession, mocker, test_user
+):
+    """
+    Regression (403 resync loop): when the file identity belongs to a
+    different node (physical) than the pending report (wallet node), resync
+    must auth as the report's own node from settings — self-attribution
+    never trips the hub attribution gate.
+    """
+    monkeypatch.setenv("IS_CENTRAL_HUB", "false")
+    monkeypatch.setenv("HUB_NODE_UUID", "physical-node-file")
+    monkeypatch.setenv("HUB_NODE_SECRET", "physical-secret-file")
+    monkeypatch.setenv("FEDERATION_HUB_URL", "https://mock-hub.test")
+
+    # NB: the test_user fixture already owns an AppConfig row (UNIQUE
+    # user_id) — update it in place instead of inserting a second one.
+    cfg_res = await db_session.execute(
+        select(models.AppConfig).where(models.AppConfig.user_id == test_user.id)
+    )
+    cfg = cfg_res.scalars().first()
+    assert cfg is not None
+    cfg.exchange_settings = {
+        "mining_node_uuid": "wallet-node-9",
+        "mining_node_secret": "wallet-secret-9",
+        "wallet_address": "0x9999999999999999999999999999999999999999",
+        "wallet_configured": True,
+    }
+    cfg.is_mining_enabled = True
+    await db_session.commit()
+
+    payload = {
+        "symbol": "BTCUSDT",
+        "direction": "LONG",
+        "entry_price": 60000.0,
+        "exit_price": 61200.0,
+        "pnl_percent": 2.0,
+        "trade_duration_sec": 900,
+        "exit_reason": "take_profit",
+        "trade_mode": "LIVE",
+        "exchange_id": "bitget",
+        "market_type": "futures",
+        "broker_trade_id": "resync-attr-identity-1",
+        "trade_volume_usdt": 1500.0,
+    }
+    report = await crud.save_hub_telemetry_report(
+        db_session,
+        payload=payload,
+        attribution_node_uuid="wallet-node-9",
+    )
+    assert report.verification_status == "LOCAL_ONLY"
+
+    mock_post = mocker.patch("httpx.AsyncClient.post")
+    mock_post.return_value = Response(201, json={"status": "accepted"})
+
+    res = await resync_pending_telemetry_reports(db=db_session)
+    assert res["synced"] >= 1
+
+    _, kwargs = mock_post.call_args
+    headers = kwargs["headers"]
+    assert headers["X-Node-UUID"] == "wallet-node-9"
+    assert headers["X-Node-Secret"] == "wallet-secret-9"

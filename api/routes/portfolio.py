@@ -480,6 +480,65 @@ async def emergency_stop(
 
 
 @portfolio_router.post(
+    "/portfolio/risk/reset",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=schemas.ApiResponseData,
+    summary="Reset daily risk counters (manual unblock).",
+)
+async def reset_risk_counters(
+    mode: str = Query(
+        "all",
+        description="Which sandbox to reset: 'live', 'paper', or 'all'",
+    ),
+    redis_client: redis.Redis = Depends(get_redis_client),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Sends RESET_RISK_COUNTERS to the bot: zeroes today PnL / consecutive
+    losses and re-enables trading for the selected sandbox.
+
+    Use after a phantom block (e.g. a reconciler-closed paper trade tripped
+    the daily loss) instead of restarting the bot. Live and paper sandboxes
+    reset independently.
+    """
+    normalized = str(mode or "all").lower()
+    if normalized not in ("live", "paper", "all"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="mode must be one of: live, paper, all.",
+        )
+    logger.info(
+        f"User '{current_user.username}' (ID: {current_user.id}) requested RISK RESET (mode={normalized})."
+    )
+    command = {
+        "command": "RESET_RISK_COUNTERS",
+        "type": "RESET_RISK_COUNTERS",
+        "payload": {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "user_id": str(current_user.id),
+            "mode": normalized,
+        },
+    }
+    try:
+        await redis_client.publish(REDIS_COMMAND_CHANNEL, json.dumps(command))
+        logger.info(
+            f"RESET_RISK_COUNTERS command sent to the bot by user '{current_user.username}' (ID: {current_user.id}, mode={normalized})."
+        )
+    except redis_exceptions.ConnectionError as e:
+        logger.error(
+            f"Could not send RESET_RISK_COUNTERS command to Redis for user '{current_user.username}' (ID: {current_user.id}): {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not send command to Redis: {e}",
+        )
+    return {
+        "data": {
+            "message": f"RESET_RISK_COUNTERS command has been sent to the bot (mode={normalized})."
+        }
+    }
+
+
+@portfolio_router.post(
     "/portfolio-backtests",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=schemas.ApiResponse,
