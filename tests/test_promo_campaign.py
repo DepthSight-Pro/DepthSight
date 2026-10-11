@@ -1580,3 +1580,105 @@ async def test_admin_upsert_rejects_empty_quests(
         },
     )
     assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_paper_volume_never_feeds_quests(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """Regression (paper in mining): PAPER sandbox fills must never count
+    toward quest volume, activity or claims — only LIVE broker volume does."""
+    wallet = "0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
+    user = models.User(
+        username="promo_paper_excluded",
+        email="promo_paper_excluded@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-PAPER-001",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    sample_campaign.admin_only = False
+    await db_session.commit()
+
+    db_session.add(
+        models.ApiKey(
+            user_id=user.id,
+            name="Paper Bitget Key",
+            encrypted_api_key="enc_key",
+            encrypted_api_secret="enc_secret",
+            key_prefix="bg...papr",
+            exchange="bitget",
+            is_active=True,
+        )
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        models.HubNode(
+            node_uuid="paper-physical-node",
+            name="PaperPhysical",
+            secret_hash="secret",
+            bitget_uid="uid_paper_excl",
+            wallet_address=wallet,
+            node_referral_code="REF-PAPER-001",
+            ip_address="203.0.113.99",
+            last_ping=now,
+            created_at=now - timedelta(days=20),
+            total_mined=0.0,
+        )
+    )
+    # LIVE report, still pending verification.
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=60000.0,
+            exit_price=61200.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="paper-physical-node",
+            verification_status="PENDING",
+            is_verified=False,
+            created_at=now - timedelta(hours=12),
+        )
+    )
+    # PAPER report, verified, huge: must be invisible to quests.
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="XRPUSDT",
+            direction="LONG",
+            entry_price=1.40,
+            exit_price=1.41,
+            trade_mode="PAPER",
+            trade_volume_usdt=26610.0,
+            exchange_id="bitget_futures",
+            node_uuid="paper-physical-node",
+            verification_status="VERIFIED",
+            is_verified=True,
+            created_at=now - timedelta(hours=11),
+        )
+    )
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(user)
+    res = await client.get("/api/v1/hub/promo/status")
+    assert res.status_code == 200
+    quest2 = next(q for q in res.json()["quests"] if q["questType"] == "node_runner")
+    reqs = quest2["requirements"]
+    assert reqs["totalVolume"] == 1500.0
+    assert reqs["verifiedVolume"] == 0.0
+    assert reqs["isVolumeVerifying"] is True
+    assert reqs["hasActiveMining"] is True
+
+    res_claim = await client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "node_runner"},
+    )
+    assert res_claim.status_code == 400
+    assert "broker verification" in res_claim.json()["detail"].lower()

@@ -2321,9 +2321,80 @@ async def get_mining_referrals_impl(
         seen_ids = set()
         items = []
         total_volume_sum = 0.0
-        total_rewards_sum = 0.0
         active_count = 0
         now_utc = datetime.now(timezone.utc)
+
+        # Exact all-time referral bonus earned by MY nodes (computed ONCE):
+        # the epoch processor credits it to the referrer's ledgers as an
+        # aggregate, with no per-referral breakdown stored.
+        exact_total_bonus = 0.0
+        if possible_node_uuids:
+            stmt_total_bonus = select(
+                func.sum(models.MiningLedger.referral_bonus)
+            ).where(models.MiningLedger.node_uuid.in_(possible_node_uuids))
+            res_total_bonus = await db.execute(stmt_total_bonus)
+            exact_total_bonus = float(res_total_bonus.scalar() or 0.0)
+
+        # Per-row attribution weights: each referral's share of the exact
+        # total, proportional to its own ledger base rewards (the base that
+        # minted the 10% cut each epoch). Only node-linked rows generate a
+        # bonus — an invite without the node-level link earns nothing.
+        # Rows are collected first so weights are known before rendering.
+        referral_base_sums: Dict[str, float] = {}
+        ref_row_uuids: List[str] = []
+        for u in ref_users:
+            if u.referral_code:
+                _nres = await db.execute(
+                    select(models.HubNode.node_uuid).where(
+                        models.HubNode.node_referral_code == u.referral_code
+                    )
+                )
+                _nuuid = _nres.scalars().first()
+                if _nuuid and _nuuid not in ref_row_uuids:
+                    ref_row_uuids.append(_nuuid)
+        for _rn in ref_nodes:
+            if _rn.node_uuid not in ref_row_uuids:
+                ref_row_uuids.append(_rn.node_uuid)
+        if ref_row_uuids:
+            base_res = await db.execute(
+                select(
+                    models.MiningLedger.node_uuid,
+                    func.sum(models.MiningLedger.base_reward),
+                )
+                .where(models.MiningLedger.node_uuid.in_(ref_row_uuids))
+                .group_by(models.MiningLedger.node_uuid)
+            )
+            for _buuid, _bsum in base_res.all():
+                referral_base_sums[str(_buuid)] = float(_bsum or 0.0)
+            link_res = await db.execute(
+                select(
+                    models.HubNode.node_uuid, models.HubNode.referrer_node_uuid
+                ).where(models.HubNode.node_uuid.in_(ref_row_uuids))
+            )
+            linked_by_uuid: Dict[str, bool] = {}
+            for _luuid, _ref in link_res.all():
+                linked_by_uuid[str(_luuid)] = bool(_ref and _ref in possible_node_uuids)
+            linked_weight_total = sum(
+                referral_base_sums.get(_wu, 0.0)
+                for _wu, _linked in linked_by_uuid.items()
+                if _linked
+            )
+        else:
+            linked_by_uuid = {}
+            linked_weight_total = 0.0
+
+        def _row_bonus(_node_uuid: Optional[str]) -> float:
+            if (
+                not _node_uuid
+                or not linked_by_uuid.get(str(_node_uuid), False)
+                or linked_weight_total <= 0
+            ):
+                return 0.0
+            return (
+                exact_total_bonus
+                * referral_base_sums.get(str(_node_uuid), 0.0)
+                / linked_weight_total
+            )
 
         # Process Referred Users
         for u in ref_users:
@@ -2360,12 +2431,9 @@ async def get_mining_referrals_impl(
                 res_vol = await db.execute(stmt_vol)
                 vol = float(res_vol.scalar() or 0.0)
 
-                if possible_node_uuids:
-                    stmt_bonus = select(
-                        func.sum(models.MiningLedger.referral_bonus)
-                    ).where(models.MiningLedger.node_uuid.in_(possible_node_uuids))
-                    res_bonus = await db.execute(stmt_bonus)
-                    bonus = float(res_bonus.scalar() or 0.0)
+                # Per-referral share of the exact total bonus (see above):
+                # zero when this row did not mint anything.
+                bonus = _row_bonus(u_hub_node.node_uuid)
 
                 stmt_cfg = select(models.AppConfig.is_mining_enabled).where(
                     models.AppConfig.user_id == u.id
@@ -2384,7 +2452,6 @@ async def get_mining_referrals_impl(
             if is_active:
                 active_count += 1
             total_volume_sum += vol
-            total_rewards_sum += bonus
 
             items.append(
                 schemas.MiningReferralItem(
@@ -2426,13 +2493,8 @@ async def get_mining_referrals_impl(
             res_vol = await db.execute(stmt_vol)
             vol = float(res_vol.scalar() or 0.0)
 
-            bonus = 0.0
-            if possible_node_uuids:
-                stmt_bonus = select(func.sum(models.MiningLedger.referral_bonus)).where(
-                    models.MiningLedger.node_uuid.in_(possible_node_uuids)
-                )
-                res_bonus = await db.execute(stmt_bonus)
-                bonus = float(res_bonus.scalar() or 0.0)
+            # Per-referral share of the exact total bonus (see above).
+            bonus = _row_bonus(r_node.node_uuid)
 
             is_active = False
             if r_node.last_ping:
@@ -2446,7 +2508,6 @@ async def get_mining_referrals_impl(
                 active_count += 1
 
             total_volume_sum += vol
-            total_rewards_sum += bonus
 
             items.append(
                 schemas.MiningReferralItem(
@@ -2471,7 +2532,7 @@ async def get_mining_referrals_impl(
         return schemas.MiningReferralsResponse(
             total_invited=len(items),
             active_referrals=active_count,
-            total_referral_rewards_depth=total_rewards_sum,
+            total_referral_rewards_depth=exact_total_bonus,
             total_referral_volume_usdt=total_volume_sum,
             referrals=items,
         )
@@ -3259,6 +3320,10 @@ async def get_node_trades(
     else:
         all_uuids = list(set(my_node_uuids + ref_node_uuids))
         filters = [models.HubTelemetryReport.node_uuid.in_(all_uuids)]
+
+    # Mining views show live broker volume only: paper (sandbox) fills are
+    # practice, not mining. They stay visible in raw telemetry/analytics.
+    filters.append(_live_trade_mode_filter())
 
     if status_filter and status_filter.upper() != "ALL":
         filters.append(
@@ -4938,6 +5003,19 @@ def _is_node_online(
     return True
 
 
+def _live_trade_mode_filter():
+    """SQLAlchemy filter matching LIVE trades (case-insensitive).
+
+    Paper (sandbox) trades must never feed promo quests, mining volumes or
+    activity: they are practice fills, not broker volume. Legacy rows
+    without a recorded mode predate paper trading and count as live.
+    """
+    return or_(
+        models.HubTelemetryReport.trade_mode.is_(None),
+        func.lower(models.HubTelemetryReport.trade_mode) == "live",
+    )
+
+
 @router.get("/promo/status", response_model=schemas.PromoStatusResponse)
 async def get_promo_status(
     authorization: Optional[str] = Header(None),
@@ -5053,6 +5131,7 @@ async def get_promo_status(
         # (source_node_uuid) is physical-server volume, not central.
         # Conversely the central context excludes trades sourced from the
         # excluded (physical) nodes so one trade never feeds both quests.
+        # Paper trades never count (practice fills, not broker volume).
         if not uuids:
             return 0.0, 0.0
         source_guard = (
@@ -5076,6 +5155,7 @@ async def get_promo_status(
             ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status != "REJECTED",
+            _live_trade_mode_filter(),
             *source_guard,
         )
         verified_stmt = select(
@@ -5087,6 +5167,7 @@ async def get_promo_status(
             ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status == "VERIFIED",
+            _live_trade_mode_filter(),
             *source_guard,
         )
         total_r = await db.execute(total_stmt)
@@ -5099,10 +5180,10 @@ async def get_promo_status(
     physical_total, physical_verified = await _sum_volumes(physical_uuids)
 
     async def _has_recent_trade(window_days: int) -> bool:
-        # Activity = ANY non-rejected trade attributed to OR sourced from a
-        # physical node inside the quest's own window. Broker verification
-        # gates the VOLUME threshold separately — activity must not wait
-        # for it.
+        # Activity = ANY non-rejected LIVE trade attributed to OR sourced
+        # from a physical node inside the quest's own window. Paper fills
+        # prove nothing about the server. Broker verification gates the
+        # VOLUME threshold separately — activity must not wait for it.
         if not physical_uuids:
             return False
         try:
@@ -5119,6 +5200,7 @@ async def get_promo_status(
                 ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
+                _live_trade_mode_filter(),
                 models.HubTelemetryReport.created_at >= window_ago,
             )
             .limit(1)
@@ -5501,6 +5583,7 @@ async def claim_promo_quest(
             ),
             models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
             models.HubTelemetryReport.verification_status == "VERIFIED",
+            _live_trade_mode_filter(),
             *central_source_guard,
         )
         vol_res = await db.execute(verified_vol_stmt)
@@ -5521,6 +5604,7 @@ async def claim_promo_quest(
                 ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
+                _live_trade_mode_filter(),
                 *central_source_guard,
             )
             total_vol_res = await db.execute(total_vol_stmt)
@@ -5561,10 +5645,10 @@ async def claim_promo_quest(
     if payload.quest_type == "node_runner":
         # Physical presence + age already verified above; here only the
         # activity window on physical nodes remains (trade_window_days from
-        # the quest config, default 7). Any non-rejected trade attributed to
-        # OR sourced from a physical node counts (liveness proof); broker
-        # verification gates the volume threshold separately with its own
-        # message.
+        # the quest config, default 7). Any non-rejected LIVE trade
+        # attributed to OR sourced from a physical node counts (liveness
+        # proof); broker verification gates the volume threshold separately
+        # with its own message.
         try:
             claim_window_days = max(1, int(target_quest.get("trade_window_days", 7)))
         except (TypeError, ValueError):
@@ -5580,6 +5664,7 @@ async def claim_promo_quest(
                 ),
                 models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
                 models.HubTelemetryReport.verification_status != "REJECTED",
+                _live_trade_mode_filter(),
                 models.HubTelemetryReport.created_at >= window_ago,
             )
             .limit(1)

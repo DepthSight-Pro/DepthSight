@@ -2759,7 +2759,14 @@ async def get_local_mining_trades(
             referral_node_uuids.append(rnuuid)
 
     stmt = select(models.HubTelemetryReport)
-    filters = []
+    filters = [
+        # Mining views show live broker volume only: paper (sandbox) fills
+        # are practice, not mining. They stay visible in raw telemetry.
+        or_(
+            models.HubTelemetryReport.trade_mode.is_(None),
+            func.lower(models.HubTelemetryReport.trade_mode) == "live",
+        )
+    ]
 
     if user_id:
         target_node_uuids = []

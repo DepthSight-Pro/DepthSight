@@ -127,6 +127,169 @@ async def test_mining_referrals_user_and_node_level(
     assert node_view["referrals"][0]["name"] == "ChildNode"
 
 
+async def test_mining_referrals_bonus_is_per_referral(
+    authenticated_client_factory,
+    db_session: AsyncSession,
+):
+    """Regression: the +10% column must show each referral's own share, not
+    the inviter's total stamped on every row. Zero-base rows show zero."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    inviter = models.User(
+        username="bonus-parent",
+        email="bonus-parent@example.com",
+        hashed_password="hash",
+        is_active=True,
+        role="user",
+        referral_code="REF-BONUS-PARENT",
+    )
+    db_session.add(inviter)
+    await db_session.commit()
+    await db_session.refresh(inviter)
+
+    parent_node = models.HubNode(
+        node_uuid="bonus-parent-node",
+        name="BonusParent",
+        secret_hash="hash",
+        node_referral_code="REF-BONUS-PARENT",
+        created_at=now,
+    )
+    # Two linked referrals with ledger base; one unlinked node with base.
+    child_a = models.HubNode(
+        node_uuid="bonus-child-a",
+        name="BonusChildA",
+        secret_hash="hash",
+        node_referral_code="REF-BONUS-A",
+        referrer_node_uuid="bonus-parent-node",
+        total_mined=1000.0,
+        created_at=now,
+    )
+    child_b = models.HubNode(
+        node_uuid="bonus-child-b",
+        name="BonusChildB",
+        secret_hash="hash",
+        node_referral_code="REF-BONUS-B",
+        referrer_node_uuid="bonus-parent-node",
+        total_mined=3000.0,
+        created_at=now,
+    )
+    stranger = models.HubNode(
+        node_uuid="bonus-stranger",
+        name="BonusStranger",
+        secret_hash="hash",
+        node_referral_code="REF-BONUS-X",
+        referrer_node_uuid="some-other-node",
+        total_mined=5000.0,
+        created_at=now,
+    )
+    # User-level invitee whose node was never linked: listed, but earns no
+    # bonus (rewards flow only through the node-level link).
+    lone_user = models.User(
+        username="bonus-lone",
+        email="bonus-lone@example.com",
+        hashed_password="hash",
+        is_active=True,
+        role="user",
+        referred_by_user_id=inviter.id,
+        referral_code="REF-BONUS-LONE",
+    )
+    db_session.add(lone_user)
+    await db_session.commit()
+    await db_session.refresh(lone_user)
+    lone_node = models.HubNode(
+        node_uuid="bonus-lone-node",
+        name="BonusLone",
+        secret_hash="hash",
+        node_referral_code="REF-BONUS-LONE",
+        referrer_node_uuid=None,
+        total_mined=5000.0,
+        created_at=now,
+    )
+    db_session.add_all([parent_node, child_a, child_b, stranger, lone_node])
+    epoch_day = datetime.date.today() - datetime.timedelta(days=1)
+    db_session.add_all(
+        [
+            models.MiningLedger(
+                node_uuid="bonus-parent-node",
+                epoch_date=epoch_day,
+                base_reward=0.0,
+                referral_bonus=400.0,
+                welcome_bonus=0.0,
+                boost_multiplier=1.0,
+                total_reward=400.0,
+                total_rebate_usdt=0.0,
+                verified_trades_count=0,
+            ),
+            models.MiningLedger(
+                node_uuid="bonus-child-a",
+                epoch_date=epoch_day,
+                base_reward=1000.0,
+                referral_bonus=0.0,
+                welcome_bonus=0.0,
+                boost_multiplier=1.0,
+                total_reward=1000.0,
+                total_rebate_usdt=0.0,
+                verified_trades_count=1,
+            ),
+            models.MiningLedger(
+                node_uuid="bonus-child-b",
+                epoch_date=epoch_day,
+                base_reward=3000.0,
+                referral_bonus=0.0,
+                welcome_bonus=0.0,
+                boost_multiplier=1.0,
+                total_reward=3000.0,
+                total_rebate_usdt=0.0,
+                verified_trades_count=2,
+            ),
+            models.MiningLedger(
+                node_uuid="bonus-stranger",
+                epoch_date=epoch_day,
+                base_reward=5000.0,
+                referral_bonus=0.0,
+                welcome_bonus=0.0,
+                boost_multiplier=1.0,
+                total_reward=5000.0,
+                total_rebate_usdt=0.0,
+                verified_trades_count=3,
+            ),
+            models.MiningLedger(
+                node_uuid="bonus-lone-node",
+                epoch_date=epoch_day,
+                base_reward=5000.0,
+                referral_bonus=0.0,
+                welcome_bonus=0.0,
+                boost_multiplier=1.0,
+                total_reward=5000.0,
+                total_rebate_usdt=0.0,
+                verified_trades_count=1,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    client = await authenticated_client_factory(inviter)
+    resp = await client.get("/api/v1/hub/mining/referrals")
+    assert resp.status_code == 200
+    data = resp.json()["data"] if "data" in resp.json() else resp.json()
+    # Header keeps the exact ledger total.
+    assert data["totalReferralRewardsDepth"] == pytest.approx(400.0, rel=1e-6)
+    by_name = {r["name"]: r for r in data["referrals"]}
+    # Proportional shares of the exact total by own base: 100 / 300.
+    assert by_name["BonusChildA"]["referralBonusEarned"] == pytest.approx(
+        100.0, rel=1e-6
+    )
+    assert by_name["BonusChildB"]["referralBonusEarned"] == pytest.approx(
+        300.0, rel=1e-6
+    )
+    # Unlinked invitee: listed with zero bonus (no node-level link).
+    assert by_name["bonus-lone"]["referralBonusEarned"] == pytest.approx(0.0)
+    assert by_name["bonus-lone"]["nodeLinked"] is False
+    # Shares add up to the header total.
+    assert sum(r["referralBonusEarned"] for r in data["referrals"]) == pytest.approx(
+        400.0, rel=1e-6
+    )
+
+
 async def test_mining_node_trades_filters_and_pagination(
     test_client: AsyncClient, db_session: AsyncSession
 ):
@@ -185,6 +348,16 @@ async def test_mining_node_trades_filters_and_pagination(
                 trade_volume_usdt=300.0,
                 broker_trade_id="unique-search-target-1",
             ),
+            models.HubTelemetryReport(
+                **{**base, "trade_mode": "PAPER"},
+                symbol="XRPUSDT",
+                node_uuid="trades-node",
+                exchange_id="weex",
+                market_type="futures",
+                verification_status="VERIFIED",
+                trade_volume_usdt=99999.0,
+                broker_trade_id="paper-hidden-1",
+            ),
         ]
     )
     await db_session.commit()
@@ -196,7 +369,7 @@ async def test_mining_node_trades_filters_and_pagination(
 
     resp = await test_client.get("/api/v1/hub/mining/node-trades", headers=headers)
     assert resp.status_code == 200
-    assert resp.json()["total"] == 3  # own + child
+    assert resp.json()["total"] == 3  # own + child; PAPER fills stay out of mining
 
     resp = await test_client.get(
         "/api/v1/hub/mining/node-trades", headers=headers, params={"exchange": "bybit"}
