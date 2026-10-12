@@ -4080,6 +4080,8 @@ class TradingController:
                                             _ptp.target_price or 0.0,
                                         )
                                     )
+                            matched_exit_oid = None
+                            matched_exit_cid = None
                             for _reason, _oid, _ref_price in exit_orders_to_check:
                                 _oinfo = await executor.get_order_info(symbol, _oid)
                                 if not _oinfo or _oinfo.get("error"):
@@ -4100,6 +4102,10 @@ class TradingController:
                                     approx_exit_price = _avg if _avg > 0 else _ref_price
                                     close_reason = _reason
                                     price_source = "exchange_order"
+                                    matched_exit_oid = _oid
+                                    matched_exit_cid = (
+                                        _oinfo.get("clientOrderId") or _oinfo.get("clientOid")
+                                    )
                                     logger.info(
                                         f"{log_prefix} Close fallback matched exit order "
                                         f"{_oid} for {symbol}: price={approx_exit_price}, "
@@ -4122,8 +4128,8 @@ class TradingController:
                         exit_price=approx_exit_price,
                         commission=0.0,
                         commission_asset="USDT",
-                        order_id=None,
-                        client_order_id=None,
+                        order_id=matched_exit_oid,
+                        client_order_id=matched_exit_cid,
                         market_type=reconcile_market_type,
                         price_source=price_source,
                     )
@@ -11928,8 +11934,7 @@ class TradingController:
                                         _cid = _ev.get("client_order_id") or _ev.get(
                                             "clientOrderId"
                                         )
-                                        if not _cid:
-                                            continue
+                                        _oid = _ev.get("order_id") or _ev.get("orderId")
                                         _ev_type = _ev.get("type", "")
                                         if _ev_type in (
                                             "EXIT",
@@ -11937,18 +11942,29 @@ class TradingController:
                                             "TP",
                                             "SL",
                                         ):
-                                            _close_ids.append(str(_cid))
-                                        elif (
-                                            _ev_type == "ENTRY"
-                                            and _ev.get("execution_type") == "SCALE_IN"
-                                        ):
-                                            _entry_ids.append(str(_cid))
+                                            if _cid and str(_cid) not in _close_ids:
+                                                _close_ids.append(str(_cid))
+                                            if _oid and str(_oid) not in _close_ids:
+                                                _close_ids.append(str(_oid))
+                                        elif _ev_type == "ENTRY":
+                                            if _cid and str(_cid) not in _entry_ids:
+                                                _entry_ids.append(str(_cid))
+                                            if _oid and str(_oid) not in _entry_ids:
+                                                _entry_ids.append(str(_oid))
                                     _main_entry = (
                                         position_to_process_copy.entry_client_order_id
                                     )
                                     _all_entry_ids = (
                                         [_main_entry] if _main_entry else []
                                     )
+                                    _main_entry_oid = getattr(
+                                        position_to_process_copy, "entry_order_id", None
+                                    )
+                                    if (
+                                        _main_entry_oid
+                                        and str(_main_entry_oid) not in _all_entry_ids
+                                    ):
+                                        _all_entry_ids.append(str(_main_entry_oid))
                                     for _eid in _entry_ids:
                                         if _eid not in _all_entry_ids:
                                             _all_entry_ids.append(_eid)
@@ -11961,19 +11977,38 @@ class TradingController:
                                         or []
                                     )
                                     for _ptp in _ptp_list:
-                                        if (
-                                            hasattr(_ptp, "client_order_id")
-                                            and _ptp.client_order_id
-                                        ):
-                                            _cid_str = str(_ptp.client_order_id)
-                                            if _cid_str not in _close_ids:
-                                                _close_ids.append(_cid_str)
-                                        elif isinstance(_ptp, dict) and _ptp.get(
-                                            "client_order_id"
-                                        ):
-                                            _cid_str = str(_ptp["client_order_id"])
-                                            if _cid_str not in _close_ids:
-                                                _close_ids.append(_cid_str)
+                                        _ptp_cid = (
+                                            getattr(_ptp, "client_order_id", None)
+                                            if hasattr(_ptp, "client_order_id")
+                                            else _ptp.get("client_order_id")
+                                            if isinstance(_ptp, dict)
+                                            else None
+                                        )
+                                        _ptp_oid = (
+                                            getattr(_ptp, "order_id", None)
+                                            if hasattr(_ptp, "order_id")
+                                            else _ptp.get("order_id")
+                                            if isinstance(_ptp, dict)
+                                            else None
+                                        )
+                                        if _ptp_cid and str(_ptp_cid) not in _close_ids:
+                                            _close_ids.append(str(_ptp_cid))
+                                        if _ptp_oid and str(_ptp_oid) not in _close_ids:
+                                            _close_ids.append(str(_ptp_oid))
+                                    _sl_cid = getattr(
+                                        position_to_process_copy,
+                                        "current_sl_client_order_id",
+                                        None,
+                                    )
+                                    _sl_oid = getattr(
+                                        position_to_process_copy,
+                                        "current_sl_order_id",
+                                        None,
+                                    )
+                                    if _sl_cid and str(_sl_cid) not in _close_ids:
+                                        _close_ids.append(str(_sl_cid))
+                                    if _sl_oid and str(_sl_oid) not in _close_ids:
+                                        _close_ids.append(str(_sl_oid))
 
                                     strat_tf = None
                                     if strat_raw_cfg and isinstance(
@@ -17934,6 +17969,8 @@ class TradingController:
                 )
 
         close_order_placed = False
+        last_close_order_id = None
+        last_close_client_order_id = None
 
         for attempt in range(max_retries):
             # 1. Checking the position status
@@ -18283,6 +18320,12 @@ class TradingController:
                     f"{log_prefix} Close order sent. ID: {response.get('orderId')}"
                 )
                 close_order_placed = True
+                last_close_order_id = response.get("orderId")
+                last_close_client_order_id = (
+                    response.get("clientOrderId")
+                    or response.get("clientOid")
+                    or close_params.get("newClientOrderId")
+                )
 
             await asyncio.sleep(retry_delay)
 
@@ -18323,6 +18366,17 @@ class TradingController:
                 else 0.0
             )
 
+            # If no market close order was placed by this loop (e.g. position was already
+            # closed by exchange SL/TP), check if position has an active SL/TP order ID to attribute
+            if not last_close_order_id and not last_close_client_order_id:
+                async with self._get_lock_for_position(symbol, normalized_market_type):
+                    _p_chk = self._active_position_get(symbol, normalized_market_type)
+                    if _p_chk:
+                        if _p_chk.current_sl_order_id:
+                            last_close_order_id = _p_chk.current_sl_order_id
+                        if _p_chk.current_sl_client_order_id:
+                            last_close_client_order_id = _p_chk.current_sl_client_order_id
+
             # Important: _handle_final_exit will remove the position from _active_positions.
             # We call it only once, being sure that everything is closed on the exchange.
             await self._handle_final_exit(
@@ -18331,8 +18385,8 @@ class TradingController:
                 exit_price=approx_exit_price,
                 commission=0,  # We don't know the exact commission, can leave it as 0
                 commission_asset="USDT",
-                order_id=None,  # Closing order ID is not that important to us
-                client_order_id=None,
+                order_id=last_close_order_id,
+                client_order_id=last_close_client_order_id,
                 market_type=normalized_market_type,
             )
         else:

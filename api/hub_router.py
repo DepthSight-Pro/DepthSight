@@ -3123,6 +3123,19 @@ async def estimate_live_epoch_reward(
     return net_base + referral_bonus
 
 
+def _live_trade_mode_filter():
+    """SQLAlchemy filter matching LIVE trades (case-insensitive).
+
+    Paper (sandbox) trades must never feed promo quests, mining volumes or
+    activity: they are practice fills, not broker volume. Legacy rows
+    without a recorded mode predate paper trading and count as live.
+    """
+    return or_(
+        models.HubTelemetryReport.trade_mode.is_(None),
+        func.lower(models.HubTelemetryReport.trade_mode) == "live",
+    )
+
+
 def score_trade_with_reason(
     report: schemas.TelemetryReportCreate, config: models.MiningConfig
 ) -> tuple[float, Optional[str]]:
@@ -3813,7 +3826,8 @@ async def get_mining_analytics(
     total_nodes = int((await db.scalar(total_nodes_stmt)) or 0)
 
     active_ex_stmt = select(func.distinct(models.HubTelemetryReport.exchange_id)).where(
-        models.HubTelemetryReport.exchange_id.isnot(None)
+        models.HubTelemetryReport.exchange_id.isnot(None),
+        _live_trade_mode_filter(),
     )
     active_ex_res = await db.scalars(active_ex_stmt)
     active_exchanges = sorted([ex for ex in active_ex_res.all() if ex])
@@ -3821,10 +3835,11 @@ async def get_mining_analytics(
     cfg = await _get_active_mining_config(db)
     is_mining_enabled = bool(cfg.is_mining_enabled)
 
-    # 2. Trade Mining KPIs in selected date range
+    # 2. Trade Mining KPIs in selected date range (only LIVE broker volume)
     trades_filter = [
         models.HubTelemetryReport.created_at >= dt_from,
         models.HubTelemetryReport.created_at <= dt_to,
+        _live_trade_mode_filter(),
     ]
 
     stmt_kpi = select(
@@ -3921,7 +3936,10 @@ async def get_mining_analytics(
             models.HubTelemetryReport.exchange_id,
             func.min(models.HubTelemetryReport.created_at).label("first_seen"),
         )
-        .where(models.HubTelemetryReport.exchange_id.isnot(None))
+        .where(
+            models.HubTelemetryReport.exchange_id.isnot(None),
+            _live_trade_mode_filter(),
+        )
         .group_by(models.HubTelemetryReport.exchange_id)
     )
     first_seen_rows = (await db.execute(stmt_first_seen)).all()
@@ -4228,7 +4246,7 @@ async def get_analytics_trades(
     """
     await _verify_hub_admin_access(authorization, db)
 
-    conditions = []
+    conditions = [_live_trade_mode_filter()]
     if date_from:
         dt_from = datetime.combine(date_from, dt_time.min, tzinfo=timezone.utc)
         conditions.append(models.HubTelemetryReport.created_at >= dt_from)
@@ -5001,19 +5019,6 @@ def _is_node_online(
     if (now - last_ping).total_seconds() > max_ping_age_hours * 3600:
         return False
     return True
-
-
-def _live_trade_mode_filter():
-    """SQLAlchemy filter matching LIVE trades (case-insensitive).
-
-    Paper (sandbox) trades must never feed promo quests, mining volumes or
-    activity: they are practice fills, not broker volume. Legacy rows
-    without a recorded mode predate paper trading and count as live.
-    """
-    return or_(
-        models.HubTelemetryReport.trade_mode.is_(None),
-        func.lower(models.HubTelemetryReport.trade_mode) == "live",
-    )
 
 
 @router.get("/promo/status", response_model=schemas.PromoStatusResponse)

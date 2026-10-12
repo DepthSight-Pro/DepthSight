@@ -1591,7 +1591,7 @@ async def format_mining_status_response(
     hub_data: Optional[dict],
     registered: bool,
 ):
-    from sqlalchemy import select, func
+    from sqlalchemy import select, func, or_
 
     node_cfg_res = await db.execute(
         select(models.NodeMiningConfig).where(models.NodeMiningConfig.id == 1)
@@ -1827,15 +1827,25 @@ async def format_mining_status_response(
 
     if current_user.role == "admin":
         if is_central:
-            stmt = select(
-                models.HubTelemetryReport.node_uuid,
-                func.sum(models.HubTelemetryReport.trade_volume_usdt).label(
-                    "total_volume"
-                ),
-                func.sum(models.HubTelemetryReport.estimated_rebate_usdt).label(
-                    "total_rebate"
-                ),
-            ).group_by(models.HubTelemetryReport.node_uuid)
+            stmt = (
+                select(
+                    models.HubTelemetryReport.node_uuid,
+                    func.sum(models.HubTelemetryReport.trade_volume_usdt).label(
+                        "total_volume"
+                    ),
+                    func.sum(models.HubTelemetryReport.estimated_rebate_usdt).label(
+                        "total_rebate"
+                    ),
+                )
+                .where(
+                    models.HubTelemetryReport.is_mining_eligible.is_(True),
+                    or_(
+                        models.HubTelemetryReport.trade_mode.is_(None),
+                        func.lower(models.HubTelemetryReport.trade_mode) == "live",
+                    ),
+                )
+                .group_by(models.HubTelemetryReport.node_uuid)
+            )
 
             node_stats_res = await db.execute(stmt)
             user_metrics = []

@@ -179,8 +179,29 @@ async def sample_mining_data(db_session: AsyncSession):
         mining_multiplier=1.0,  # Initially stamped 1.0 in DB, should resolve to 2.0 via config
         created_at=dt.datetime.now(timezone.utc) - timedelta(minutes=10),
     )
-    db_session.add_all([trade1, trade2, trade3, trade4])
+    paper_trade = models.HubTelemetryReport(
+        id="trade-paper-1",
+        symbol="BTCUSDT",
+        direction="LONG",
+        entry_price=60000.0,
+        exit_price=60500.0,
+        pnl_percent=0.8,
+        trade_duration_sec=300,
+        trade_mode="PAPER",
+        node_uuid="node-uuid-1",
+        exchange_id="bitget_futures",
+        broker_trade_id="BG-PAPER-001",
+        trade_volume_usdt=50000.0,
+        estimated_rebate_usdt=20.0,
+        is_mining_eligible=False,
+        is_verified=False,
+        verification_status="PENDING",
+        verification_error="trade is not LIVE",
+        created_at=dt.datetime.now(timezone.utc) - timedelta(minutes=5),
+    )
+    db_session.add_all([trade1, trade2, trade3, trade4, paper_trade])
     await db_session.commit()
+
 
 
 @pytest.mark.asyncio
@@ -242,6 +263,11 @@ async def test_mining_analytics_summary(
     assert weex_stat["verifiedVolumeUsdt"] == 5000.0
     assert weex_stat["verifiedRebateUsdt"] == 2.0
 
+    # Ensure paper trade volume on bitget (50,000 USDT) was excluded
+    bitget_stat = next(x for x in ex_list if x["exchangeId"] == "bitget_futures")
+    assert bitget_stat["tradeCount"] == 1
+    assert bitget_stat["totalVolumeUsdt"] == 2000.0
+
     # Node breakdown
     node_list = data["nodeBreakdown"]
     assert len(node_list) >= 2
@@ -249,6 +275,8 @@ async def test_mining_analytics_summary(
     assert node1["isOnline"] is True
     assert node1["name"] == "DepthNode-Alpha"
     assert node1["tradeCount"] == 3
+    assert node1["totalVolumeUsdt"] == 10000.0
+
 
     # Daily trends
     assert len(data["dailyTrends"]) >= 1
@@ -326,3 +354,12 @@ async def test_mining_analytics_trades_pagination_and_filters(
     bitget_data = resp_bitget.json()
     assert bitget_data["total"] == 1
     assert bitget_data["items"][0]["miningMultiplier"] == 2.0
+
+    # 6. Ensure paper trades are never returned in paginated trades
+    resp_paper = await test_client.get(
+        "/api/v1/hub/mining/analytics/trades?search=BG-PAPER",
+        headers=admin_auth,
+    )
+    assert resp_paper.status_code == 200
+    assert resp_paper.json()["total"] == 0
+
