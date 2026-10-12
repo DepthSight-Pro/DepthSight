@@ -3958,6 +3958,10 @@ class TradingController:
                     approx_exit_price = pos_to_fin.entry_price or 0.0
                     close_reason = "CLOSED_ON_EXCHANGE"
                     price_source = "ticker_fallback"
+                    matched_exit_oid = getattr(pos_to_fin, "current_sl_order_id", None)
+                    matched_exit_cid = getattr(
+                        pos_to_fin, "current_sl_client_order_id", None
+                    )
                     if executor and hasattr(executor, "get_ticker_price"):
                         try:
                             price_info = await executor.get_ticker_price(symbol)
@@ -4080,8 +4084,6 @@ class TradingController:
                                             _ptp.target_price or 0.0,
                                         )
                                     )
-                            matched_exit_oid = None
-                            matched_exit_cid = None
                             for _reason, _oid, _ref_price in exit_orders_to_check:
                                 _oinfo = await executor.get_order_info(symbol, _oid)
                                 if not _oinfo or _oinfo.get("error"):
