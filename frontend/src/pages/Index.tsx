@@ -2,6 +2,7 @@
 
 import {
 	Gauge,
+	Key,
 	Layers,
 	LineChart,
 	Percent,
@@ -12,6 +13,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { WelcomeApiHero } from "@/components/dashboard/WelcomeApiHero";
+import { AddApiKeyModal } from "@/components/settings/AddApiKeyModal";
 import {
 	ExchangeBadge,
 } from "@/components/layout/AccountSelector";
@@ -45,6 +48,7 @@ import {
 	readMarketOf,
 } from "@/lib/livePnl";
 import {
+	useAddApiKey,
 	useConfig,
 	useLogHistory,
 	useMultiAccountBalances,
@@ -129,6 +133,9 @@ const Index = () => {
 
 	const { selectedApiKeyId, selectedMarketType } = useAccountStore();
 	const { data: config } = useConfig();
+	const [isAddApiKeyModalOpen, setIsAddApiKeyModalOpen] = useState(false);
+	const { mutate: addApiKey, isPending: isAddingApiKey } = useAddApiKey();
+	const hasApiKeys = Boolean(config?.apiKeys && config.apiKeys.length > 0);
 
 	// --- Dashboard scope (Equity card + Equity Curve) ---
 	// Follows the account/market selector: a specific API key scopes the
@@ -796,6 +803,10 @@ const Index = () => {
 	return (
 		<PageLayout title={t("index:pageTitle", "Quant Command")} hideHeader>
 			<div className="space-y-4">
+				{!hasApiKeys && (
+					<WelcomeApiHero onConnect={() => setIsAddApiKeyModalOpen(true)} />
+				)}
+
 				{/* 1. Top KPI Stat Strip */}
 				<div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
 					<Stat
@@ -940,8 +951,22 @@ const Index = () => {
 						subtitle={t("index:allocation.subtitle", "Multi-exchange · equity share")}
 					>
 						{accountList.length === 0 ? (
-							<div className="flex h-[120px] items-center justify-center text-center text-[12px] text-white/35">
-								{t("index:allocation.empty", "No API keys connected yet — add one in Settings to see allocation.")}
+							<div className="flex flex-col items-center justify-center py-6 px-4 text-center">
+								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.04] border border-white/10 text-white/50 mb-2.5">
+									<Key className="h-5 w-5 text-cyan/70" />
+								</div>
+								<p className="text-[12px] text-white/50 mb-3 max-w-[240px]">
+									{t("index:allocation.empty", "No API keys connected yet — add one in Settings to see allocation.")}
+								</p>
+								<Btn
+									size="xs"
+									variant="subtle"
+									onClick={() => setIsAddApiKeyModalOpen(true)}
+									className="text-cyan border-cyan/30 hover:border-cyan/50 hover:bg-cyan/10"
+								>
+									<Key className="h-3 w-3 mr-1.5" />
+									{t("index:welcomeHero.connectButton", "Connect API Key")}
+								</Btn>
 							</div>
 						) : (
 							<div className="space-y-3">
@@ -1348,6 +1373,17 @@ const Index = () => {
 					}}
 				/>
 			)}
+
+			<AddApiKeyModal
+				isOpen={isAddApiKeyModalOpen}
+				onClose={() => setIsAddApiKeyModalOpen(false)}
+				onAdd={(data) => {
+					addApiKey(data, {
+						onSuccess: () => setIsAddApiKeyModalOpen(false),
+					});
+				}}
+				isLoading={isAddingApiKey}
+			/>
 		</PageLayout>
 	);
 };

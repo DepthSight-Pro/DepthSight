@@ -321,7 +321,10 @@ async def test_pool_telemetry_once_logs_pool_state():
     finally:
         bot_runner.logger.removeHandler(handler)
     assert any(
-        "[PoolTelemetry]" in m and "checkedout=" in m and "controllers=" in m
+        "[PoolTelemetry]" in m
+        and "checkedout=" in m
+        and "controllers=" in m
+        and "tasks_top=" in m
         for m in messages
     )
 
@@ -371,3 +374,94 @@ async def test_initialize_controller_releases_bootstrap_pin(mocker):
     )
     assert ok is True
     db.commit.assert_awaited_once()
+
+
+def test_worker_main_installs_loadtest_shim(mocker):
+    """Spawned workers start a fresh interpreter without the parent's patches.
+
+    Without per-worker shim install, no worker (including shard 0's, since the
+    parent only spawns and waits) would have the synthetic live balance and
+    every signal would be rejected with RISK_BLOCK.
+    """
+    installed = []
+    fake_shim = SimpleNamespace(install=lambda: installed.append(True))
+    mocker.patch.dict("sys.modules", {"loadtest_live_balance_shim": fake_shim})
+    mocker.patch.object(bot_runner.asyncio, "run", MagicMock())
+    bot_runner.worker_main(2, 4)
+    assert installed == [True]
+    bot_runner.asyncio.run.assert_called_once()
+
+
+def _dead_worker(pid):
+    p = MagicMock()
+    p.is_alive = MagicMock(return_value=False)
+    p.exitcode = 1
+    p.pid = pid
+    return p
+
+
+def test_run_multi_process_exits_nonzero_when_all_dead(mocker):
+    """A master that outlives all children must fail loudly (Exited 1), not
+    idle as a look-healthy container with zero output."""
+    mocker.patch.object(
+        bot_runner.multiprocessing,
+        "Process",
+        MagicMock(side_effect=[_dead_worker(101), _dead_worker(102)]),
+    )
+    mocker.patch.object(bot_runner.multiprocessing, "set_start_method", MagicMock())
+    mocker.patch.object(
+        bot_runner,
+        "shutdown_event",
+        SimpleNamespace(is_set=MagicMock(return_value=False)),
+    )
+    mocker.patch("time.sleep", MagicMock())
+    assert bot_runner._run_multi_process(2) == 1
+
+
+def test_run_multi_process_zero_on_clean_shutdown(mocker):
+    alive = MagicMock()
+    alive.is_alive = MagicMock(return_value=True)
+    alive.exitcode = None
+    alive.pid = 1111
+    mocker.patch.object(
+        bot_runner.multiprocessing, "Process", MagicMock(return_value=alive)
+    )
+    mocker.patch.object(bot_runner.multiprocessing, "set_start_method", MagicMock())
+    state = {"stop": False}
+
+    def _is_set():
+        if state["stop"]:
+            return True
+        state["stop"] = True
+        return False
+
+    mocker.patch.object(
+        bot_runner,
+        "shutdown_event",
+        SimpleNamespace(is_set=MagicMock(side_effect=_is_set)),
+    )
+    mocker.patch("time.sleep", MagicMock())
+    assert bot_runner._run_multi_process(1) == 0
+
+
+@pytest.mark.asyncio
+async def test_pool_telemetry_appends_csv_when_configured(tmp_path, monkeypatch):
+    """POOL_TELEMETRY_PATH must receive one CSV line per sample (survives log
+    rotation, unlike the bot log)."""
+    target = tmp_path / "pool_telemetry.csv"
+    monkeypatch.setenv("POOL_TELEMETRY_PATH", str(target))
+    await bot_runner._log_pool_telemetry_once(shard_id=2)
+    lines = target.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    parts = lines[0].split(",")
+    assert parts[1] == "2"
+    assert len(parts) == 9
+
+
+@pytest.mark.asyncio
+async def test_pool_telemetry_skips_file_when_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("POOL_TELEMETRY_PATH", raising=False)
+    before = set(p.name for p in tmp_path.iterdir())
+    monkeypatch.chdir(tmp_path)
+    await bot_runner._log_pool_telemetry_once(shard_id=0)
+    assert set(p.name for p in tmp_path.iterdir()) == before

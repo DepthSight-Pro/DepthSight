@@ -105,12 +105,28 @@ def setup_bot_logging():
     # File handler (if path is available)
     if can_write_to_file and log_file_path:
         try:
-            # Using logging.handlers.RotatingFileHandler
-            # Increasing file size and number of backups
+            # Rotation is env-tunable: a 1000-controller night writes far more
+            # than the defaults retain (10MB x 6 covered ~15 minutes at peak
+            # churn, eating all forensics). Prod keeps defaults; loadtest
+            # sets LOG_ROTATE_MAX_MB=50 / LOG_ROTATE_BACKUPS=20.
+            # Unparseable or non-positive values fall back to defaults (a
+            # negative backup count would silently destroy history).
+            try:
+                rotate_mb = float(os.environ.get("LOG_ROTATE_MAX_MB", 10))
+                if rotate_mb < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                rotate_mb = 10.0
+            try:
+                rotate_backups = int(os.environ.get("LOG_ROTATE_BACKUPS", 5))
+                if rotate_backups < 1:
+                    raise ValueError
+            except (TypeError, ValueError):
+                rotate_backups = 5
             file_handler = logging.handlers.RotatingFileHandler(
                 log_file_path,
-                maxBytes=10 * 1024 * 1024,
-                backupCount=5,
+                maxBytes=int(rotate_mb * 1024 * 1024),
+                backupCount=rotate_backups,
                 encoding="utf-8",
             )
             file_formatter = logging.Formatter(log_format)
@@ -174,7 +190,8 @@ def setup_bot_logging():
 def setup_global_logging(log_filename: str, log_level: str = "INFO"):
     """
     Configures root logger to write logs to both console and a rotating file log.
-    File logs are limited to 10MB each, with a maximum of 5 backup copies.
+    Rotation defaults to 10MB x 5 backups; LOG_ROTATE_MAX_MB / LOG_ROTATE_BACKUPS
+    env overrides it (loadtest uses 50 x 20).
     """
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
@@ -201,12 +218,25 @@ def setup_global_logging(log_filename: str, log_level: str = "INFO"):
     console_handler.setLevel(level)
     root_logger.addHandler(console_handler)
 
-    # Create rotating file handler
+    # Create rotating file handler (env-tunable, see setup above: a 1000-bot
+    # night outgrows 10MB x 6 in minutes).
     try:
+        try:
+            rotate_mb = float(os.environ.get("LOG_ROTATE_MAX_MB", 10))
+            if rotate_mb < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            rotate_mb = 10.0
+        try:
+            rotate_backups = int(os.environ.get("LOG_ROTATE_BACKUPS", 5))
+            if rotate_backups < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            rotate_backups = 5
         file_handler = logging.handlers.RotatingFileHandler(
             log_file_path,
-            maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=5,
+            maxBytes=int(rotate_mb * 1024 * 1024),
+            backupCount=rotate_backups,
             encoding="utf-8",
         )
         file_formatter = logging.Formatter(log_format)

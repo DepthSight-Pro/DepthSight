@@ -25,17 +25,20 @@
 
 services:
   pgbouncer:
-    image: edoburu/pgbouncer:1.24.0
+    image: edoburu/pgbouncer:v1.24.1-p1
     container_name: depthsight_pgbouncer
     env_file: .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      LISTEN_PORT: 6432
+      AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
       MAX_CLIENT_CONN: "1000"
-      DEFAULT_POOL_SIZE: "25"
+      DEFAULT_POOL_SIZE: "50"
       RESERVE_POOL_SIZE: "5"
       RESERVE_POOL_TIMEOUT: "3"
-      SERVER_IDLE_TIMEOUT: "60"
+      SERVER_LIFETIME: "7200"
+      SERVER_IDLE_TIMEOUT: "600"
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
       - "${PGBOUNCER_HOST_PORT:-6432}:6432"
@@ -45,6 +48,7 @@ services:
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
+      interval: 5s
+      timeout: 3s
       retries: 5
+      start_period: 2s

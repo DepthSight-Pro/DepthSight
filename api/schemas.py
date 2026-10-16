@@ -13,7 +13,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_snake, to_camel
 from typing import TypeVar, Generic, Optional, List, Any, Dict, Union, Tuple, Literal
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from . import schemas
 from bot_module.symbol_selection import SymbolSelectionConfig  # noqa: F401
 import uuid
@@ -3670,5 +3670,18 @@ class PromoNodeRelinkResponse(BaseModel):
     node_uuid: str
     referrer_node_uuid: str
     previous_referrer_node_uuid: Optional[str] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoPublicStatsResponse(BaseModel):
+    volume_usdt: float = 0.0
+    slots_web_taken: int = 0
+    slots_pro_taken: int = 0
+    slots_web_total: int = 1000
+    slots_pro_total: int = 200
+    start_iso: Optional[str] = "2026-10-20T00:00:00Z"
+    end_iso: Optional[str] = "2026-11-20T00:00:00Z"
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)

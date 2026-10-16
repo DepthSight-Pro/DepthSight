@@ -656,18 +656,52 @@ async def _log_pool_telemetry_once(shard_id) -> None:
         rss_str = f"{rss_mb:.0f}MB"
     except Exception:
         rss_str = "n/a"
+    # Task-name histogram: the 1000-user night showed a 65k-task spike in
+    # one shard with no way to tell what they were. Top-5 names are
+    # log-line only (CSV schema stays fixed at 9 columns).
+    try:
+        import collections as _collections
+
+        _task_names = _collections.Counter(t.get_name() for t in asyncio.all_tasks())
+        _n_tasks = sum(_task_names.values())
+        _tasks_top = ",".join(
+            f"{_name}:{_cnt}" for _name, _cnt in _task_names.most_common(5)
+        )
+    except Exception:
+        _n_tasks = -1
+        _tasks_top = "n/a"
     logger.info(
         "[PoolTelemetry] shard=%s pool checkedout=%s checkedin=%s overflow=%s "
-        "size=%s tasks=%s controllers=%s rss=%s",
+        "size=%s tasks=%s tasks_top=%s controllers=%s rss=%s",
         shard_id,
         pool.checkedout(),
         pool.checkedin(),
         pool.overflow(),
         pool.size(),
-        len(asyncio.all_tasks()),
+        _n_tasks,
+        _tasks_top,
         _count_active_controllers(),
         rss_str,
     )
+    # Persistent per-shard telemetry file (opt-in via POOL_TELEMETRY_PATH).
+    # The bot log rotates away intraday at fleet scale (10MB x 6 covered ~15
+    # minutes), destroying the only pool/task/memory history forensics needs.
+    # One CSV line per sample; concurrent worker appends are atomic for short
+    # lines. Never raises: telemetry must not break trading.
+    telemetry_path = os.environ.get("POOL_TELEMETRY_PATH", "")
+    if telemetry_path:
+        try:
+            import datetime as _datetime
+
+            with open(telemetry_path, "a", encoding="utf-8") as _tf:
+                _tf.write(
+                    f"{_datetime.datetime.now(_datetime.timezone.utc).isoformat()},"
+                    f"{shard_id},{pool.checkedout()},{pool.checkedin()},"
+                    f"{pool.overflow()},{pool.size()},{_n_tasks},"
+                    f"{_count_active_controllers()},{rss_str}\n"
+                )
+        except Exception as e_tlm:
+            logger.debug(f"[PoolTelemetry] file append failed: {e_tlm}")
 
 
 async def _pool_telemetry_loop(shard_id, interval_seconds: float = 60.0) -> None:
@@ -1024,6 +1058,20 @@ def worker_main(shard_id, num_workers):
     if worker_platform.system() == "Windows":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+    # Loadtest shim in spawned workers: multiprocessing spawn starts a fresh
+    # interpreter WITHOUT the parent's patches, and the parent only spawns
+    # and waits (all controllers live in workers, including shard 0's). So
+    # without this, no worker would have the synthetic live balance and every
+    # signal would be rejected with RISK_BLOCK. No-op unless
+    # LOADTEST_FAKE_LIVE_BALANCE is set (never in prod); a missing shim file
+    # must never break startup.
+    try:
+        import loadtest_live_balance_shim as _worker_shim
+
+        _worker_shim.install()
+    except Exception as e_shim:
+        logger.warning(f"Worker {shard_id}: loadtest shim unavailable: {e_shim}")
+
     # We re-register signals in the child process
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
@@ -1038,12 +1086,91 @@ def worker_main(shard_id, num_workers):
 
 
 # --- Entry Point ---
+def _run_multi_process(num_workers: int) -> int:
+    """Spawn N worker shards and supervise them. Returns exit code.
+
+    0 = clean shutdown via signal. 1 = every worker terminated: idling as a
+    healthy-looking master while doing nothing is worse than a loud failure
+    (`docker ps` shows Exited(1) instead of a fake-healthy Up).
+    """
+    import time
+
+    # Multi-process mode (Sharding)
+    logger.info(
+        f"Starting bot runner in MULTI-PROCESS mode with {num_workers} workers..."
+    )
+    processes = []
+
+    # Set start method for cleaner multiprocessing behavior (especially on Windows)
+    if platform.system() != "Windows":
+        try:
+            multiprocessing.set_start_method("spawn", force=True)
+        except RuntimeError:
+            pass
+
+    for i in range(num_workers):
+        p = multiprocessing.Process(
+            target=worker_main, args=(i, num_workers), name=f"BotShard_{i}"
+        )
+        p.start()
+        processes.append(p)
+        logger.info(f"Spawned worker shard {i} (PID: {p.pid})")
+
+    # Main process waits for signals or child process completion
+    all_workers_dead = False
+    try:
+        # Use a simple loop to check on children and wait for signal
+        while not shutdown_event.is_set():
+            # Check if all processes are still alive
+            alive_count = sum(1 for p in processes if p.is_alive())
+            if alive_count < num_workers:
+                logger.warning(
+                    f"Some workers died! (Alive: {alive_count}/{num_workers})."
+                )
+            # Fail fast when EVERYTHING is dead: a master process that
+            # outlives all its children looks healthy (container Up, zero
+            # log output) while doing nothing. exitcode is not None means
+            # terminated, as opposed to merely still starting.
+            exited_count = sum(1 for p in processes if p.exitcode is not None)
+            if exited_count >= num_workers:
+                logger.critical(
+                    f"All {num_workers} workers terminated "
+                    f"(exit codes: {[p.exitcode for p in processes]}). "
+                    "Shutting down instead of idling as a zombie master."
+                )
+                all_workers_dead = True
+                break
+
+            # Sleep a bit to not burn CPU in the master process
+            time.sleep(2)
+
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Master process received shutdown. Terminating workers...")
+    finally:
+        for p in processes:
+            if p.is_alive():
+                # Send SIGTERM to children
+                try:
+                    os.kill(p.pid, signal.SIGTERM)
+                except Exception:
+                    p.terminate()
+
+        # Wait for them to finish
+        for p in processes:
+            p.join(timeout=5)
+            if p.is_alive():
+                p.terminate()
+
+        logger.info("All worker shards stopped. Master process exiting.")
+
+    return 1 if all_workers_dead else 0
+
+
 if __name__ == "__main__":
     try:
         num_workers = int(getattr(config, "BOT_RUNNER_PROCESSES", 1))
     except (ValueError, TypeError):
         num_workers = 1
-    import time
 
     if num_workers <= 1:
         # Standard single-process mode
@@ -1059,56 +1186,4 @@ if __name__ == "__main__":
                 f"Critical error in single-process run: {e_main_run}", exc_info=True
             )
     else:
-        # Multi-process mode (Sharding)
-        logger.info(
-            f"Starting bot runner in MULTI-PROCESS mode with {num_workers} workers..."
-        )
-        processes = []
-
-        # Set start method for cleaner multiprocessing behavior (especially on Windows)
-        if platform.system() != "Windows":
-            try:
-                multiprocessing.set_start_method("spawn", force=True)
-            except RuntimeError:
-                pass
-
-        for i in range(num_workers):
-            p = multiprocessing.Process(
-                target=worker_main, args=(i, num_workers), name=f"BotShard_{i}"
-            )
-            p.start()
-            processes.append(p)
-            logger.info(f"Spawned worker shard {i} (PID: {p.pid})")
-
-        # Main process waits for signals or child process completion
-        try:
-            # Use a simple loop to check on children and wait for signal
-            while not shutdown_event.is_set():
-                # Check if all processes are still alive
-                alive_count = sum(1 for p in processes if p.is_alive())
-                if alive_count < num_workers:
-                    logger.warning(
-                        f"Some workers died! (Alive: {alive_count}/{num_workers})."
-                    )
-
-                # Sleep a bit to not burn CPU in the master process
-                time.sleep(2)
-
-        except (KeyboardInterrupt, SystemExit):
-            logger.info("Master process received shutdown. Terminating workers...")
-        finally:
-            for p in processes:
-                if p.is_alive():
-                    # Send SIGTERM to children
-                    try:
-                        os.kill(p.pid, signal.SIGTERM)
-                    except Exception:
-                        p.terminate()
-
-            # Wait for them to finish
-            for p in processes:
-                p.join(timeout=5)
-                if p.is_alive():
-                    p.terminate()
-
-            logger.info("All worker shards stopped. Master process exiting.")
+        raise SystemExit(_run_multi_process(num_workers))

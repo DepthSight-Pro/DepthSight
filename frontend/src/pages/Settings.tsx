@@ -175,7 +175,20 @@ export default function Settings() {
 	const [togglingApiKeyId, setTogglingApiKeyId] = useState<number | null>(null);
 	const [apiKeyToDelete, setApiKeyToDelete] = useState<ApiKeyType | null>(null);
 
-	const [isAddApiKeyModalOpen, setIsAddApiKeyModalOpen] = useState(false);
+	const [isAddApiKeyModalOpen, setIsAddApiKeyModalOpen] = useState<boolean>(
+		() => searchParams.get("addKey") === "true",
+	);
+	const [syncedAddKeyParam, setSyncedAddKeyParam] = useState<string | null>(
+		() => searchParams.get("addKey"),
+	);
+	const addKeyParam = searchParams.get("addKey");
+	if (addKeyParam !== syncedAddKeyParam) {
+		setSyncedAddKeyParam(addKeyParam);
+		if (addKeyParam === "true") {
+			setActiveSettingsTab("api-keys");
+			setIsAddApiKeyModalOpen(true);
+		}
+	}
 
 	const [riskMaxDrawdown, setRiskMaxDrawdown] = useState<number | string>("");
 	const [riskMaxConsecutiveLosses, setRiskMaxConsecutiveLosses] = useState<

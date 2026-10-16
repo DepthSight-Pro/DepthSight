@@ -96,6 +96,7 @@
 		"accountLabel": "Торговый счёт",
 		"selectAccountPlaceholder": "Выберите торговый счёт",
 		"noActiveKeysWarning": "Нет доступных валидных API-ключей. Добавьте и подтвердите API-ключ в Настройках.",
+		"connectKeyButton": "Подключить ключ",
 		"advancedSettingsLabel": "Дополнительные настройки",
 		"useMlConfirmationLabel": "Включить ML-подтверждение",
 		"breakevenOnRegimeChangeLabel": "Безубыток при смене режима",

@@ -49,7 +49,9 @@
 	"copiedToClipboard": "скопировано в буфер обмена.",
 	"errors": {
 		"unknownError": "Произошла неизвестная ошибка.",
-		"connectApiKeys": "Подключите API ключи в настройках"
+		"connectApiKeys": "Подключите API ключи в настройках",
+		"connectApiKeysDesc": "Добавьте API-ключ биржи для перехода в реальный режим торговли.",
+		"goToSettings": "Настройки"
 	},
 	"confirmButton": "Подтвердить",
 	"notFound": {

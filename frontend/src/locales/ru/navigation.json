@@ -20,6 +20,8 @@
 	"adminPanel": "Админ-панель",
 	"affiliateDashboard": "Панель партнера",
 	"mining": "Торговый майнинг",
+	"connectExchange": "Подключить биржу",
+	"connectExchangeHint": "Добавьте API-ключ для торговли",
 	"ai_assistant": {
 		"title": "AI Co-Pilot",
 		"ariaLabel": "Открыть AI Co-Pilot",

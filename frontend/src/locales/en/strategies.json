@@ -96,6 +96,7 @@
 		"accountLabel": "Trading Account",
 		"selectAccountPlaceholder": "Select trading account",
 		"noActiveKeysWarning": "No valid API keys available. Please add and verify an API key in Settings.",
+		"connectKeyButton": "Connect Key",
 		"advancedSettingsLabel": "Advanced Settings",
 		"useMlConfirmationLabel": "Enable ML Confirmation",
 		"breakevenOnRegimeChangeLabel": "Breakeven on Regime Change",

@@ -12,6 +12,7 @@ import {
 	FlaskConical,
 	Globe,
 	Home,
+	Key,
 	Loader2,
 	Microscope,
 	PencilRuler,
@@ -55,6 +56,7 @@ import { usePortfolioMode } from "@/context/PortfolioModeContext";
 import { useAccountStore } from "@/stores/accountStore";
 import {
 	useAccountStatus,
+	useConfig,
 	useGetMiningStatus,
 	useGetPromoStatus,
 	usePositions,
@@ -107,7 +109,9 @@ export function AppSidebar() {
 	const isExpanded = state === "expanded";
 
 	const { data: accountStatus } = useAccountStatus();
+	const { data: config } = useConfig();
 	const { data: systemStatus } = useSystemStatus();
+	const hasApiKeys = Boolean(config?.apiKeys && config.apiKeys.length > 0);
 	const { data: miningStatus } = useGetMiningStatus();
 	const { data: resources } = useSystemResources();
 	const { mode } = usePortfolioMode();
@@ -446,6 +450,54 @@ export function AppSidebar() {
 								);
 							})}
 						</nav>
+
+						{/* Connect Exchange CTA when user has 0 API keys */}
+						{!hasApiKeys && (
+							<div className="pt-2">
+								{isExpanded ? (
+									<Link
+										to="/settings?tab=api-keys&addKey=true"
+										className="group relative flex flex-col gap-1.5 overflow-hidden rounded-xl border border-cyan/40 bg-gradient-to-br from-cyan/15 via-azure/10 to-transparent p-2.5 shadow-[0_0_20px_-5px_rgba(0,212,255,0.35)] hover:border-cyan/70 hover:shadow-[0_0_25px_-3px_rgba(0,212,255,0.6)] transition-all"
+									>
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<div className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan/20 border border-cyan/40 text-cyan shadow-sm">
+													<Key size={13} className="animate-pulse" />
+												</div>
+												<span className="text-[11px] font-semibold tracking-tight text-white flex items-center gap-1.5">
+													{t("connectExchange", "Connect Exchange")}
+												</span>
+											</div>
+											<span className="relative flex h-2 w-2">
+												<span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan opacity-75" />
+												<span className="relative inline-flex rounded-full h-2 w-2 bg-cyan shadow-[0_0_8px_#00d4ff]" />
+											</span>
+										</div>
+										<p className="text-[10px] text-white/50 leading-snug line-clamp-2">
+											{t("connectExchangeHint", "Add API key to trade")}
+										</p>
+									</Link>
+								) : (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Link
+												to="/settings?tab=api-keys&addKey=true"
+												className="group relative flex h-10 w-10 items-center justify-center rounded-xl border border-cyan/40 bg-cyan/15 text-cyan hover:bg-cyan/25 transition-all shadow-[0_0_15px_-3px_rgba(0,212,255,0.5)] mx-auto"
+											>
+												<Key size={17} className="animate-pulse text-cyan" />
+												<span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+													<span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan opacity-75" />
+													<span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan shadow-[0_0_8px_#00d4ff]" />
+												</span>
+											</Link>
+										</TooltipTrigger>
+										<TooltipContent side="right" className="bg-popover border border-border text-xs shadow-md">
+											{t("connectExchange", "Connect Exchange")}
+										</TooltipContent>
+									</Tooltip>
+								)}
+							</div>
+						)}
 					</SidebarContent>
 
 					{/* Trade Mining Widget (Variant 2: Epoch & Radial Progress) */}

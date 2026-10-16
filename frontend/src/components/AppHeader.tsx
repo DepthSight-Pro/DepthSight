@@ -3,7 +3,9 @@
 import { FlaskConical, Radio, Sparkles } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { AccountSelector } from "@/components/layout/AccountSelector";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
@@ -30,6 +32,7 @@ export const AppHeader = () => {
 	const { data: balances } = useMultiAccountBalances(selectedMarketType);
 	const { t } = useTranslation(["common", "account"]);
 	const { widgetState, setWidgetState } = useAiCopilotStore();
+	const navigate = useNavigate();
 
 	const apiKeys = config?.apiKeys;
 	const hasApiKeys = Boolean(apiKeys?.length);
@@ -93,7 +96,20 @@ export const AppHeader = () => {
 			if (hasApiKeys) {
 				setMode("live");
 			} else {
-				toast.error(t("common:errors.connectApiKeys"));
+				toast.error(t("common:errors.connectApiKeys"), {
+					description: t(
+						"common:errors.connectApiKeysDesc",
+						"Add an exchange API key to enable live trading mode.",
+					),
+					action: (
+						<ToastAction
+							altText={t("common:errors.goToSettings", "Settings")}
+							onClick={() => navigate("/settings?tab=api-keys&addKey=true")}
+						>
+							{t("common:errors.goToSettings", "Settings")}
+						</ToastAction>
+					),
+				});
 			}
 		} else if (targetMode === "paper") {
 			setMode("paper");

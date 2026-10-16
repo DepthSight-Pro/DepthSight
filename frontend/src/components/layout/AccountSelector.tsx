@@ -168,16 +168,16 @@ export const AccountSelector: React.FC<AccountSelectorProps> = ({
 
 	const formatUsd = (val: number) => {
 		return `$${val.toLocaleString("en-US", {
-			minimumFractionDigits: 0,
-			maximumFractionDigits: 0,
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
 		})}`;
 	};
 
 	const formatPnl = (val: number) => {
 		const sign = val > 0 ? "+" : "";
 		return `${sign}$${val.toLocaleString("en-US", {
-			minimumFractionDigits: 0,
-			maximumFractionDigits: 0,
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 2,
 		})}`;
 	};
 

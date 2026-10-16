@@ -10,6 +10,7 @@ import {
 	Cpu,
 	FlaskConical,
 	HelpCircle,
+	Key,
 	Loader2,
 	Play,
 	Rocket,
@@ -20,7 +21,7 @@ import {
 import { memo, useEffect, useMemo, useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { ExchangeBadge } from "@/components/layout/AccountSelector";
@@ -1339,11 +1340,20 @@ export const ConfigAndLaunchPanel = memo(
 									</SelectContent>
 								</Select>
 								{activeApiKeys.length === 0 && (
-									<div className="text-[11px] text-amber-500 dark:text-amber-200/80 leading-tight">
-										{t(
-											"configPanel.noActiveKeysWarning",
-											"No active API keys. Add and verify a key in Settings.",
-										)}
+									<div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-400">
+										<span className="leading-tight">
+											{t(
+												"configPanel.noActiveKeysWarning",
+												"No active API keys.",
+											)}
+										</span>
+										<Link
+											to="/settings?tab=api-keys&addKey=true"
+											className="inline-flex items-center gap-1 font-semibold text-cyan hover:underline shrink-0"
+										>
+											<Key className="h-3 w-3" />
+											{t("configPanel.connectKeyLink", "Connect Key")}
+										</Link>
 									</div>
 								)}
 								{isPaperDeploy && hedgeEnabled && (

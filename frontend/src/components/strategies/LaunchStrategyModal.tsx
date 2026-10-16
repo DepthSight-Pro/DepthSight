@@ -10,6 +10,7 @@ import {
 	useWatch,
 } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -324,13 +325,21 @@ export const LaunchStrategyModal: React.FC<LaunchStrategyModalProps> = ({
 
 					{/* API Key Selection for Live Mode - only show if multiple active keys */}
 					{tradingMode === "live" && activeApiKeys.length === 0 && (
-						<div className="p-3 border border-rose-500/30 rounded-xl bg-rose-500/10">
-							<p className="text-xs text-rose-400">
+						<div className="p-3 border border-rose-500/30 rounded-xl bg-rose-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+							<p className="text-xs text-rose-300">
 								{t(
 									"launchModal.noActiveKeysWarning",
 									"No valid API keys available. Please add and verify an API key in Settings.",
 								)}
 							</p>
+							<Link
+								to="/settings?tab=api-keys&addKey=true"
+								onClick={onClose}
+								className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-200 transition-colors shrink-0"
+							>
+								<Key className="h-3.5 w-3.5" />
+								{t("launchModal.connectKeyButton", "Connect Key")}
+							</Link>
 						</div>
 					)}
 

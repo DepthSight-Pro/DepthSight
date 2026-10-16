@@ -49,7 +49,9 @@
 	"copiedToClipboard": "copied to clipboard.",
 	"errors": {
 		"unknownError": "An unknown error occurred.",
-		"connectApiKeys": "Connect API keys in settings"
+		"connectApiKeys": "Connect API keys in settings",
+		"connectApiKeysDesc": "Add an exchange API key to enable live trading mode.",
+		"goToSettings": "Settings"
 	},
 	"confirmButton": "Confirm",
 	"notFound": {

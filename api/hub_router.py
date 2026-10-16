@@ -5021,6 +5021,143 @@ def _is_node_online(
     return True
 
 
+@router.get(
+    "/promo/public-stats",
+    response_model=schemas.PromoPublicStatsResponse,
+)
+async def get_promo_public_stats(
+    db: AsyncSession = Depends(get_db),
+):
+    """Public stats for Bitget promo campaign (for landing page widgets).
+
+    Returns all-time cumulative verified Bitget volume and claimed slots.
+    Cached in Redis for 60 seconds to protect DB under high landing traffic.
+    """
+    CACHE_KEY = "promo:public_stats:bitget"
+    CACHE_TTL_SEC = 60
+
+    redis_client = None
+    try:
+        from .redis_client import get_redis_client
+
+        redis_client = await get_redis_client()
+        cached = await redis_client.get(CACHE_KEY)
+        if cached:
+            import json
+
+            data = json.loads(cached)
+            return schemas.PromoPublicStatsResponse(**data)
+    except Exception as cache_err:
+        logger.debug(f"Promo public stats cache lookup skipped/failed: {cache_err}")
+        redis_client = None
+
+    # 1. Active campaign config if exists
+    camp_stmt = (
+        select(models.PromoCampaign)
+        .where(models.PromoCampaign.is_active == True)  # noqa: E712
+        .order_by(models.PromoCampaign.created_at.desc())
+    )
+    camp_res = await db.execute(camp_stmt)
+    campaign = camp_res.scalars().first()
+
+    slots_web_total = 1000
+    slots_pro_total = 200
+    start_iso = "2026-10-20T00:00:00Z"
+    end_iso = "2026-11-20T00:00:00Z"
+
+    if campaign and campaign.quests:
+        quests_list = (
+            campaign.quests if isinstance(campaign.quests, list) else [campaign.quests]
+        )
+        for q in quests_list:
+            if q.get("quest_type") == "api_volume":
+                slots_web_total = int(q.get("total_slots", 1000))
+            elif q.get("quest_type") == "node_runner":
+                slots_pro_total = int(q.get("total_slots", 200))
+        if campaign.ui_config:
+            start_iso = campaign.ui_config.get("start_iso", start_iso)
+            end_iso = campaign.ui_config.get("end_iso", end_iso)
+
+    # 2. Claimed slots across ALL time
+    web_claims_stmt = select(func.count(models.PromoClaim.id)).where(
+        models.PromoClaim.quest_type == "api_volume",
+        models.PromoClaim.status != "rejected",
+    )
+    pro_claims_stmt = select(func.count(models.PromoClaim.id)).where(
+        models.PromoClaim.quest_type == "node_runner",
+        models.PromoClaim.status != "rejected",
+    )
+    total_claims_stmt = select(func.count(models.PromoClaim.id)).where(
+        models.PromoClaim.status != "rejected",
+    )
+
+    slots_web_taken = int((await db.execute(web_claims_stmt)).scalar() or 0)
+    slots_pro_taken = int((await db.execute(pro_claims_stmt)).scalar() or 0)
+    total_claims_taken = int((await db.execute(total_claims_stmt)).scalar() or 0)
+
+    # If test claims exist under general/other quest types, ensure they count toward web slots:
+    if slots_web_taken == 0 and slots_pro_taken == 0 and total_claims_taken > 0:
+        slots_web_taken = total_claims_taken
+
+    # 3. Cumulative Bitget volume across ALL time:
+    # A. From HubTelemetryReport (LIVE only, excluding paper trades)
+    telem_stmt = select(
+        func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
+    ).where(
+        models.HubTelemetryReport.exchange_id.ilike("%bitget%"),
+        models.HubTelemetryReport.verification_status != "REJECTED",
+        _live_trade_mode_filter(),
+    )
+    telem_vol = float((await db.execute(telem_stmt)).scalar() or 0.0)
+
+    # B. From PromoClaim (verified_volume across both quests: Web + Pro Node)
+    claims_vol_stmt = select(
+        func.coalesce(func.sum(models.PromoClaim.verified_volume), 0.0)
+    ).where(
+        models.PromoClaim.status != "rejected",
+    )
+    claims_vol = float((await db.execute(claims_vol_stmt)).scalar() or 0.0)
+
+    # C. From Trade table (LIVE trades executed via DepthSight on Bitget)
+    trade_vol_stmt = (
+        select(
+            func.coalesce(
+                func.sum(models.Trade.entry_price * models.Trade.quantity), 0.0
+            )
+        )
+        .join(models.ApiKey, models.Trade.api_key_id == models.ApiKey.id)
+        .where(
+            models.ApiKey.exchange.ilike("%bitget%"),
+            models.Trade.trade_mode == "LIVE",
+        )
+    )
+    trade_vol = float((await db.execute(trade_vol_stmt)).scalar() or 0.0)
+
+    total_volume_usdt = max(telem_vol, claims_vol, trade_vol)
+
+    resp = schemas.PromoPublicStatsResponse(
+        volume_usdt=total_volume_usdt,
+        slots_web_taken=slots_web_taken,
+        slots_pro_taken=slots_pro_taken,
+        slots_web_total=slots_web_total,
+        slots_pro_total=slots_pro_total,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    if redis_client:
+        try:
+            payload_str = resp.model_dump_json(by_alias=False)
+            await redis_client.setex(CACHE_KEY, CACHE_TTL_SEC, payload_str)
+        except Exception as cache_write_err:
+            logger.debug(
+                f"Failed to set Redis cache for promo public stats: {cache_write_err}"
+            )
+
+    return resp
+
+
 @router.get("/promo/status", response_model=schemas.PromoStatusResponse)
 async def get_promo_status(
     authorization: Optional[str] = Header(None),

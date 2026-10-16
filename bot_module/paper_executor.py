@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
 from bot_module.runtime_dependencies import crud
+from bot_module.db_retry import get_retry_attempts, is_transient_connection_error
 from .data_consumer import DataConsumer
 from .execution_simulator import (
     OrderExecutionResult,
@@ -84,58 +85,91 @@ class PaperTradingExecutor:
         No retry loop on purpose: a session that raised "Session is already
         flushing" stays unusable for subsequent work, so retrying only added
         latency before the same failure.
+
+        Transient *connection* kills are different: they carry no poisoned
+        session state (the short session is discarded), so one re-attempt
+        after rollback is safe and recovers the night-run failure class
+        ("connection was closed in the middle of operation" via PgBouncer).
         """
-        try:
-            async with self._session() as db:
-                wallet_assets = await crud.get_paper_wallet(db, user_id=self.user_id)
-                if wallet_assets:
+        _ensure_attempts = get_retry_attempts()
+        for _attempt in range(1, _ensure_attempts + 1):
+            try:
+                async with self._session() as db:
+                    wallet_assets = await crud.get_paper_wallet(
+                        db, user_id=self.user_id
+                    )
+                    if wallet_assets:
+                        return True
+                    logger.info(
+                        f"Paper wallet not found for user {self.user_id}. Initializing..."
+                    )
+                    await crud.init_or_reset_paper_wallet(db, user_id=self.user_id)
+                    # Persist the init in the same scope: previously it rode the
+                    # ambient long-lived session and was only durable if some later
+                    # write happened to commit. Without this, a short session would
+                    # roll the wallet back on close and re-init every call.
+                    await db.commit()
                     return True
-                logger.info(
-                    f"Paper wallet not found for user {self.user_id}. Initializing..."
+            except Exception as e:
+                if _attempt < _ensure_attempts and is_transient_connection_error(e):
+                    logger.warning(
+                        f"Transient DB failure ensuring paper wallet for user "
+                        f"{self.user_id} (attempt {_attempt}/{_ensure_attempts}): "
+                        f"{e}. Retrying once."
+                    )
+                    try:
+                        await self.db.rollback()
+                    except Exception:
+                        pass
+                    continue
+                logger.error(
+                    f"Paper wallet init failed for user {self.user_id}: {e}. Paper "
+                    "trading cannot size positions until the wallet is available.",
+                    exc_info=True,
                 )
-                await crud.init_or_reset_paper_wallet(db, user_id=self.user_id)
-                # Persist the init in the same scope: previously it rode the
-                # ambient long-lived session and was only durable if some later
-                # write happened to commit. Without this, a short session would
-                # roll the wallet back on close and re-init every call.
-                await db.commit()
-                return True
-        except Exception as e:
-            logger.error(
-                f"Paper wallet init failed for user {self.user_id}: {e}. Paper "
-                "trading cannot size positions until the wallet is available.",
-                exc_info=True,
-            )
-            return False
+                return False
+        return False
 
     async def get_account_balance(self) -> Optional[Dict[str, Dict[str, str]]]:
         logger.debug(f"Getting paper wallet balance for user_id: {self.user_id}")
-        try:
-            if not await self._ensure_paper_wallet():
-                return None
-            async with self._session() as db:
-                wallet_assets = await crud.get_paper_wallet(db, user_id=self.user_id)
-                if not wallet_assets:
-                    logger.error(
-                        f"Paper wallet for user {self.user_id} is still missing after "
-                        "initialization; treating balance as unavailable."
-                    )
+        _balance_attempts = get_retry_attempts()
+        for _attempt in range(1, _balance_attempts + 1):
+            try:
+                if not await self._ensure_paper_wallet():
                     return None
+                async with self._session() as db:
+                    wallet_assets = await crud.get_paper_wallet(
+                        db, user_id=self.user_id
+                    )
+                    if not wallet_assets:
+                        logger.error(
+                            f"Paper wallet for user {self.user_id} is still missing after "
+                            "initialization; treating balance as unavailable."
+                        )
+                        return None
 
-                balances = {}
-                for asset in wallet_assets:
-                    balances[asset.asset] = {
-                        "free": str(asset.balance),
-                        "locked": "0.0",
-                    }
-                logger.debug(f"Paper wallet balance: {balances}")
-                return balances
-        except Exception as e:
-            logger.error(
-                f"Error getting paper account balance for user {self.user_id}: {e}",
-                exc_info=True,
-            )
-            return None
+                    balances = {}
+                    for asset in wallet_assets:
+                        balances[asset.asset] = {
+                            "free": str(asset.balance),
+                            "locked": "0.0",
+                        }
+                    logger.debug(f"Paper wallet balance: {balances}")
+                    return balances
+            except Exception as e:
+                if _attempt < _balance_attempts and is_transient_connection_error(e):
+                    logger.warning(
+                        f"Transient DB failure reading paper balance for user "
+                        f"{self.user_id} (attempt {_attempt}/{_balance_attempts}): "
+                        f"{e}. Retrying once."
+                    )
+                    continue
+                logger.error(
+                    f"Error getting paper account balance for user {self.user_id}: {e}",
+                    exc_info=True,
+                )
+                return None
+        return None
 
     async def place_order(
         self, symbol: str, side: str, order_type: str, **kwargs
@@ -235,230 +269,280 @@ class PaperTradingExecutor:
             )
             if sim_result.filled_quantity > 0:
                 async with self._db_lock:
-                    try:
-                        realized_pnl = 0.0
-                        asset_to_update = "USDT"
+                    # Retry budget for transient connection kills: PgBouncer
+                    # may recycle a server connection mid-query ("connection
+                    # was closed in the middle of operation"), which
+                    # pool_pre_ping cannot prevent. Retrying is safe only
+                    # while nothing was committed, so the loop is gated on
+                    # _persist_committed and the in-memory position is
+                    # restored from snapshot before each re-attempt.
+                    _persist_attempts = get_retry_attempts()
+                    _pos_snapshot = (
+                        dict(self._positions[symbol])
+                        if symbol in self._positions
+                        else None
+                    )
+                    _persist_committed = False
+                    for _db_attempt in range(1, _persist_attempts + 1):
+                        try:
+                            realized_pnl = 0.0
+                            asset_to_update = "USDT"
 
-                        # Check if this trade is a closure or a reduction of an existing position
-                        if symbol in self._positions:
-                            old_pos = self._positions[symbol]
-                            old_qty = old_pos["quantity"]
+                            # Check if this trade is a closure or a reduction of an existing position
+                            if symbol in self._positions:
+                                old_pos = self._positions[symbol]
+                                old_qty = old_pos["quantity"]
 
-                            is_long_position = old_qty > 0
-                            is_reducing_trade = (
-                                is_long_position and direction == SignalDirection.SHORT
-                            ) or (
-                                not is_long_position
-                                and direction == SignalDirection.LONG
-                            )
-
-                            if is_reducing_trade:
-                                # Calculate PnL for the closing part
-                                qty_being_closed = min(
-                                    abs(old_qty), sim_result.filled_quantity
-                                )
-                                entry_price = old_pos["avg_entry_price"]
-                                exit_price = sim_result.avg_fill_price
-
-                                if is_long_position:
-                                    realized_pnl = (
-                                        exit_price - entry_price
-                                    ) * qty_being_closed
-                                else:  # Short position
-                                    realized_pnl = (
-                                        entry_price - exit_price
-                                    ) * qty_being_closed
-
-                                logger.info(
-                                    f"{log_prefix} Closing trade detected. Realized PnL for this fill: {realized_pnl:.4f}"
+                                is_long_position = old_qty > 0
+                                is_reducing_trade = (
+                                    is_long_position
+                                    and direction == SignalDirection.SHORT
+                                ) or (
+                                    not is_long_position
+                                    and direction == SignalDirection.LONG
                                 )
 
-                        # For futures, the balance only changes by PnL (if any) and commission.
-                        # The full contract value is NOT debited and NOT credited.
-                        total_balance_change = (
-                            realized_pnl - sim_result.actual_commission_paid
-                        )
+                                if is_reducing_trade:
+                                    # Calculate PnL for the closing part
+                                    qty_being_closed = min(
+                                        abs(old_qty), sim_result.filled_quantity
+                                    )
+                                    entry_price = old_pos["avg_entry_price"]
+                                    exit_price = sim_result.avg_fill_price
 
-                        await crud.update_paper_wallet_balance(
-                            self.db, self.user_id, asset_to_update, total_balance_change
-                        )
+                                    if is_long_position:
+                                        realized_pnl = (
+                                            exit_price - entry_price
+                                        ) * qty_being_closed
+                                    else:  # Short position
+                                        realized_pnl = (
+                                            entry_price - exit_price
+                                        ) * qty_being_closed
 
-                        # Recording the equity history point in Redis
-                        await self._record_equity_point()
-
-                        # Position update logic (remains the same)
-                        position_change = (
-                            sim_result.filled_quantity
-                            if direction == SignalDirection.LONG
-                            else -sim_result.filled_quantity
-                        )
-
-                        if symbol not in self._positions:
-                            self._positions[symbol] = {
-                                "quantity": position_change,
-                                "avg_entry_price": sim_result.avg_fill_price,
-                                "entry_timestamp": datetime.now(
-                                    timezone.utc
-                                ),  # Save entry time
-                            }
-                        else:
-                            old_pos = self._positions[symbol]
-                            old_qty = old_pos["quantity"]
-                            old_avg_price = old_pos["avg_entry_price"]
-                            new_qty = old_qty + position_change
-
-                            if abs(new_qty) > 1e-9:
-                                if (old_qty > 0 and position_change > 0) or (
-                                    old_qty < 0 and position_change < 0
-                                ):  # Position increase
-                                    # Recalculate the average entry price
-                                    new_avg_price = (
-                                        (old_avg_price * old_qty)
-                                        + (sim_result.avg_fill_price * position_change)
-                                    ) / new_qty
-                                else:  # Position reduction
-                                    new_avg_price = (
-                                        old_avg_price  # Entry price does not change
+                                    logger.info(
+                                        f"{log_prefix} Closing trade detected. Realized PnL for this fill: {realized_pnl:.4f}"
                                     )
 
+                            # For futures, the balance only changes by PnL (if any) and commission.
+                            # The full contract value is NOT debited and NOT credited.
+                            total_balance_change = (
+                                realized_pnl - sim_result.actual_commission_paid
+                            )
+
+                            await crud.update_paper_wallet_balance(
+                                self.db,
+                                self.user_id,
+                                asset_to_update,
+                                total_balance_change,
+                            )
+
+                            # Recording the equity history point in Redis
+                            await self._record_equity_point()
+
+                            # Position update logic (remains the same)
+                            position_change = (
+                                sim_result.filled_quantity
+                                if direction == SignalDirection.LONG
+                                else -sim_result.filled_quantity
+                            )
+
+                            if symbol not in self._positions:
                                 self._positions[symbol] = {
-                                    "quantity": new_qty,
-                                    "avg_entry_price": new_avg_price,
+                                    "quantity": position_change,
+                                    "avg_entry_price": sim_result.avg_fill_price,
+                                    "entry_timestamp": datetime.now(
+                                        timezone.utc
+                                    ),  # Save entry time
                                 }
-                            else:  # Position is fully closed
-                                del self._positions[symbol]
+                            else:
+                                old_pos = self._positions[symbol]
+                                old_qty = old_pos["quantity"]
+                                old_avg_price = old_pos["avg_entry_price"]
+                                new_qty = old_qty + position_change
 
-                        # Logic for recording the trade in the DB
-                        # Determining the exit type (for grouping trades)
-                        # Using the passed exit_type or determining by PnL
-                        exit_type = kwargs.get("exit_type")
-                        if not exit_type:
-                            exit_type = "ENTRY" if realized_pnl == 0 else "EXIT"
+                                if abs(new_qty) > 1e-9:
+                                    if (old_qty > 0 and position_change > 0) or (
+                                        old_qty < 0 and position_change < 0
+                                    ):  # Position increase
+                                        # Recalculate the average entry price
+                                        new_avg_price = (
+                                            (old_avg_price * old_qty)
+                                            + (
+                                                sim_result.avg_fill_price
+                                                * position_change
+                                            )
+                                        ) / new_qty
+                                    else:  # Position reduction
+                                        new_avg_price = (
+                                            old_avg_price  # Entry price does not change
+                                        )
 
-                        is_final_exit = (
-                            symbol not in self._positions
-                        )  # If the position is deleted, it means a final exit
+                                    self._positions[symbol] = {
+                                        "quantity": new_qty,
+                                        "avg_entry_price": new_avg_price,
+                                    }
+                                else:  # Position is fully closed
+                                    del self._positions[symbol]
 
-                        # Determining the correct entry_price and exit_price
-                        # If this is a position closure - take entry_price from the old position
-                        actual_entry_price = sim_result.avg_fill_price
-                        actual_exit_price = sim_result.avg_fill_price
-                        actual_entry_timestamp = datetime.now(
-                            timezone.utc
-                        )  # Default for entry orders
+                            # Logic for recording the trade in the DB
+                            # Determining the exit type (for grouping trades)
+                            # Using the passed exit_type or determining by PnL
+                            exit_type = kwargs.get("exit_type")
+                            if not exit_type:
+                                exit_type = "ENTRY" if realized_pnl == 0 else "EXIT"
 
-                        if realized_pnl != 0 and "old_pos" in dir() and old_pos:
-                            # This is a position closure - entry_price from the old position, exit_price is current
-                            actual_entry_price = old_pos.get(
-                                "avg_entry_price", sim_result.avg_fill_price
-                            )
+                            is_final_exit = (
+                                symbol not in self._positions
+                            )  # If the position is deleted, it means a final exit
+
+                            # Determining the correct entry_price and exit_price
+                            # If this is a position closure - take entry_price from the old position
+                            actual_entry_price = sim_result.avg_fill_price
                             actual_exit_price = sim_result.avg_fill_price
-                            actual_entry_timestamp = old_pos.get(
-                                "entry_timestamp", datetime.now(timezone.utc)
+                            actual_entry_timestamp = datetime.now(
+                                timezone.utc
+                            )  # Default for entry orders
+
+                            if realized_pnl != 0 and "old_pos" in dir() and old_pos:
+                                # This is a position closure - entry_price from the old position, exit_price is current
+                                actual_entry_price = old_pos.get(
+                                    "avg_entry_price", sim_result.avg_fill_price
+                                )
+                                actual_exit_price = sim_result.avg_fill_price
+                                actual_entry_timestamp = old_pos.get(
+                                    "entry_timestamp", datetime.now(timezone.utc)
+                                )
+
+                            trade_data = {
+                                "trade_uuid": client_order_id,
+                                "timestamp_close": datetime.now(timezone.utc),
+                                "timestamp_signal": actual_entry_timestamp,
+                                "symbol": symbol,
+                                "strategy_config_id": kwargs.get("strategy_config_id"),
+                                "direction": side,
+                                "entry_price": actual_entry_price,
+                                "exit_price": actual_exit_price,
+                                "pnl": realized_pnl,
+                                "commission": sim_result.actual_commission_paid,
+                                "exit_reason": "PAPER_TRADE_MARKET_EXECUTION",
+                                "quantity": sim_result.filled_quantity,
+                                # New fields for grouping
+                                "position_entry_id": kwargs.get(
+                                    "entry_client_order_id"
+                                ),  # Entry ID for grouping
+                                "exit_type": exit_type,
+                                "is_final_exit": is_final_exit,
+                                # Signal details with decision trace for analytics
+                                "signal_details_json": kwargs.get("signal_details"),
+                            }
+
+                            from tasks import process_live_trade_analytics_task
+
+                            new_db_trade = await crud.create_trade(
+                                self.db,
+                                user_id=self.user_id,
+                                trade_data=trade_data,
+                                trade_mode="PAPER",
                             )
-
-                        trade_data = {
-                            "trade_uuid": client_order_id,
-                            "timestamp_close": datetime.now(timezone.utc),
-                            "timestamp_signal": actual_entry_timestamp,
-                            "symbol": symbol,
-                            "strategy_config_id": kwargs.get("strategy_config_id"),
-                            "direction": side,
-                            "entry_price": actual_entry_price,
-                            "exit_price": actual_exit_price,
-                            "pnl": realized_pnl,
-                            "commission": sim_result.actual_commission_paid,
-                            "exit_reason": "PAPER_TRADE_MARKET_EXECUTION",
-                            "quantity": sim_result.filled_quantity,
-                            # New fields for grouping
-                            "position_entry_id": kwargs.get(
-                                "entry_client_order_id"
-                            ),  # Entry ID for grouping
-                            "exit_type": exit_type,
-                            "is_final_exit": is_final_exit,
-                            # Signal details with decision trace for analytics
-                            "signal_details_json": kwargs.get("signal_details"),
-                        }
-
-                        from tasks import process_live_trade_analytics_task
-
-                        new_db_trade = await crud.create_trade(
-                            self.db,
-                            user_id=self.user_id,
-                            trade_data=trade_data,
-                            trade_mode="PAPER",
-                        )
-                        await self.db.commit()
-                        await self.db.refresh(new_db_trade)
-                        logger.info(
-                            f"{log_prefix} Trade {new_db_trade.id} successfully saved and committed."
-                        )
-                        # Release the refresh pin: refresh() issues a SELECT on
-                        # the ambient long-lived session, checking out a pool
-                        # connection that reads never return. Without this every
-                        # traded controller pins 1 connection forever (~1 pin
-                        # per controller observed on a 50-user run). All writes
-                        # above are committed, so this is pure release; the
-                        # response below is built from plain values, nothing
-                        # ORM escapes this block.
-                        try:
                             await self.db.commit()
-                        except Exception as e_release:
-                            logger.warning(
-                                f"{log_prefix} Session release commit failed "
-                                f"(trade {new_db_trade.id} is already committed): "
-                                f"{e_release}"
-                            )
-
-                        try:
-                            process_live_trade_analytics_task.delay(
-                                trade_id=new_db_trade.id, user_id=self.user_id
-                            )
+                            # From here on a retry would double-apply: the
+                            # wallet UPDATE and the trade INSERT above are
+                            # durable, so any later failure (refresh, celery)
+                            # must NOT re-enter the loop.
+                            _persist_committed = True
+                            await self.db.refresh(new_db_trade)
                             logger.info(
-                                f"{log_prefix} Analytical task started for trade_id: {new_db_trade.id}"
+                                f"{log_prefix} Trade {new_db_trade.id} successfully saved and committed."
                             )
-                        except Exception as e_celery:
-                            logger.error(
-                                f"{log_prefix} Error starting analytical task for trade_id={new_db_trade.id}: {e_celery}",
-                                exc_info=True,
-                            )
+                            # Release the refresh pin: refresh() issues a SELECT on
+                            # the ambient long-lived session, checking out a pool
+                            # connection that reads never return. Without this every
+                            # traded controller pins 1 connection forever (~1 pin
+                            # per controller observed on a 50-user run). All writes
+                            # above are committed, so this is pure release; the
+                            # response below is built from plain values, nothing
+                            # ORM escapes this block.
+                            try:
+                                await self.db.commit()
+                            except Exception as e_release:
+                                logger.warning(
+                                    f"{log_prefix} Session release commit failed "
+                                    f"(trade {new_db_trade.id} is already committed): "
+                                    f"{e_release}"
+                                )
 
-                        # Returning the response (slightly modified for correctness)
-                        return {
-                            "symbol": symbol,
-                            "orderId": int(uuid.uuid4().int & (1 << 32) - 1),
-                            "clientOrderId": client_order_id,
-                            "transactTime": int(
-                                datetime.now(timezone.utc).timestamp() * 1000
-                            ),
-                            "price": "0",
-                            "origQty": str(quantity),
-                            "executedQty": str(sim_result.filled_quantity),
-                            "cummulativeQuoteQty": str(
-                                sim_result.avg_fill_price * sim_result.filled_quantity
-                            ),
-                            "status": "FILLED",
-                            "timeInForce": "GTC",
-                            "type": "MARKET",
-                            "side": side,
-                            "fills": [
-                                {
-                                    "price": str(sim_result.avg_fill_price),
-                                    "qty": str(sim_result.filled_quantity),
-                                    "commission": str(
-                                        sim_result.actual_commission_paid
-                                    ),
-                                    "commissionAsset": "USDT",
-                                }
-                            ],
-                        }
-                    except Exception as e:
-                        msg = (
-                            f"Failed to update paper wallet or create trade record: {e}"
-                        )
-                        logger.error(f"{log_prefix} {msg}", exc_info=True)
-                        await self.db.rollback()
-                        return {"error": True, "code": -1002, "msg": msg}
+                            try:
+                                process_live_trade_analytics_task.delay(
+                                    trade_id=new_db_trade.id, user_id=self.user_id
+                                )
+                                logger.info(
+                                    f"{log_prefix} Analytical task started for trade_id: {new_db_trade.id}"
+                                )
+                            except Exception as e_celery:
+                                logger.error(
+                                    f"{log_prefix} Error starting analytical task for trade_id={new_db_trade.id}: {e_celery}",
+                                    exc_info=True,
+                                )
+
+                            # Returning the response (slightly modified for correctness)
+                            return {
+                                "symbol": symbol,
+                                "orderId": int(uuid.uuid4().int & (1 << 32) - 1),
+                                "clientOrderId": client_order_id,
+                                "transactTime": int(
+                                    datetime.now(timezone.utc).timestamp() * 1000
+                                ),
+                                "price": "0",
+                                "origQty": str(quantity),
+                                "executedQty": str(sim_result.filled_quantity),
+                                "cummulativeQuoteQty": str(
+                                    sim_result.avg_fill_price
+                                    * sim_result.filled_quantity
+                                ),
+                                "status": "FILLED",
+                                "timeInForce": "GTC",
+                                "type": "MARKET",
+                                "side": side,
+                                "fills": [
+                                    {
+                                        "price": str(sim_result.avg_fill_price),
+                                        "qty": str(sim_result.filled_quantity),
+                                        "commission": str(
+                                            sim_result.actual_commission_paid
+                                        ),
+                                        "commissionAsset": "USDT",
+                                    }
+                                ],
+                            }
+                        except Exception as e:
+                            if (
+                                not _persist_committed
+                                and _db_attempt < _persist_attempts
+                                and is_transient_connection_error(e)
+                            ):
+                                logger.warning(
+                                    f"{log_prefix} Transient DB connection failure "
+                                    f"before commit (attempt {_db_attempt}/"
+                                    f"{_persist_attempts}): {e}. Rolling back and "
+                                    "retrying the persist once."
+                                )
+                                try:
+                                    await self.db.rollback()
+                                except Exception:
+                                    pass
+                                # Undo the in-memory position mutation so the
+                                # re-attempt recomputes from a clean state;
+                                # without this the position would be applied
+                                # twice while the DB write happens once.
+                                if _pos_snapshot is None:
+                                    self._positions.pop(symbol, None)
+                                else:
+                                    self._positions[symbol] = dict(_pos_snapshot)
+                                continue
+                            msg = f"Failed to update paper wallet or create trade record: {e}"
+                            logger.error(f"{log_prefix} {msg}", exc_info=True)
+                            await self.db.rollback()
+                            return {"error": True, "code": -1002, "msg": msg}
             else:
                 return {
                     "error": True,
