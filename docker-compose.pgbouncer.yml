@@ -52,7 +52,7 @@ services:
       SERVER_IDLE_TIMEOUT: "600"
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
-      - "${PGBOUNCER_HOST_PORT:-6432}:6432"
+      - "127.0.0.1:${PGBOUNCER_HOST_PORT:-6432}:6432"
     depends_on:
       postgres:
         condition: service_healthy

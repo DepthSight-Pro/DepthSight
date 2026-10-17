@@ -60,7 +60,7 @@ services:
       - default
       - depthsight_network
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     volumes:
       - ./bitcart_data:/app/data
     depends_on:
@@ -213,9 +213,10 @@ services:
     container_name: bitcart_admin
     command: yarn start
     environment:
-      BITCART_ADMIN_API_URL: ${BITCART_API_URL:-http://localhost:8001}
+      BITCART_ADMIN_API_URL: ${BITCART_ADMIN_API_URL:-http://localhost:8001}
+      BITCART_ADMIN_SERVER_API_URL: http://bitcart_api:8000
     ports:
-      - "8081:4000"
+      - "127.0.0.1:8081:4000"
     networks:
       - default
       - depthsight_network
@@ -228,12 +229,12 @@ services:
     container_name: bitcart_store
     command: yarn start
     environment:
-      BITCART_STORE_API_URL: ${BITCART_API_URL:-http://localhost:8001}
+      BITCART_STORE_API_URL: ${BITCART_STORE_API_URL:-http://localhost:8001}
       BITCART_STORE_SERVER_API_URL: http://bitcart_api:8000
       BITCART_ADMIN_HOST: ${BITCART_ADMIN_URL:-http://localhost:8081}
       HOST: 0.0.0.0
     ports:
-      - "8082:3000"
+      - "127.0.0.1:8082:3000"
     networks:
       - default
       - depthsight_network
