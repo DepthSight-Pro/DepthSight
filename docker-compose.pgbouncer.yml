@@ -5,15 +5,23 @@
 # instead of Postgres directly:
 #
 #   1. cp docker-compose.pgbouncer.yml next to docker-compose.yml (already here).
-#   2. In .env: POSTGRES_HOST=pgbouncer, POSTGRES_PORT=6432,
-#      DB_STATEMENT_CACHE_SIZE=0, DB_DIRECT_DATABASE_URL=postgresql+asyncpg://...:5432/... (real PG!).
+#   2. In .env, add exactly this line: POSTGRES_HOST=pgbouncer
+#      (update.sh keys on it to auto-add this overlay). Nothing else is
+#      required: the overlay itself pins every client-side pooler variable
+#      (host, port 6432, statement cache off, direct DSN) on all DB-using
+#      services.
 #   3. docker compose --env-file .env -p depthsight \
 #        -f docker-compose.yml -f docker-compose.pgbouncer.yml up -d
 #
-# Why these three are inseparable:
+# Why the pinned variables are inseparable:
 # - Transaction pooling multiplexes thousands of app connections onto tens of
 #   server connections. Our sessions are short-transaction style since the
 #   _owned_session fix, which is exactly what transaction mode wants.
+# - POSTGRES_PORT=6432 must be pinned next to POSTGRES_HOST: database.py
+#   defaults the port to 5432 while the pooler LISTENs on 6432. With only the
+#   host pinned, every service dialed pgbouncer:5432 and crash-looped with
+#   ConnectionRefused (prod incident 2026-10-17: bot 168 "Spawned worker"
+#   lines = 21 restarts, api asyncpg ConnectionRefusedError [Errno 111]).
 # - DB_STATEMENT_CACHE_SIZE=0 is REQUIRED: asyncpg prepared statements do not
 #   survive across pooled transactions ("prepared statement already exists").
 # - DB_DIRECT_DATABASE_URL must bypass the pooler: the mining-epoch advisory
@@ -33,7 +41,10 @@ services:
       LISTEN_PORT: 6432
       AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
-      MAX_CLIENT_CONN: "1000"
+      # 1000 would start refusing at ~470 controllers: measured 2.1 concurrent
+      # client conns/controller fleet-wide (1097 at 523 controllers), and a
+      # sharded bot fleet alone can present workers x (DB_POOL_SIZE + overflow).
+      MAX_CLIENT_CONN: "5000"
       DEFAULT_POOL_SIZE: "50"
       RESERVE_POOL_SIZE: "5"
       RESERVE_POOL_TIMEOUT: "3"
@@ -52,3 +63,75 @@ services:
       timeout: 3s
       retries: 5
       start_period: 2s
+
+  # Route every DB-using app service through the pooler. The base compose
+  # hardcodes POSTGRES_HOST=postgres for api/websocket/mcp-memory (service
+  # `environment` wins over `env_file`), so .env values alone would never
+  # reach them; database.py also defaults POSTGRES_PORT to 5432 (the pooler
+  # LISTENs on 6432). Pin BOTH host and port, plus the two transaction-pooling
+  # requirements, on every service that opens DB connections. slack_agent is
+  # not listed on purpose: it talks HTTP to api/mcp-memory and never opens a
+  # DB connection.
+  api:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+  websocket:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+  mcp-memory:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+  bot:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+  market_data:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+  celery_worker:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+  celery_beat:
+    environment:
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      DB_STATEMENT_CACHE_SIZE: "0"
+      DB_DIRECT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy

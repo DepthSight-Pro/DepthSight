@@ -53,6 +53,11 @@ class MarketDataService:
     and publishes live payloads to worker-specific Redis channels.
     """
 
+    # Consecutive idle timeouts tolerated before the watchdog bothers to
+    # verify the transport with a PING. 1 = the old behaviour (reconnect on
+    # the first quiet period); 3 gives a one-off hiccup room to pass.
+    WATCHDOG_IDLE_STREAK_BEFORE_CHECK = 3
+
     def __init__(self) -> None:
         self.redis: Optional[redis_asyncio.Redis] = None
         self.pubsub: Optional[Any] = None
@@ -146,6 +151,7 @@ class MarketDataService:
         await self.start()
         last_msg_time = time.monotonic()
         watchdog_timeout = getattr(config, "MDS_PUBSUB_WATCHDOG_SECONDS", 30)
+        idle_streak = 0
         try:
             while not self._stop_event.is_set():
                 if not self.pubsub:
@@ -156,18 +162,60 @@ class MarketDataService:
                 )
                 if message and message.get("type") == "message":
                     last_msg_time = time.monotonic()
+                    idle_streak = 0
                     raw = message.get("data")
                     payload = json.loads(raw) if isinstance(raw, str) else raw
                     await self._handle_command(payload)
                 elif time.monotonic() - last_msg_time > watchdog_timeout:
-                    logger.warning(
-                        "Pubsub watchdog timeout (%ss) — no messages. Reconnecting...",
-                        watchdog_timeout,
-                    )
-                    await self._reconnect_pubsub()
                     last_msg_time = time.monotonic()
+                    idle_streak += 1
+                    await self._maybe_reconnect_pubsub(idle_streak, watchdog_timeout)
         finally:
             await self.stop()
+
+    async def _maybe_reconnect_pubsub(self, idle_streak: int, timeout: int) -> None:
+        """Reconnect the command pub/sub only when it is actually broken.
+
+        The previous watchdog treated "no command message for N seconds" as
+        proof of a dead connection. Commands arrive exactly once per
+        subscription, so a healthy service that is fully subscribed stayed
+        silent forever and the watchdog reconnected every 30s: 1361 times in
+        an 11.3-hour night, each reconnect re-opening the subscription window
+        (a subscribe published inside that window is dropped for good -
+        pub/sub has no replay, and the controller then waits for A17's
+        watchdog instead of receiving data).
+
+        Traffic silence is not liveness information. Ping the server first:
+        a reachable server with a quiet channel is normal operation, so log
+        at DEBUG and keep the connection. Only an unreachable server after
+        a streak of timeouts is worth tearing the subscription down.
+        """
+        if idle_streak < self.WATCHDOG_IDLE_STREAK_BEFORE_CHECK:
+            logger.debug(
+                "Pubsub idle %ss (streak %d/%d) - channel is simply quiet.",
+                timeout,
+                idle_streak,
+                self.WATCHDOG_IDLE_STREAK_BEFORE_CHECK,
+            )
+            return
+        try:
+            await self.redis.ping()
+        except Exception as e_ping:
+            logger.warning(
+                "Pubsub watchdog: %d consecutive idle timeouts (%ss) and the "
+                "server is unreachable (%s). Reconnecting...",
+                idle_streak,
+                timeout,
+                e_ping,
+            )
+            await self._reconnect_pubsub()
+            return
+        logger.debug(
+            "Pubsub idle %ss (streak %d) but server responds to PING - connection "
+            "is healthy, keeping the subscription.",
+            timeout,
+            idle_streak,
+        )
 
     async def _reconnect_pubsub(self) -> None:
         try:

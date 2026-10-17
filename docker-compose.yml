@@ -54,6 +54,11 @@ services:
         exec redis-server --aclfile /tmp/users_market.acl --save "" --appendonly no
       '
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user market_data -a \"$${REDIS_MARKET_DATA_PASSWORD:-$${REDIS_PASSWORD}}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mcp-memory:
     build: .
@@ -147,6 +152,13 @@ services:
       - ./logs:/app/logs
       - ./gcp_key.json:/app/gcp_key.json:ro
     shm_size: '2gb'
+    # The bot process hosts every controller of the shard: per-controller Redis
+    # pools + pubsubs, exchange sockets. EMFILE ("Too many open files") was
+    # observed on the loadtest stand without this - same value here.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     env_file: .env
     environment:
       - MARKET_DATA_FANOUT_MODE=redis
@@ -164,7 +176,7 @@ services:
       market_data:
         condition: service_started
       redis-market:
-        condition: service_started
+        condition: service_healthy
       mcp-memory:
         condition: service_started
     restart: on-failure
@@ -194,7 +206,7 @@ services:
       redis:
         condition: service_healthy
       redis-market:
-        condition: service_started
+        condition: service_healthy
     restart: on-failure
     logging:
       driver: "json-file"

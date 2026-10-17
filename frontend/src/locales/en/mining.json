@@ -48,7 +48,7 @@
   "nodeSharePercentage": "Node Share Percentage",
   "yourVolumeShare": "Your Volume Share (Today)",
   "yourTotalVolume": "Your Total Volume",
-  "nodeSharingPolicyDesc": "Rewards are distributed in real-time according to verified trade volume share and active node policy.",
+  "nodeSharingPolicyDesc": "This is an estimated calculation based on trade volume share and active node policy. Final distribution occurs once a day at epoch close after exchange trade verification (delays up to 48h may occur).",
   "futuresRebate": "Futures Rebate",
   "spotRebate": "Spot Rebate",
   "totalMinedSubtitle": "All-time accumulated earnings",

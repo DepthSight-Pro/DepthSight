@@ -532,7 +532,7 @@ const MiningScreen: React.FC = () => {
               </div>
               <div className="pt-2 border-t border-[hsl(var(--border))] flex items-start gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
                 <p className="leading-snug">
-                  {t("mining.nodeSharingPolicyDesc", "Rewards are distributed in real-time according to verified trade volume share and active node policy.")}
+                  {t("mining.nodeSharingPolicyDesc", "This is an estimated calculation based on trade volume share and active node policy. Final distribution occurs once a day at epoch close after exchange trade verification (delays up to 48h may occur).")}
                 </p>
               </div>
             </div>

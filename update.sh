@@ -175,6 +175,19 @@ else
     COMPOSE_FILES=""
 fi
 
+# PgBouncer overlay must be present exactly when the app talks to the pooler:
+# POSTGRES_HOST=pgbouncer is unresolvable without the pgbouncer container, and
+# without the overlay the base compose pins api/websocket/mcp-memory to
+# POSTGRES_HOST=postgres (service `environment` beats env_file). Keyed on .env
+# so the auto-updater can never drop the overlay from a pooled deployment.
+if [ -f "docker-compose.pgbouncer.yml" ] && grep -q "^POSTGRES_HOST=pgbouncer" .env 2>/dev/null; then
+    if [ -n "$COMPOSE_FILES" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pgbouncer.yml"
+    else
+        COMPOSE_FILES="-f docker-compose.yml -f docker-compose.pgbouncer.yml"
+    fi
+fi
+
 # Pull fresh base images (postgres/redis/caddy/bitcart); non-fatal on failure
 # shellcheck disable=SC2086
 if ! docker compose $COMPOSE_FILES pull; then
@@ -182,8 +195,8 @@ if ! docker compose $COMPOSE_FILES pull; then
 fi
 
 # shellcheck disable=SC2086
-if [ "$USE_BITCART" = "y" ]; then
-    docker compose -f docker-compose.yml -f docker-compose.bitcart.yml up -d --build --remove-orphans
+if [ -n "$COMPOSE_FILES" ]; then
+    docker compose $COMPOSE_FILES up -d --build --remove-orphans
 else
     docker compose up -d --build --remove-orphans
 fi

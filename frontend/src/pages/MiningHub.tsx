@@ -1303,7 +1303,7 @@ const MiningHub: React.FC = () => {
                   <div className="mt-3.5 pt-3 border-t border-white/10 flex items-start gap-2 text-[11px] text-white/50 bg-white/[0.01] p-2.5 rounded-xl border border-white/5">
                     <Activity className="h-3.5 w-3.5 text-cyan-400 shrink-0 mt-0.5" />
                     <p className="leading-snug">
-                      {t("nodeSharingPolicyDesc", "Rewards are distributed in real-time according to verified trade volume share and active node policy.")}
+                      {t("nodeSharingPolicyDesc", "This is an estimated calculation based on trade volume share and active node policy. Final distribution occurs once a day at epoch close after exchange trade verification (delays up to 48h may occur).")}
                     </p>
                   </div>
                 </div>

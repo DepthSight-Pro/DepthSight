@@ -506,6 +506,16 @@ If the strategy uses DCA (`dca_management`) OR a Grid (`grid_management`), you M
 10. **NATIVE MANAGEMENT BLOCKS (CRITICAL):** NEVER use `conditional_management` for partial take-profits (Partial TP) or moving to breakeven.
     - All partial exits MUST be defined within the `partial_exits` array of the `open_position` block.
     - All move-to-breakeven logic MUST use the standalone `move_to_breakeven` block directly in the `positionManagement` array. Do not wrap it in unnecessary `if_conditions`.
+11. **VOLUME FARMING / MINIMAL STRATEGY:** If the user explicitly asks for a strategy to generate trading volume quickly (volume farming, volume quests, "накрутить объём", or similar), you MUST generate a **minimal** strategy:
+    - `filters`: empty array `[]` (NO filters)
+    - `entryConditions`: `{{"id": "entry_root", "type": "AND", "children": []}}` (Empty AND root node — evaluates to True on every candle in both runtime and backtester)
+    - `entryTrigger`: `{{"type": "on_candle_close", "params": {{"timeframe": "1m"}}}}`
+    - `initialization`: `open_position` with `direction: "LONG"`, tight symmetrical SL/TP (e.g., `sl_type: "percent_from_price"`, `sl_value: 0.5`, `tp_type: "percent_from_price"`, `tp_value: 0.5`), NO `partial_exits` (opposing SHORT is automatically mirrored by Leg B when Hedge Mode is enabled)
+    - `positionManagement`: empty array `[]` (NO management blocks)
+    - `min_foundation_weight_threshold`: 0
+    - `foundation_weights`: empty object `{{}}`
+    - In `unsupported_features`, add a note (in the user's language): "This is a volume-farming strategy. Enable Hedge Mode (×2) in the deployment panel for maximum volume. Expected P&L is break-even minus fees."
+    - Do NOT add any filters, foundations, indicators, trailing stops, or other blocks. The user wants maximum trade frequency, not analytical complexity.
 
 # VISION & GEOMETRY DECONSTRUCTION
 0. **CRITICAL PRE-CHECK:** If the uploaded image is NOT a trading chart (e.g., a photo, a generic document, or anything without price candles/lines), DO NOT attempt to identify patterns. Set all strategy fields to empty/default values and add a message to the `unsupported_features` list (in the user's language) explicitly stating that the image is not a chart and asking for a chart screenshot.
