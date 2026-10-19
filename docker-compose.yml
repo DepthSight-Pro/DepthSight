@@ -83,6 +83,10 @@ services:
     build: .
     container_name: depthsight_api
     init: true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     env_file: .env
     volumes:
       - ./data_storage:/app/data_storage
@@ -114,6 +118,10 @@ services:
     build: .
     container_name: depthsight_websocket
     init: true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     command: >
       /usr/local/bin/gunicorn api.websocket_server:app
       --workers 3
@@ -152,9 +160,6 @@ services:
       - ./logs:/app/logs
       - ./gcp_key.json:/app/gcp_key.json:ro
     shm_size: '2gb'
-    # The bot process hosts every controller of the shard: per-controller Redis
-    # pools + pubsubs, exchange sockets. EMFILE ("Too many open files") was
-    # observed on the loadtest stand without this - same value here.
     ulimits:
       nofile:
         soft: 65536
@@ -190,6 +195,10 @@ services:
     build: .
     container_name: depthsight_market_data
     init: true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     command: python market_data_service.py
     volumes:
       - ./data_storage:/app/data_storage
@@ -218,6 +227,10 @@ services:
     build: .
     container_name: depthsight_celery_worker
     init: true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     command: celery -A tasks.celery_app worker --loglevel=info --pool=prefork -c 8
     volumes:
       - ./data_storage:/app/data_storage
@@ -250,9 +263,6 @@ services:
     build: .
     container_name: depthsight_celery_beat
     init: true
-    # Scheduler state goes to /tmp: the image workdir is not writable by the
-    # container user, and an unwritable/unopenable celerybeat-schedule file
-    # crash-loops beat (=> no periodic tasks ever run).
     command: >
       celery -A tasks.celery_app beat --loglevel=info
       --schedule=/tmp/celerybeat-schedule

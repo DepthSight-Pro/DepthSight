@@ -860,6 +860,12 @@ HISTORY_BACKFILL_MIN_INTERVAL_SECONDS = _ws_float_env(
 HISTORY_WATCHDOG_INTERVAL_SECONDS = _ws_float_env(
     "HISTORY_WATCHDOG_INTERVAL_SECONDS", 300, minimum=60.0
 )
+# Hard cap on in-flight event-handler tasks per controller (see
+# TradingController._run_main_loop). Fire-and-forget spawns let a saturated
+# handler pile up ~300 pending HandleEvent_CANDLE_CLOSE tasks per controller
+# during the 2026-10-17 night run (24-25k tasks/shard -> event-loop starvation
+# -> asyncpg connect-timeout storm). Steady state is ~11 tasks/controller.
+MAX_INFLIGHT_EVENT_TASKS = _ws_int_env("MAX_INFLIGHT_EVENT_TASKS", 64, minimum=8)
 # General timeout for HTTP requests to the API in seconds
 API_REQUEST_TIMEOUT_SECONDS = 10
 # Timeout for User Data Stream (if there are no messages, a reconnection will occur)

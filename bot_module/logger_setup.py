@@ -33,11 +33,54 @@ except ImportError:
     )
 
 
+def _shard_file_suffix() -> str:
+    """Per-process file suffix for multi-process bot_runner fleets.
+
+    Several worker processes used to open one RotatingFileHandler on the same
+    path: when one process rotated, the others kept writing to the renamed
+    inode, so 8 shards produced interleaved, overlapping log generations and
+    everything before the first rotation was lost (2026-10-17 night run).
+    A per-shard file makes rotation process-local and race-free again. Set by
+    bot_runner.worker_main before (re)initializing logging; empty (no suffix)
+    in single-process mode.
+    """
+    shard = os.environ.get("BOT_SHARD_ID")
+    if shard is None:
+        return ""
+    try:
+        return f".shard{int(shard)}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _shard_quota_divisor() -> int:
+    """How many worker processes share the LOG_ROTATE_* disk budget.
+
+    LOG_ROTATE_MAX_MB / LOG_ROTATE_BACKUPS describe the whole service's
+    budget; with N per-shard files the per-file size must be divided so the
+    budget does not multiply by N (8 x 120MB x 20 would hoard 19GB).
+    """
+    try:
+        count = int(os.environ.get("BOT_SHARD_COUNT", 1))
+    except (TypeError, ValueError):
+        count = 1
+    return max(1, count)
+
+
+def _apply_shard_quota(rotate_mb: float) -> float:
+    """Divide the rotation size budget over the shard count (min 1MB)."""
+    divisor = _shard_quota_divisor()
+    if divisor <= 1:
+        return rotate_mb
+    return max(1.0, rotate_mb / divisor)
+
+
 def setup_bot_logging():
     """Configures logging for the bot module."""
     # Get parameters from config
     log_level_str = getattr(config, "LOG_LEVEL", "INFO").upper()
     log_file_path = getattr(config, "LOG_FILE_BOT", "logs/bot_module_default.log")
+    log_file_path = f"{log_file_path}{_shard_file_suffix()}"
     log_format = getattr(
         config,
         "LOG_FORMAT",
@@ -117,6 +160,7 @@ def setup_bot_logging():
                     raise ValueError
             except (TypeError, ValueError):
                 rotate_mb = 10.0
+            rotate_mb = _apply_shard_quota(rotate_mb)
             try:
                 rotate_backups = int(os.environ.get("LOG_ROTATE_BACKUPS", 5))
                 if rotate_backups < 1:
@@ -195,7 +239,7 @@ def setup_global_logging(log_filename: str, log_level: str = "INFO"):
     """
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
-    log_file_path = os.path.join(log_dir, log_filename)
+    log_file_path = os.path.join(log_dir, f"{log_filename}{_shard_file_suffix()}")
 
     log_format = "%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s"
     level = getattr(logging, log_level.upper(), logging.INFO)
@@ -227,6 +271,7 @@ def setup_global_logging(log_filename: str, log_level: str = "INFO"):
                 raise ValueError
         except (TypeError, ValueError):
             rotate_mb = 10.0
+        rotate_mb = _apply_shard_quota(rotate_mb)
         try:
             rotate_backups = int(os.environ.get("LOG_ROTATE_BACKUPS", 5))
             if rotate_backups < 1:

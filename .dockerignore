@@ -30,8 +30,6 @@ venv/
 venv_bot/
 .venv/
 
-# Node.js (для бэкенд-контейнера они не нужны, фронтенд их обработает сам)
-# Если папка frontend в корне, то так:
 frontend/node_modules/
 landing/
 build
@@ -41,11 +39,11 @@ build.sh
 docker
 Makefile
 .vite
-# IDE
 .idea/
 .vscode/
-
-# Другое
+logs_loadtest/
+data_loadtest/
+data_storage_loadtest/
 *.log
 logs/
 data/

@@ -12,24 +12,6 @@
 #      services.
 #   3. docker compose --env-file .env -p depthsight \
 #        -f docker-compose.yml -f docker-compose.pgbouncer.yml up -d
-#
-# Why the pinned variables are inseparable:
-# - Transaction pooling multiplexes thousands of app connections onto tens of
-#   server connections. Our sessions are short-transaction style since the
-#   _owned_session fix, which is exactly what transaction mode wants.
-# - POSTGRES_PORT=6432 must be pinned next to POSTGRES_HOST: database.py
-#   defaults the port to 5432 while the pooler LISTENs on 6432. With only the
-#   host pinned, every service dialed pgbouncer:5432 and crash-looped with
-#   ConnectionRefused (prod incident 2026-10-17: bot 168 "Spawned worker"
-#   lines = 21 restarts, api asyncpg ConnectionRefusedError [Errno 111]).
-# - DB_STATEMENT_CACHE_SIZE=0 is REQUIRED: asyncpg prepared statements do not
-#   survive across pooled transactions ("prepared statement already exists").
-# - DB_DIRECT_DATABASE_URL must bypass the pooler: the mining-epoch advisory
-#   lock (B7) needs one stable server connection, which transaction pooling
-#   cannot provide. get_isolated_worker_session() uses it automatically.
-#
-# Deploy rule of thumb: DEFAULT_POOL_SIZE x bot_shards + api/ws/celery pools
-# < postgres max_connections. Start 25/600 and watch pg_stat_activity.
 
 services:
   pgbouncer:
@@ -41,9 +23,6 @@ services:
       LISTEN_PORT: 6432
       AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
-      # 1000 would start refusing at ~470 controllers: measured 2.1 concurrent
-      # client conns/controller fleet-wide (1097 at 523 controllers), and a
-      # sharded bot fleet alone can present workers x (DB_POOL_SIZE + overflow).
       MAX_CLIENT_CONN: "5000"
       DEFAULT_POOL_SIZE: "50"
       RESERVE_POOL_SIZE: "5"
@@ -53,6 +32,10 @@ services:
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
       - "127.0.0.1:${PGBOUNCER_HOST_PORT:-6432}:6432"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,15 +46,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 2s
-
-  # Route every DB-using app service through the pooler. The base compose
-  # hardcodes POSTGRES_HOST=postgres for api/websocket/mcp-memory (service
-  # `environment` wins over `env_file`), so .env values alone would never
-  # reach them; database.py also defaults POSTGRES_PORT to 5432 (the pooler
-  # LISTENs on 6432). Pin BOTH host and port, plus the two transaction-pooling
-  # requirements, on every service that opens DB connections. slack_agent is
-  # not listed on purpose: it talks HTTP to api/mcp-memory and never opens a
-  # DB connection.
   api:
     environment:
       POSTGRES_HOST: pgbouncer

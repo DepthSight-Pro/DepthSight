@@ -488,6 +488,18 @@ class TradingController:
         self._event_handler_semaphore = asyncio.Semaphore(
             int(getattr(config, "MAX_PARALLEL_EVENT_HANDLERS", 64))
         )
+        # Bounded in-flight event handling (see _run_main_loop). Fire-and-forget
+        # spawns let a saturated handler (e.g. 60s asyncpg connect timeouts) pile
+        # up tasks without bound: 2026-10-17 night run showed ~300 pending
+        # HandleEvent_CANDLE_CLOSE tasks per controller (24-25k per shard),
+        # which starved the event loop and snowballed into DB-wide timeouts.
+        # Steady state is ~11 tasks/controller, so 64 keeps ample headroom.
+        self._max_inflight_events = int(getattr(config, "MAX_INFLIGHT_EVENT_TASKS", 64))
+        self._event_tasks: Set[asyncio.Task] = set()
+        # Dedupe bookkeeping for redelivered CANDLE_CLOSE events: maps task ->
+        # identity key and the set of keys queued or in flight.
+        self._event_task_dedupe_keys: Dict[asyncio.Task, tuple] = {}
+        self._inflight_event_keys: Set[tuple] = set()
 
         self.paper_executor = paper_executor
         self.executors = {"live": live_executor, "paper": paper_executor}
@@ -1543,9 +1555,27 @@ class TradingController:
                         logger.info(f"Received command '{command_type}' via Redis.")
 
                         if command_type == "START_STRATEGY":
+                            # Timing only - no behaviour change. The API waits
+                            # BOT_COMMAND_ACK_TIMEOUT_SECONDS (30s) for this ack,
+                            # and on the 1000-user stand ~half of the starts
+                            # missed that window (36 "ack timeout" vs 34
+                            # "confirmed by the bot" per 30 min), which is what
+                            # makes onboarding cost ~25s per user instead of ~5.
+                            # Without a per-start duration there is no way to
+                            # tell whether the handler is slow (kline warmup,
+                            # DB) or the ack is lost, so log the elapsed time.
+                            _start_cmd_t0 = time.monotonic()
                             start_applied = await self._handle_start_strategy_command(
                                 payload
                             )
+                            _start_cmd_elapsed = time.monotonic() - _start_cmd_t0
+                            if _start_cmd_elapsed > 1.0:
+                                logger.info(
+                                    "[StartCmdTiming] config_id=%s applied=%s elapsed=%.2fs",
+                                    payload.get("id"),
+                                    start_applied,
+                                    _start_cmd_elapsed,
+                                )
                             # A2 fix: acknowledge the command so the API can tell
                             # "applied" apart from "silently dropped". A None
                             # result means "not for this controller" (another one
@@ -5428,6 +5458,68 @@ class TradingController:
         finally:
             user_id_context.reset(token)
 
+    @staticmethod
+    def _event_dedupe_key(event: Dict[str, Any]) -> Optional[tuple]:
+        """Exact-identity key for events whose redeliveries are safe to drop.
+
+        Only CANDLE_CLOSE: carriers redeliver the same closed candle (same
+        open-time timestamp_ms) after reconnects, and each redelivery used to
+        spawn a full handler run (2026-10-17: ~300 stacked tasks/controller).
+        Ticks are never deduped — every tick carries new price information.
+        """
+        if event.get("type") != "CANDLE_CLOSE":
+            return None
+        return (
+            event.get("symbol"),
+            event.get("market_type"),
+            event.get("timeframe"),
+            event.get("timestamp_ms"),
+        )
+
+    def _on_event_task_done(self, task: asyncio.Task):
+        """Bookkeeping + error surfacing for one finished event handler task."""
+        self._event_tasks.discard(task)
+        dedupe_key = self._event_task_dedupe_keys.pop(task, None)
+        if dedupe_key is not None:
+            self._inflight_event_keys.discard(dedupe_key)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(
+                f"Unhandled error in event handler {task.get_name()}: {exc}",
+                exc_info=exc,
+            )
+
+    async def _wait_for_event_task_slot(self):
+        """Block until an in-flight event handler finishes (hard cap)."""
+        while len(self._event_tasks) >= self._max_inflight_events:
+            done, _ = await asyncio.wait(
+                self._event_tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            self._event_tasks.difference_update(done)
+
+    async def _drain_event_tasks_on_shutdown(self):
+        """Cancel and await in-flight event handler tasks on loop exit.
+
+        Without this, pending HandleEvent_* tasks survive the event loop,
+        log "Task was destroyed but it is pending" and may still touch
+        cancelled DB sessions during teardown.
+        """
+        if not self._event_tasks:
+            return
+        tasks = list(self._event_tasks)
+        logger.info(f"Cancelling {len(tasks)} in-flight event tasks...")
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        done, pending = await asyncio.wait(tasks, timeout=3.0)
+        self._event_tasks.difference_update(done)
+        if pending:
+            logger.warning(
+                f"{len(pending)} event tasks still pending after cancel timeout."
+            )
+
     async def _run_main_loop(self):
         """Main event loop of the controller."""
         logger.info("Controller event loop started.")
@@ -5441,11 +5533,36 @@ class TradingController:
                 # Blocking wait for a new event (tick or candle close)
                 event = await self.event_queue.get()
 
+                # Drop exact redeliveries of a candle we already queued or are
+                # still handling. This collapses reconnect replays instead of
+                # letting them stack as duplicate handler tasks.
+                event_key = self._event_dedupe_key(event)
+                if event_key is not None:
+                    if event_key in self._inflight_event_keys:
+                        logger.debug(
+                            "Duplicate %s dropped (symbol=%s timeframe=%s ts=%s)",
+                            event.get("type"),
+                            event.get("symbol"),
+                            event.get("timeframe"),
+                            event.get("timestamp_ms"),
+                        )
+                        continue
+                    self._inflight_event_keys.add(event_key)
+
+                # Hard cap on in-flight handler tasks: wait for a slot instead
+                # of stacking tasks without bound. The bounded event_queue
+                # absorbs the pressure and drops excess on its own.
+                await self._wait_for_event_task_slot()
+
                 # Starting event processing in a separate task WITH CONTEXT
-                self.loop.create_task(
+                task = self.loop.create_task(
                     self._handle_event_with_context(event),
                     name=f"HandleEvent_{event.get('type')}_{event.get('symbol')}",
                 )
+                self._event_tasks.add(task)
+                if event_key is not None:
+                    self._event_task_dedupe_keys[task] = event_key
+                task.add_done_callback(self._on_event_task_done)
 
             except asyncio.CancelledError:
                 logger.info("Controller event loop cancelled.")
@@ -5456,6 +5573,7 @@ class TradingController:
                 )
                 await asyncio.sleep(5)  # Pause in case of a critical error
 
+        await self._drain_event_tasks_on_shutdown()
         logger.info("Controller event loop finished.")
 
     async def _run_periodic_tasks(self):

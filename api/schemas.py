@@ -2347,6 +2347,15 @@ class DashboardStats(BaseModel):
     new_users_last_7_days: int
     tasks_run_last_7_days: int
     task_counts_by_type: Dict[str, int]
+    # Fleet gauges, read from Redis (bot shards publish every 60s).
+    # fleet_strategies is what the admission cap gates; fleet_controllers is
+    # the RAM unit (one per user x API key, created at bot bootstrap).
+    # Both are -1 when unreadable: "unknown" must be distinguishable from a
+    # real zero, otherwise a dead bot fleet looks like an idle platform.
+    fleet_strategies: int = 0
+    fleet_strategy_cap: int = 0
+    fleet_controllers: int = 0
+    fleet_shards_reporting: int = 0
 
     model_config = ConfigDict(
         alias_generator=to_camel,

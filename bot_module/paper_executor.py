@@ -269,13 +269,7 @@ class PaperTradingExecutor:
             )
             if sim_result.filled_quantity > 0:
                 async with self._db_lock:
-                    # Retry budget for transient connection kills: PgBouncer
-                    # may recycle a server connection mid-query ("connection
-                    # was closed in the middle of operation"), which
-                    # pool_pre_ping cannot prevent. Retrying is safe only
-                    # while nothing was committed, so the loop is gated on
-                    # _persist_committed and the in-memory position is
-                    # restored from snapshot before each re-attempt.
+
                     _persist_attempts = get_retry_attempts()
                     _pos_snapshot = (
                         dict(self._positions[symbol])
@@ -722,7 +716,8 @@ class PaperTradingExecutor:
             logger.debug("[PaperOrderCheck] No open orders to check.")
             return
 
-        logger.info(
+        # DEBUG: fires on every periodic tick per controller;
+        logger.debug(
             f"[PaperOrderCheck] Checking {len(self._open_orders)} open orders..."
         )
 

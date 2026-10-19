@@ -115,6 +115,7 @@ from .dependencies import (
     is_strategy_kline_only,
     is_strategy_pro_only,
 )
+from .fleet_capacity import is_fleet_at_capacity
 from .gamification import check_and_grant_retroactive_achievements
 from .hft_router import router as hft_router
 from .plans import plans_config
@@ -682,6 +683,26 @@ async def _enforce_live_strategy_limit(
 ) -> None:
     if request.mode != "live":
         return
+
+    # Platform-wide capacity guard, checked before the per-plan limit so a full
+    # box sheds new starts instead of queueing them (running bots are never
+    # touched - only starts are rejected). Fail-open by design: an unreadable
+    # fleet gauge must not block trading.
+    at_capacity, capacity_reason = await is_fleet_at_capacity(redis_client)
+    if at_capacity:
+        logger.warning(
+            "Rejecting live strategy start at fleet capacity: %s (user_id=%s)",
+            capacity_reason,
+            user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "The platform is at its trading capacity right now "
+                f"({capacity_reason}). Your strategy was not started. "
+                "Please try again in a few minutes."
+            ),
+        )
 
     live_limit = get_max_live_strategies(user.plan)
     plan_config = plans_config.get_plan(user.plan)

@@ -376,13 +376,18 @@ async def test_initialize_controller_releases_bootstrap_pin(mocker):
     db.commit.assert_awaited_once()
 
 
-def test_worker_main_installs_loadtest_shim(mocker):
+def test_worker_main_installs_loadtest_shim(mocker, monkeypatch):
     """Spawned workers start a fresh interpreter without the parent's patches.
 
     Without per-worker shim install, no worker (including shard 0's, since the
     parent only spawns and waits) would have the synthetic live balance and
     every signal would be rejected with RISK_BLOCK.
     """
+    # worker_main exports its shard identity for the per-shard log files; the
+    # delenv records the pre-test value so monkeypatch restores it afterwards
+    # and the process-wide env change does not leak into other tests.
+    monkeypatch.delenv("BOT_SHARD_ID", raising=False)
+    monkeypatch.delenv("BOT_SHARD_COUNT", raising=False)
     installed = []
     fake_shim = SimpleNamespace(install=lambda: installed.append(True))
     mocker.patch.dict("sys.modules", {"loadtest_live_balance_shim": fake_shim})
@@ -465,3 +470,71 @@ async def test_pool_telemetry_skips_file_when_unset(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     await bot_runner._log_pool_telemetry_once(shard_id=0)
     assert set(p.name for p in tmp_path.iterdir()) == before
+
+
+@pytest.mark.asyncio
+async def test_pool_telemetry_publishes_fleet_gauges(monkeypatch):
+    """Shard publishes BOTH fleet counters for the API cap and admin gauge.
+
+    Two units, two keys: running strategy instances (the gated unit) and
+    controllers (the RAM unit). TTL is part of the contract - without it a
+    dead shard would hold capacity hostage forever.
+    """
+    from api.fleet_capacity import (
+        FLEET_CONTROLLER_KEY_PREFIX,
+        FLEET_KEY_TTL_SECONDS,
+        FLEET_STRATEGY_KEY_PREFIX,
+    )
+
+    calls = {}
+
+    class _Redis:
+        async def set(self, key, value, ex=None):
+            calls[key] = (value, ex)
+
+    monkeypatch.setattr(bot_runner, "_count_active_controllers", lambda: 91)
+    monkeypatch.setattr(bot_runner, "_count_running_strategy_instances", lambda: 12)
+    await bot_runner._log_pool_telemetry_once(shard_id=3, redis_client=_Redis())
+
+    assert calls[f"{FLEET_STRATEGY_KEY_PREFIX}3"] == (12, FLEET_KEY_TTL_SECONDS)
+    assert calls[f"{FLEET_CONTROLLER_KEY_PREFIX}3"] == (91, FLEET_KEY_TTL_SECONDS)
+
+
+@pytest.mark.asyncio
+async def test_pool_telemetry_survives_fleet_publish_failure():
+    """Telemetry must never break trading - a Redis error is swallowed."""
+
+    class _BrokenRedis:
+        async def set(self, *args, **kwargs):
+            raise ConnectionError("redis down")
+
+    # No assertion on logs; the point is that this returns instead of raising.
+    assert (
+        await bot_runner._log_pool_telemetry_once(
+            shard_id=1, redis_client=_BrokenRedis()
+        )
+        is None
+    )
+
+
+def test_count_running_strategy_instances_sums_across_controllers(monkeypatch):
+    """One controller can host several strategies: they must all be counted."""
+    user_controllers = {
+        1: {
+            10: SimpleNamespace(
+                running_strategy_instances={"cfg-a": (1, {}), "cfg-b": (2, {})}
+            ),
+            11: SimpleNamespace(running_strategy_instances={}),
+        },
+        2: {20: SimpleNamespace(running_strategy_instances={"cfg-c": (3, {})})},
+    }
+    monkeypatch.setattr(bot_runner, "user_controllers", user_controllers)
+    assert bot_runner._count_active_controllers() == 3
+    assert bot_runner._count_running_strategy_instances() == 3
+
+
+def test_count_running_strategy_instances_tolerates_partial_controllers(monkeypatch):
+    """A controller without the registry must not break the gauge."""
+    user_controllers = {1: {10: SimpleNamespace(), 11: None}}
+    monkeypatch.setattr(bot_runner, "user_controllers", user_controllers)
+    assert bot_runner._count_running_strategy_instances() == 0

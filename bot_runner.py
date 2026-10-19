@@ -45,6 +45,11 @@ from api import crud, models, security
 from api.plans import plans_config
 from api.push_sender import send_push_notification
 from api.redis_client import get_redis_client
+from api.fleet_capacity import (
+    FLEET_KEY_TTL_SECONDS,
+    fleet_controller_key,
+    fleet_strategy_key,
+)
 from bot_module.runtime_dependencies import configure_runtime_dependencies
 
 from bot_module.paper_executor import PaperTradingExecutor
@@ -74,7 +79,30 @@ telegram_notifier: Optional[TelegramNotifier] = None
 
 
 def _count_active_controllers() -> int:
+    """Bot controllers, i.e. one per (user x API key) pair.
+
+    Controllers are created at bootstrap for every key the bot finds, whether
+    or not a strategy is running on them, and they are what holds the ~45 MB
+    of RAM each. This is the capacity number to watch - NOT the strategy count.
+    """
     return sum(len(controllers) for controllers in user_controllers.values())
+
+
+def _count_running_strategy_instances() -> int:
+    """Running strategy instances across all controllers on this shard.
+
+    A controller can host several strategies (free plan allows 5 live ones per
+    exchange per user), so this grows without creating a new controller. It is
+    the unit a strategy start adds to, which makes it the unit the global
+    admission cap gates.
+    """
+    total = 0
+    for controllers in user_controllers.values():
+        for controller in controllers.values():
+            instances = getattr(controller, "running_strategy_instances", None)
+            if instances:
+                total += len(instances)
+    return total
 
 
 def _coerce_int(value) -> Optional[int]:
@@ -378,7 +406,7 @@ async def run_bot(shard_id: int = 0, num_workers: int = 1):
 
         logger.info("Command listener started. Waiting for shutdown signal...")
         telemetry_task = asyncio.create_task(
-            _pool_telemetry_loop(shard_id),
+            _pool_telemetry_loop(shard_id, redis_client),
             name=f"BotRunnerPoolTelemetry_S{shard_id}",
         )
         while not shutdown_event.is_set():
@@ -638,13 +666,18 @@ async def _initialize_controller_for_key(
             user_id_context.reset(token)
 
 
-async def _log_pool_telemetry_once(shard_id) -> None:
+async def _log_pool_telemetry_once(shard_id, redis_client=None) -> None:
     """Single pool/loop telemetry sample for fleet forensics.
 
     Names the pool holder class on the next load run instead of post-hoc log
     archaeology: checkedout rising with idle PG means client-side pinning;
     checkedout tracking task/controller counts means congestion. Import of the
     engine is deferred so module import never touches the database.
+
+    Also publishes the live controller count to Redis (fleet gauge): it is the
+    number behind the admin dashboard gauge and the global admission cap, and
+    the bot process is the only place that knows it. Redis client is optional
+    so telemetry keeps working in tests and degraded environments.
     """
     from api.database import engine as _telemetry_engine
 
@@ -656,9 +689,6 @@ async def _log_pool_telemetry_once(shard_id) -> None:
         rss_str = f"{rss_mb:.0f}MB"
     except Exception:
         rss_str = "n/a"
-    # Task-name histogram: the 1000-user night showed a 65k-task spike in
-    # one shard with no way to tell what they were. Top-5 names are
-    # log-line only (CSV schema stays fixed at 9 columns).
     try:
         import collections as _collections
 
@@ -672,7 +702,7 @@ async def _log_pool_telemetry_once(shard_id) -> None:
         _tasks_top = "n/a"
     logger.info(
         "[PoolTelemetry] shard=%s pool checkedout=%s checkedin=%s overflow=%s "
-        "size=%s tasks=%s tasks_top=%s controllers=%s rss=%s",
+        "size=%s tasks=%s tasks_top=%s controllers=%s strategies=%s rss=%s",
         shard_id,
         pool.checkedout(),
         pool.checkedin(),
@@ -681,13 +711,9 @@ async def _log_pool_telemetry_once(shard_id) -> None:
         _n_tasks,
         _tasks_top,
         _count_active_controllers(),
+        _count_running_strategy_instances(),
         rss_str,
     )
-    # Persistent per-shard telemetry file (opt-in via POOL_TELEMETRY_PATH).
-    # The bot log rotates away intraday at fleet scale (10MB x 6 covered ~15
-    # minutes), destroying the only pool/task/memory history forensics needs.
-    # One CSV line per sample; concurrent worker appends are atomic for short
-    # lines. Never raises: telemetry must not break trading.
     telemetry_path = os.environ.get("POOL_TELEMETRY_PATH", "")
     if telemetry_path:
         try:
@@ -703,12 +729,30 @@ async def _log_pool_telemetry_once(shard_id) -> None:
         except Exception as e_tlm:
             logger.debug(f"[PoolTelemetry] file append failed: {e_tlm}")
 
+    if redis_client is not None:
+        try:
+            await redis_client.set(
+                fleet_strategy_key(shard_id),
+                _count_running_strategy_instances(),
+                ex=FLEET_KEY_TTL_SECONDS,
+            )
+            await redis_client.set(
+                fleet_controller_key(shard_id),
+                _count_active_controllers(),
+                ex=FLEET_KEY_TTL_SECONDS,
+            )
+        except Exception as e_fleet:
+            # Never let telemetry break trading (same rule as the CSV append).
+            logger.debug(f"[PoolTelemetry] fleet gauge publish failed: {e_fleet}")
 
-async def _pool_telemetry_loop(shard_id, interval_seconds: float = 60.0) -> None:
+
+async def _pool_telemetry_loop(
+    shard_id, redis_client=None, interval_seconds: float = 60.0
+) -> None:
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            await _log_pool_telemetry_once(shard_id)
+            await _log_pool_telemetry_once(shard_id, redis_client)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -1058,13 +1102,15 @@ def worker_main(shard_id, num_workers):
     if worker_platform.system() == "Windows":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # Loadtest shim in spawned workers: multiprocessing spawn starts a fresh
-    # interpreter WITHOUT the parent's patches, and the parent only spawns
-    # and waits (all controllers live in workers, including shard 0's). So
-    # without this, no worker would have the synthetic live balance and every
-    # signal would be rejected with RISK_BLOCK. No-op unless
-    # LOADTEST_FAKE_LIVE_BALANCE is set (never in prod); a missing shim file
-    # must never break startup.
+
+    os.environ["BOT_SHARD_ID"] = str(shard_id)
+    os.environ["BOT_SHARD_COUNT"] = str(num_workers)
+    try:
+        setup_global_logging("bot_runner.log")
+        setup_bot_logging()
+    except Exception as e_log:
+        logger.warning(f"Worker {shard_id}: per-shard logging setup failed: {e_log}")
+
     try:
         import loadtest_live_balance_shim as _worker_shim
 
@@ -1127,10 +1173,7 @@ def _run_multi_process(num_workers: int) -> int:
                 logger.warning(
                     f"Some workers died! (Alive: {alive_count}/{num_workers})."
                 )
-            # Fail fast when EVERYTHING is dead: a master process that
-            # outlives all its children looks healthy (container Up, zero
-            # log output) while doing nothing. exitcode is not None means
-            # terminated, as opposed to merely still starting.
+
             exited_count = sum(1 for p in processes if p.exitcode is not None)
             if exited_count >= num_workers:
                 logger.critical(

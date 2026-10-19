@@ -2,6 +2,7 @@
 
 import {
 	Activity,
+	Bot,
 	ListChecks,
 	TrendingUp,
 	UserPlus,
@@ -90,6 +91,36 @@ const AdminDashboardPage: React.FC = () => {
 	const { data: affiliatesData, isLoading: isLoadingAffiliates } =
 		useAdminAffiliates(1, 1);
 
+	// Fleet gauges (Redis, published by bot shards every 60s):
+	//   fleetStrategies  - running strategy instances; the unit the admission
+	//                      cap gates and the unit a start adds to.
+	//   fleetControllers - bot controllers, one per user x API key, created at
+	//                      bot bootstrap. This is the RAM unit (~45 MB each),
+	//                      so it is what predicts OOM.
+	// -1 means the gauge is unreadable, which is NOT the same as "no bots":
+	// on promo day that difference is the difference between "idle" and
+	// "workers are dead".
+	const fleetStrategies = stats?.fleetStrategies ?? 0;
+	const fleetCap = stats?.fleetStrategyCap ?? 0;
+	const fleetControllers = stats?.fleetControllers ?? 0;
+	const fleetShards = stats?.fleetShardsReporting ?? 0;
+	const fleetUnknown = fleetStrategies < 0;
+	const capEnabled = fleetCap > 0;
+	const fleetOverCap = capEnabled && !fleetUnknown && fleetStrategies >= fleetCap;
+	const fleetNearCap =
+		capEnabled &&
+		!fleetUnknown &&
+		!fleetOverCap &&
+		fleetStrategies >= fleetCap * 0.9;
+	const fleetIconColor = fleetOverCap
+		? "text-red-600"
+		: fleetNearCap
+			? "text-amber-600"
+			: "text-blue-600";
+	const fleetDescription = fleetUnknown
+		? "Unknown - bot fleet is not reporting"
+		: `${capEnabled ? `${fleetStrategies} / ${fleetCap} strategy slots used` : "No strategy limit set"} - ${fleetControllers} controllers (${fleetShards} shards reporting)`;
+
 	const chartData = React.useMemo(() => {
 		const taskCounts = stats?.taskCountsByType;
 		if (!taskCounts) return [];
@@ -116,7 +147,7 @@ const AdminDashboardPage: React.FC = () => {
 				</p>
 			</div>
 
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
 				<StatCard
 					title="Total Users"
 					value={totalUsers}
@@ -144,6 +175,13 @@ const AdminDashboardPage: React.FC = () => {
 					icon={<TrendingUp className="h-4 w-4 text-orange-600" />}
 					isLoading={isLoadingAffiliates}
 					description="Affiliates with referrals"
+				/>
+				<StatCard
+					title="Live strategies"
+					value={fleetUnknown ? "Unknown" : fleetStrategies}
+					icon={<Bot className={`h-4 w-4 ${fleetIconColor}`} />}
+					isLoading={isLoadingStats}
+					description={fleetDescription}
 				/>
 			</div>
 

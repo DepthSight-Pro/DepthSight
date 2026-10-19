@@ -14,6 +14,11 @@ from sqlalchemy import select
 from .. import crud, models, schemas, security
 from ..database import get_db
 from ..dependencies import require_admin_role
+from ..fleet_capacity import (
+    get_max_global_live_strategies,
+    read_fleet_controllers,
+    read_fleet_strategies,
+)
 from ..redis_client import get_redis_client
 from ..plans import plans_config
 from ..audit_logger import AuditEventType, audit_logger, get_client_ip
@@ -80,11 +85,30 @@ async def admin_get_user_extended(user_id: int, db: AsyncSession = Depends(get_d
 
 
 @admin_router.get("/dashboard/stats", response_model=schemas.DashboardStats)
-async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
+async def get_dashboard_stats(
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
     """
-    Get key metrics for the admin dashboard.
+    Get key metrics for the admin dashboard, including the live fleet gauges.
+
+    Gauges come from Redis (bot shards publish every 60s) rather than the DB:
+    they reflect what the workers run right now, which is what the capacity
+    cap and the launch-day watch depend on.
+
+    "No shard reporting" is reported as unknown (-1), not as zero: right after
+    a bot restart the dashboard would otherwise show an idle platform while
+    every worker is still coming up.
     """
     stats = await crud.get_dashboard_stats(db)
+    strategies, shards_reporting = await read_fleet_strategies(redis_client)
+    controllers, _ = await read_fleet_controllers(redis_client)
+
+    unknown = strategies < 0 or controllers < 0 or shards_reporting == 0
+    stats.fleet_strategies = -1 if unknown else strategies
+    stats.fleet_controllers = -1 if unknown else controllers
+    stats.fleet_shards_reporting = shards_reporting
+    stats.fleet_strategy_cap = get_max_global_live_strategies()
     return stats
 
 

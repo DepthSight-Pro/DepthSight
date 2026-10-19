@@ -1063,6 +1063,14 @@ export interface DashboardStats {
 	newUsersLast7Days: number;
 	tasksRunLast7Days: number;
 	taskCountsByType: Record<string, number>;
+	/** Running strategy instances fleet-wide (-1 = gauge unreadable). */
+	fleetStrategies: number;
+	/** Admission cap (MAX_GLOBAL_LIVE_STRATEGIES); 0 = cap disabled. */
+	fleetStrategyCap: number;
+	/** Bot controllers, one per user x API key (-1 = gauge unreadable). */
+	fleetControllers: number;
+	/** Shards currently reporting; 0 means "nobody reports", not "no bots". */
+	fleetShardsReporting: number;
 }
 
 export interface AdminUserExtendedDetails {
