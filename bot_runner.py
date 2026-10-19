@@ -660,6 +660,14 @@ async def _initialize_controller_for_key(
             f"Failed to initialize controller for user {user.username}, key {api_key_obj.name}: {api_key_obj.id}): {e_user_init}",
             exc_info=True,
         )
+        # The session opened a transaction on its first read and only
+        # commit/rollback/close gives the connection back. Without this every
+        # failed init pins one server connection for the life of the process
+        # (18 of them ate a third of the pooler on 2026-10-19).
+        try:
+            await db.rollback()
+        except Exception as e_rollback:
+            logger.debug(f"Rollback after failed controller init failed: {e_rollback}")
         return False
     finally:
         if token:
@@ -1079,6 +1087,17 @@ async def _run_command_listener(
                     logger.error(f"Failed to parse command message: {e}")
                 except Exception as e:
                     logger.error(f"Error processing command: {e}", exc_info=True)
+                finally:
+                    # The listener session only reads, and a read opens a
+                    # transaction that is never closed - pinning one server
+                    # connection per worker for the whole run. Roll it back
+                    # after every command so the connection goes back.
+                    try:
+                        await db.rollback()
+                    except Exception as e_rel:
+                        logger.debug(
+                            f"Command listener session release failed: {e_rel}"
+                        )
 
         except asyncio.CancelledError:
             logger.info("Bot runner command listener task cancelled.")
@@ -1101,7 +1120,6 @@ def worker_main(shard_id, num_workers):
 
     if worker_platform.system() == "Windows":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 
     os.environ["BOT_SHARD_ID"] = str(shard_id)
     os.environ["BOT_SHARD_COUNT"] = str(num_workers)

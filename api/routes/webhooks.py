@@ -107,7 +107,8 @@ async def bitcart_webhook(
                     f"Bitcart Webhook price tampering detected for payment '{payment_id}': expected ${expected_price:.2f}, got ${invoice_price:.2f}."
                 )
                 raise HTTPException(
-                    status_code=400, detail="Paid amount does not match expected plan price."
+                    status_code=400,
+                    detail="Paid amount does not match expected plan price.",
                 )
         except (ValueError, TypeError):
             pass

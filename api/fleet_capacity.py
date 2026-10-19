@@ -96,6 +96,12 @@ async def is_fleet_at_capacity(redis_client: redis.Redis) -> Tuple[bool, str]:
 
     Returns `(True, reason)` only when the gauge is readable AND the number of
     running strategy instances is at or above the configured cap.
+
+    The gauge counts EVERY running instance (paper and live alike - both cost
+    RAM and DB work), while the cap only gates NEW LIVE starts. A platform
+    already running 200 paper strategies therefore has 200 fewer promo slots
+    than the raw cap number suggests; the admin dashboard card shows both the
+    used count and the cap so the headroom is visible.
     """
     cap = get_max_global_live_strategies()
     if cap <= 0:
@@ -108,6 +114,6 @@ async def is_fleet_at_capacity(redis_client: redis.Redis) -> Tuple[bool, str]:
         return False, "no shard reporting yet (fail-open)"
     if total >= cap:
         return True, (
-            f"{total} live strategies running on {shards} shard(s), cap={cap}"
+            f"{total} strategy instances running on {shards} shard(s), cap={cap}"
         )
-    return False, f"{total}/{cap} live strategies"
+    return False, f"{total}/{cap} strategy instances"

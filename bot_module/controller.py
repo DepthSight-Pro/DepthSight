@@ -2179,6 +2179,26 @@ class TradingController:
                     return (key, instance, config_dict)
         return None
 
+    @staticmethod
+    def _payload_symbols(payload: dict) -> Set[str]:
+        """Symbols a payload covers; empty set = unknown.
+
+        Payloads reach the controller from two directions: the API (which
+        always sends "symbols") and the saved runtime state, whose shape
+        depends on when it was written. A payload without a usable symbol list
+        must be treated as UNKNOWN, not as "covers nothing" - otherwise a
+        restored instance becomes invisible to the duplicate check and a second
+        copy of the same strategy starts on the same symbol (2026-10-19:
+        "Total running: 2" per controller, two instances fighting over one
+        position).
+        """
+        raw = payload.get("symbols")
+        if not raw:
+            config_data = payload.get("config_data") or {}
+            single = config_data.get("symbol")
+            raw = [single] if single else []
+        return {str(s).strip().upper() for s in raw if str(s).strip()}
+
     def _has_overlapping_running_instance(self, payload: dict) -> bool:
         """
         Checks whether an instance of the same source config already covers any of
@@ -2187,11 +2207,7 @@ class TradingController:
         """
         source_config_id = payload.get("config_id")
         requested_mode = (payload.get("symbol_selection_mode") or "STATIC").upper()
-        requested_symbols = {
-            str(s).strip().upper()
-            for s in payload.get("symbols") or []
-            if str(s).strip()
-        }
+        requested_symbols = self._payload_symbols(payload)
 
         for existing_key, (_inst, cfg) in self.running_strategy_instances.items():
             if existing_key == payload.get("id"):
@@ -2201,11 +2217,11 @@ class TradingController:
             entry_mode = (cfg.get("symbol_selection_mode") or "STATIC").upper()
             if requested_mode == "DYNAMIC" or entry_mode == "DYNAMIC":
                 return True
-            entry_symbols = {
-                str(s).strip().upper()
-                for s in cfg.get("symbols") or []
-                if str(s).strip()
-            }
+            entry_symbols = self._payload_symbols(cfg)
+            if not entry_symbols or not requested_symbols:
+                # Coverage unknown -> disjointness cannot be proven, so refuse
+                # the duplicate rather than run two copies of one strategy.
+                return True
             if requested_symbols & entry_symbols:
                 return True
         return False
@@ -2366,8 +2382,20 @@ class TradingController:
             )
 
         # After adding a strategy, the list of tracked symbols needs to be updated
-        await self._update_monitored_symbols()
-        await self._save_runtime_state()
+        # and the runtime state persisted. Both are bookkeeping AFTER the
+        # instance is registered: if they raise, the strategy is running but the
+        # ack never reaches the API, which then reports "not started" for a
+        # strategy that is actually live (2026-10-19: every start unconfirmed,
+        # each burning the full ack timeout). A failure here must not silence
+        # the acknowledgement.
+        try:
+            await self._update_monitored_symbols()
+            await self._save_runtime_state()
+        except Exception as e_bookkeeping:
+            logger.error(
+                f"{log_prefix} Post-start bookkeeping failed (strategy is registered): {e_bookkeeping}",
+                exc_info=True,
+            )
         # Burst publish so dashboards ("all accounts" included) show the new
         # strategy immediately instead of waiting for the periodic snapshot.
         self.loop.create_task(
@@ -4135,9 +4163,9 @@ class TradingController:
                                     close_reason = _reason
                                     price_source = "exchange_order"
                                     matched_exit_oid = _oid
-                                    matched_exit_cid = (
-                                        _oinfo.get("clientOrderId") or _oinfo.get("clientOid")
-                                    )
+                                    matched_exit_cid = _oinfo.get(
+                                        "clientOrderId"
+                                    ) or _oinfo.get("clientOid")
                                     logger.info(
                                         f"{log_prefix} Close fallback matched exit order "
                                         f"{_oid} for {symbol}: price={approx_exit_price}, "
@@ -18495,7 +18523,9 @@ class TradingController:
                         if _p_chk.current_sl_order_id:
                             last_close_order_id = _p_chk.current_sl_order_id
                         if _p_chk.current_sl_client_order_id:
-                            last_close_client_order_id = _p_chk.current_sl_client_order_id
+                            last_close_client_order_id = (
+                                _p_chk.current_sl_client_order_id
+                            )
 
             # Important: _handle_final_exit will remove the position from _active_positions.
             # We call it only once, being sure that everything is closed on the exchange.

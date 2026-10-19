@@ -698,7 +698,7 @@ async def _enforce_live_strategy_limit(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                "The platform is at its trading capacity right now "
+                "The platform has reached its strategy capacity right now "
                 f"({capacity_reason}). Your strategy was not started. "
                 "Please try again in a few minutes."
             ),

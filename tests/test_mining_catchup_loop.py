@@ -12,7 +12,7 @@ tasks._async_process_mining_epoch):
 
 import datetime
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.future import select
@@ -138,6 +138,7 @@ async def test_two_days_close_as_two_epochs_without_absorption(db_session, monke
     assert new_reports[0].created_at.date() == day_new
     # Equal rebates on different days earn equal rewards (no dilution).
     assert old_reports[0].reward_tokens == pytest.approx(new_reports[0].reward_tokens)
+
 
 async def test_late_trade_forward_credited_when_own_day_finalized(
     db_session, monkeypatch

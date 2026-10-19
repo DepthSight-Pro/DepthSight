@@ -269,7 +269,6 @@ class PaperTradingExecutor:
             )
             if sim_result.filled_quantity > 0:
                 async with self._db_lock:
-
                     _persist_attempts = get_retry_attempts()
                     _pos_snapshot = (
                         dict(self._positions[symbol])

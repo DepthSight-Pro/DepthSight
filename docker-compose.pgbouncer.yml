@@ -24,9 +24,9 @@ services:
       AUTH_TYPE: scram-sha-256
       POOL_MODE: transaction
       MAX_CLIENT_CONN: "5000"
-      DEFAULT_POOL_SIZE: "50"
-      RESERVE_POOL_SIZE: "5"
-      RESERVE_POOL_TIMEOUT: "3"
+      DEFAULT_POOL_SIZE: "100"
+      RESERVE_POOL_SIZE: "25"
+      RESERVE_POOL_TIMEOUT: "5"
       SERVER_LIFETIME: "7200"
       SERVER_IDLE_TIMEOUT: "600"
       IGNORE_STARTUP_PARAMETERS: extra_float_digits

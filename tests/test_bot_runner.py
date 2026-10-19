@@ -376,6 +376,44 @@ async def test_initialize_controller_releases_bootstrap_pin(mocker):
     db.commit.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_initialize_controller_failure_releases_the_pinned_connection(mocker):
+    """A failed init must not pin its session's connection forever.
+
+    The session opened a transaction on its first read; only commit/rollback/
+    close give the connection back. Without the rollback every failed init
+    leaked one server connection for the life of the process - 18 of them ate
+    a third of the pooler on 2026-10-19 and starved every other query.
+    """
+    mocker.patch.object(
+        bot_runner.security, "decrypt_data", MagicMock(return_value="x")
+    )
+    mocker.patch.object(
+        bot_runner, "create_exchange_executor", MagicMock(return_value=MagicMock())
+    )
+    mocker.patch.object(bot_runner, "DataConsumer", MagicMock(return_value=MagicMock()))
+    mocker.patch.object(
+        bot_runner.crud,
+        "get_user_by_id",
+        AsyncMock(side_effect=RuntimeError("db timeout")),
+    )
+
+    db = AsyncMock()
+    user = SimpleNamespace(id=7, username="pin_user")
+    key = SimpleNamespace(
+        id=9,
+        name="k",
+        exchange="binance",
+        encrypted_api_key="ek",
+        encrypted_api_secret="es",
+    )
+    ok = await bot_runner._initialize_controller_for_key(
+        user, key, db, object(), object(), None
+    )
+    assert ok is False
+    db.rollback.assert_awaited()
+
+
 def test_worker_main_installs_loadtest_shim(mocker, monkeypatch):
     """Spawned workers start a fresh interpreter without the parent's patches.
 
@@ -531,6 +569,22 @@ def test_count_running_strategy_instances_sums_across_controllers(monkeypatch):
     monkeypatch.setattr(bot_runner, "user_controllers", user_controllers)
     assert bot_runner._count_active_controllers() == 3
     assert bot_runner._count_running_strategy_instances() == 3
+
+
+def test_count_running_strategy_instances_includes_paper(monkeypatch):
+    """Paper instances count toward the cap: they cost RAM and DB work too."""
+    user_controllers = {
+        1: {
+            10: SimpleNamespace(
+                running_strategy_instances={
+                    "cfg-live": (1, {"mode": "live"}),
+                    "cfg-paper": (2, {"mode": "paper"}),
+                }
+            )
+        }
+    }
+    monkeypatch.setattr(bot_runner, "user_controllers", user_controllers)
+    assert bot_runner._count_running_strategy_instances() == 2
 
 
 def test_count_running_strategy_instances_tolerates_partial_controllers(monkeypatch):

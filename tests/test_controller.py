@@ -3208,3 +3208,104 @@ async def test_config_reloader_staggers_startup(controller, monkeypatch):
             await task
         except asyncio.CancelledError:
             pass
+
+
+# --- duplicate-instance guard (2026-10-19 night run) ---
+
+
+def _bare_controller():
+    """TradingController with only the state the overlap guard reads."""
+    ctrl = TradingController.__new__(TradingController)
+    ctrl.running_strategy_instances = {}
+    return ctrl
+
+
+def test_overlap_guard_blocks_duplicate_when_stored_payload_lacks_symbols():
+    """A stored payload without a symbol list must not hide an instance.
+
+    The runtime state restored on startup can carry a payload shape without
+    "symbols"; comparing only that key made the intersection empty and let a
+    SECOND copy of the same strategy start on the same symbol (observed:
+    "Total running: 2" per controller, two instances over one position).
+    """
+    ctrl = _bare_controller()
+    ctrl.running_strategy_instances = {
+        "cfg1:aaaaaaaa": (
+            None,
+            {"id": "cfg1:aaaaaaaa", "config_id": "cfg1", "mode": "paper"},
+        )
+    }
+    payload = {
+        "id": "cfg1:bbbbbbbb",
+        "config_id": "cfg1",
+        "mode": "paper",
+        "symbol_selection_mode": "STATIC",
+        "symbols": ["BTCUSDT"],
+    }
+    assert ctrl._has_overlapping_running_instance(payload) is True
+
+
+def test_overlap_guard_blocks_duplicate_when_symbols_only_in_config_data():
+    ctrl = _bare_controller()
+    ctrl.running_strategy_instances = {
+        "cfg1:aaaaaaaa": (
+            None,
+            {
+                "id": "cfg1:aaaaaaaa",
+                "config_id": "cfg1",
+                "config_data": {"symbol": "BTCUSDT"},
+            },
+        )
+    }
+    payload = {
+        "id": "cfg1:bbbbbbbb",
+        "config_id": "cfg1",
+        "symbol_selection_mode": "STATIC",
+        "symbols": ["BTCUSDT"],
+    }
+    assert ctrl._has_overlapping_running_instance(payload) is True
+
+
+def test_overlap_guard_allows_disjoint_symbols():
+    """The same config on a different symbol is a legitimate second instance."""
+    ctrl = _bare_controller()
+    ctrl.running_strategy_instances = {
+        "cfg1:aaaaaaaa": (
+            None,
+            {
+                "id": "cfg1:aaaaaaaa",
+                "config_id": "cfg1",
+                "symbol_selection_mode": "STATIC",
+                "symbols": ["ETHUSDT"],
+            },
+        )
+    }
+    payload = {
+        "id": "cfg1:bbbbbbbb",
+        "config_id": "cfg1",
+        "symbol_selection_mode": "STATIC",
+        "symbols": ["BTCUSDT"],
+    }
+    assert ctrl._has_overlapping_running_instance(payload) is False
+
+
+def test_overlap_guard_allows_a_different_source_config():
+    ctrl = _bare_controller()
+    ctrl.running_strategy_instances = {
+        "cfg1:aaaaaaaa": (
+            None,
+            {
+                "id": "cfg1:aaaaaaaa",
+                "config_id": "cfg1",
+                "symbol_selection_mode": "STATIC",
+                "symbols": ["BTCUSDT"],
+            },
+        )
+    }
+    payload = {
+        "id": "cfg2:bbbbbbbb",
+        "config_id": "cfg2",
+        "symbol_selection_mode": "STATIC",
+        "symbols": ["BTCUSDT"],
+    }
+    assert ctrl._has_overlapping_running_instance(payload) is False

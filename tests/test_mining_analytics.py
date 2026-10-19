@@ -203,7 +203,6 @@ async def sample_mining_data(db_session: AsyncSession):
     await db_session.commit()
 
 
-
 @pytest.mark.asyncio
 async def test_mining_analytics_auth_required(
     test_client: AsyncClient, regular_user_auth: dict
@@ -276,7 +275,6 @@ async def test_mining_analytics_summary(
     assert node1["name"] == "DepthNode-Alpha"
     assert node1["tradeCount"] == 3
     assert node1["totalVolumeUsdt"] == 10000.0
-
 
     # Daily trends
     assert len(data["dailyTrends"]) >= 1
@@ -362,4 +360,3 @@ async def test_mining_analytics_trades_pagination_and_filters(
     )
     assert resp_paper.status_code == 200
     assert resp_paper.json()["total"] == 0
-
