@@ -3309,3 +3309,35 @@ def test_overlap_guard_allows_a_different_source_config():
         "symbols": ["BTCUSDT"],
     }
     assert ctrl._has_overlapping_running_instance(payload) is False
+
+
+def test_no_raw_async_for_over_get_db_session():
+    """Guard: long-lived session reads must go through _owned_session().
+
+    `async for db in self.get_db_session()` abandons the generator when the
+    body raises, and the abandoned session keeps its transaction OPEN - which
+    pins a pooled server connection forever. On the 2026-10-19 night run that
+    was ~120 pinned connections at 660 controllers: the pooler ran out of
+    server connections, 1300 clients queued, and every query past them timed
+    out. _owned_session() always rolls back and closes.
+    """
+    import ast
+    import inspect
+
+    from bot_module import controller as controller_mod
+
+    tree = ast.parse(inspect.getsource(controller_mod))
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AsyncFor):
+            it = node.iter
+            if (
+                isinstance(it, ast.Call)
+                and isinstance(it.func, ast.Attribute)
+                and it.func.attr == "get_db_session"
+            ):
+                offenders.append(node.lineno)
+    assert offenders == [], (
+        "raw `async for ... self.get_db_session()` pins a connection on error: "
+        f"lines {offenders}"
+    )

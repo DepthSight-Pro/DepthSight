@@ -3846,7 +3846,7 @@ class TradingController:
                 )
             if self.api_key_id is not None:
                 try:
-                    async for db_session in self.get_db_session():
+                    async with self._owned_session() as db_session:
                         try:
                             await crud.update_api_key_status(
                                 db_session,
@@ -3870,7 +3870,7 @@ class TradingController:
             )
             if self.api_key_id is not None:
                 try:
-                    async for db_session in self.get_db_session():
+                    async with self._owned_session() as db_session:
                         try:
                             await crud.update_api_key_status(
                                 db_session,
@@ -9810,9 +9810,14 @@ class TradingController:
                 "PENDING_ENTRY",
                 "OPEN",
             ]:
-                async for db_session in (
-                    self.get_db_session()
-                ):  # Use async for to iterate over the generator
+                # _owned_session, not `async for db in self.get_db_session()`:
+                # the latter abandons the generator when the body raises, and a
+                # user lookup that fails under DB pressure then leaves an OPEN
+                # TRANSACTION holding a pooled connection forever. That was the
+                # leak: ~120 pinned server connections at 660 controllers, which
+                # starved the pooler and made every other query queue
+                # (2026-10-19 night run).
+                async with self._owned_session() as db_session:
                     user = await crud.admin_get_user_details(
                         db_session, new_position.user_id
                     )
@@ -11438,7 +11443,9 @@ class TradingController:
 
             # Send Push Notification for Position Closed
             if position_to_process_copy.user_id:
-                async for db_session in self.get_db_session():  # Using async for
+                # _owned_session: see the position-opened path above - an
+                # abandoned session here would pin a connection the same way.
+                async with self._owned_session() as db_session:
                     try:
                         user = await crud.admin_get_user_details(
                             db_session, position_to_process_copy.user_id
@@ -19036,7 +19043,7 @@ class TradingController:
         wallet_node_uuid = None
         if getattr(self, "user_id", None):
             try:
-                async for session in self.get_db_session():
+                async with self._owned_session() as session:
                     app_config = await crud.get_config(session, user_id=self.user_id)
                     settings = app_config.exchange_settings if app_config else None
                     if settings and isinstance(settings, dict):
@@ -19081,15 +19088,13 @@ class TradingController:
 
         if not attribution_node_uuid and getattr(self, "user_id", None):
             try:
-                async for session in self.get_db_session():
+                async with self._owned_session() as session:
                     if hasattr(crud, "resolve_user_attribution_node_uuid"):
                         attribution_node_uuid = (
                             await crud.resolve_user_attribution_node_uuid(
                                 session, self.user_id
                             )
                         )
-                        if attribution_node_uuid:
-                            break
             except Exception as e:
                 logger.error(
                     f"[controller] Failed to resolve attribution node from user: {e}"

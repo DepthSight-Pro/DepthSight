@@ -2,7 +2,8 @@
 
 # --- DepthSight Auto-Updater ---
 # Pulls latest main, merges new keys from .env.example (without overwriting),
-# rebuilds containers and restarts the stack.
+# dumps the Postgres database to backups/db (best-effort), rebuilds containers
+# and restarts the stack.
 # NOTE: DB migrations are NOT run here directly — they run implicitly on
 # container boot via ENTRYPOINT ./docker-startup.sh (alembic upgrade head + flock).
 
@@ -90,12 +91,42 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# 2c. Backup .env (only .env, no DB dump by design)
+# 2c. Backup .env and the database before touching code or containers
 BACKUP_FILE=".env.bak-$(date +%Y%m%d-%H%M%S)"
 cp .env "$BACKUP_FILE"
 echo -e "${GREEN}[+] .env backup saved to $BACKUP_FILE${NC}"
 # Retention: keep last 5 backups
 ls -t .env.bak-* 2>/dev/null | tail -n +6 | xargs -r rm -f -- || true
+
+# 2d. Dump the Postgres database (best-effort: a failed dump must not block updates)
+BACKUP_DIR="$PROJECT_DIR/backups/db"
+mkdir -p "$BACKUP_DIR" 2>/dev/null && chmod 700 "$BACKUP_DIR" 2>/dev/null || true
+if docker inspect -f '{{.State.Running}}' depthsight_postgres 2>/dev/null | grep -q true; then
+    PG_USER="$(docker exec depthsight_postgres printenv POSTGRES_USER 2>/dev/null || true)"
+    PG_DB="$(docker exec depthsight_postgres printenv POSTGRES_DB 2>/dev/null || true)"
+    if [ -n "$PG_USER" ] && [ -n "$PG_DB" ]; then
+        DB_BACKUP="$BACKUP_DIR/${PG_DB}-$(date +%Y%m%d-%H%M%S).dump"
+        echo -e "${BLUE}[*] Backing up database '$PG_DB'...${NC}"
+        if docker exec depthsight_postgres pg_dump -U "$PG_USER" -d "$PG_DB" -Fc > "$DB_BACKUP" 2>/tmp/depthsight-pgdump.err; then
+            chmod 600 "$DB_BACKUP" 2>/dev/null || true
+            if [ "$(head -c 5 "$DB_BACKUP" 2>/dev/null)" = "PGDMP" ]; then
+                echo -e "${GREEN}[+] DB backup saved to $DB_BACKUP ($(du -h "$DB_BACKUP" 2>/dev/null | cut -f1))${NC}"
+            else
+                echo -e "${YELLOW}[!] DB backup looks invalid: $DB_BACKUP (inspect before deleting).${NC}"
+            fi
+        else
+            echo -e "${YELLOW}[!] DB backup failed: $(tail -n 1 /tmp/depthsight-pgdump.err 2>/dev/null). Continuing without a fresh dump.${NC}"
+            rm -f "$DB_BACKUP" 2>/dev/null || true
+        fi
+        rm -f /tmp/depthsight-pgdump.err 2>/dev/null || true
+        # Retention: keep last 10 DB dumps
+        ls -t "$BACKUP_DIR"/*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f -- || true
+    else
+        echo -e "${YELLOW}[!] Could not read POSTGRES_USER/POSTGRES_DB from the postgres container; skipping DB backup.${NC}"
+    fi
+else
+    echo -e "${YELLOW}[!] postgres container is not running; skipping DB backup.${NC}"
+fi
 
 # 3. Pull Latest Code (branch is always main)
 echo -e "${BLUE}[*] Fetching latest updates from GitHub (main)...${NC}"
