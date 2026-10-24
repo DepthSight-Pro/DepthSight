@@ -1,7 +1,7 @@
 import logging
 import json
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import timedelta, datetime, date
 import pandas as pd
 from pydantic import BaseModel
@@ -288,7 +288,7 @@ async def get_available_bonuses():
 
 @admin_router.get("/analytics/foundations", response_model=List[schemas.FoundationStat])
 async def get_foundation_stats(
-    source_type: str = Query(..., enum=["backtest", "live", "paper"]),
+    source_type: Literal["backtest", "live", "paper"] = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -303,7 +303,7 @@ async def get_foundation_stats(
     "/analytics/market-sentiment", response_model=List[schemas.MarketSentimentStat]
 )
 async def get_market_sentiment_stats(
-    source_type: str = Query(..., enum=["backtest", "live", "paper"]),
+    source_type: Literal["backtest", "live", "paper"] = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -436,7 +436,7 @@ async def get_system_update_status():
 @admin_router.get("/logs/errors")
 async def get_all_error_logs(
     limit: int = Query(100, ge=1, le=500),
-    level: str = Query("ERROR", enum=["ERROR", "WARNING"]),
+    level: Literal["ERROR", "WARNING"] = Query("ERROR"),
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis_client),
 ):

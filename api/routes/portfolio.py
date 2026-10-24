@@ -140,7 +140,7 @@ async def get_portfolio_status(
     current_user: models.User = Depends(get_current_user),
     http_session: aiohttp.ClientSession = HttpSessDep,
     db: AsyncSession = Depends(get_db),
-    mode: str = Query("live", enum=["live", "paper"]),
+    mode: Literal["live", "paper"] = Query("live"),
     api_key_id: Optional[int] = Query(
         None, description="Optional API key ID for multi-account support"
     ),
@@ -606,7 +606,7 @@ async def list_positions(
     redis_client: redis.Redis = Depends(get_redis_client),
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    mode: str = Query("live", enum=["live", "paper"]),
+    mode: Literal["live", "paper"] = Query("live"),
     api_key_id: Optional[int] = Query(
         None, description="Filter by specific API key (subaccount)"
     ),
@@ -929,7 +929,7 @@ async def get_trades_history(
     strategy: Optional[str] = Query(
         None, alias="strategy_config_id"
     ),  # Use alias for clarity
-    mode: str = Query("live", enum=["live", "paper"]),
+    mode: Literal["live", "paper"] = Query("live"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     api_key_id: Optional[int] = Query(

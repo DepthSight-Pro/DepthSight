@@ -5,7 +5,7 @@ import json
 import math
 import time
 import uuid
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Literal
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select
@@ -47,7 +47,7 @@ async def list_strategies(
     redis_client: redis.Redis = Depends(get_redis_client),
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    mode: str = Query("live", enum=["live", "paper"]),
+    mode: Literal["live", "paper"] = Query("live"),
     api_key_id: Optional[int] = Query(
         None, description="Filter by specific API key (subaccount)"
     ),

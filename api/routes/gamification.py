@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Literal
 from fastapi import APIRouter, Depends, status, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,8 +24,8 @@ gamification_router = APIRouter(
     response_model=schemas.ApiResponseData[List[schemas.LeaderboardEntry]],
 )
 async def get_leaderboard(
-    period: str = Query("all_time", enum=["weekly", "monthly", "all_time"]),
-    category: str = Query("sharpe_ratio", enum=["sharpe_ratio", "net_pnl_percent"]),
+    period: Literal["weekly", "monthly", "all_time"] = Query("all_time"),
+    category: Literal["sharpe_ratio", "net_pnl_percent"] = Query("sharpe_ratio"),
     db: AsyncSession = Depends(get_db),
 ):
     """
