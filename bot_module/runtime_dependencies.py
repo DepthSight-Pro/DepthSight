@@ -13,6 +13,13 @@ class DependencyProxy:
     def __bool__(self) -> bool:
         return self._target is not None or bool(self._overrides)
 
+    def __dir__(self) -> list[str]:
+        attrs = set(super().__dir__())
+        attrs.update(self._overrides.keys())
+        if self._target is not None:
+            attrs.update(dir(self._target))
+        return sorted(attrs)
+
     def __getattr__(self, name: str) -> Any:
         if name in self._overrides:
             return self._overrides[name]
@@ -27,18 +34,20 @@ class DependencyProxy:
         if name.startswith("_"):
             object.__setattr__(self, name, value)
             return
-        if self._target is None:
-            self._overrides[name] = value
-            return
-        setattr(self._target, name, value)
+        self._overrides[name] = value
 
     def __delattr__(self, name: str) -> None:
+        if name.startswith("_"):
+            object.__delattr__(self, name)
+            return
         if name in self._overrides:
             del self._overrides[name]
             return
-        if self._target is None:
-            raise AttributeError(name)
-        delattr(self._target, name)
+        if self._target is not None and hasattr(self._target, name):
+            return
+        raise AttributeError(
+            f"Runtime dependency '{self._name}' has no attribute {name!r}"
+        )
 
 
 class CallableDependency:
