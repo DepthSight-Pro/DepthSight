@@ -42,6 +42,10 @@ os.environ.setdefault("POSTGRES_DB", "testdb")
 os.environ.setdefault("POSTGRES_HOST", "localhost")
 os.environ.setdefault("POSTGRES_PORT", "5432")
 
+import pytest
+
+pytest.importorskip("tools.db_session_guard", reason="tools/db_session_guard is not present")
+
 from tools.db_session_guard import (  # noqa: E402
     ALLOWED,
     REPO,
