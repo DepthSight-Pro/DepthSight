@@ -18,6 +18,16 @@ Exit coupling is configurable per hedge group (``exit_policy``):
   ``spread_exit_threshold_pct`` of the combined notional, the leg closes
   itself and market-closes the sibling. Requires ``FIXED_NOTIONAL`` sizing
   (equal notionals are what maps spread deviation to pair PnL).
+- ``SPREAD_CONVERGENCE_EXIT``: pair-trade exit. The entry spread between
+  the two legs' executed fills is recorded at launch; while the position
+  is open, each tick compares the current cross-exchange mark spread with
+  it. The pair closes BOTH legs at market when the spread has narrowed BY
+  ``spread_convergence_ratio_pct`` percent from the entry spread, i.e. down
+  to ``100 - ratio``% of it (and/or an absolute
+  ``spread_convergence_target_pct``, disabled at 0). Requires
+  per-exchange live marks for both legs, parallel opposite-direction
+  positions and a per-launch cooldown; native SL/TP still protect each
+  leg when the spread data is unavailable.
 - ``INDEPENDENT``: legs live until their own TP/SL. The only coupling is
   the paired launch. Best for decorrelated markets: a leg that did not hit
   its stop may still ride into profit after the sibling closed.
@@ -68,11 +78,14 @@ HEDGE_EXIT_MOVE_SL_TO_BE = "MOVE_SL_TO_BE"
 
 HEDGE_EXIT_SPREAD_PROFIT = "SPREAD_PROFIT_EXIT"
 
+HEDGE_EXIT_SPREAD_CONVERGENCE = "SPREAD_CONVERGENCE_EXIT"
+
 HEDGE_EXIT_POLICIES = (
     HEDGE_EXIT_RACE_FINAL_MARKET,
     HEDGE_EXIT_INDEPENDENT,
     HEDGE_EXIT_MOVE_SL_TO_BE,
     HEDGE_EXIT_SPREAD_PROFIT,
+    HEDGE_EXIT_SPREAD_CONVERGENCE,
 )
 
 HEDGE_DEFAULT_EXIT_POLICY = HEDGE_EXIT_RACE_FINAL_MARKET
@@ -84,6 +97,14 @@ HEDGE_MARK_TTL_SEC = 30
 HEDGE_COOLDOWN_TTL_SEC = 300
 HEDGE_DEFAULT_SPREAD_THRESHOLD_PCT = 0.5
 HEDGE_DEFAULT_SPREAD_COOLDOWN_SEC = 60
+
+# Convergence-exit tuning: exit when the entry spread has narrowed BY this
+# percent of itself, i.e. down to (100 - ratio)% (<= 0 disables the ratio
+# condition) and/or when the absolute spread reaches
+# ``HEDGE_DEFAULT_CONVERGENCE_TARGET_PCT`` percent of mid-price (<= 0
+# disables the absolute condition).
+HEDGE_DEFAULT_CONVERGENCE_RATIO_PCT = 80.0
+HEDGE_DEFAULT_CONVERGENCE_TARGET_PCT = 0.0
 
 HEDGE_REDIS_PREFIX = "depthsight:hedge"
 
@@ -198,6 +219,59 @@ def pair_pnl_pct(
         return None
 
 
+def spread_pct(mark_a: Any, mark_b: Any) -> Optional[float]:
+    """Signed cross-exchange spread in percent of the pair's mid-mark.
+
+    ``(A - B) / ((A + B) / 2) * 100``. The sign encodes which leg is rich:
+    positive when leg A's mark exceeds leg B's. Returns None for any
+    non-positive or unusable input so callers can treat bad data as
+    "no measurement" instead of firing exits.
+    """
+    try:
+        a = float(mark_a)
+        b = float(mark_b)
+    except (TypeError, ValueError):
+        return None
+    if a <= 0 or b <= 0:
+        return None
+    mid = (a + b) / 2.0
+    return (a - b) / mid * 100.0
+
+
+def spread_convergence_fires(
+    *,
+    entry_spread_pct: float,
+    current_spread_pct: float,
+    narrowing_pct: float,
+    target_abs_pct: float,
+) -> bool:
+    """Convergence exit test (pure, magnitude-only).
+
+    Fires when the current |spread| is down to ``narrowing_pct`` percent of
+    the entry |spread| and/or at/below the absolute ``target_abs_pct``
+    (the absolute condition is meaningful only when the entry spread was
+    wider than the target). Either condition alone is sufficient; both
+    disabled (<= 0) never fires. Garbage inputs never fire.
+    """
+    try:
+        entry = abs(float(entry_spread_pct))
+        current = abs(float(current_spread_pct))
+        narrowing = float(narrowing_pct)
+        target = float(target_abs_pct)
+    except (TypeError, ValueError):
+        return False
+    if entry <= 0:
+        return False
+    if narrowing <= 0 and target <= 0:
+        return False
+    fires = False
+    if narrowing > 0 and current <= entry * max(0.0, 1.0 - narrowing / 100.0):
+        fires = True
+    if target > 0 and entry > target and current <= target:
+        fires = True
+    return fires
+
+
 HEDGE_SIDE_MODE_OPPOSITE = "OPPOSITE"
 
 HEDGE_SIZE_FIXED_NOTIONAL = "FIXED_NOTIONAL"
@@ -213,6 +287,7 @@ HEDGE_SIZE_MODES = (
 HEDGE_CLOSE_REASON_PREFIX = "HEDGE_RACE"
 HEDGE_SPREAD_REASON_PREFIX = "HEDGE_SPREAD"
 HEDGE_SYNC_FAIL_REASON_PREFIX = "HEDGE_SYNC_FAIL"
+HEDGE_CONVERGENCE_REASON_PREFIX = "HEDGE_CONVERGENCE"
 
 HEDGE_CLOSE_REASON_PREFIX = "HEDGE_RACE"
 HEDGE_SPREAD_REASON_PREFIX = "HEDGE_SPREAD"

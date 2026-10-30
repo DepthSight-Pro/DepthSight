@@ -124,7 +124,7 @@ export const McpSection: React.FC = () => {
 	const [newTokenExpiryDays, setNewTokenExpiryDays] = useState<number | null>(90);
 	const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null);
 
-	const origin = typeof window !== "undefined" ? window.location.origin : "https://app.depthsight.pro";
+	const origin = typeof window !== "undefined" ? window.location.origin : (import.meta.env.VITE_PUBLIC_BASE_URL || "https://app.depthsight.pro");
 	const sseUrl = `${origin}/api/v1/mcp/sse`;
 	const httpUrl = `${origin}/api/v1/mcp`;
 

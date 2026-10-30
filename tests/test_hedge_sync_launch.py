@@ -179,3 +179,78 @@ async def test_sync_launch_rejects_dynamic_symbols(
     )
     assert response.status_code == 400, response.text
     assert _start_payloads(mock_redis_client) == []
+
+
+@pytest.mark.asyncio
+async def test_convergence_launch_fans_out_with_exit_conditions(
+    pro_user_client: AsyncClient,
+    mock_redis_client,
+    db_session: AsyncSession,
+    pro_user: models.User,
+):
+    config = await _futures_config(db_session, pro_user.id)
+    keys = await crud.get_active_api_keys_for_user(db_session, user_id=pro_user.id)
+    leg_b = await _second_key(db_session, pro_user.id, exchange="bitget")
+
+    response = await pro_user_client.post(
+        "/api/v1/strategies",
+        json={
+            "config_id": config.id,
+            "mode": "live",
+            "symbol_selection_mode": "STATIC",
+            "symbols": ["XRPUSDT"],
+            "api_key_id": keys[0].id,
+            "hedge": {
+                "enabled": True,
+                "leg_b_api_key_id": leg_b.id,
+                "exit_policy": "SPREAD_CONVERGENCE_EXIT",
+                "size_mode": "FIXED_NOTIONAL",
+                "notional_usd": 20.0,
+                "spread_convergence_ratio_pct": 80.0,
+                "spread_convergence_target_pct": 0.0,
+            },
+        },
+    )
+    assert response.status_code == 202, response.text
+
+    messages = _start_payloads(mock_redis_client)
+    assert len(messages) == 2
+    for message in messages:
+        hedge = message["payload"]["config_data"]["hedge"]
+        assert hedge["exit_policy"] == "SPREAD_CONVERGENCE_EXIT"
+        assert hedge["spread_convergence_ratio_pct"] == 80.0
+        assert hedge["spread_convergence_target_pct"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_convergence_launch_rejects_disabled_conditions(
+    pro_user_client: AsyncClient,
+    mock_redis_client,
+    db_session: AsyncSession,
+    pro_user: models.User,
+):
+    config = await _futures_config(db_session, pro_user.id)
+    keys = await crud.get_active_api_keys_for_user(db_session, user_id=pro_user.id)
+    leg_b = await _second_key(db_session, pro_user.id, exchange="bitget")
+
+    response = await pro_user_client.post(
+        "/api/v1/strategies",
+        json={
+            "config_id": config.id,
+            "mode": "live",
+            "symbol_selection_mode": "STATIC",
+            "symbols": ["XRPUSDT"],
+            "api_key_id": keys[0].id,
+            "hedge": {
+                "enabled": True,
+                "leg_b_api_key_id": leg_b.id,
+                "exit_policy": "SPREAD_CONVERGENCE_EXIT",
+                "size_mode": "FIXED_NOTIONAL",
+                "notional_usd": 20.0,
+                "spread_convergence_ratio_pct": 0.0,
+                "spread_convergence_target_pct": 0.0,
+            },
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert _start_payloads(mock_redis_client) == []

@@ -3874,13 +3874,13 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 ex = str(exchange_id).lower().strip()
                 if ex in multipliers:
                     try:
-                        return max(0.1, float(multipliers[ex]))
+                        return float(multipliers[ex])
                     except (ValueError, TypeError):
                         return 1.0
                 base = ex.split("_")[0]
                 if base in multipliers:
                     try:
-                        return max(0.1, float(multipliers[base]))
+                        return float(multipliers[base])
                     except (ValueError, TypeError):
                         return 1.0
                 return 1.0
@@ -3902,9 +3902,7 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     stamped = float(stamped) if stamped is not None else 1.0
                 except (TypeError, ValueError):
                     stamped = 1.0
-                if stamped <= 0:
-                    stamped = 1.0
-                return max(0.1, stamped)
+                return stamped
 
             node_stats = {}
             for report in reports:
@@ -3913,7 +3911,8 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     continue
                 node_rebate = report.estimated_rebate_usdt or 0.0
                 mult = _resolve_report_mult(report)
-                weighted_pts = node_rebate * mult
+                safe_mult = max(0.0, mult)
+                weighted_pts = node_rebate * safe_mult
 
                 if node_id not in node_stats:
                     node_stats[node_id] = {

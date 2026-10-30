@@ -72,8 +72,8 @@ def test_get_exchange_multiplier_matching():
     assert _get_exchange_multiplier(cfg, None) == 1.0
     assert _get_exchange_multiplier(None, "bitget") == 1.0
 
-    # 5. Safe bounds: negative/zero clamped to 0.1, invalid string fallback to 1.0
-    assert _get_exchange_multiplier(cfg, "low_bound") == 0.1
+    # 5. Negative multiplier preserved for partner penalty/burn mode, invalid string fallback to 1.0
+    assert _get_exchange_multiplier(cfg, "low_bound") == -5.0
     assert _get_exchange_multiplier(cfg, "invalid_val") == 1.0
 
 

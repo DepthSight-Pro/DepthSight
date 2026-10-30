@@ -756,6 +756,11 @@ class TradingController:
             f"Symbol cooldown after close: {self._symbol_cooldown_duration} seconds."
         )
 
+    @property
+    def _log_scope(self) -> str:
+        """Identifies this controller in log lines."""
+        return f"{self.api_key_name}/u{self.user_id}"
+
     def _position_uses_no_stop_loss_mode(
         self, position: Optional[LivePosition]
     ) -> bool:
@@ -1283,6 +1288,17 @@ class TradingController:
         self._market_info_update_task = self.loop.create_task(
             self._run_market_info_updater(), name="MarketInfoUpdater"
         )
+
+        # Re-arm the resting exit orders of restored PAPER positions
+        try:
+            await self._ensure_paper_exit_orders_present(reason="startup")
+        except Exception as rearm_startup_err:
+            logger.critical(
+                f"[ReArmPaperExits:{self.api_key_name}] Startup re-arm of paper "
+                f"exit orders failed: {rearm_startup_err}. Restored paper "
+                f"positions may be left without stop-losses.",
+                exc_info=True,
+            )
 
         self._main_task = self.loop.create_task(
             self._run_main_loop(), name="ControllerMainLoop"
@@ -4612,7 +4628,9 @@ class TradingController:
             # JSON-compatible serialization under dictionary lock to prevent iteration errors
             async with self._positions_dict_lock:
                 serialized_positions = {
-                    k: v.to_dict() for k, v in self._active_positions.items()
+                    k: v.to_dict()
+                    for k, v in self._active_positions.items()
+                    if getattr(v, "status", None) != "RESERVING"
                 }
 
             async with self.instances_lock:
@@ -4649,6 +4667,55 @@ class TradingController:
             logger.error(
                 f"{log_prefix} Failed to save runtime state: {e}", exc_info=True
             )
+
+    def _invalidate_stale_paper_exit_order_state(self, position: LivePosition) -> bool:
+        """
+        Wipes the persisted exit-order state of a restored PAPER position.
+
+        Paper SL / partial-TP orders are resting orders that live only in
+        `PaperTradingExecutor._open_orders` -- a plain in-memory dict built empty in
+        `PaperTradingExecutor.__init__`. Nothing persists it and nothing rebuilds
+        it, so after a bot restart those orders are gone while the restored
+        position still carries their ids.
+
+        Leaving that state in place is actively harmful:
+        - `_place_stop_loss` returns True on a stale `current_sl_order_id` without
+          placing anything;
+        - `_place_partial_tp` returns early on `ptp_placement_initiated_flags`;
+        - `_check_and_close_positions_without_sl` skips any position whose
+          `sl_placement_initiated` is True.
+
+        Returns True if any stale exit-order state was cleared.
+        """
+        if position is None:
+            return False
+
+        cleared = False
+
+        if (
+            position.current_sl_order_id is not None
+            or position.current_sl_client_order_id is not None
+            or position.is_sl_algo_order
+            or position.sl_placement_initiated
+        ):
+            position.current_sl_order_id = None
+            position.current_sl_client_order_id = None
+            position.is_sl_algo_order = False
+            position.sl_placement_initiated = False
+            cleared = True
+
+        if position.ptp_placement_initiated_flags:
+            position.ptp_placement_initiated_flags = {}
+            cleared = True
+
+        for tp in position.partial_tp_orders:
+            if tp.status == "PENDING" and (tp.order_id or tp.client_order_id):
+                tp.order_id = None
+                tp.client_order_id = None
+                tp.status = "PENDING_PLACEMENT"
+                cleared = True
+
+        return cleared
 
     async def _load_runtime_state(self):
         """
@@ -4724,9 +4791,15 @@ class TradingController:
 
                 # 1. Deserialize all positions first
                 restored_positions_objects = {}
+                discarded_reserving = []
                 for k, v in restored_positions_raw.items():
                     try:
                         pos = LivePosition.from_dict(v)
+
+                        # Never restore a RESERVING placeholder
+                        if getattr(pos, "status", None) == "RESERVING":
+                            discarded_reserving.append(k)
+                            continue
 
                         # Backfill api_key_id if missing and not from legacy key
                         if (
@@ -4740,6 +4813,17 @@ class TradingController:
                         logger.error(
                             f"{log_prefix} Error deserializing position {k}: {e}"
                         )
+
+                if discarded_reserving:
+                    logger.warning(
+                        f"{log_prefix} Discarded {len(discarded_reserving)} "
+                        f"RESERVING placeholder(s) from saved state: "
+                        f"{', '.join(discarded_reserving)}. These are in-process "
+                        f"signal reservations owned by a previous process; "
+                        f"restoring one would block that symbol permanently, "
+                        f"stay invisible to the dashboard, and consume a "
+                        f"max_concurrent_trades slot."
+                    )
 
                 validated_positions = {}
                 # 2. Getting real positions from the exchange for verification.
@@ -4831,6 +4915,8 @@ class TradingController:
                 # 3. Finally set the validated positions under lock
                 async with self._positions_dict_lock:
                     for pos in validated_positions.values():
+                        if self.api_key_id is None:
+                            self._invalidate_stale_paper_exit_order_state(pos)
                         self._active_position_set(pos)
 
                 logger.info(
@@ -4881,6 +4967,191 @@ class TradingController:
                 f"{log_prefix} Clearing potentially corrupted state to avoid issues."
             )
             self._active_positions = ActivePositionMap()
+
+    async def _ensure_paper_exit_orders_present(self, reason: str = "periodic"):
+        """
+        Guarantees every OPEN paper position has a REAL resting exit order in the
+        paper executor's in-memory order book.
+        """
+        log_prefix = f"[EnsurePaperExitOrders:{self._log_scope}]"
+        is_startup = reason == "startup"
+
+        paper_executor = self.executors.get("paper")
+        if (
+            self.api_key_id is not None
+            or self.executors.get("live") is not None
+            or paper_executor is None
+        ):
+            # Not a paper-only controller. Never touch the live restore path.
+            if is_startup:
+                logger.info(
+                    f"{log_prefix} Skipped ({reason}): not a paper-only controller."
+                )
+            return
+
+        async with self._positions_dict_lock:
+            paper_positions = [
+                LivePosition(**vars(pos))
+                for pos in self._active_positions.values()
+                if getattr(pos, "api_key_id", None) is None
+            ]
+
+        if not paper_positions:
+            if is_startup:
+                logger.info(
+                    f"{log_prefix} No restored paper positions present to re-arm."
+                )
+            return
+
+        non_open = [p for p in paper_positions if p.status != "OPEN"]
+        if non_open:
+            logger.warning(
+                f"{log_prefix} {len(non_open)} paper position(s) are NOT in OPEN "
+                f"status. They are excluded from risk management AND from the "
+                f"dashboard publish. Operator attention required: "
+                + ", ".join(f"{p.symbol}={p.status}" for p in non_open)
+            )
+
+        restored_positions = [p for p in paper_positions if p.status == "OPEN"]
+        if not restored_positions:
+            logger.warning(
+                f"{log_prefix} No OPEN paper position among {len(paper_positions)} "
+                f"restored paper position(s); nothing can be re-armed."
+            )
+            return
+
+        try:
+            resting_orders = await paper_executor.get_open_orders()
+        except Exception as open_orders_err:
+            logger.warning(
+                f"{log_prefix} Could not read the paper order book "
+                f"({open_orders_err}); skipping this cycle and retrying."
+            )
+            return
+
+        def _has_resting_stop(symbol: str) -> bool:
+            return any(
+                str(o.get("symbol")) == symbol
+                and str(o.get("type", "")).upper() == "STOP_MARKET"
+                for o in resting_orders
+            )
+
+        logger.info(
+            f"{log_prefix} Ensuring resting exit orders for "
+            f"{len(restored_positions)} OPEN paper position(s) ({reason})."
+        )
+
+        rearmed_sl = 0
+        rearmed_tp = 0
+        failed: list[str] = []
+
+        for position in restored_positions:
+            pos_log_prefix = f"{log_prefix}:{position.symbol}"
+
+            try:
+                if self._position_is_intentional_no_sl_mode(position):
+                    logger.info(
+                        f"{pos_log_prefix} Position runs in NO_STOP_LOSS mode by "
+                        f"design. Nothing to re-arm."
+                    )
+                elif not self._position_has_active_stop_target(position):
+                    logger.warning(
+                        f"{pos_log_prefix} OPEN paper position has NO active stop "
+                        f"target stored (current_sl_price="
+                        f"{position.current_sl_price}). It cannot be protected by "
+                        f"a resting order."
+                    )
+                elif _has_resting_stop(position.symbol):
+                    logger.debug(
+                        f"{pos_log_prefix} STOP_MARKET already resting; nothing to do."
+                    )
+                else:
+                    if (
+                        position.sl_placement_initiated
+                        or position.current_sl_order_id
+                        or position.current_sl_client_order_id
+                        or position.is_sl_algo_order
+                    ):
+                        logger.warning(
+                            f"{pos_log_prefix} Persisted flags claim an SL order "
+                            f"({position.current_sl_order_id}) but no STOP_MARKET is "
+                            f"resting for {position.symbol}. Clearing stale state; the "
+                            f"order lived only in the previous process's memory."
+                        )
+                        position.sl_placement_initiated = False
+                        position.current_sl_order_id = None
+                        position.current_sl_client_order_id = None
+                        position.is_sl_algo_order = False
+
+                    if await self._place_stop_loss(position):
+                        rearmed_sl += 1
+                        logger.info(
+                            f"{pos_log_prefix} Placed missing STOP_MARKET "
+                            f"(current_sl_price={position.current_sl_price}). "
+                            f"Position was protected by the persisted flags but had "
+                            f"no live order; repaired."
+                        )
+                    else:
+                        failed.append(f"{position.symbol}:stop-loss")
+                        logger.warning(
+                            f"{pos_log_prefix} FAILED to place a stop-loss order for an "
+                            f"OPEN position with no resting protection."
+                        )
+
+                paper_executor = self.executors.get("paper")
+                if self._position_should_use_virtual_spot_tps(position, paper_executor):
+                    logger.info(
+                        f"{pos_log_prefix} TPs are virtual by design. "
+                        f"TP re-arm skipped."
+                    )
+                else:
+                    try:
+                        for index, tp in enumerate(list(position.partial_tp_orders)):
+                            if tp.status != "PENDING_PLACEMENT":
+                                continue
+                            if tp.quantity is None or tp.quantity <= 0:
+                                continue
+                            await self._place_partial_tp(
+                                position,
+                                tp.target_price,
+                                tp.quantity,
+                                tp.orig_fraction,
+                                index,
+                            )
+                            if tp.order_id or tp.client_order_id:
+                                rearmed_tp += 1
+                            else:
+                                failed.append(f"{position.symbol}:tp#{index}")
+                    except Exception as tp_err:
+                        logger.error(
+                            f"{pos_log_prefix} Failed to re-arm partial take-profit "
+                            f"orders (stop-loss repair above is unaffected): {tp_err}",
+                            exc_info=True,
+                        )
+                        failed.append(f"{position.symbol}:partial-tp")
+            except Exception as rearm_err:
+                logger.error(
+                    f"{pos_log_prefix} Failed to re-arm stop-loss: {rearm_err}",
+                    exc_info=True,
+                )
+                failed.append(f"{position.symbol}:exception")
+
+        if failed:
+            logger.warning(
+                f"{log_prefix} Ensure incomplete: {len(failed)} exit order(s) "
+                f"could not be placed ({', '.join(failed)})."
+            )
+        elif rearmed_sl or rearmed_tp:
+            logger.info(
+                f"{log_prefix} Repaired {rearmed_sl} stop-loss(es) and "
+                f"{rearmed_tp} partial TP(s); all OPEN paper positions now have "
+                f"live resting exit orders."
+            )
+        else:
+            logger.debug(
+                f"{log_prefix} All OPEN paper positions already protected; "
+                f"nothing to repair."
+            )
 
     async def _publish_state_to_redis(self):
         """Serialize state publishes: skip if a previous publish is still running.
@@ -5630,8 +5901,9 @@ class TradingController:
             60  # Reconciliation once per minute (sufficient for prevention)
         )
 
-        # Hedge spread exits (SPREAD_PROFIT_EXIT legs publish marks and
-        # evaluate pair profit; spreads live seconds-minutes, 3s is enough).
+        # Hedge spread exits (SPREAD_PROFIT_EXIT / SPREAD_CONVERGENCE_EXIT
+        # legs publish marks and evaluate pair PnL / spread convergence;
+        # spreads live seconds-minutes, 3s is enough).
         last_hedge_spread_time = 0
         hedge_spread_interval = 3.0
 
@@ -7975,6 +8247,7 @@ class TradingController:
 
         if not positions_to_process_for_missing_sl:
             logger.debug(f"{log_prefix} No OPEN positions to check for missing SL.")
+            await self._recover_stuck_closing_positions(log_prefix)
             return
 
         logger.info(
@@ -8113,7 +8386,16 @@ class TradingController:
                     f"{pos_log_prefix} Position OPEN for {time_since_opened:.1f}s without SL. Within grace period."
                 )
 
-        # Second level of protection: checking positions stuck in CLOSING status
+                # Second level of protection: checking positions stuck in CLOSING status
+        await self._recover_stuck_closing_positions(log_prefix)
+
+    async def _recover_stuck_closing_positions(self, log_prefix: str) -> None:
+        """
+        Retries the close of any position stuck in CLOSING with quantity left or finalizes zombies.
+        """
+        if not log_prefix:
+            log_prefix = f"[MissingSLCheck:{self._log_scope}]"
+
         async with self._positions_dict_lock:
             stuck_closing_positions = [
                 (
@@ -8124,7 +8406,7 @@ class TradingController:
                     pos.failed_close_attempts,
                 )
                 for pos in list(self._active_positions.values())
-                if pos.status == "CLOSING" and pos.remaining_quantity > 0
+                if pos.status == "CLOSING" and (pos.remaining_quantity or 0.0) >= 0
             ]
 
         for (
@@ -8136,7 +8418,6 @@ class TradingController:
         ) in stuck_closing_positions:
             stuck_log_prefix = f"[{log_prefix}:StuckCLOSING:{symbol}:{entry_cid}]"
 
-            # Incrementing the failed attempts counter
             symbol_lock_stuck = self._get_lock_for_position(
                 symbol, position_market_type
             )
@@ -8145,10 +8426,21 @@ class TradingController:
                 if stuck_position:
                     stuck_position.failed_close_attempts += 1
                     failed_attempts = stuck_position.failed_close_attempts
+                    remaining_qty = stuck_position.remaining_quantity
+                else:
+                    remaining_qty = None
 
-            logger.warning(
-                f"{stuck_log_prefix} Position still in CLOSING status with remaining qty > 0. Attempt #{failed_attempts}."
-            )
+            if remaining_qty is not None and remaining_qty <= 0:
+                logger.warning(
+                    f"{stuck_log_prefix} Position stuck in CLOSING with ZERO "
+                    f"remaining quantity (close already completed). Attempt "
+                    f"#{failed_attempts}. Finalising."
+                )
+            else:
+                logger.warning(
+                    f"{stuck_log_prefix} Position still in CLOSING status with "
+                    f"remaining qty > 0. Attempt #{failed_attempts}."
+                )
 
             reason_for_retry_closure = (
                 exit_reason or f"RETRY_CLOSE_STUCK_CLOSING_{entry_cid}"
@@ -8160,13 +8452,11 @@ class TradingController:
                 name=f"RetryCloseStuckClosing_{symbol}",
             )
 
-            # NOTIFICATION ESCALATION
             if self.telegram_notifier:
                 if failed_attempts >= 5:
-                    # CRITICAL escalation — immediate intervention required
                     self.loop.create_task(
                         self.telegram_notifier.bot_error(
-                            error_description=f"🚨 CRITICAL ESCALATION: Position {symbol} ({entry_cid}) does not close after {failed_attempts} attempts! MANUAL CLOSURE REQUIRED!",
+                            error_description=f"CRITICAL ESCALATION: Position {symbol} ({entry_cid}) does not close after {failed_attempts} attempts! MANUAL CLOSURE REQUIRED!",
                             module_function="TradingController._check_and_close_positions_without_sl",
                             action_taken=f"Attempt #{failed_attempts}. Position may be unprotected!",
                             chat_id=self.user_telegram_chat_id,
@@ -8175,10 +8465,9 @@ class TradingController:
                         name=f"TelegramNotify_CriticalEscalation_{symbol}",
                     )
                 elif failed_attempts >= 3:
-                    # Elevated notification
                     self.loop.create_task(
                         self.telegram_notifier.bot_error(
-                            error_description=f"⚠️ Position {symbol} ({entry_cid}) stuck in CLOSING! This is attempt #{failed_attempts}.",
+                            error_description=f"Position {symbol} ({entry_cid}) stuck in CLOSING! This is attempt #{failed_attempts}.",
                             module_function="TradingController._check_and_close_positions_without_sl",
                             action_taken=f"Position closure re-initiated {symbol}",
                             chat_id=self.user_telegram_chat_id,
@@ -8186,19 +8475,6 @@ class TradingController:
                         ),
                         name=f"TelegramNotify_StuckClosing_{symbol}",
                     )
-                else:
-                    # Normal notification only on the first attempt
-                    if failed_attempts == 1:
-                        self.loop.create_task(
-                            self.telegram_notifier.bot_error(
-                                error_description=f"Position {symbol} ({entry_cid}) stuck in CLOSING status! Retrying closure.",
-                                module_function="TradingController._check_and_close_positions_without_sl",
-                                action_taken=f"Position closure re-initiated {symbol}",
-                                chat_id=self.user_telegram_chat_id,
-                                api_key_name=self.api_key_name,
-                            ),
-                            name=f"TelegramNotify_StuckClosing_{symbol}",
-                        )
 
     async def _check_and_update_symbols(self):
         """
@@ -9077,6 +9353,12 @@ class TradingController:
             ml_confirmed_this_signal_live = True
             ml_confirm_proba_1_live: Optional[float] = None
             ml_confirm_proba_0_live: Optional[float] = None
+            # Did the ML model actually reach a verdict for THIS signal? Tracked
+            # separately from `ml_confirmed_this_signal_live`, because that flag is
+            # True both when the model approved the signal AND when the model
+            # never ran at all -- so on its own it cannot distinguish "the ML
+            # cleared this trade" from "nothing checked this trade".
+            ml_confirm_evaluated_this_signal_live = False
 
             if use_ml_confirmation_flag:
                 logger.info(
@@ -9235,6 +9517,12 @@ class TradingController:
                                                 logger.info(
                                                     f"{log_prefix} LIVE ML REJECTED (Threshold/Opposite). P(1)={ml_confirm_proba_1_live:.3f} (Thr={config.ML_CONFIRMATION_PROBABILITY_THRESHOLD:.2f}), P(0)={ml_confirm_proba_0_live:.3f}"
                                                 )
+                                            # The model produced probabilities and
+                                            # reached a verdict, so this signal really
+                                            # WAS evaluated. Every fail-open path below
+                                            # leaves it False, which is the whole point
+                                            # of tracking it.
+                                            ml_confirm_evaluated_this_signal_live = True
                                         else:
                                             logger.warning(
                                                 f"{log_prefix} LIVE ML Confirm: predict_proba_one returned None. Allowing signal (fail-open)."
@@ -9257,12 +9545,91 @@ class TradingController:
                         logger.debug(
                             f"{log_prefix} Strategy '{signal.strategy_name}' not in ML_CONFIRMATION_STRATEGIES. Skipping LIVE ML confirmation."
                         )
+                        # FIX 2026-10-07: same failure mode as the
+                        # components-not-ready branch below. The strategy asked
+                        # for ML confirmation and did not get any, and the only
+                        # trace was a DEBUG line. Recorded now so the trade log
+                        # shows the difference between "ML approved this" and
+                        # "ML never looked at this".
+                        signal.details["ml_confirmation_skipped_reason"] = (
+                            "Strategy requested ML confirmation but is not in "
+                            "ML_CONFIRMATION_STRATEGIES, so it was never evaluated. "
+                            "The signal was allowed through unconfirmed (fail-open)."
+                        )
                 else:
-                    logger.debug(
-                        f"{log_prefix} Live ML Confirmation not enabled or components not ready. Skipping."
-                    )
+                    # FIX 2026-10-07: this used to be a `logger.debug` that said
+                    # only "not enabled or components not ready. Skipping." and
+                    # then fell through with `ml_confirmed_this_signal_live` still
+                    # True from its initialisation.
+                    #
+                    # Every OTHER fail-open in this block is a WARNING that spells
+                    # out "Allowing signal (fail-open)" -- missing klines, None from
+                    # predict_proba_one, failed feature extraction, failed
+                    # normalisation. This branch was the single fail-open that did
+                    # not announce itself, and it is not even the same kind of
+                    # event: the others are "the model ran but could not reach a
+                    # verdict on this candle". This one is "the model never loaded
+                    # at all", which is structural, not transient.
+                    _ml_missing = []
+                    if not self._ml_confirmation_enabled_live_runtime:
+                        _ml_missing.append(
+                            "runtime flag _ml_confirmation_enabled_live_runtime is False"
+                        )
+                    if not self._ml_confirmation_feature_extractor_live:
+                        _ml_missing.append("feature extractor is None")
+                    if not self._ml_confirmation_pipeline_live:
+                        _ml_missing.append("model pipeline is None")
+                    ml_confirm_evaluated_this_signal_live = False
+                    signal.details["ml_confirmation_evaluated"] = False
+
+                    # Default stays fail-open (ML_CONFIRMATION_FAIL_OPEN=True)
+                    if not config.ML_CONFIRMATION_FAIL_OPEN:
+                        ml_confirmed_this_signal_live = False
+                        signal.details["ml_confirmation_skipped_reason"] = (
+                            "ML confirmation was REQUIRED by "
+                            "ML_CONFIRMATION_FAIL_OPEN=False but the model "
+                            "could not run: " + "; ".join(_ml_missing) + ". The "
+                            "signal was REJECTED because it cannot be confirmed."
+                        )
+                        logger.error(
+                            f"{log_prefix} ML confirmation is REQUIRED "
+                            f"(ML_CONFIRMATION_FAIL_OPEN=False) but the model is "
+                            f"unavailable: {'; '.join(_ml_missing)}. This signal "
+                            f"is being REJECTED because it cannot be confirmed. "
+                            f"Either deploy a model at "
+                            f"{config.ML_CONFIRMATION_MODEL_PATH} or set "
+                            f"ML_CONFIRMATION_FAIL_OPEN=True to accept signals "
+                            f"unconfirmed."
+                        )
+                    else:
+                        signal.details["ml_confirmation_skipped_reason"] = (
+                            "ML confirmation was requested by this strategy but "
+                            "could not run: " + "; ".join(_ml_missing) + ". The "
+                            "signal was allowed through unconfirmed "
+                            "(fail-open)."
+                        )
+                        logger.warning(
+                            f"{log_prefix} ML confirmation was REQUESTED for "
+                            f"this strategy but the model is not available, so "
+                            f"the signal will be allowed through WITHOUT any ML "
+                            f"confirmation (fail-open). Missing: "
+                            f"{'; '.join(_ml_missing)}. If you believe ML "
+                            f"confirmation should be active, check "
+                            f"ML_CONFIRMATION_ENABLED and the model file path."
+                        )
 
                 signal.details["ml_confirmed_live"] = ml_confirmed_this_signal_live
+                # FIX 2026-10-07: recorded alongside `ml_confirmed_live` because
+                # that flag alone is ambiguous. It is True both when the model
+                # approved the signal and when the model never ran, so a trade log
+                # reading `ml_confirmed_live: true` did not prove any model had
+                # seen the trade. Now the two can be read together:
+                #   evaluated=True,  confirmed=True  -> model approved it
+                #   evaluated=True,  confirmed=False -> model rejected it
+                #   evaluated=False                  -> nothing checked it
+                signal.details["ml_confirmation_evaluated"] = (
+                    ml_confirm_evaluated_this_signal_live
+                )
                 signal.details["ml_confirm_proba_1_live"] = ml_confirm_proba_1_live
                 signal.details["ml_confirm_proba_0_live"] = ml_confirm_proba_0_live
                 signal.details["ml_threshold_good_live"] = (
@@ -11213,11 +11580,22 @@ class TradingController:
                             pnl_this_event = -pnl_this_event
                         total_pnl_calculated += pnl_this_event
 
-                position.pnl = float(total_pnl_calculated)
-                logger.warning(
-                    f"{log_prefix} Exchange realized PnL ('rp') not available for this close event — "
-                    f"using CALCULATED PnL fallback: {position.pnl:.4f}"
-                )
+                # FIX 2026-10-07: a zero exit_price means "finalize this record,
+                # the money already moved" -- used by the stuck-CLOSING zombie
+                # recovery, which calls _handle_final_exit with exit_price=0.0
+                # precisely so no further PnL is booked. Preserve existing value.
+                if exit_price is None or exit_price <= 0:
+                    logger.warning(
+                        f"{log_prefix} Finalization-only close (exit_price="
+                        f"{exit_price}); preserving already-booked PnL "
+                        f"{position.pnl:.4f} instead of recomputing."
+                    )
+                else:
+                    position.pnl = float(total_pnl_calculated)
+                    logger.warning(
+                        f"{log_prefix} Exchange realized PnL ('rp') not available for this close event "
+                        f"using CALCULATED PnL fallback: {position.pnl:.4f}"
+                    )
 
             position.total_commission = float(total_commission_calculated)
             position.remaining_quantity = 0.0
@@ -13502,18 +13880,58 @@ class TradingController:
                 )
                 return False
 
-            # Check if SL has already been placed or is in the process of being placed (idempotency)
+            # Check if SL has already been placed or is in the process of being placed (idempotency).
+            _sl_already_resting = False
+            _paper_exec = self.executors.get("paper")
+            if (
+                _paper_exec is not None
+                and self.api_key_id is None
+                and self.executors.get("live") is None
+            ):
+                try:
+                    _existing_orders = await _paper_exec.get_open_orders()
+                    _sl_already_resting = any(
+                        str(o.get("symbol")) == symbol_to_use
+                        and str(o.get("type", "")).upper() == "STOP_MARKET"
+                        for o in _existing_orders
+                    )
+                except Exception as _order_book_err:
+                    logger.warning(
+                        f"{log_prefix} Could not read the paper order book "
+                        f"({_order_book_err}); falling back to persisted state."
+                    )
+
             if current_pos_in_db.sl_placement_initiated:
-                logger.debug(
-                    f"{log_prefix} SL placement already initiated. Skipping duplicate attempt."
+                if _sl_already_resting:
+                    logger.debug(
+                        f"{log_prefix} SL placement already initiated. Skipping duplicate attempt."
+                    )
+                    return True
+                logger.warning(
+                    f"{log_prefix} Persisted state claims an SL order "
+                    f"({current_pos_in_db.current_sl_order_id}) but no STOP_MARKET "
+                    f"is resting for {symbol_to_use}. The persisted id refers to an "
+                    f"order that no longer exists; clearing it and re-placing."
                 )
-                return True if current_pos_in_db.current_sl_order_id else False
+                current_pos_in_db.sl_placement_initiated = False
+                current_pos_in_db.current_sl_order_id = None
+                current_pos_in_db.current_sl_client_order_id = None
+                current_pos_in_db.is_sl_algo_order = False
 
             if current_pos_in_db.current_sl_order_id:
-                logger.info(
-                    f"{log_prefix} SL order ID {current_pos_in_db.current_sl_order_id} already exists. Skipping placement."
+                if _sl_already_resting:
+                    logger.info(
+                        f"{log_prefix} SL order ID {current_pos_in_db.current_sl_order_id} already exists. Skipping placement."
+                    )
+                    return True
+                logger.warning(
+                    f"{log_prefix} Persisted current_sl_order_id "
+                    f"({current_pos_in_db.current_sl_order_id}) has no matching "
+                    f"STOP_MARKET order in the paper book. Clearing it."
                 )
-                return True
+                current_pos_in_db.current_sl_order_id = None
+                current_pos_in_db.current_sl_client_order_id = None
+                current_pos_in_db.is_sl_algo_order = False
 
             if current_pos_in_db.remaining_quantity <= 0:
                 logger.warning(
@@ -16875,9 +17293,20 @@ class TradingController:
     async def _update_market_info_cache(self, force: bool = False):
         log_prefix = "[MarketInfoCache]"
         try:
-            exchange_info = await self.executors["live"].fetch_exchange_info(
-                force_update=force
-            )
+            exchange_info = None
+            live_executor = self.executors.get("live")
+            if live_executor is None:
+                # Paper-only mode (no API key wired) — nothing to cache.
+                # market_executors below may still populate if non-default
+                # market types are configured.
+                logger.debug(
+                    f"{log_prefix} Skipped: no live executor (paper-only mode)."
+                )
+                # fall through to the market_executors loop below
+            else:
+                exchange_info = await live_executor.fetch_exchange_info(
+                    force_update=force
+                )
             if exchange_info and isinstance(exchange_info.get("symbols"), list):
                 new_cache = {}
                 processed_count = 0
@@ -16935,9 +17364,15 @@ class TradingController:
                 current_cache = dict(self._market_info_cache)
             for extra_market_type, extra_executor in self.market_executors.items():
                 normalized_extra_market = self._normalize_market_type(extra_market_type)
-                if normalized_extra_market == self._normalize_market_type(
-                    getattr(self.executors.get("live"), "market_type", None)
+                live_market_type = getattr(
+                    self.executors.get("live"), "market_type", None
+                )
+                if (
+                    live_market_type is not None
+                    and normalized_extra_market
+                    == self._normalize_market_type(live_market_type)
                 ):
+                    # Same as the live executor we already loaded above; don't re-fetch.
                     continue
                 if extra_executor is None:
                     continue
@@ -17028,7 +17463,14 @@ class TradingController:
         async with symbol_lock:
             position = self._active_position_get(symbol, market_type)
             if not position:
-                logger.warning(
+                # DEBUG, not WARNING: returning None is a normal resolution
+                # result, not an anomaly. Every caller already branches on
+                # `if not executor:` and logs its own consequence with more
+                # context than this line has. At WARNING this fired once per
+                # trade print from the TICK handler and buried the Critical
+                # Events panel -- 46 of the last 100 entries were this one
+                # message.
+                logger.debug(
                     f"[_get_executor_for_symbol] Position not found for symbol {symbol} market={market_type}. Cannot determine mode."
                 )
                 return None
@@ -17050,21 +17492,24 @@ class TradingController:
         """Fire-and-forget sibling close for coupled hedge groups.
 
         Fires for RACE_FINAL_MARKET on any final exit, and for
-        SPREAD_PROFIT_EXIT on any NON-spread final exit (individual TP/SL,
-        manual, emergency) — a lone surviving leg must never stay naked
-        directional. Spread-triggered exits send their own command already.
+        SPREAD_PROFIT_EXIT / SPREAD_CONVERGENCE_EXIT on any NON-policy final
+        exit (individual TP/SL, manual, emergency) — a lone surviving leg
+        must never stay naked directional. Policy-triggered exits send their
+        own command already.
         No-op for INDEPENDENT groups, for HEDGE-originated exits
         (loop guard), and when the sibling cannot be addressed. Safe to call
         from inside the position lock: only schedules an async publish task.
         """
         from bot_module.hedge_mirror import (
             HEDGE_EXIT_RACE_FINAL_MARKET,
+            HEDGE_EXIT_SPREAD_CONVERGENCE,
             HEDGE_EXIT_SPREAD_PROFIT,
             build_hedge_race_close_command,
         )
 
-        # Loop guard: any HEDGE_* exit (RACE, SPREAD, or a received sibling
-        # close) never re-broadcasts — the originator already sent the command.
+        # Loop guard: any HEDGE_* exit (RACE, SPREAD, CONVERGENCE, or a
+        # received sibling close) never re-broadcasts — the originator
+        # already sent the command.
         if reason and "HEDGE_" in str(reason).upper():
             return
         signal_details = getattr(position, "signal_details", None)
@@ -17073,6 +17518,7 @@ class TradingController:
         if signal_details.get("hedge_exit_policy") not in (
             HEDGE_EXIT_RACE_FINAL_MARKET,
             HEDGE_EXIT_SPREAD_PROFIT,
+            HEDGE_EXIT_SPREAD_CONVERGENCE,
         ):
             return
         group_id = signal_details.get("hedge_group_id")
@@ -17134,15 +17580,19 @@ class TradingController:
         return 0
 
     async def _check_hedge_spread_exits(self) -> None:
-        """Spread take-profit for SPREAD_PROFIT_EXIT hedge legs (periodic).
+        """Spread-based hedge exits for pair policies (periodic).
 
-        Every OPEN hedge leg publishes its live mark/PnL to Redis and reads
-        the sibling's snapshot. When pair PnL (mine + sibling, already signed
-        so no direction logic is needed) reaches the configured threshold of
-        the combined notional, this leg market-closes itself and asks the
-        sibling to do the same. Stale sibling data never triggers.
+        Dispatches by the leg's ``hedge_exit_policy``:
+        - ``SPREAD_PROFIT_EXIT``: pair unrealized PnL take-profit.
+        - ``SPREAD_CONVERGENCE_EXIT``: convergence of the cross-exchange
+          mark spread back to the entry spread (both legs close).
+        Every OPEN policy leg publishes its live mark to Redis and reads the
+        sibling's snapshot; stale sibling data never triggers.
         """
-        from bot_module.hedge_mirror import HEDGE_EXIT_SPREAD_PROFIT
+        from bot_module.hedge_mirror import (
+            HEDGE_EXIT_SPREAD_CONVERGENCE,
+            HEDGE_EXIT_SPREAD_PROFIT,
+        )
 
         if self.redis_client is None:
             return
@@ -17158,11 +17608,18 @@ class TradingController:
                 details = getattr(position, "signal_details", None)
                 if not isinstance(details, dict):
                     continue
-                if details.get("hedge_exit_policy") != HEDGE_EXIT_SPREAD_PROFIT:
+                policy = details.get("hedge_exit_policy")
+                if policy not in (
+                    HEDGE_EXIT_SPREAD_PROFIT,
+                    HEDGE_EXIT_SPREAD_CONVERGENCE,
+                ):
                     continue
                 if not details.get("hedge_group_id") or not details.get("hedge_leg"):
                     continue
-                await self._hedge_spread_tick(position, details)
+                if policy == HEDGE_EXIT_SPREAD_CONVERGENCE:
+                    await self._hedge_convergence_tick(position, details)
+                else:
+                    await self._hedge_spread_tick(position, details)
             except Exception as e_tick:
                 logger.debug(f"[HedgeSpread] Tick failed (non-fatal): {e_tick}")
 
@@ -17376,6 +17833,380 @@ class TradingController:
                 name=f"HedgeSpreadRace_{symbol}",
             )
 
+    async def _hedge_reference_price(
+        self, symbol: str, market_type: Optional[str] = None
+    ) -> Optional[float]:
+        """Exchange-scoped live price with a global-cache fallback.
+
+        hedge legs usually run on different exchanges; the shared
+        ``last_price`` pair cache is SYMBOL-scoped and gets overwritten by
+        whichever exchange's stream fired last, so cross-exchange spread
+        math (SPREAD_CONVERGENCE_EXIT) must use a per-exchange price.
+        Never raises; None when both caches are silent.
+        """
+        consumer = getattr(self, "consumer", None)
+        if consumer is None:
+            return None
+        try:
+            if hasattr(consumer, "get_latest_price_for_exchange"):
+                scoped = await consumer.get_latest_price_for_exchange(
+                    symbol, market_type
+                )
+                try:
+                    scoped_f = float(scoped)
+                except (TypeError, ValueError):
+                    scoped_f = None
+                if scoped_f and scoped_f > 0:
+                    return scoped_f
+        except Exception as e_scoped:
+            logger.debug(f"[HedgePrice:{symbol}] Scoped price failed: {e_scoped}")
+        try:
+            fallback = await consumer.get_latest_price(symbol)
+        except Exception:
+            return None
+        try:
+            fallback_f = float(fallback)
+        except (TypeError, ValueError):
+            return None
+        return fallback_f if fallback_f > 0 else None
+
+    async def _hedge_entry_spread_pct(
+        self,
+        *,
+        group_id: str,
+        symbol: str,
+        leg: str,
+        position: LivePosition,
+        details: dict,
+    ) -> Optional[float]:
+        """A-vs-B entry spread (pct) from the legs' recorded fill marks.
+
+        Reads both entry proofs, requires simultaneously-valid freshest
+        fills (within the entry window of this position), prefers ``mark``
+        references and falls back to fill ``price`` — never mixes the two.
+        The result is cached in ``details`` so later ticks skip the Redis
+        round-trip even when the proofs expire. None when data is missing
+        or stale: the native SL/TP then remains the only protection.
+        """
+        from bot_module import hedge_mirror as hm
+
+        cached = details.get("hedge_entry_spread_pct")
+        try:
+            cached_f = float(cached)
+        except (TypeError, ValueError):
+            cached_f = None
+        if cached_f is not None:
+            return cached_f
+        sib_leg = hm.sibling_leg(leg)
+        if not sib_leg:
+            return None
+        try:
+            my_entry_ts = float(position.entry_time or 0.0)
+        except (TypeError, ValueError):
+            my_entry_ts = 0.0
+        try:
+            raw_a = await self.redis_client.get(
+                hm.hedge_entry_key(str(group_id), symbol, "A")
+            )
+            raw_b = await self.redis_client.get(
+                hm.hedge_entry_key(str(group_id), symbol, "B")
+            )
+        except Exception:
+            return None
+        proofs = {}
+        for name, raw in (("A", raw_a), ("B", raw_b)):
+            if not raw:
+                return None
+            try:
+                proof = json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw)
+            except Exception:
+                return None
+            if not isinstance(proof, dict):
+                return None
+            proofs[name] = proof
+
+        def _fresh(proof: dict) -> bool:
+            try:
+                ts = float(proof.get("ts") or 0.0)
+            except (TypeError, ValueError):
+                return False
+            # The pair enters roughly together; a proof recorded an entire
+            # entry-cycle before this position is a leftover from a previous
+            # cycle sharing the (TTL 7d) group key.
+            return ts >= my_entry_ts - 120.0
+
+        if not all(_fresh(proof) for proof in proofs.values()):
+            return None
+
+        def _positive(proof: dict, field: str) -> Optional[float]:
+            try:
+                value = float(proof.get(field))
+            except (TypeError, ValueError):
+                return None
+            return value if value > 0 else None
+
+        mark_a = _positive(proofs["A"], "mark")
+        mark_b = _positive(proofs["B"], "mark")
+        if mark_a and mark_b:
+            ref_a, ref_b = mark_a, mark_b
+        else:
+            price_a = _positive(proofs["A"], "price")
+            price_b = _positive(proofs["B"], "price")
+            if not (price_a and price_b):
+                return None
+            ref_a, ref_b = price_a, price_b
+        spread = hm.spread_pct(ref_a, ref_b)
+        if spread is not None:
+            try:
+                details["hedge_entry_spread_pct"] = float(spread)
+            except Exception:
+                pass
+        return spread
+
+    async def _hedge_convergence_tick(
+        self, position: LivePosition, details: dict
+    ) -> None:
+        """One convergence evaluation for a single OPEN hedge position.
+
+        SPREAD_CONVERGENCE_EXIT: the pair closes BOTH legs at market when
+        the current A-vs-B mark spread has narrowed by the configured
+        percent from the entry spread, i.e. down to (100 - ratio)% (and/or
+        reaches an absolute target). Both marks are exchange-scoped;
+        direction-opposite live legs are required.
+        Missing/stale/cooldown data never triggers — native SL/TP stays.
+        """
+        from bot_module import hedge_mirror as hm
+
+        group_id = str(details.get("hedge_group_id"))
+        leg = details.get("hedge_leg")
+        sib_leg = hm.sibling_leg(leg)
+        if not sib_leg:
+            return
+        symbol = position.symbol
+
+        # 1. Hedge config (ratio/target/cooldown) from the running instance.
+        found = await self._find_running_instance_by_symbol(symbol, position.config_id)
+        hedge_cfg = (
+            (found[2].get("config_data", {}) or {}).get("hedge") if found else None
+        )
+        if not isinstance(hedge_cfg, dict):
+            return
+        if str(hedge_cfg.get("exit_policy") or "").upper() != (
+            hm.HEDGE_EXIT_SPREAD_CONVERGENCE
+        ):
+            return
+        try:
+            ratio_pct = float(
+                hedge_cfg.get(
+                    "spread_convergence_ratio_pct",
+                    hm.HEDGE_DEFAULT_CONVERGENCE_RATIO_PCT,
+                )
+            )
+            target_pct = float(
+                hedge_cfg.get(
+                    "spread_convergence_target_pct",
+                    hm.HEDGE_DEFAULT_CONVERGENCE_TARGET_PCT,
+                )
+            )
+            cooldown_sec = float(
+                hedge_cfg.get(
+                    "spread_exit_cooldown_sec", hm.HEDGE_DEFAULT_SPREAD_COOLDOWN_SEC
+                )
+            )
+        except (TypeError, ValueError):
+            return
+        if ratio_pct < 0 or target_pct < 0 or cooldown_sec < 0:
+            return
+        if ratio_pct <= 0 and target_pct <= 0:
+            return
+
+        now = time.time()
+
+        # 2. Early cooldown gate: a fresh trigger (own or sibling's) blocks.
+        cool_key = hm.hedge_cooldown_key(group_id, symbol)
+        try:
+            cool_raw = await self.redis_client.get(cool_key)
+            if cool_raw is not None:
+                try:
+                    elapsed = now - float(cool_raw)
+                except (TypeError, ValueError):
+                    elapsed = 0.0
+                if 0.0 <= elapsed < cooldown_sec:
+                    return
+        except Exception:
+            return
+
+        # 3. Own exchange-scoped mark + publish the pair snapshot.
+        try:
+            position_market_type = self._market_type_for_position(position)
+        except Exception:
+            position_market_type = None
+        mark = await self._hedge_reference_price(symbol, position_market_type)
+        try:
+            mark_f = float(mark)
+        except (TypeError, ValueError):
+            return
+        if mark_f <= 0:
+            return
+        try:
+            qty_f = float(position.remaining_quantity)
+        except (TypeError, ValueError):
+            return
+        my_side = self._hedge_position_side(position.direction)
+        if my_side == 0 or qty_f <= 0:
+            return
+        try:
+            await self.redis_client.set(
+                hm.hedge_mark_key(group_id, symbol, leg),
+                json.dumps(
+                    {
+                        "mark": mark_f,
+                        "qty": qty_f,
+                        "direction": str(
+                            getattr(position.direction, "name", position.direction)
+                        ).upper(),
+                        "ts": now,
+                        "api_key_id": getattr(position, "api_key_id", None),
+                    },
+                    default=str,
+                ),
+                ex=hm.HEDGE_MARK_TTL_SEC,
+            )
+        except Exception as e_pub:
+            logger.debug(f"[HedgeConv:{symbol}] Mark publish failed: {e_pub}")
+            return
+
+        # 4. Sibling snapshot (fresh, opposite-direction, mark-bearing).
+        try:
+            raw = await self.redis_client.get(
+                hm.hedge_mark_key(group_id, symbol, sib_leg)
+            )
+        except Exception:
+            return
+        if not raw:
+            return
+        try:
+            sib = json.loads(raw) if isinstance(raw, (str, bytes)) else dict(raw)
+        except Exception:
+            return
+        if not isinstance(sib, dict):
+            return
+        try:
+            sib_ts = float(sib.get("ts") or 0.0)
+        except (TypeError, ValueError):
+            return
+        if now - sib_ts > hm.HEDGE_SIBLING_STALE_SEC:
+            return
+        sib_side = self._hedge_position_side(sib.get("direction"))
+        if sib_side == 0 or sib_side == my_side:
+            logger.debug(
+                f"[HedgeConv:{symbol}] Sibling leg has unexpected direction "
+                f"(mine={my_side}, sibling={sib_side}). Skipping."
+            )
+            return
+        try:
+            sib_mark = float(sib.get("mark"))
+        except (TypeError, ValueError):
+            return
+        if sib_mark <= 0:
+            return
+        if leg == "A":
+            current_spread = hm.spread_pct(mark_f, sib_mark)
+        else:
+            current_spread = hm.spread_pct(sib_mark, mark_f)
+        if current_spread is None:
+            return
+
+        # 5. Entry spread from the recorded fill marks (cached in details).
+        entry_spread = await self._hedge_entry_spread_pct(
+            group_id=group_id,
+            symbol=symbol,
+            leg=str(leg),
+            position=position,
+            details=details,
+        )
+        if entry_spread is None:
+            logger.debug(
+                f"[HedgeConv:{symbol}] No valid entry spread for group "
+                f"{group_id}. Convergence disabled until data is available."
+            )
+            return
+
+        # 6. Trigger: narrowing to ratio% of the entry spread (and/or the
+        # absolute target). Either condition alone is sufficient.
+        if not hm.spread_convergence_fires(
+            entry_spread_pct=entry_spread,
+            current_spread_pct=current_spread,
+            narrowing_pct=ratio_pct,
+            target_abs_pct=target_pct,
+        ):
+            return
+
+        logger.info(
+            f"[HedgeConv:{symbol}] CONVERGENCE EXIT triggered (group={group_id}, "
+            f"entry_spread={entry_spread:.3f}%, current={current_spread:.3f}%, "
+            f"ratio={ratio_pct}%, target={target_pct}%). Closing both legs."
+        )
+        try:
+            details["hedge_convergence_entry_spread_pct"] = float(entry_spread)
+        except Exception:
+            pass
+
+        # 7. Claim the cooldown (elect one closer): overwrite a stale gate
+        # freely; SET NX when absent so the sibling's claim stops this leg.
+        try:
+            cool_now = await self.redis_client.get(cool_key)
+            if cool_now is not None:
+                try:
+                    old_elapsed = now - float(cool_now)
+                except (TypeError, ValueError):
+                    old_elapsed = -1.0
+                if 0.0 <= old_elapsed < cooldown_sec:
+                    # Claimed by the sibling between our gates.
+                    return
+                await self.redis_client.set(
+                    cool_key, str(now), ex=hm.HEDGE_COOLDOWN_TTL_SEC
+                )
+            else:
+                acquired = await self.redis_client.set(
+                    cool_key, str(now), ex=hm.HEDGE_COOLDOWN_TTL_SEC, nx=True
+                )
+                if not acquired:
+                    return
+        except Exception:
+            return
+
+        self.loop.create_task(
+            self.close_position(
+                symbol,
+                f"{hm.HEDGE_CONVERGENCE_REASON_PREFIX}:{group_id[:8]}",
+                market_type=getattr(position, "market_type", None),
+            ),
+            name=f"HedgeConvClose_{symbol}",
+        )
+        sibling_key_id = details.get("hedge_sibling_api_key_id")
+        try:
+            sibling_id = (
+                int(sibling_key_id)
+                if sibling_key_id is not None
+                else (await self._hedge_sibling_key_from_config(position))
+            )
+        except (TypeError, ValueError):
+            sibling_id = None
+        if sibling_id is not None:
+            cmd = hm.build_hedge_race_close_command(
+                user_id=getattr(position, "user_id", None) or self.user_id,
+                api_key_id=sibling_id,
+                group_id=group_id,
+                symbol=symbol,
+                market_type=getattr(position, "market_type", None),
+                reason=f"{hm.HEDGE_CONVERGENCE_REASON_PREFIX}:{group_id[:8]}",
+            )
+            self.loop.create_task(
+                self._publish_hedge_command(cmd),
+                name=f"HedgeConvRace_{symbol}",
+            )
+
     async def _hedge_sibling_key_from_config(
         self, position: LivePosition
     ) -> Optional[int]:
@@ -17456,8 +18287,15 @@ class TradingController:
     async def _publish_hedge_entry_event(
         self, position: LivePosition, symbol: str
     ) -> None:
-        """Broadcasts this leg's executed entry for SYNC_STEP verification."""
+        """Broadcasts this leg's executed entry.
+
+        SYNC_STEP legs publish for fill verification; convergence legs
+        publish additionally with the entry reference mark + direction so
+        the exit tick can rebuild the A-vs-B entry spread from the real
+        fills. Other policies publish nothing.
+        """
         from bot_module import hedge_mirror as hm
+        from bot_module.hedge_mirror import HEDGE_EXIT_SPREAD_CONVERGENCE
 
         if self.redis_client is None:
             return
@@ -17469,7 +18307,11 @@ class TradingController:
         if not group_id or leg not in ("A", "B"):
             return
         hedge_cfg = await self._hedge_sync_config_for_position(position)
-        if hedge_cfg is None:
+        is_convergence = (
+            str(details.get("hedge_exit_policy") or "").upper()
+            == HEDGE_EXIT_SPREAD_CONVERGENCE
+        )
+        if hedge_cfg is None and not is_convergence:
             return
         try:
             qty = float(position.initial_quantity)
@@ -17477,18 +18319,31 @@ class TradingController:
             return
         if qty <= 0:
             return
+        entry_payload = {
+            "qty": qty,
+            "price": getattr(position, "entry_price", None),
+            "ts": time.time(),
+            "leg": leg,
+            "api_key_id": getattr(position, "api_key_id", None),
+        }
+        if is_convergence:
+            try:
+                position_market_type = self._market_type_for_position(position)
+            except Exception:
+                position_market_type = None
+            entry_mark = await self._hedge_reference_price(symbol, position_market_type)
+            try:
+                entry_mark_f = float(entry_mark)
+            except (TypeError, ValueError):
+                entry_mark_f = None
+            if entry_mark_f and entry_mark_f > 0:
+                entry_payload["mark"] = entry_mark_f
+                entry_payload["direction"] = str(
+                    getattr(position.direction, "name", position.direction)
+                ).upper()
         await self.redis_client.set(
             hm.hedge_entry_key(str(group_id), symbol, str(leg)),
-            json.dumps(
-                {
-                    "qty": qty,
-                    "price": getattr(position, "entry_price", None),
-                    "ts": time.time(),
-                    "leg": leg,
-                    "api_key_id": getattr(position, "api_key_id", None),
-                },
-                default=str,
-            ),
+            json.dumps(entry_payload, default=str),
             ex=hm.HEDGE_ENTRY_TTL_SEC,
         )
         logger.debug(
@@ -17883,10 +18738,32 @@ class TradingController:
                     )
                     return
 
-                # If the position is already in CLOSING status, but remaining_quantity = 0, we also exit
-                if position.status == "CLOSING" and position.remaining_quantity <= 0:
-                    logger.info(
-                        f"{log_prefix} Position is already in CLOSING status with zero balance. Waiting for finalization."
+                # If the position is already in CLOSING status with zero remaining quantity, finalize it
+                if (
+                    position.status == "CLOSING"
+                    and position.remaining_quantity is not None
+                    and position.remaining_quantity <= 0
+                ):
+                    logger.warning(
+                        f"{log_prefix} Position for {symbol} is in CLOSING status "
+                        f"with remaining_quantity={position.remaining_quantity}. "
+                        f"The close order already completed but finalisation "
+                        f"was lost. Finalising now (no PnL booked again)."
+                    )
+                    self.loop.create_task(
+                        self._handle_final_exit(
+                            symbol,
+                            reason or "FINALIZE_ORPHANED_CLOSING",
+                            exit_price=0.0,
+                            commission=0.0,
+                            commission_asset=None,
+                            order_id=None,
+                            client_order_id=None,
+                            realized_pnl_from_exchange=0.0,
+                            exchange_pnl_available=False,
+                            market_type=normalized_market_type,
+                        ),
+                        name=f"FinalizeOrphanedClosing_{symbol}",
                     )
                     return
 

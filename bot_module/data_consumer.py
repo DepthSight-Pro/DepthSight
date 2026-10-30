@@ -2347,6 +2347,86 @@ class DataConsumer:
             return pair_data["last_price"]
         return None
 
+    async def get_latest_price_for_exchange(
+        self, symbol: str, market_type: Optional[str] = None
+    ) -> Optional[float]:
+        """Last known price for a symbol scoped to one exchange's streams.
+
+        ``_global_active_pairs["last_price"]`` is keyed by symbol only and is
+        shared by every exchange running in the process, so it cannot tell two
+        hedge legs (same symbol, different venues) apart. This helper reads
+        the exchange-scoped aggTrade deque, then the freshest exchange-scoped
+        kline cache, falls back to the global last price and finally to a REST
+        ticker snapshot — None only when nothing valid is available.
+        """
+        uc_symbol = symbol.upper()
+        executor = self._executor_for_market(market_type)
+        exchange_id = (
+            getattr(executor, "exchange_id", "binance") if executor else "binance"
+        )
+        if getattr(executor, "sandbox", False):
+            if not exchange_id.endswith("_testnet"):
+                exchange_id = f"{exchange_id}_testnet"
+        market = market_type or self._effective_market_type()
+
+        trade_deque = _global_agg_trade_deques.get(
+            _trade_cache_key(uc_symbol, exchange_id, market)
+        )
+        if not trade_deque:
+            trade_deque = _global_agg_trade_deques.get(uc_symbol)
+        if trade_deque:
+            try:
+                price = float(trade_deque[-1].get("p"))
+                if price > 0:
+                    return price
+            except (IndexError, AttributeError, TypeError, ValueError):
+                pass
+
+        kline_prefix = (
+            f"{exchange_id}:{_normalize_market_type_for_cache(market)}:{uc_symbol}:"
+        )
+        best_ts = -1.0
+        best_price: Optional[float] = None
+        async with _global_cache_lock:
+            for cache_key, updated_at in _global_kline_last_update.items():
+                if not cache_key.startswith(kline_prefix) or updated_at < best_ts:
+                    continue
+                candle_deque = _global_kline_cache.get(cache_key)
+                if not candle_deque:
+                    continue
+                try:
+                    price = abs(float(candle_deque[-1][4]))
+                except (IndexError, TypeError, ValueError):
+                    continue
+                if price <= 0:
+                    continue
+                best_ts = updated_at
+                best_price = price
+        if best_price is not None:
+            return best_price
+
+        global_price = await self.get_latest_price(symbol)
+        if global_price and global_price > 0:
+            return float(global_price)
+
+        if executor is not None and hasattr(executor, "get_ticker_price"):
+            try:
+                ticker = await executor.get_ticker_price(uc_symbol)
+            except Exception as exc:
+                logger.debug(
+                    "[get_latest_price_for_exchange:%s:%s] Ticker fetch failed: %s",
+                    exchange_id,
+                    uc_symbol,
+                    exc,
+                )
+                return None
+            try:
+                price = float((ticker or {}).get("price", ""))
+            except (TypeError, ValueError):
+                return None
+            return price if price > 0 else None
+        return None
+
     async def _download_initial_oi_history_for_key(
         self, cache_key: str, symbol_uc: str, market_type_for_loader: str
     ):

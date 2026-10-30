@@ -177,10 +177,15 @@ export const ConfigAndLaunchPanel = memo(
 		const [hedgeEnabled, setHedgeEnabled] = useState(false);
 		const [hedgeLegBId, setHedgeLegBId] = useState<number | null>(null);
 		const [hedgeExitPolicy, setHedgeExitPolicy] = useState<
-			"INDEPENDENT" | "RACE_FINAL_MARKET" | "SPREAD_PROFIT_EXIT"
+			| "INDEPENDENT"
+			| "RACE_FINAL_MARKET"
+			| "SPREAD_PROFIT_EXIT"
+			| "SPREAD_CONVERGENCE_EXIT"
 		>("RACE_FINAL_MARKET");
 		const [hedgeSpreadThreshold, setHedgeSpreadThreshold] =
 			useState<string>("0.5");
+		const [hedgeConvRatio, setHedgeConvRatio] = useState<string>("80");
+		const [hedgeConvTarget, setHedgeConvTarget] = useState<string>("0");
 		const [hedgeSizeMode, setHedgeSizeMode] = useState<
 			"FIXED_NOTIONAL" | "INDEPENDENT" | "SYNC_STEP"
 		>("FIXED_NOTIONAL");
@@ -247,6 +252,20 @@ export const ConfigAndLaunchPanel = memo(
 			(Number.isFinite(parsedSpreadThreshold) &&
 				parsedSpreadThreshold > 0 &&
 				parsedSpreadThreshold <= 10);
+		const parsedConvRatio = Number.parseFloat(hedgeConvRatio);
+		const parsedConvTarget = Number.parseFloat(hedgeConvTarget);
+		const hedgeConvergenceValid =
+			hedgeExitPolicy !== "SPREAD_CONVERGENCE_EXIT" ||
+			(Number.isFinite(parsedConvRatio) &&
+				parsedConvRatio >= 0 &&
+				parsedConvRatio <= 100 &&
+				Number.isFinite(parsedConvTarget) &&
+				parsedConvTarget >= 0 &&
+				parsedConvTarget <= 10 &&
+				(parsedConvRatio > 0 || parsedConvTarget > 0));
+		const hedgeNeedsSizedMode =
+			hedgeExitPolicy === "SPREAD_PROFIT_EXIT" ||
+			hedgeExitPolicy === "SPREAD_CONVERGENCE_EXIT";
 		const hedgeReady =
 			isPaperDeploy ||
 			!hedgeEnabled ||
@@ -255,9 +274,9 @@ export const ConfigAndLaunchPanel = memo(
 				!hedgeSpotBlocked &&
 				hedgeNotionalValid &&
 				hedgeSpreadValid &&
+				hedgeConvergenceValid &&
 				hedgeSyncTimeoutValid &&
-				(hedgeExitPolicy !== "SPREAD_PROFIT_EXIT" ||
-					hedgeSizedMode));
+				(!hedgeNeedsSizedMode || hedgeSizedMode));
 
 		const handleHedgeToggle = (checked: boolean) => {
 			setHedgeEnabled(checked);
@@ -570,6 +589,16 @@ export const ConfigAndLaunchPanel = memo(
 											hedgeExitPolicy === "SPREAD_PROFIT_EXIT" &&
 											hedgeSpreadValid
 												? parsedSpreadThreshold
+												: undefined,
+										spread_convergence_ratio_pct:
+											hedgeExitPolicy === "SPREAD_CONVERGENCE_EXIT" &&
+											hedgeConvergenceValid
+												? parsedConvRatio
+												: undefined,
+										spread_convergence_target_pct:
+											hedgeExitPolicy === "SPREAD_CONVERGENCE_EXIT" &&
+											hedgeConvergenceValid
+												? parsedConvTarget
 												: undefined,
 									}
 								: undefined,
@@ -1451,13 +1480,14 @@ export const ConfigAndLaunchPanel = memo(
 													{/* Exit policy — segmented radio cards */}
 													<div className="space-y-1.5">
 														<Label className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground dark:text-white/60">
-															{t("configPanel.hedgeExitPolicyLabel", "When one leg exits")}
+															{t("configPanel.hedgeExitPolicyLabel", "Exit condition")}
 														</Label>
 														<div className="grid grid-cols-2 gap-1.5">
 															{([
 																{ value: "RACE_FINAL_MARKET" as const, label: t("configPanel.hedgeExitRace", "Close the other leg at market"), desc: t("configPanel.hedgeExitRaceDesc"), wide: false },
 																{ value: "INDEPENDENT" as const, label: t("configPanel.hedgeExitIndependent", "Leave the other leg running"), desc: t("configPanel.hedgeExitIndependentDesc"), wide: false },
 																{ value: "SPREAD_PROFIT_EXIT" as const, label: t("configPanel.hedgeExitSpread", "Take profit on spread"), desc: t("configPanel.hedgeExitSpreadDesc"), wide: true },
+																{ value: "SPREAD_CONVERGENCE_EXIT" as const, label: t("configPanel.hedgeExitConvergence", "Close both when spread converges"), desc: t("configPanel.hedgeExitConvergenceDesc"), wide: true },
 															] as const).map((opt) => (
 																<button
 																	key={opt.value}
@@ -1465,7 +1495,8 @@ export const ConfigAndLaunchPanel = memo(
 																	onClick={() => {
 																		setHedgeExitPolicy(opt.value);
 																		if (
-																			opt.value === "SPREAD_PROFIT_EXIT" &&
+																			(opt.value === "SPREAD_PROFIT_EXIT" ||
+																				opt.value === "SPREAD_CONVERGENCE_EXIT") &&
 																			hedgeSizeMode === "INDEPENDENT"
 																		) {
 																			setHedgeSizeMode("FIXED_NOTIONAL");
@@ -1501,6 +1532,41 @@ export const ConfigAndLaunchPanel = memo(
 																	{hedgeSpreadValid
 																		? t("configPanel.hedgeExitSpreadHint")
 																		: t("configPanel.hedgeSpreadInvalid")}
+																</p>
+															</>
+														)}
+														{hedgeExitPolicy === "SPREAD_CONVERGENCE_EXIT" && (
+															<>
+																<div className="flex items-center gap-2">
+																	<Input
+																		type="number"
+																		min="0"
+																		max="100"
+																		step="1"
+																		value={hedgeConvRatio}
+																		onChange={(e) => setHedgeConvRatio(e.target.value)}
+																		className="h-8 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-xs text-foreground dark:text-white"
+																	/>
+																	<span className="text-[11px] text-muted-foreground dark:text-white/50 font-mono">
+																		% {t("configPanel.hedgeConvRatioUnit", "of entry")}
+																	</span>
+																</div>
+																<div className="flex items-center gap-2">
+																	<Input
+																		type="number"
+																		min="0"
+																		max="10"
+																		step="0.1"
+																		value={hedgeConvTarget}
+																		onChange={(e) => setHedgeConvTarget(e.target.value)}
+																		className="h-8 rounded-lg border border-border dark:border-white/10 bg-card dark:bg-white/[0.03] text-xs text-foreground dark:text-white"
+																	/>
+																	<span className="text-[11px] text-muted-foreground dark:text-white/50 font-mono">% abs</span>
+																</div>
+																<p className="text-[10px] text-muted-foreground dark:text-white/40 leading-tight">
+																	{hedgeConvergenceValid
+																		? t("configPanel.hedgeExitConvergenceHint")
+																		: t("configPanel.hedgeConvergenceInvalid")}
 																</p>
 															</>
 														)}

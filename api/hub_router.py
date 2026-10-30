@@ -25,6 +25,7 @@ from sqlalchemy.future import select
 
 from .database import get_db
 from . import schemas, crud, models
+from .auth import get_current_user
 from .depthsight_api import limiter, get_limit_value, APP_VERSION
 from .plans import plans_config
 from .audit_logger import audit_logger, AuditEventType, get_client_ip as audit_client_ip
@@ -115,6 +116,36 @@ def make_news_comment_response(
     res.author_name = clean_name
     res.is_admin = is_admin
     return res
+
+
+def _ensure_ticket_owner(
+    ticket: models.SupportTicket, current_user: models.User, action: str
+) -> None:
+    """Refuse access to a support ticket that belongs to somebody else."""
+    if current_user.role == "admin" or str(ticket.user_id) == str(current_user.id):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Not authorized to {action} this ticket.",
+    )
+
+
+async def get_optional_current_user(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[models.User]:
+    """Resolve the caller when a valid bearer token is supplied."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        return None
+    try:
+        from .auth import get_current_user_from_token
+        return await get_current_user_from_token(token, db)
+    except Exception:
+        return None
 
 
 router = APIRouter(prefix="/api/v1/hub", tags=["Federation Hub"])
@@ -438,6 +469,7 @@ async def get_news_comments(news_id: int, db: AsyncSession = Depends(get_db)):
 async def post_hub_feedback(
     feedback: schemas.HubFeedbackCreate,
     request: Request,
+    current_user: Optional[models.User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -452,14 +484,16 @@ async def post_hub_feedback(
         from sqlalchemy.future import select
         from . import models
 
-        stmt_admin = select(models.User).filter(models.User.role == "admin").limit(1)
-        res_admin = await db.execute(stmt_admin)
-        assoc_user = res_admin.scalars().first()
+        assoc_user = current_user
+        if assoc_user is None:
+            stmt_admin = select(models.User).filter(models.User.role == "admin").limit(1)
+            res_admin = await db.execute(stmt_admin)
+            assoc_user = res_admin.scalars().first()
 
-        if not assoc_user:
-            stmt_any = select(models.User).order_by(models.User.id.asc()).limit(1)
-            res_any = await db.execute(stmt_any)
-            assoc_user = res_any.scalars().first()
+            if not assoc_user:
+                stmt_any = select(models.User).order_by(models.User.id.asc()).limit(1)
+                res_any = await db.execute(stmt_any)
+                assoc_user = res_any.scalars().first()
 
         if assoc_user:
             email_info = (
@@ -784,7 +818,11 @@ async def unverify_topic(
 @router.get(
     "/tickets/{ticket_id}/status", response_model=schemas.SupportTicketStatusResponse
 )
-async def get_hub_ticket_status(ticket_id: str, db: AsyncSession = Depends(get_db)):
+async def get_hub_ticket_status(
+    ticket_id: str,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Returns public details (status, subject, category) of a support ticket.
     Authenticated by knowing the unguessable ticket_id UUID.
@@ -799,6 +837,7 @@ async def get_hub_ticket_status(ticket_id: str, db: AsyncSession = Depends(get_d
         ticket = result.scalar_one_or_none()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
+        _ensure_ticket_owner(ticket, current_user, "view")
         return ticket
     except HTTPException:
         raise
@@ -814,7 +853,10 @@ async def get_hub_ticket_status(ticket_id: str, db: AsyncSession = Depends(get_d
     "/tickets/{ticket_id}/status", response_model=schemas.SupportTicketStatusResponse
 )
 async def update_hub_ticket_status(
-    ticket_id: str, status_in: Dict[str, str], db: AsyncSession = Depends(get_db)
+    ticket_id: str,
+    status_in: Dict[str, str],
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Allows a remote user to update their support ticket status (e.g. close it).
@@ -829,6 +871,7 @@ async def update_hub_ticket_status(
         ticket = result.scalar_one_or_none()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
+        _ensure_ticket_owner(ticket, current_user, "update")
 
         new_status = status_in.get("status")
         if new_status:
@@ -852,7 +895,11 @@ async def update_hub_ticket_status(
     "/tickets/{ticket_id}/messages",
     response_model=List[schemas.SupportTicketMessageResponse],
 )
-async def get_hub_ticket_messages(ticket_id: str, db: AsyncSession = Depends(get_db)):
+async def get_hub_ticket_messages(
+    ticket_id: str,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Retrieves message history for a hub support ticket.
     """
@@ -866,6 +913,7 @@ async def get_hub_ticket_messages(ticket_id: str, db: AsyncSession = Depends(get
         ticket = result.scalar_one_or_none()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
+        _ensure_ticket_owner(ticket, current_user, "read messages for")
 
         msg_result = await db.execute(
             select(models.SupportTicketMessage)
@@ -893,6 +941,7 @@ async def post_hub_ticket_message(
     request: Request,
     ticket_id: str,
     msg_in: schemas.SupportTicketMessageCreate,
+    current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -908,8 +957,9 @@ async def post_hub_ticket_message(
         ticket = result.scalar_one_or_none()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found.")
+        _ensure_ticket_owner(ticket, current_user, "reply to")
 
-        sender_name = msg_in.sender_name or "User"
+        sender_name = msg_in.sender_name or current_user.username or "User"
         db_msg = models.SupportTicketMessage(
             ticket_id=ticket_id,
             sender_name=sender_name,
@@ -3044,9 +3094,7 @@ def _resolve_report_multiplier(cfg, report) -> float:
         stamped_val = float(stamped) if stamped is not None else 1.0
     except (TypeError, ValueError):
         stamped_val = 1.0
-    if stamped_val <= 0:
-        stamped_val = 1.0
-    return max(0.1, stamped_val)
+    return stamped_val
 
 
 async def estimate_live_epoch_reward(
@@ -3077,8 +3125,11 @@ async def estimate_live_epoch_reward(
             continue
         reb = rep.estimated_rebate_usdt or 0.0
         mult = _resolve_report_multiplier(cfg, rep)
+        safe_mult = max(0.0, mult)
         node_rebates[nid] = node_rebates.get(nid, 0.0) + reb
-        node_weighted_points[nid] = node_weighted_points.get(nid, 0.0) + (reb * mult)
+        node_weighted_points[nid] = node_weighted_points.get(nid, 0.0) + (
+            reb * safe_mult
+        )
     if not node_weighted_points:
         return 0.0
 
@@ -3266,7 +3317,7 @@ def _get_exchange_multiplier(
     Returns the mining reward point multiplier for a given exchange.
     Checks exact match first (e.g. 'bitget_futures'), then base name ('bitget').
     Case-insensitive on both exchange_id and configuration keys.
-    Defaults to 1.0 (minimum allowed 0.1).
+    Defaults to 1.0. Supports negative values for partner penalty/burn mode.
     """
     if not config or not exchange_id:
         return 1.0
@@ -3275,20 +3326,20 @@ def _get_exchange_multiplier(
     ex = str(exchange_id).lower().strip()
     if ex in multipliers:
         try:
-            return max(0.1, float(multipliers[ex]))
+            return float(multipliers[ex])
         except (ValueError, TypeError):
             return 1.0
     base = ex.split("_")[0]
     if base in multipliers:
         try:
-            return max(0.1, float(multipliers[base]))
+            return float(multipliers[base])
         except (ValueError, TypeError):
             return 1.0
     # Also check if any configured key shares the base exchange name (e.g. "bitget_futures" when exchange is "bitget")
     for k, v in multipliers.items():
         if k.split("_")[0] == base:
             try:
-                return max(0.1, float(v))
+                return float(v)
             except (ValueError, TypeError):
                 return 1.0
     return 1.0

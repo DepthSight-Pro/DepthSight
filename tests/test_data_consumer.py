@@ -2,7 +2,9 @@
 import pytest
 import asyncio
 import json
-from unittest.mock import AsyncMock, patch
+import time
+from collections import deque
+from unittest.mock import AsyncMock, MagicMock, patch
 import pandas as pd
 import websockets
 import websockets.protocol  # Added for State enum
@@ -545,3 +547,104 @@ async def test_aggtrade_data_processing_from_mock_ws(
     assert event["price"] == 100.5
     assert event["quantity"] == 1.0
     assert event["timestamp_ms"] == 1699999999000
+
+
+# --- get_latest_price_for_exchange (per-exchange scoped prices) ---
+
+
+@pytest.mark.asyncio
+async def test_get_latest_price_for_exchange_reads_own_deque():
+    loop = asyncio.get_running_loop()
+    executor_a = MagicMock()
+    executor_a.sandbox = False
+    executor_a.exchange_id = "binance"
+    executor_b = MagicMock()
+    executor_b.sandbox = False
+    executor_b.exchange_id = "bybit"
+    consumer_a = DataConsumer(loop=loop, executor=executor_a, market_data_mode="direct")
+    consumer_b = DataConsumer(loop=loop, executor=executor_b, market_data_mode="direct")
+
+    market = "futures_usdtm"
+    data_consumer._global_agg_trade_deques[
+        data_consumer._trade_cache_key("BTCUSDT", "binance", market)
+    ] = deque([{"p": "101.0", "q": 0.1, "T": 1, "m": True}])
+    data_consumer._global_agg_trade_deques[
+        data_consumer._trade_cache_key("BTCUSDT", "bybit", market)
+    ] = deque([{"p": "99.5", "q": 0.2, "T": 2, "m": False}])
+
+    assert await consumer_a.get_latest_price_for_exchange("BTCUSDT", market) == 101.0
+    assert await consumer_b.get_latest_price_for_exchange("BTCUSDT", market) == 99.5
+
+
+@pytest.mark.asyncio
+async def test_get_latest_price_for_exchange_falls_back_to_global_key():
+    loop = asyncio.get_running_loop()
+    executor = MagicMock()
+    executor.sandbox = False
+    executor.exchange_id = "bybit"
+    consumer = DataConsumer(loop=loop, executor=executor, market_data_mode="direct")
+
+    data_consumer._global_agg_trade_deques["BTCUSDT"] = deque(
+        [{"p": "88.8", "q": 0.1, "T": 1, "m": True}]
+    )
+
+    assert await consumer.get_latest_price_for_exchange("BTCUSDT") == 88.8
+
+
+@pytest.mark.asyncio
+async def test_get_latest_price_for_exchange_kline_fallback():
+    loop = asyncio.get_running_loop()
+    executor = MagicMock()
+    executor.sandbox = False
+    executor.exchange_id = "binance"
+    consumer = DataConsumer(loop=loop, executor=executor, market_data_mode="direct")
+
+    market = "futures_usdtm"
+    new_key = data_consumer._kline_cache_key("BTCUSDT", "5m", "binance", market)
+    old_key = data_consumer._kline_cache_key("BTCUSDT", "15m", "binance", market)
+    data_consumer._global_kline_cache[new_key] = deque(
+        [(0, 50.0, 51.0, 49.0, 55.0, 1.0)]
+    )
+    data_consumer._global_kline_cache[old_key] = deque(
+        [(0, 50.0, 51.0, 49.0, 40.0, 1.0)]
+    )
+    data_consumer._global_kline_last_update[old_key] = time.monotonic() - 100.0
+    data_consumer._global_kline_last_update[new_key] = time.monotonic()
+
+    # The freshest updated exchange-scoped kline wins (55.0, not the old 40.0).
+    assert await consumer.get_latest_price_for_exchange("BTCUSDT", market) == 55.0
+
+
+@pytest.mark.asyncio
+async def test_get_latest_price_for_exchange_rest_ticker_fallback():
+    loop = asyncio.get_running_loop()
+    executor = MagicMock()
+    executor.sandbox = False
+    executor.exchange_id = "bybit"
+    executor.get_ticker_price = AsyncMock(return_value={"price": "77.7"})
+    consumer = DataConsumer(loop=loop, executor=executor, market_data_mode="direct")
+
+    # No aggTrades, no klines, no global pair cache: REST snapshot is used.
+    assert await consumer.get_latest_price_for_exchange("BTCUSDT") == 77.7
+    executor.get_ticker_price.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_latest_price_for_exchange_unrelated_kline_ignored():
+    loop = asyncio.get_running_loop()
+    executor = MagicMock()
+    executor.sandbox = False
+    executor.exchange_id = "binance"
+    executor.get_ticker_price = AsyncMock(return_value={"price": "10.0"})
+    consumer = DataConsumer(loop=loop, executor=executor, market_data_mode="direct")
+
+    # A kline cached by another exchange/stream must not leak into binance.
+    other_key = data_consumer._kline_cache_key(
+        "BTCUSDT", "5m", "bybit", "futures_usdtm"
+    )
+    data_consumer._global_kline_cache[other_key] = deque(
+        [(0, 50.0, 51.0, 49.0, 999.0, 1.0)]
+    )
+    data_consumer._global_kline_last_update[other_key] = time.monotonic()
+
+    assert await consumer.get_latest_price_for_exchange("BTCUSDT") == 10.0

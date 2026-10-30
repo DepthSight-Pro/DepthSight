@@ -51,7 +51,7 @@ def _get_base_url(request: Request) -> str:
 
     if host:
         return f"{proto}://{host}"
-    return "https://app.depthsight.pro"
+    return os.getenv("PUBLIC_BASE_URL", "https://app.depthsight.pro").rstrip("/")
 
 
 @public_router.get(

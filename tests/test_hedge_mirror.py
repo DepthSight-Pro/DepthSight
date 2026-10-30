@@ -23,6 +23,8 @@ from bot_module.hedge_mirror import (
     pair_pnl_pct,
     quantize_to_shared_step,
     sibling_leg,
+    spread_convergence_fires,
+    spread_pct,
     spread_trigger_fires,
     tag_hedge_details,
 )
@@ -382,6 +384,106 @@ def test_pair_pnl_pct():
     assert pair_pnl_pct(my_pnl=1.0, sibling_pnl=1.0, combined_notional_usd=0.0) is None
 
 
+def test_spread_pct_signed_and_invalid():
+    # A rich over B is positive; the mirror leg computes the same magnitude.
+    assert spread_pct(101.0, 100.0) == pytest.approx(0.995, rel=1e-3)
+    assert spread_pct(100.0, 101.0) == pytest.approx(-0.995, rel=1e-3)
+    # Zero or negative marks are unmeasurable, not a spread.
+    assert spread_pct(0.0, 100.0) is None
+    assert spread_pct(-10.0, 100.0) is None
+    assert spread_pct(None, 100.0) is None
+    assert spread_pct("bad", 100.0) is None
+
+
+def test_spread_convergence_fires_ratio_only():
+    # Entry +0.995%: narrowed to <20% of itself fires at ratio 80.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=0.995,
+            current_spread_pct=0.19,
+            narrowing_pct=80.0,
+            target_abs_pct=0.0,
+        )
+        is True
+    )
+    # Still above the 20%-of-entry floor: not yet converged.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=0.995,
+            current_spread_pct=0.25,
+            narrowing_pct=80.0,
+            target_abs_pct=0.0,
+        )
+        is False
+    )
+
+
+def test_spread_convergence_fires_absolute_target():
+    # entry 9.95% > target 2% and current 1.9% <= target: fires.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=9.95,
+            current_spread_pct=1.9,
+            narrowing_pct=0.0,
+            target_abs_pct=2.0,
+        )
+        is True
+    )
+    # Entry already inside the target cannot "converge" to it.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=0.1,
+            current_spread_pct=0.05,
+            narrowing_pct=0.0,
+            target_abs_pct=2.0,
+        )
+        is False
+    )
+
+
+def test_spread_convergence_no_fire_cases():
+    # Widened spread never fires.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=1.0,
+            current_spread_pct=1.5,
+            narrowing_pct=80.0,
+            target_abs_pct=2.0,
+        )
+        is False
+    )
+    # Both conditions disabled: exit never fires.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=1.0,
+            current_spread_pct=0.0,
+            narrowing_pct=0.0,
+            target_abs_pct=0.0,
+        )
+        is False
+    )
+    # Garbage inputs never fire.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=None,
+            current_spread_pct=0.1,
+            narrowing_pct=80.0,
+            target_abs_pct=0.0,
+        )
+        is False
+    )
+    # Zero entry spread: nothing to converge from.
+    assert (
+        spread_convergence_fires(
+            entry_spread_pct=0.0,
+            current_spread_pct=0.0,
+            narrowing_pct=80.0,
+            target_abs_pct=0.0,
+        )
+        is False
+    )
+
+
 def test_spread_policy_requires_fixed_notional():
     from pydantic import ValidationError
 
@@ -424,6 +526,77 @@ def test_spread_policy_requires_fixed_notional():
             size_mode="FIXED_NOTIONAL",
             notional_usd=100.0,
             spread_exit_threshold_pct=25.0,
+        )
+
+
+def test_convergence_exit_schema_validation():
+    from pydantic import ValidationError
+
+    from api.schemas import HedgeLaunchConfig
+
+    ok = HedgeLaunchConfig(
+        enabled=True,
+        leg_b_api_key_id=2,
+        exit_policy="SPREAD_CONVERGENCE_EXIT",
+        size_mode="FIXED_NOTIONAL",
+        notional_usd=100.0,
+        spread_convergence_ratio_pct=80.0,
+        spread_convergence_target_pct=0.0,
+    )
+    assert ok.exit_policy == "SPREAD_CONVERGENCE_EXIT"
+    assert ok.spread_convergence_ratio_pct == 80.0
+    assert ok.spread_convergence_target_pct == 0.0
+
+    # Ratio-only and target-only configurations are both valid.
+    HedgeLaunchConfig(
+        enabled=True,
+        leg_b_api_key_id=2,
+        exit_policy="SPREAD_CONVERGENCE_EXIT",
+        size_mode="SYNC_STEP",
+        notional_usd=100.0,
+        spread_convergence_ratio_pct=0.0,
+        spread_convergence_target_pct=0.5,
+    )
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_CONVERGENCE_EXIT",
+            size_mode="INDEPENDENT",
+            notional_usd=None,
+            spread_convergence_ratio_pct=80.0,
+        )
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_CONVERGENCE_EXIT",
+            size_mode="FIXED_NOTIONAL",
+            notional_usd=100.0,
+            spread_convergence_ratio_pct=0.0,
+            spread_convergence_target_pct=0.0,
+        )  # both conditions disabled
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_CONVERGENCE_EXIT",
+            size_mode="FIXED_NOTIONAL",
+            notional_usd=100.0,
+            spread_convergence_ratio_pct=101.0,
+        )
+
+    with pytest.raises(ValidationError):
+        HedgeLaunchConfig(
+            enabled=True,
+            leg_b_api_key_id=2,
+            exit_policy="SPREAD_CONVERGENCE_EXIT",
+            size_mode="FIXED_NOTIONAL",
+            notional_usd=100.0,
+            spread_convergence_target_pct=11.0,
         )
 
 

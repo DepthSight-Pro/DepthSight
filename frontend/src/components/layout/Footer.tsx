@@ -39,7 +39,7 @@ export const Footer: React.FC<FooterProps> = ({ className = "" }) => {
 				</a>
 				<span className="text-muted-foreground/30">|</span>
 				<a
-					href="https://app.depthsight.pro/pwa/"
+					href="/pwa/"
 					target="_blank"
 					rel="noopener noreferrer"
 					className="hover:text-cyan hover:underline transition-colors text-muted-foreground hover:text-foreground"

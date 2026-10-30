@@ -1100,6 +1100,8 @@ class HedgeLaunchConfig(BaseModel):
         "RACE_FINAL_MARKET",
         description="RACE_FINAL_MARKET (first final exit market-closes the sibling), "
         "SPREAD_PROFIT_EXIT (one-sided spread take-profit on pair PnL), "
+        "SPREAD_CONVERGENCE_EXIT (close BOTH legs when the cross-exchange "
+        "spread narrows back to the entry spread), "
         "INDEPENDENT (each leg to its own TP/SL), "
         "MOVE_SL_TO_BE (reserved, currently behaves as INDEPENDENT)",
     )
@@ -1128,6 +1130,17 @@ class HedgeLaunchConfig(BaseModel):
         60.0,
         description="Min seconds between spread exits of one pair",
     )
+    spread_convergence_ratio_pct: float = Field(
+        80.0,
+        description="SPREAD_CONVERGENCE_EXIT: close both legs after the "
+        "spread has narrowed by this percent from the entry spread, "
+        "e.g. 80 = close at 20% of entry (0 disables)",
+    )
+    spread_convergence_target_pct: float = Field(
+        0.0,
+        description="SPREAD_CONVERGENCE_EXIT: absolute spread target in "
+        "percent of mid-price (0 disables)",
+    )
 
     @field_validator("exit_policy")
     @classmethod
@@ -1137,6 +1150,7 @@ class HedgeLaunchConfig(BaseModel):
             "RACE_FINAL_MARKET",
             "MOVE_SL_TO_BE",
             "SPREAD_PROFIT_EXIT",
+            "SPREAD_CONVERGENCE_EXIT",
         }
         normalized = str(v or "RACE_FINAL_MARKET").strip().upper()
         if normalized not in allowed:
@@ -1198,6 +1212,41 @@ class HedgeLaunchConfig(BaseModel):
             except (TypeError, ValueError):
                 cooldown = -1.0
             if cooldown < 0:
+                raise ValueError("hedge.spread_exit_cooldown_sec must be >= 0.")
+        if self.enabled and self.exit_policy == "SPREAD_CONVERGENCE_EXIT":
+            if self.size_mode not in ("FIXED_NOTIONAL", "SYNC_STEP"):
+                raise ValueError(
+                    "hedge.exit_policy='SPREAD_CONVERGENCE_EXIT' requires "
+                    "size_mode='FIXED_NOTIONAL' or 'SYNC_STEP' (pair economics "
+                    "need equal legs)."
+                )
+            try:
+                ratio = float(self.spread_convergence_ratio_pct)
+            except (TypeError, ValueError):
+                ratio = 0.0
+            if not 0 <= ratio <= 100:
+                raise ValueError(
+                    "hedge.spread_convergence_ratio_pct must be within [0, 100]."
+                )
+            try:
+                target = float(self.spread_convergence_target_pct)
+            except (TypeError, ValueError):
+                target = 0.0
+            if not 0 <= target <= 10:
+                raise ValueError(
+                    "hedge.spread_convergence_target_pct must be within [0, 10]."
+                )
+            if ratio <= 0 and target <= 0:
+                raise ValueError(
+                    "hedge SPREAD_CONVERGENCE_EXIT needs at least one exit "
+                    "condition: spread_convergence_ratio_pct > 0 or "
+                    "spread_convergence_target_pct > 0."
+                )
+            try:
+                conv_cooldown = float(self.spread_exit_cooldown_sec)
+            except (TypeError, ValueError):
+                conv_cooldown = -1.0
+            if conv_cooldown < 0:
                 raise ValueError("hedge.spread_exit_cooldown_sec must be >= 0.")
         return self
 

@@ -268,3 +268,70 @@ def test_log_event_handles_unknown_fields(setup_trade_logger):  # Removed caplog
     expected_details = {"unknown_field": "some value", "another_unknown": 123}
     assert json.loads(row["details"]) == expected_details
     mock_warning.assert_not_called()  # Ensure there were no warnings
+
+
+def test_event_log_can_be_disabled(tmp_path, monkeypatch):
+    """LOG_TRADES_ENABLED=false: no file is created and nothing is queued."""
+    log_file = tmp_path / "disabled_events.csv"
+    diary_file = tmp_path / "disabled_diary.csv"
+    monkeypatch.setattr(config, "LOG_FILE_TRADES", str(log_file))
+    monkeypatch.setattr(config, "LOG_FILE_TRADER_DIARY", str(diary_file))
+    monkeypatch.setattr(config, "LOG_TRADES_ENABLED", False)
+
+    logger_instance = TradeLogger(max_queue_size=5)
+    assert logger_instance._event_log_enabled is False
+    assert not log_file.exists()
+    # The diary is independent and still enabled.
+    assert diary_file.exists()
+
+    logger_instance.log_event("SHOULD_NOT_BE_QUEUED", {"symbol": "BTCUSDT"})
+    assert logger_instance.log_queue.empty()
+    logger_instance.stop()
+
+
+def test_trader_diary_can_be_disabled(tmp_path, monkeypatch):
+    """LOG_TRADER_DIARY_ENABLED=false: no file is created, no entry queued."""
+    log_file = tmp_path / "events.csv"
+    diary_file = tmp_path / "disabled_diary.csv"
+    monkeypatch.setattr(config, "LOG_FILE_TRADES", str(log_file))
+    monkeypatch.setattr(config, "LOG_FILE_TRADER_DIARY", str(diary_file))
+    monkeypatch.setattr(config, "LOG_TRADER_DIARY_ENABLED", False)
+
+    logger_instance = TradeLogger(max_queue_size=5)
+    assert logger_instance._trader_diary_enabled is False
+    assert not diary_file.exists()
+    assert log_file.exists()
+
+    logger_instance.log_closed_trade_to_diary({"symbol": "BTCUSDT"})
+    assert logger_instance.log_queue.empty()
+    logger_instance.stop()
+
+
+def test_trader_diary_writes_when_enabled(tmp_path, monkeypatch):
+    """Enabled diary still writes a row through the writer thread."""
+    log_file = tmp_path / "events.csv"
+    diary_file = tmp_path / "diary.csv"
+    monkeypatch.setattr(config, "LOG_FILE_TRADES", str(log_file))
+    monkeypatch.setattr(config, "LOG_FILE_TRADER_DIARY", str(diary_file))
+
+    logger_instance = TradeLogger(max_queue_size=5)
+    logger_instance.start()
+    logger_instance.log_closed_trade_to_diary(
+        {
+            "symbol": "ETHUSDT",
+            "strategy_name": "TestStrat",
+            "direction": "LONG",
+            "entry_price": 2500.0,
+            "exit_price": 2550.0,
+            "quantity": 0.01,
+            "pnl_usd": 0.5,
+            "exit_reason": "TAKE_PROFIT",
+        }
+    )
+    logger_instance.stop()
+
+    rows = read_csv_log(diary_file)
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "ETHUSDT"
+    assert rows[0]["strategy_name"] == "TestStrat"
+    assert rows[0]["exit_reason"] == "TAKE_PROFIT"

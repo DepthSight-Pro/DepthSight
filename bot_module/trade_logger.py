@@ -22,12 +22,22 @@ except ImportError:
     class MockTradeLogConfig:
         LOG_FILE_TRADES = "logs/trades_and_events.csv"
         LOG_FILE_TRADER_DIARY = "logs/trader_diary.csv"
+        LOG_TRADES_ENABLED = True
+        LOG_TRADER_DIARY_ENABLED = True
         LOG_FORMAT = "%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s"
 
     config = MockTradeLogConfig()
 
 
 logger = logging.getLogger("bot_module.trade_logger")
+
+
+def _config_flag(name: str, default: bool = True) -> bool:
+    """Reads a boolean setting that may be a bool or an env-style string."""
+    value = getattr(config, name, default)
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    return bool(value)
 
 
 class TradeLogger:
@@ -106,21 +116,33 @@ class TradeLogger:
         self._trader_diary_file_path = getattr(
             config, "LOG_FILE_TRADER_DIARY", "logs/trader_diary.csv"
         )
-        self._ensure_file_exists(
-            self._event_log_file_path, TradeLogger.EVENT_LOG_FIELDNAMES, "EventLog"
-        )
-        self._ensure_file_exists(
-            self._trader_diary_file_path,
-            TradeLogger.TRADER_DIARY_FIELDNAMES,
-            "TraderDiary",
-        )
+        self._event_log_enabled = _config_flag("LOG_TRADES_ENABLED", True)
+        self._trader_diary_enabled = _config_flag("LOG_TRADER_DIARY_ENABLED", True)
+        if self._event_log_enabled:
+            self._ensure_file_exists(
+                self._event_log_file_path,
+                TradeLogger.EVENT_LOG_FIELDNAMES,
+                "EventLog",
+            )
+        if self._trader_diary_enabled:
+            self._ensure_file_exists(
+                self._trader_diary_file_path,
+                TradeLogger.TRADER_DIARY_FIELDNAMES,
+                "TraderDiary",
+            )
 
         self._writer_thread: Optional[threading.Thread] = None
         self._running = False
-        logger.info(
-            f"TradeLogger initialized. Event logging to: {self._event_log_file_path}"
-        )
-        logger.info(f"Trader Diary logging to: {self._trader_diary_file_path}")
+        if self._event_log_enabled:
+            logger.info(
+                f"TradeLogger initialized. Event logging to: {self._event_log_file_path}"
+            )
+        else:
+            logger.info("TradeLogger: event CSV logging is DISABLED by config.")
+        if self._trader_diary_enabled:
+            logger.info(f"Trader Diary logging to: {self._trader_diary_file_path}")
+        else:
+            logger.info("TradeLogger: Trader Diary CSV logging is DISABLED by config.")
 
     def _ensure_file_exists(
         self, file_path: str, fieldnames: List[str], log_type_name: str
@@ -217,6 +239,8 @@ class TradeLogger:
         logger.info("TradeLogger writer thread stopped.")
 
     def log_event(self, event_type: str, data: Optional[Dict[str, Any]] = None):
+        if not self._event_log_enabled:
+            return
         log_entry: Dict[str, Any] = {
             field: None for field in TradeLogger.EVENT_LOG_FIELDNAMES
         }
@@ -268,6 +292,8 @@ class TradeLogger:
             )
 
     def log_closed_trade_to_diary(self, trade_data: Dict[str, Any]):
+        if not self._trader_diary_enabled:
+            return
         log_entry: Dict[str, Any] = {
             field: None for field in TradeLogger.TRADER_DIARY_FIELDNAMES
         }

@@ -1771,6 +1771,7 @@ export interface PromoStatusResponse {
 	exchangeId?: string;
 	isActive?: boolean;
 	isAdminPreview?: boolean;
+	isPenalty?: boolean;
 	totalPool?: number;
 	distributed?: number;
 	remainingPool?: number;

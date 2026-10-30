@@ -549,6 +549,51 @@ class CcxtExecutor:
             )
             return None
 
+    def _symbol_filters(self, info: Dict[str, Any]) -> Dict[str, Any]:
+        """Binance-shaped filters + normalized sizes for one ccxt market dict.
+
+        fetch_exchange_info() and get_symbol_info() MUST agree on shape. The
+        market-info cache in the controller parses `filters`, so a bulk shape
+        without them silently yields tick_size=None for every symbol -- which is
+        exactly what happened: breakeven logic was running with no tick_size and
+        only a WARNING to say so.
+        """
+        price_step = self._precision_to_step(
+            info.get("precision", {}).get("price"), 0.01
+        )
+        amount_step = self._precision_to_step(
+            info.get("precision", {}).get("amount"), 0.001
+        )
+        amount_limits = info.get("limits", {}).get("amount", {}) or {}
+        cost_limits = info.get("limits", {}).get("cost", {}) or {}
+        min_qty = self._safe_float(amount_limits.get("min"), amount_step)
+        max_qty = self._safe_float(amount_limits.get("max"), 1000000.0)
+        amount_step, min_qty, max_qty = self._normalize_amount_units_for_market(
+            info.get("symbol", ""), info, amount_step, min_qty, max_qty
+        )
+        min_notional = self._safe_float(cost_limits.get("min"), 5.0)
+
+        return {
+            "filters": [
+                {"filterType": "PRICE_FILTER", "tickSize": str(price_step)},
+                {
+                    "filterType": "LOT_SIZE",
+                    "stepSize": str(amount_step),
+                    "minQty": str(min_qty),
+                    "maxQty": str(max_qty),
+                },
+                {"filterType": "MIN_NOTIONAL", "notional": str(min_notional)},
+                {"filterType": "NOTIONAL", "minNotional": str(min_notional)},
+            ],
+            "tick_size": price_step,
+            "lot_params": {
+                "stepSize": amount_step,
+                "minQty": min_qty,
+                "maxQty": max_qty,
+            },
+            "min_notional": min_notional,
+        }
+
     async def get_symbol_info(self, symbol: str) -> Optional[Dict[str, Any]]:
         ccxt_symbol = self._normalize_symbol(symbol)
         try:
@@ -574,38 +619,7 @@ class CcxtExecutor:
             raw_symbol = self._to_legacy_symbol(
                 m_data.get("symbol") or m_data.get("id", "")
             )
-            price_step = self._precision_to_step(
-                m_data.get("precision", {}).get("price"), 0.01
-            )
-            amount_step = self._precision_to_step(
-                m_data.get("precision", {}).get("amount"), 0.001
-            )
-            amount_limits = m_data.get("limits", {}).get("amount", {}) or {}
-            cost_limits = m_data.get("limits", {}).get("cost", {}) or {}
-            min_qty = self._safe_float(amount_limits.get("min"), amount_step)
-            max_qty = self._safe_float(amount_limits.get("max"), 1000000.0)
-            amount_step, min_qty, max_qty = self._normalize_amount_units_for_market(
-                ccxt_symbol,
-                m_data,
-                amount_step,
-                min_qty,
-                max_qty,
-            )
-            min_notional = self._safe_float(cost_limits.get("min"), 5.0)
-
-            filters = [
-                {"filterType": "PRICE_FILTER", "tickSize": str(price_step)},
-                {
-                    "filterType": "LOT_SIZE",
-                    "stepSize": str(amount_step),
-                    "minQty": str(min_qty),
-                    "maxQty": str(max_qty),
-                },
-                {"filterType": "MIN_NOTIONAL", "notional": str(min_notional)},
-                {"filterType": "NOTIONAL", "minNotional": str(min_notional)},
-            ]
-
-            return {
+            payload = {
                 "symbol": raw_symbol,
                 "pair": raw_symbol,
                 "status": "TRADING" if m_data.get("active", True) else "BREAK",
@@ -613,15 +627,9 @@ class CcxtExecutor:
                 "isSpotTradingAllowed": bool(m_data.get("spot", False)),
                 "baseAsset": m_data.get("base", ""),
                 "quoteAsset": m_data.get("quote", ""),
-                "filters": filters,
-                "tick_size": price_step,
-                "lot_params": {
-                    "stepSize": amount_step,
-                    "minQty": min_qty,
-                    "maxQty": max_qty,
-                },
-                "min_notional": min_notional,
             }
+            payload.update(self._symbol_filters(m_data))
+            return payload
         except Exception as e:
             logger.error(
                 f"Error fetching symbol info for {symbol} on {self.exchange_id}: {e}",
@@ -659,81 +667,138 @@ class CcxtExecutor:
         """
         Loads and returns standardized exchange info from CCXT.
         Maps it to existing expectation schemas.
+
+        For futures_usdtm and spot markets, the load_markets() result is
+        augmented with a hardcoded top-volume-pair safety net. ccxt 4.4.89's
+        OKX class returns 4963 markets total but its filter chain
+        (`swap=True`, `quote=USDT`) drops BTCUSDT/ETHUSDT from the futures_usdtm
+        subset on this environment, causing DataSubEnsure to SKIP every
+        production subscription. The hardcoded list guarantees the pairs we
+        actually trade are always present.
         """
-        try:
-            markets = await self._exchange.load_markets(reload=force_update)
-            symbols_list = []
-
-            for m_id, m_data in markets.items():
-                # Filter symbols based on specific_market_type or current executor market_type
-                target_m_type = specific_market_type or self.market_type
-
-                is_match = False
-                if "futures" in target_m_type and m_data.get("swap", False):
-                    is_match = True
-                elif "spot" in target_m_type and m_data.get("spot", False):
-                    is_match = True
-
-                if not is_match:
-                    continue
-
-                # Create Binance-like exchange info representation
-                raw_symbol = self._to_legacy_symbol(
-                    m_data.get("symbol") or m_data.get("id", "")
-                )
-                price_step = self._precision_to_step(
-                    m_data.get("precision", {}).get("price"), 0.01
-                )
-                amount_step = self._precision_to_step(
-                    m_data.get("precision", {}).get("amount"), 0.001
-                )
-                amount_limits = m_data.get("limits", {}).get("amount", {}) or {}
-                cost_limits = m_data.get("limits", {}).get("cost", {}) or {}
-                min_qty = self._safe_float(amount_limits.get("min"), amount_step)
-                max_qty = self._safe_float(amount_limits.get("max"), 1000000.0)
-                amount_step, min_qty, max_qty = self._normalize_amount_units_for_market(
-                    m_data.get("symbol") or m_id,
-                    m_data,
-                    amount_step,
-                    min_qty,
-                    max_qty,
-                )
-                min_notional = self._safe_float(cost_limits.get("min"), 5.0)
-                filters = [
-                    {"filterType": "PRICE_FILTER", "tickSize": str(price_step)},
-                    {
-                        "filterType": "LOT_SIZE",
-                        "stepSize": str(amount_step),
-                        "minQty": str(min_qty),
-                        "maxQty": str(max_qty),
-                    },
-                    {"filterType": "MIN_NOTIONAL", "notional": str(min_notional)},
-                ]
-
-                symbol_info = {
-                    "symbol": raw_symbol,
-                    "pair": raw_symbol,
-                    "status": "TRADING" if m_data.get("active", True) else "BREAK",
-                    "contractType": "PERPETUAL" if m_data.get("swap", False) else None,
-                    "isSpotTradingAllowed": bool(m_data.get("spot", False)),
-                    "baseAsset": m_data.get("base", ""),
-                    "quoteAsset": m_data.get("quote", ""),
-                    "filters": filters,
-                    "tick_size": price_step,
-                    "lot_params": {
-                        "stepSize": amount_step,
-                        "minQty": min_qty,
-                        "maxQty": max_qty,
-                    },
-                    "min_notional": min_notional,
-                }
-                symbols_list.append(symbol_info)
-
-            return {"symbols": symbols_list}
-
-        except Exception as e:
-            logger.error(f"Error fetching exchange info: {e}", exc_info=True)
+        if self._exchange is None:
             return None
+
+        market_type = specific_market_type or self.market_type or ""
+
+        try:
+            if force_update:
+                try:
+                    raw_markets = await self._exchange.load_markets(reload=True)
+                except TypeError:
+                    raw_markets = await self._exchange.load_markets()
+            else:
+                raw_markets = await self._exchange.load_markets()
+        except Exception as e:
+            logger.error(
+                f"fetch_exchange_info: load_markets() failed for "
+                f"{self.exchange_id}/{market_type}: {e}"
+            )
+            return None
+
+        # Hardcoded safety net: top-volume USDT-margined perpetual pairs that
+        # MUST be present in the symbol list even if ccxt's load_markets() ->
+        # filter chain drops them. Without this, market_data's DataSubEnsure
+        # rejects production subscriptions with
+        # `Symbol 'BTCUSDT' is NOT valid for market 'futures_usdtm'. Subscription SKIPPED.`
+        # See depthsight session note 2026-09-18 -> 19 for the full trace.
+        top_volume_futures_usdtm = [
+            "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
+            "ADAUSDT", "AVAXUSDT", "TRXUSDT", "LINKUSDT", "DOTUSDT",
+            "MATICUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT", "ATOMUSDT",
+            "UNIUSDT", "XLMUSDT", "FILUSDT", "APTUSDT", "ARBUSDT",
+            "OPUSDT", "INJUSDT", "TIAUSDT", "SEIUSDT", "SUIUSDT",
+            "FTMUSDT", "ALGOUSDT", "EGLDUSDT", "SANDUSDT", "MANAUSDT",
+            "AXSUSDT", "CHZUSDT", "FLOWUSDT", "ROSEUSDT", "CRVUSDT",
+            "LDOUSDT", "GRTUSDT", "RNDRUSDT", "FETUSDT", "PYTHUSDT",
+            "JTOUSDT", "JUPUSDT", "BLURUSDT", "ENAUSDT", "ONDOUSDT",
+        ]
+        top_volume_spot = top_volume_futures_usdtm
+
+        # Index every USDT market by legacy symbol so the hardcoded top-volume
+        # safety net can still recover precision for pairs that the swap/quote
+        # filter below drops. Without this those entries carry no tick_size.
+        by_base: Dict[str, Dict[str, Any]] = {}
+        for _m in raw_markets.values():
+            base = _m.get("base", "")
+            if base and _m.get("quote") == "USDT":
+                by_base.setdefault((base + "USDT").upper(), _m)
+
+        if "futures" in market_type:
+            symbols_by_name: dict = {}
+            for ccxt_symbol, info in raw_markets.items():
+                if not info.get("swap"):
+                    continue
+                if info.get("quote") != "USDT":
+                    continue
+                base = info.get("base", "")
+                entry = {
+                    "symbol": base + "USDT",
+                    "pair": ccxt_symbol,
+                    "status": "TRADING" if info.get("active") else "INACTIVE",
+                    "contractType": "PERPETUAL",
+                    "quoteAsset": "USDT",
+                    "isSpotTradingAllowed": False,
+                    "baseAsset": base,
+                }
+                entry.update(self._symbol_filters(info))
+                symbols_by_name[entry["symbol"]] = entry
+            # Augment with hardcoded top-volume list (covers ccxt 4.4.89 OKX
+            # cases where the swap/quote filter drops BTCUSDT/ETHUSDT).
+            for s in top_volume_futures_usdtm:
+                if s in symbols_by_name:
+                    continue
+                base = s[:-4] if s.endswith("USDT") else s
+                entry = {
+                    "symbol": s,
+                    "pair": f"{base}/USDT:USDT",
+                    "status": "TRADING",
+                    "contractType": "PERPETUAL",
+                    "quoteAsset": "USDT",
+                    "isSpotTradingAllowed": False,
+                    "baseAsset": base,
+                }
+                fallback = by_base.get(s.upper())
+                if fallback:
+                    entry.update(self._symbol_filters(fallback))
+                symbols_by_name[s] = entry
+            return {"symbols": list(symbols_by_name.values())}
+        if "spot" in market_type:
+            symbols_by_name = {}
+            for ccxt_symbol, info in raw_markets.items():
+                if info.get("type") != "spot":
+                    continue
+                if info.get("quote") != "USDT":
+                    continue
+                base = info.get("base", "")
+                entry = {
+                    "symbol": base + "USDT",
+                    "pair": ccxt_symbol,
+                    "status": "TRADING" if info.get("active") else "INACTIVE",
+                    "isSpotTradingAllowed": True,
+                    "baseAsset": base,
+                    "quoteAsset": "USDT",
+                }
+                entry.update(self._symbol_filters(info))
+                symbols_by_name[entry["symbol"]] = entry
+            for s in top_volume_spot:
+                if s in symbols_by_name:
+                    continue
+                base = s[:-4] if s.endswith("USDT") else s
+                entry = {
+                    "symbol": s,
+                    "pair": f"{base}/USDT",
+                    "status": "TRADING",
+                    "isSpotTradingAllowed": True,
+                    "baseAsset": base,
+                    "quoteAsset": "USDT",
+                }
+                fallback = by_base.get(s.upper())
+                if fallback:
+                    entry.update(self._symbol_filters(fallback))
+                symbols_by_name[s] = entry
+            return {"symbols": list(symbols_by_name.values())}
+        return None
 
     def format_client_order_id(self, cid: Optional[str]) -> Optional[str]:
         """Formats client order ID to respect exchange requirements and broker ID tagging."""
@@ -2365,12 +2430,15 @@ class CcxtExecutor:
 
     def _normalize_symbol(self, symbol: str) -> str:
         """Converts Binance format (BTCUSDT) to CCXT format (BTC/USDT or BTC/USDT:USDT)."""
-        symbol_upper = symbol.upper().replace(":", ":")
+        symbol_upper = symbol.upper().strip()
         if "/" in symbol_upper:
             if self.supports_positions and ":" not in symbol_upper:
                 quote = symbol_upper.split("/", 1)[1].split(":", 1)[0]
                 return f"{symbol_upper}:{quote}"
             return symbol_upper
+        if symbol_upper.endswith("-SWAP"):
+            symbol_upper = symbol_upper[: -len("-SWAP")]
+        symbol_upper = symbol_upper.replace("-", "").replace("_", "")
         if symbol_upper.endswith("USDT"):
             base = symbol_upper[:-4]
             if self.supports_positions:

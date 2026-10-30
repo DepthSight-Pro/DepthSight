@@ -618,6 +618,14 @@ class PaperTradingExecutor:
         log_prefix = "[PaperCancelOrder]"
         order_to_cancel_id = origClientOrderId
 
+        if not order_to_cancel_id and orderId is not None:
+            # Callers that only know the numeric id still need to be able to
+            # cancel, otherwise the resting order survives the close.
+            for cid, existing in list(self._open_orders.items()):
+                if str(existing.get("orderId")) == str(orderId):
+                    order_to_cancel_id = cid
+                    break
+
         if order_to_cancel_id and order_to_cancel_id in self._open_orders:
             cancelled_order = self._open_orders.pop(order_to_cancel_id)
             cancelled_order["status"] = "CANCELED"

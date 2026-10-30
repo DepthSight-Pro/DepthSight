@@ -190,7 +190,7 @@ function processLeaderboardData(activeNodes: LeaderboardNode[]) {
 		version: "v0.5.0",
 		is_master: true,
 		user_reward_share_percent: 75,
-		public_domain: "app.depthsight.pro",
+		public_domain: import.meta.env.VITE_PUBLIC_DOMAIN || (typeof window !== "undefined" ? window.location.hostname : "app.depthsight.pro"),
 		uptime_percent: 99.99,
 		active_miners: 0,
 		total_mined: 0.0,

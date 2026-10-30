@@ -907,11 +907,18 @@ RETRAIN_WINDOW_SIZE = 50
 # ML Confirmation Model Settings (Used in Backtester and potentially in Controller)
 # ==============================================================================
 # Whether to enable the use of an ML model for CONFIRMATION of signals from REGULAR strategies
-ML_CONFIRMATION_ENABLED = True
+ML_CONFIRMATION_ENABLED = os.environ.get(
+    "ML_CONFIRMATION_ENABLED", "False"
+).strip().lower() in ("1", "true", "yes", "on")
+
 # Path to the model for confirmation (can be the same as ML_OFFLINE_TRAINED_MODEL_PATH)
 ML_CONFIRMATION_MODEL_PATH = Path(
-    "data/offline_trained_model.joblib"
-)  # Path to the model for confirmation
+    os.environ.get("ML_CONFIRMATION_MODEL_PATH", "data/offline_trained_model.joblib")
+)
+
+ML_CONFIRMATION_FAIL_OPEN = os.environ.get(
+    "ML_CONFIRMATION_FAIL_OPEN", "True"
+).strip().lower() in ("1", "true", "yes", "on")
 # List of strategies for which ML confirmation will be applied. If empty - for all.
 ML_CONFIRMATION_STRATEGIES = [
     "VolumeBreakout",
@@ -1335,6 +1342,20 @@ LOG_FILE_BOT = "logs/bot_module.log"
 LOG_FILE_TRADES = "logs/trades_and_events.csv"
 # Path to the "Trader's Diary" CSV file
 LOG_FILE_TRADER_DIARY = "logs/trader_diary.csv"
+# Enable/disable the CSV trade logs. When disabled, TradeLogger neither
+# creates the file nor enqueues entries for it (useful for read-only
+# filesystems, loadtest stands or when the DB is the only sink).
+LOG_TRADES_ENABLED = str(
+    os.environ.get("LOG_TRADES_ENABLED", "true")
+).strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+LOG_TRADER_DIARY_ENABLED = str(
+    os.environ.get("LOG_TRADER_DIARY_ENABLED", "true")
+).strip().lower() in ("true", "1", "yes", "on")
 # Log message format
 LOG_FORMAT = "%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s"
 

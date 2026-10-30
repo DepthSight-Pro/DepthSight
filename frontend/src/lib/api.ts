@@ -1096,6 +1096,8 @@ export const useStartStrategy = () => {
 				notional_usd?: number;
 				spread_exit_threshold_pct?: number;
 				spread_exit_cooldown_sec?: number;
+				spread_convergence_ratio_pct?: number;
+				spread_convergence_target_pct?: number;
 				entry_sync_timeout_sec?: number;
 			}; // Hedge (mirror) launch on two exchanges
 		}

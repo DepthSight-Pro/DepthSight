@@ -127,7 +127,7 @@ async def create_payment(
         }
 
         # Use the actual external API URL for webhooks so Bitcart can reach us
-        api_base_url = os.getenv("API_BASE_URL", "https://app.depthsight.pro/api/v1")
+        api_base_url = os.getenv("API_BASE_URL") or f"{os.getenv('PUBLIC_BASE_URL', 'https://app.depthsight.pro').rstrip('/')}/api/v1"
 
         payload = {
             "price": float(price_usd),

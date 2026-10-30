@@ -494,7 +494,7 @@ class SlackWebSocketWrapper:
                                         "text": "🖥️ Open in Editor",
                                         "emoji": True,
                                     },
-                                    "url": f"https://app.depthsight.pro/editor/{config_id}",
+                                    "url": f"{os.getenv('PUBLIC_BASE_URL', 'https://app.depthsight.pro').rstrip('/')}/editor/{config_id}",
                                     "action_id": "button_open_editor",
                                 },
                                 {
@@ -1304,7 +1304,7 @@ async def handle_chat_message(
                                 "text": "🖥️ Open in Editor",
                                 "emoji": True,
                             },
-                            "url": f"https://app.depthsight.pro/editor/{config_id}",
+                            "url": f"{os.getenv('PUBLIC_BASE_URL', 'https://app.depthsight.pro').rstrip('/')}/editor/{config_id}",
                             "action_id": "button_open_editor",
                         },
                         {

@@ -881,6 +881,8 @@ async def start_strategy_instance(
             "notional_usd": hedge_request.notional_usd,
             "spread_exit_threshold_pct": hedge_request.spread_exit_threshold_pct,
             "spread_exit_cooldown_sec": hedge_request.spread_exit_cooldown_sec,
+            "spread_convergence_ratio_pct": hedge_request.spread_convergence_ratio_pct,
+            "spread_convergence_target_pct": hedge_request.spread_convergence_target_pct,
             "entry_sync_timeout_sec": hedge_request.entry_sync_timeout_sec,
         }
         # SYNC_STEP: resolve the shared lot step per symbol (coarsest of the

@@ -748,7 +748,7 @@ const StrategyEditorPage = () => {
 					{/* Actions */}
 					<div className="flex flex-col gap-2.5 w-full max-w-xs z-10">
 						<a
-							href="https://app.depthsight.pro/pwa/"
+							href="/pwa/"
 							target="_blank"
 							rel="noopener noreferrer"
 							className="group relative flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs sm:text-sm font-semibold text-black bg-gradient-to-r from-cyan to-azure hover:brightness-110 shadow-[0_0_20px_rgba(0,212,255,0.4)] transition-all"

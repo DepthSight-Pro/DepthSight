@@ -1539,11 +1539,14 @@ class TelegramNotifier:
 
                 # Update DB
                 db_gen = get_db_gen()
-                async with await anext(db_gen) as db:
-                    await crud.update_user_telegram_chat_id(
-                        db, user_id=user_id, chat_id=chat_id, username=username
-                    )
-                    await db.commit()
+                try:
+                    async with await anext(db_gen) as db:
+                        await crud.update_user_telegram_chat_id(
+                            db, user_id=user_id, chat_id=chat_id, username=username
+                        )
+                        await db.commit()
+                finally:
+                    await db_gen.aclose()
 
                 # Delete the one-time token BEFORE replying, so a reply
                 # failure cannot leave a stale token behind (binding is

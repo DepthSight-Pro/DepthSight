@@ -339,9 +339,10 @@ async def _clear_expired_push_subscription(user_id: Any) -> bool:
     if user_id is None:
         return False
     try:
+        from bot_module.db_session import owned_session
         from bot_module.runtime_dependencies import crud, get_db
 
-        async for db in get_db():
+        async with owned_session(get_db) as db:
             await crud.delete_user_push_subscription(db, user_id=user_id)
             await db.commit()
         logger.info(

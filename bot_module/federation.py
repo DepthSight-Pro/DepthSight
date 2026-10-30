@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_HUB_URL = "https://app.depthsight.pro/api/v1/hub"
+_DEFAULT_HUB_URL = os.getenv("FEDERATION_HUB_URL") or f"{os.getenv('PUBLIC_BASE_URL', 'https://app.depthsight.pro').rstrip('/')}/api/v1/hub"
 
 
 class InsecureHubUrlError(RuntimeError):
