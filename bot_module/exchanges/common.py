@@ -36,6 +36,15 @@ _EXCHANGE_ALIASES = {
     "weex_usdtm": "weex",
     "weex_linear": "weex",
     "weex_spot": "weex_spot",
+    "hyperliquid": "hyperliquid",
+    "hyperliquid_futures": "hyperliquid",
+    "hyperliquid_swap": "hyperliquid",
+    "hyperliquid_linear": "hyperliquid",
+    "hyperliquid_spot": "hyperliquid_spot",
+    "hl": "hyperliquid",
+    "hl_futures": "hyperliquid",
+    "hl_swap": "hyperliquid",
+    "hl_spot": "hyperliquid_spot",
 }
 
 
@@ -52,7 +61,17 @@ def normalize_exchange_id(exchange: str | None) -> str:
 
 
 def supported_exchange_ids() -> tuple[str, ...]:
-    return ("binance", "bybit", "gateio", "okx", "bitget", "kucoin", "bingx", "weex")
+    return (
+        "binance",
+        "bybit",
+        "gateio",
+        "okx",
+        "bitget",
+        "kucoin",
+        "bingx",
+        "weex",
+        "hyperliquid",
+    )
 
 
 def is_binance_exchange(exchange: str | None) -> bool:

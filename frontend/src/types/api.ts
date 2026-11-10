@@ -955,6 +955,7 @@ export interface AddApiKeyPayload {
 	api_secret: string;
 	exchange: string;
 	api_password?: string;
+	builder_fee_rate?: string;
 }
 
 // Types for creating tasks
@@ -1583,6 +1584,8 @@ export interface MiningAnalyticsTradeItem {
 	verificationError: string | null;
 	isMiningEligible: boolean;
 	miningMultiplier: number;
+	nftPassType?: string;
+	nftMultiplierBonus?: number;
 	rewardTokens: number;
 	epochDate: string | null;
 }
@@ -1761,6 +1764,17 @@ export interface PromoQuestProgress {
 		[key: string]: unknown;
 	};
 	allRequirementsMet: boolean;
+	rewardType?: "token" | "nft";
+	nftContractAddress?: string;
+	nftChainId?: number;
+	nftTokenId?: number;
+	nftName?: string;
+	nftImageUrl?: string;
+	nftMultiplier?: string;
+	nftNominal?: number;
+	nftMaxSupply?: number;
+	nftColorTheme?: string;
+	nft_color_theme?: string;
 }
 
 export interface PromoStatusResponse {
@@ -1793,6 +1807,8 @@ export interface PromoClaimResponse {
 	rewardAmount: number;
 	questType: string;
 	claimedAt: string;
+	rewardType?: "token" | "nft";
+	nftTokenId?: number;
 }
 
 export interface PromoCampaignAdmin {
@@ -1824,17 +1840,30 @@ export interface PromoCampaignAdmin {
  *  (`PromoCampaignCreateOrUpdate.config.quests.<quest>`). */
 export interface PromoCampaignQuestConfig {
 	enabled?: boolean;
+	title?: string;
+	description?: string;
 	reward?: number;
 	total_slots?: number;
 	min_volume_usd?: number;
 	min_node_age_days?: number;
 	trade_window_days?: number;
+	reward_type?: "token" | "nft";
+	nft_contract_address?: string;
+	nft_chain_id?: number;
+	nft_token_id?: number;
+	nft_name?: string;
+	nft_image_url?: string;
+	nft_multiplier?: string;
+	nft_nominal?: number;
+	nft_max_supply?: number;
+	nft_color_theme?: string;
 }
 
 /** `config.quests` of the admin promo form — one entry per backend quest id. */
 export interface PromoCampaignQuestsConfig {
 	api_pioneer?: PromoCampaignQuestConfig;
 	node_runner?: PromoCampaignQuestConfig;
+	telemetry_pass?: PromoCampaignQuestConfig;
 	[key: string]: PromoCampaignQuestConfig | undefined;
 }
 
@@ -1874,6 +1903,16 @@ export interface PromoCampaignUpsertPayload {
 		volume_threshold: number;
 		min_node_age_days?: number;
 		trade_window_days?: number;
+		reward_type?: "token" | "nft";
+		nft_contract_address?: string;
+		nft_chain_id?: number;
+		nft_token_id?: number;
+		nft_name?: string;
+		nft_image_url?: string;
+		nft_multiplier?: string;
+		nft_nominal?: number;
+		nft_max_supply?: number;
+		nft_color_theme?: string;
 	}>;
 	ui_config?: Record<string, unknown> | null;
 }

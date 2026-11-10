@@ -15,6 +15,10 @@ import {
 import { createOkxFuturesAdapter, createOkxSpotAdapter } from "./okx";
 import { createWeexFuturesAdapter, createWeexSpotAdapter } from "./weex";
 import {
+	createHyperliquidFuturesAdapter,
+	createHyperliquidSpotAdapter,
+} from "./hyperliquid";
+import {
 	type CreateMarksAdapter,
 	type LiveMarket,
 	type MarksCallback,
@@ -34,6 +38,8 @@ const REGISTRY: Record<string, CreateMarksAdapter> = {
 	bitget_spot: createBitgetSpotAdapter,
 	weex: createWeexFuturesAdapter,
 	weex_spot: createWeexSpotAdapter,
+	hyperliquid: createHyperliquidFuturesAdapter,
+	hyperliquid_spot: createHyperliquidSpotAdapter,
 };
 
 export interface LiveSymbol {
@@ -53,9 +59,11 @@ export const normalizeLiveExchange = (exchange?: string | null): string => {
 		base === "bybit" ||
 		base === "okx" ||
 		base === "bitget" ||
-		base === "weex"
+		base === "weex" ||
+		base === "hyperliquid" ||
+		base === "hl"
 	) {
-		return base;
+		return base === "hl" ? "hyperliquid" : base;
 	}
 	return "binance";
 };

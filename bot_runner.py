@@ -560,12 +560,18 @@ async def _initialize_controller_for_key(
             )
             return False
 
+        user_app_config = await crud.get_config(db, user_id=user.id)
+        builder_fee_rate = None
+        if user_app_config and user_app_config.exchange_settings:
+            builder_fee_rate = user_app_config.exchange_settings.get("hyperliquid", {}).get("builder_fee_rate")
+
         live_executor = create_exchange_executor(
             exchange=api_key_obj.exchange,
             api_key=decrypted_key,
             api_secret=decrypted_secret,
             session=session,
             market_type="futures_usdtm",
+            builder_fee_rate=builder_fee_rate,
         )
         market_executors = {
             "futures_usdtm": live_executor,
@@ -575,6 +581,7 @@ async def _initialize_controller_for_key(
                 api_secret=decrypted_secret,
                 session=session,
                 market_type="spot",
+                builder_fee_rate=builder_fee_rate,
             ),
         }
 
@@ -596,8 +603,6 @@ async def _initialize_controller_for_key(
 
         # Initialize equity tracking
         await paper_executor.initialize_equity_tracking()
-
-        user_app_config = await crud.get_config(db, user_id=user.id)
         user_settings = user_app_config.model_dump() if user_app_config else {}
         if not user_settings:
             logger.warning(

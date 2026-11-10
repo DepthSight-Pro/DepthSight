@@ -285,7 +285,9 @@ async def proxy_bybit_klines(
 
 
 # Exchanges supported by the unified klines proxy (ccxt ids).
-SUPPORTED_KLINE_EXCHANGES = frozenset({"binance", "bybit", "okx", "bitget", "weex"})
+SUPPORTED_KLINE_EXCHANGES = frozenset(
+    {"binance", "bybit", "okx", "bitget", "weex", "hyperliquid"}
+)
 
 SUPPORTED_KLINE_INTERVALS = frozenset(
     {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"}
@@ -303,9 +305,28 @@ def _normalize_kline_exchange(exchange: str | None) -> str:
     return raw
 
 
-def _to_ccxt_swap_symbol(symbol: str) -> str:
-    """Converts 'BTCUSDT' to ccxt swap format 'BTC/USDT:USDT' (passthrough if already ccxt)."""
+def _to_ccxt_swap_symbol(symbol: str, exchange_id: str = "") -> str:
+    """Converts 'BTCUSDT' to ccxt swap format 'BTC/USDT:USDT' or 'BTC/USDC:USDC' for Hyperliquid."""
     s = (symbol or "").strip().upper()
+    if exchange_id == "hyperliquid":
+        if "/" in s:
+            s = s.replace("USDT", "USDC")
+            parts = s.split("/")
+            if parts[0].startswith("1000"):
+                s = f"K{parts[0][4:]}/{parts[1]}"
+            if ":" not in s:
+                quote = s.split("/", 1)[1].split(":", 1)[0]
+                return f"{s}:{quote}"
+            return s
+        base = s
+        for quote in ("USDT", "USDC", "USD"):
+            if s.endswith(quote) and len(s) > len(quote):
+                base = s[: -len(quote)]
+                break
+        if base.startswith("1000"):
+            base = "K" + base[4:]
+        return f"{base}/USDC:USDC"
+
     if "/" in s:
         if ":" not in s:
             quote = s.split("/", 1)[1].split(":", 1)[0]
@@ -352,7 +373,7 @@ async def proxy_klines(
         )
     limit = max(5, min(int(limit or 500), 1000))
 
-    ccxt_symbol = _to_ccxt_swap_symbol(symbol)
+    ccxt_symbol = _to_ccxt_swap_symbol(symbol, exchange_id)
     default_type = "future" if exchange_id == "binance" else "swap"
 
     try:
@@ -481,7 +502,7 @@ async def proxy_funding(
             detail=f"ccxt is not installed: {exc}",
         )
 
-    ccxt_symbol = _to_ccxt_swap_symbol(symbol_upper)
+    ccxt_symbol = _to_ccxt_swap_symbol(symbol_upper, exchange_id)
     default_type = "future" if exchange_id == "binance" else "swap"
 
     exchange_instance = None

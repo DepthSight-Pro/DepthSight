@@ -14,6 +14,10 @@ import {
 	createBitgetFuturesAdapter,
 	createBitgetSpotAdapter,
 } from "./bitget";
+import {
+	createHyperliquidFuturesAdapter,
+	createHyperliquidSpotAdapter,
+} from "./hyperliquid";
 import { createWeexFuturesAdapter, createWeexSpotAdapter } from "./weex";
 import {
 	type CreateMarksAdapter,
@@ -35,6 +39,8 @@ const REGISTRY: Record<string, CreateMarksAdapter> = {
 	bitget_spot: createBitgetSpotAdapter,
 	weex: createWeexFuturesAdapter,
 	weex_spot: createWeexSpotAdapter,
+	hyperliquid: createHyperliquidFuturesAdapter,
+	hyperliquid_spot: createHyperliquidSpotAdapter,
 };
 
 export interface LiveSymbol {

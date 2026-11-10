@@ -2922,6 +2922,16 @@ export interface LocalMiningStatusResponse {
 	walletAddress?: string;
 	wallet_address?: string;
 	payoutAddress?: string;
+	nftPassType?: string;
+	nft_pass_type?: string;
+	nftMultiplierBonus?: number;
+	nft_multiplier_bonus?: number;
+	nftTokenId?: number;
+	nft_token_id?: number;
+	nftContractAddress?: string;
+	nft_contract_address?: string;
+	nftName?: string;
+	nft_name?: string;
 }
 
 export interface MiningActivatePayload {
@@ -3197,8 +3207,36 @@ export interface MiningTradeItem {
 	isOwnTrade?: boolean;
 	score?: number;
 	rewardTokens: number;
+	miningMultiplier?: number;
+	nftPassType?: string;
+	nftMultiplierBonus?: number;
 	createdAt: string;
 }
+
+export interface NftRefreshResponse {
+	success: boolean;
+	wallet?: string;
+	has_nft?: boolean;
+	token_id?: number | null;
+	tier?: string | null;
+	name?: string | null;
+	bonus_multiplier?: number;
+	message?: string;
+}
+
+export const useRefreshNftStatus = () => {
+	const queryClient = useQueryClient();
+	return useMutation<NftRefreshResponse, Error, void>({
+		mutationFn: () =>
+			apiClient<NftRefreshResponse>("/mining/nft/refresh", {
+				method: "POST",
+			}),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningStatus") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("miningTrades") });
+		},
+	});
+};
 
 export interface MiningTradesResponse {
 	total: number;

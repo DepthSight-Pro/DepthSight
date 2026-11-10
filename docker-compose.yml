@@ -66,6 +66,7 @@ services:
       retries: 5
 
   mcp-memory:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_mcp_memory
     command: python -c "import asyncio; from api.mcp_memory_server import MCPMemoryServer; asyncio.run(MCPMemoryServer().start())"
@@ -85,6 +86,7 @@ services:
         max-file: "3"
 
   api:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_api
     init: true
@@ -120,6 +122,7 @@ services:
         max-file: "5"
 
   websocket:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_websocket
     init: true
@@ -155,6 +158,7 @@ services:
     restart: on-failure
 
   bot:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_bot
     init: true
@@ -197,6 +201,7 @@ services:
         max-file: "5"
 
   market_data:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_market_data
     init: true
@@ -229,6 +234,7 @@ services:
         max-file: "5"
 
   celery_worker:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_celery_worker
     init: true
@@ -265,6 +271,7 @@ services:
         max-file: "5"
 
   celery_beat:
+    image: depthsight-backend:latest
     build: .
     container_name: depthsight_celery_beat
     init: true
@@ -297,34 +304,34 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  slack_agent:
-    build: .
-    container_name: depthsight_slack_agent
-    init: true
-    command: python -m slack_agent.app
-    env_file: .env
-    environment:
-      - DEPTHSIGHT_API_URL=${DEPTHSIGHT_API_URL:-http://api:8000/api/v1}
-      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
-      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
-      - API_KEY_SECRET=${API_KEY_SECRET}
-      - DEPTHSIGHT_JWT_TOKEN=${DEPTHSIGHT_JWT_TOKEN:-}
-      - MCP_MEMORY_HOST=mcp-memory
-      - MCP_MEMORY_PORT=8100
-      - REDIS_HOST=redis
-      - REDIS_USERNAME=celery
-      - REDIS_PASSWORD=${REDIS_CELERY_PASSWORD:-${REDIS_PASSWORD}}
-    depends_on:
-      api:
-        condition: service_started
-      mcp-memory:
-        condition: service_started
-    restart: on-failure
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+#  slack_agent:
+#    build: .
+#    container_name: depthsight_slack_agent
+#    init: true
+#    command: python -m slack_agent.app
+#    env_file: .env
+#    environment:
+#      - DEPTHSIGHT_API_URL=${DEPTHSIGHT_API_URL:-http://api:8000/api/v1}
+#      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+#      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+#      - API_KEY_SECRET=${API_KEY_SECRET}
+#      - DEPTHSIGHT_JWT_TOKEN=${DEPTHSIGHT_JWT_TOKEN:-}
+#      - MCP_MEMORY_HOST=mcp-memory
+#      - MCP_MEMORY_PORT=8100
+#      - REDIS_HOST=redis
+#      - REDIS_USERNAME=celery
+#      - REDIS_PASSWORD=${REDIS_CELERY_PASSWORD:-${REDIS_PASSWORD}}
+#    depends_on:
+#      api:
+#        condition: service_started
+#      mcp-memory:
+#        condition: service_started
+#    restart: on-failure
+#    logging:
+#      driver: "json-file"
+#      options:
+#        max-size: "10m"
+#        max-file: "5"
 
   frontend:
     build:

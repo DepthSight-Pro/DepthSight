@@ -129,6 +129,18 @@ interface PwaMiningStatus {
 	stats?: PwaMiningStats;
 	exchangeMultipliers?: Record<string, number>;
 	exchange_multipliers?: Record<string, number>;
+	walletAddress?: string;
+	wallet_address?: string;
+	nftPassType?: string;
+	nft_pass_type?: string;
+	nftMultiplierBonus?: number;
+	nft_multiplier_bonus?: number;
+	nftTokenId?: number;
+	nft_token_id?: number;
+	nftContractAddress?: string;
+	nft_contract_address?: string;
+	nftName?: string;
+	nft_name?: string;
 	[key: string]: unknown;
 }
 
@@ -872,6 +884,19 @@ export const api = {
 		apiFetch<{ walletAddress?: string; nodeUuid?: string; walletConfigured: boolean }>("/node/wallet/status"),
 	disconnectWallet: (): Promise<{ success: boolean }> =>
 		apiFetch<{ success: boolean }>("/node/wallet/disconnect", {
+			method: "POST",
+		}),
+	refreshNftStatus: (): Promise<{
+		success: boolean;
+		wallet?: string;
+		has_nft?: boolean;
+		token_id?: number | null;
+		tier?: string | null;
+		name?: string | null;
+		bonus_multiplier?: number;
+		message?: string;
+	}> =>
+		apiFetch("/mining/nft/refresh", {
 			method: "POST",
 		}),
 };

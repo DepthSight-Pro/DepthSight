@@ -6,6 +6,7 @@ from .base import ExchangeExecutor
 
 
 from .common import (
+    is_binance_exchange,
     normalize_exchange_id,
 )
 
@@ -22,6 +23,7 @@ def _normalize_market_type(market_type: str | None) -> str | None:
         "bingx_spot",
         "okx_spot",
         "weex_spot",
+        "hyperliquid_spot",
     }:
         return "spot"
     if raw in {
@@ -30,6 +32,7 @@ def _normalize_market_type(market_type: str | None) -> str | None:
         "futures_usdtm",
         "usdtm",
         "linear",
+        "swap",
         "binance_futures",
         "bitget_futures",
         "bitget_usdtm",
@@ -46,6 +49,9 @@ def _normalize_market_type(market_type: str | None) -> str | None:
         "weex_futures",
         "weex_usdtm",
         "weex_linear",
+        "hyperliquid_futures",
+        "hyperliquid_swap",
+        "hyperliquid_linear",
     }:
         return "futures_usdtm"
     return raw
@@ -71,15 +77,30 @@ def create_exchange_executor(
         market_type
     ) or _default_market_type_for_exchange(exchange)
 
-    # Detect testnet from suffix or global config
-    from bot_module import config
-
-    is_testnet = exchange_id.endswith("_testnet") or (
-        getattr(config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet") == "testnet"
-    )
-
     # Strip testnet suffix for mapping and CCXT
     clean_exchange_id = exchange_id.replace("_testnet", "")
+
+    # Detect testnet from explicit kwargs, suffix, or legacy global config
+    from bot_module import config
+
+    if "sandbox" in kwargs:
+        is_testnet = bool(kwargs.pop("sandbox"))
+    elif "is_testnet" in kwargs:
+        is_testnet = bool(kwargs.pop("is_testnet"))
+    elif exchange_id.endswith("_testnet"):
+        is_testnet = True
+    elif is_binance_exchange(exchange_id):
+        # Legacy Binance untagged keys follow global ACTIVE_TRADING_ENVIRONMENT
+        is_testnet = (
+            getattr(config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet") == "testnet"
+        )
+    elif clean_exchange_id == "bingx":
+        # BingX uses VST demo sandbox when globally in testnet
+        is_testnet = (
+            getattr(config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet") == "testnet"
+        )
+    else:
+        is_testnet = False
 
     # Map known exchange aliases to CCXT identifiers
     supported_ccxt_exchanges = {
@@ -98,6 +119,8 @@ def create_exchange_executor(
         "okx_spot",
         "weex",
         "weex_spot",
+        "hyperliquid",
+        "hyperliquid_spot",
     }
     if clean_exchange_id not in supported_ccxt_exchanges:
         raise NotImplementedError(
@@ -113,6 +136,7 @@ def create_exchange_executor(
         "bingx_spot": "bingx",
         "okx_spot": "okx",
         "weex_spot": "weex",
+        "hyperliquid_spot": "hyperliquid",
     }
 
     target_ccxt_id = ccxt_id_map.get(clean_exchange_id, clean_exchange_id)

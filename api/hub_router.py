@@ -17,6 +17,7 @@ from fastapi import (
     Request,
     Header,
     Query,
+    Response,
 )
 from sqlalchemy import func, or_, case
 from sqlalchemy.exc import IntegrityError
@@ -2261,6 +2262,15 @@ async def get_mining_status(
                 )
             )
 
+    # 7. Check Genesis NFT Pass status on Arbitrum One
+    from api.nft_verifier import verify_wallet_nft
+    nft_info = {}
+    if getattr(node, "wallet_address", None):
+        try:
+            nft_info = await verify_wallet_nft(node.wallet_address)
+        except Exception as e:
+            logger.warning(f"[NFT] Failed to verify wallet {node.wallet_address}: {e}")
+
     return schemas.MiningStatusResponse(
         is_mining_enabled=cfg.is_mining_enabled,
         eligible_exchanges=cfg.eligible_exchanges,
@@ -2289,6 +2299,11 @@ async def get_mining_status(
         daily_history=daily_history,
         epoch_number=current_epoch_number,
         launch_date=launch_date.isoformat() if launch_date else None,
+        nft_pass_type=nft_info.get("pass_type"),
+        nft_multiplier_bonus=float(nft_info.get("bonus_multiplier", 0.0)),
+        nft_token_id=nft_info.get("token_id"),
+        nft_contract_address=nft_info.get("contract"),
+        nft_name=nft_info.get("name"),
     )
 
 
@@ -2837,6 +2852,9 @@ async def _get_active_mining_config(db: AsyncSession) -> Optional[models.MiningC
                 "bitget_futures": 0.35,
                 "bitget_spot": 0.35,
                 "bitget": 0.35,
+                "hyperliquid_futures": 0.50,
+                "hyperliquid_spot": 0.50,
+                "hyperliquid": 0.50,
             },
             exchange_multipliers={
                 "bitget": 2.0,
@@ -2845,6 +2863,8 @@ async def _get_active_mining_config(db: AsyncSession) -> Optional[models.MiningC
                 "bybit": 1.0,
                 "okx": 1.0,
                 "weex": 1.0,
+                "hyperliquid": 1.0,
+                "hyperliquid_futures": 1.0,
             },
         )
         db.add(cfg)
@@ -3083,11 +3103,18 @@ def _resolve_report_multiplier(cfg, report) -> float:
          this exchange.
       3. 1.0.
     """
+    nft_bonus = 0.0
+    if isinstance(getattr(report, "market_context", None), dict):
+        try:
+            nft_bonus = float(report.market_context.get("nft_multiplier_bonus") or 0.0)
+        except (ValueError, TypeError):
+            pass
+
     ex = str(getattr(report, "exchange_id", None) or "").lower().strip()
     if ex and cfg:
         live_mult = _get_exchange_multiplier(cfg, ex)
         if live_mult != 1.0:
-            return live_mult
+            return round(live_mult + nft_bonus, 2)
 
     stamped = getattr(report, "mining_multiplier", None)
     try:
@@ -3119,6 +3146,7 @@ async def estimate_live_epoch_reward(
 
     node_rebates = {}
     node_weighted_points = {}
+    node_unboosted_points = {}
     for rep in reports:
         nid = rep.node_uuid
         if not nid:
@@ -3126,8 +3154,18 @@ async def estimate_live_epoch_reward(
         reb = rep.estimated_rebate_usdt or 0.0
         mult = _resolve_report_multiplier(cfg, rep)
         safe_mult = max(0.0, mult)
+        nft_bonus = (
+            float((rep.market_context or {}).get("nft_multiplier_bonus", 0.0))
+            if isinstance(rep.market_context, dict)
+            else 0.0
+        )
+        effective_mult = safe_mult + nft_bonus
+
         node_rebates[nid] = node_rebates.get(nid, 0.0) + reb
         node_weighted_points[nid] = node_weighted_points.get(nid, 0.0) + (
+            reb * effective_mult
+        )
+        node_unboosted_points[nid] = node_unboosted_points.get(nid, 0.0) + (
             reb * safe_mult
         )
     if not node_weighted_points:
@@ -3141,7 +3179,8 @@ async def estimate_live_epoch_reward(
         total_pts += w_pts
         ref_uuid = await _resolve_mining_referrer(db, nid)
         if ref_uuid:
-            rp = w_pts * cfg.referral_mining_boost
+            unboosted_w = node_unboosted_points.get(nid, w_pts)
+            rp = unboosted_w * cfg.referral_mining_boost
             ref_pts[ref_uuid] = ref_pts.get(ref_uuid, 0.0) + rp
             total_pts += rp
 
@@ -3197,11 +3236,30 @@ def score_trade_with_reason(
     a human-readable cause suitable for UI display (stored on the report as
     verification_error until/unless the broker verifier overrides it).
     """
-    # 1. Must be a LIVE trade
-    if report.trade_mode != "LIVE":
+    # 1. Must be a LIVE trade (not testnet, demo, or paper)
+    trade_mode_str = str(getattr(report, "trade_mode", "") or "LIVE").upper()
+    if trade_mode_str != "LIVE":
         return 0.0, "trade is not LIVE"
 
-    # 2. Must have valid entry/exit prices
+    raw_exchange = getattr(report, "exchange_id", None)
+    if raw_exchange:
+        exch_str = str(raw_exchange).lower().strip()
+        if "testnet" in exch_str or "demo" in exch_str:
+            return 0.0, "trade is on testnet / demo"
+
+        # 2. Exchange must be eligible for mining
+        eligible = [
+            str(e).lower().replace("_testnet", "")
+            for e in (getattr(config, "eligible_exchanges", []) or [])
+        ]
+        if eligible:
+            clean_exch = exch_str.replace("_testnet", "")
+            mtype = str(getattr(report, "market_type", "") or "futures").lower()
+            lookup = f"{clean_exch}_{mtype}"
+            if clean_exch not in eligible and lookup not in eligible:
+                return 0.0, f"exchange '{raw_exchange}' is not eligible for trade mining"
+
+    # 3. Must have valid entry/exit prices
     if (
         not report.entry_price
         or not report.exit_price
@@ -3210,7 +3268,7 @@ def score_trade_with_reason(
     ):
         return 0.0, "invalid entry/exit prices"
 
-    # 3. Quality gate evaluation (hold time & price movement)
+    # 4. Quality gate evaluation (hold time & price movement)
     operator = (getattr(config, "quality_gate_operator", "AND") or "AND").upper()
 
     # Duration check (anti-wash trading)
@@ -3478,6 +3536,9 @@ async def get_node_trades(
                 "isMiningEligible": bool(r.is_mining_eligible),
                 "score": r.score,
                 "rewardTokens": r.reward_tokens or 0.0,
+                "miningMultiplier": r.mining_multiplier,
+                "nftPassType": (r.market_context or {}).get("nft_pass_type") if isinstance(r.market_context, dict) else None,
+                "nftMultiplierBonus": float((r.market_context or {}).get("nft_multiplier_bonus", 0.0)) if isinstance(r.market_context, dict) else 0.0,
                 "createdAt": r.created_at.isoformat() if r.created_at else "",
             }
         )
@@ -3490,6 +3551,34 @@ async def get_node_trades(
         "limit": limit,
         "totalPages": total_pages,
         "items": items,
+    }
+
+
+@router.post("/mining/nft/refresh")
+async def refresh_node_nft_status(
+    x_node_uuid: Optional[str] = Header(None, alias="X-Node-UUID"),
+    x_node_secret: Optional[str] = Header(None, alias="X-Node-Secret"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    On-demand force refresh of the node's Arbitrum One ERC-1155 NFT Pass status.
+    """
+    node = await _verify_node_credentials(db, x_node_uuid, x_node_secret)
+    if not node.wallet_address:
+        return {
+            "success": False,
+            "has_nft": False,
+            "message": "No wallet address bound to this node. Please bind your EVM wallet first.",
+            "token_id": None,
+            "bonus_multiplier": 0.0,
+        }
+
+    from api.nft_verifier import verify_wallet_nft
+    nft_info = await verify_wallet_nft(node.wallet_address, force_refresh=True)
+    return {
+        "success": True,
+        "wallet": node.wallet_address,
+        **nft_info,
     }
 
 
@@ -3530,27 +3619,39 @@ async def post_telemetry_report(
         db, report.source_node_uuid, resolved_attribution
     )
 
+    trade_mode_str = str(getattr(report, "trade_mode", "") or "LIVE").upper()
+    exch_str = str(getattr(report, "exchange_id", "") or "").lower()
+    if trade_mode_str != "LIVE" or "testnet" in exch_str or "demo" in exch_str:
+        logger.info(
+            f"[hub] Ignoring non-live / testnet telemetry report: exchange={report.exchange_id}, mode={trade_mode_str}"
+        )
+        return {"status": "skipped", "message": "Testnet / non-live trades are not accepted for trade mining telemetry."}
+
     mining_cfg = await _get_active_mining_config(db)
     is_mining_eligible = False
     score = 0.0
     estimated_rebate = 0.0
     gate_reason = None
 
-    if mining_cfg and mining_cfg.is_mining_enabled:
-        lookup_key = (
-            f"{report.exchange_id}_{report.market_type}"
-            if report.market_type
-            else (report.exchange_id or "")
-        )
-        is_eligible_exchange = (
-            report.exchange_id in mining_cfg.eligible_exchanges
-        ) or (lookup_key in mining_cfg.eligible_exchanges)
+    if mining_cfg:
+        eligible = [
+            str(e).lower().replace("_testnet", "")
+            for e in (getattr(mining_cfg, "eligible_exchanges", []) or [])
+        ]
+        clean_exch = exch_str.replace("_testnet", "")
+        mtype = str(getattr(report, "market_type", "") or "futures").lower()
+        lookup = f"{clean_exch}_{mtype}"
+        if clean_exch not in eligible and lookup not in eligible:
+            logger.info(
+                f"[hub] Ignoring telemetry report from ineligible exchange: {report.exchange_id}"
+            )
+            return {"status": "skipped", "message": f"Exchange '{report.exchange_id}' is not an active mining partner."}
 
-        if is_eligible_exchange:
-            score, gate_reason = score_trade_with_reason(report, mining_cfg)
-            if score > 0.0:
-                is_mining_eligible = True
-                estimated_rebate = _estimate_rebate(report, mining_cfg)
+    if mining_cfg and mining_cfg.is_mining_enabled:
+        score, gate_reason = score_trade_with_reason(report, mining_cfg)
+        if score > 0.0:
+            is_mining_eligible = True
+            estimated_rebate = _estimate_rebate(report, mining_cfg)
 
     try:
         blocks_data = [
@@ -3559,10 +3660,29 @@ async def post_telemetry_report(
 
         exch_lower = (report.exchange_id or "").lower()
         is_verifiable = any(
-            ex in exch_lower for ex in ("weex", "bybit", "okx", "bitget")
+            ex in exch_lower for ex in ("weex", "bybit", "okx", "bitget", "hyperliquid")
         )
         initial_v_status = "PENDING" if is_verifiable else "SKIPPED"
         mining_mult = _get_exchange_multiplier(mining_cfg, report.exchange_id)
+
+        # Check NFT Pass boost for the reporting node's wallet (cached)
+        nft_bonus = 0.0
+        nft_type = None
+        if auth_node and getattr(auth_node, "wallet_address", None):
+            try:
+                from api.nft_verifier import verify_wallet_nft
+                nft_res = await verify_wallet_nft(auth_node.wallet_address)
+                if nft_res.get("has_nft"):
+                    nft_bonus = float(nft_res.get("bonus_multiplier", 0.0))
+                    nft_type = nft_res.get("tier")
+            except Exception as e:
+                logger.debug(f"[hub] Could not resolve NFT pass for {auth_node.wallet_address}: {e}")
+
+        effective_mult = round(float(mining_mult + nft_bonus), 2)
+        market_ctx_dict = report.market_context.model_dump() if hasattr(report.market_context, "model_dump") else (report.market_context or {})
+        if nft_type:
+            market_ctx_dict["nft_pass_type"] = nft_type
+            market_ctx_dict["nft_multiplier_bonus"] = nft_bonus
 
         db_report = None
         if report.broker_trade_id:
@@ -3603,7 +3723,7 @@ async def post_telemetry_report(
             db_report.max_floating_profit = report.max_floating_profit
             db_report.max_floating_loss = report.max_floating_loss
             db_report.strategy_blocks = blocks_data
-            db_report.market_context = report.market_context.model_dump()
+            db_report.market_context = market_ctx_dict
             db_report.node_uuid = resolved_attribution
             db_report.source_node_uuid = resolved_source
             db_report.exchange_id = report.exchange_id
@@ -3613,7 +3733,7 @@ async def post_telemetry_report(
             db_report.trade_volume_usdt = report.trade_volume_usdt
             db_report.score = score
             db_report.is_verified = initial_v_status == "SKIPPED"
-            db_report.mining_multiplier = mining_mult
+            db_report.mining_multiplier = effective_mult
 
             # Only upgrade status from LOCAL_ONLY to PENDING/SKIPPED
             if db_report.verification_status == "LOCAL_ONLY":
@@ -3637,7 +3757,7 @@ async def post_telemetry_report(
                 max_floating_profit=report.max_floating_profit,
                 max_floating_loss=report.max_floating_loss,
                 strategy_blocks=blocks_data,
-                market_context=report.market_context.model_dump(),
+                market_context=market_ctx_dict,
                 node_uuid=resolved_attribution,
                 source_node_uuid=resolved_source,
                 exchange_id=report.exchange_id,
@@ -3651,7 +3771,7 @@ async def post_telemetry_report(
                 verification_status=initial_v_status,
                 is_mining_eligible=is_mining_eligible,
                 estimated_rebate_usdt=estimated_rebate,
-                mining_multiplier=mining_mult,
+                mining_multiplier=effective_mult,
                 verification_error=gate_reason,
             )
             db.add(db_report)
@@ -4416,6 +4536,25 @@ async def get_analytics_trades(
 
 
 @router.post(
+    "/telemetry/cleanup-ineligible",
+    status_code=status.HTTP_200_OK,
+)
+async def cleanup_ineligible_telemetry_endpoint(
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin-only endpoint that purges testnet, demo, and ineligible exchange reports
+    from HubTelemetryReport and recalculates LocalUserMiningStats.
+    """
+    await _verify_hub_admin_access(authorization, db)
+    from scripts.cleanup_ineligible_telemetry import cleanup_ineligible_telemetry
+
+    await cleanup_ineligible_telemetry()
+    return {"status": "ok", "message": "Ineligible telemetry purged successfully."}
+
+
+@router.post(
     "/nodes/designate-operator",
     status_code=status.HTTP_200_OK,
 )
@@ -4852,7 +4991,18 @@ async def _resolve_user_promo_identity(
 
     from sqlalchemy import func as _func
 
-    ex = (exchange_id or "bitget").lower()
+    is_universal = not exchange_id or exchange_id.lower().strip() in (
+        "all",
+        "universal",
+        "*",
+        "any",
+    )
+    ex_list = (
+        [s.strip().lower() for s in (exchange_id or "").split(",") if s.strip()]
+        if not is_universal
+        else []
+    )
+    ex = ex_list[0] if len(ex_list) == 1 else (exchange_id or "all").lower().strip()
 
     # 1. AppConfig.exchange_settings: UIDs, mining_node_uuids, MetaMask wallets.
     settings_uids: List[str] = []
@@ -4876,7 +5026,7 @@ async def _resolve_user_promo_identity(
                     w.lower() for w in settings_wallets
                 ]:
                     settings_wallets.append(str(w_addr).strip())
-                if ex in k.lower() or k.lower() in ex:
+                if is_universal or any(e in k.lower() or k.lower() in e for e in ex_list) or (ex in k.lower() or k.lower() in ex):
                     for uid_key in (f"{exchange_id}_uid", f"{k}_uid", "uid"):
                         uid_val = v.get(uid_key)
                         if uid_val and str(uid_val) not in settings_uids:
@@ -4894,10 +5044,11 @@ async def _resolve_user_promo_identity(
 
     # 2. Auto-resolved UID via exchange API (user's own keys).
     auto_uid: Optional[str] = None
-    try:
-        auto_uid = await _lookup_user_exchange_uid(db, current_user_obj.id, exchange_id)
-    except Exception as e:
-        logger.debug(f"promo identity auto-resolve failed: {e}")
+    if not is_universal and len(ex_list) == 1:
+        try:
+            auto_uid = await _lookup_user_exchange_uid(db, current_user_obj.id, ex)
+        except Exception as e:
+            logger.debug(f"promo identity auto-resolve failed: {e}")
 
     known_uids: List[str] = []
     for u in settings_uids + ([str(auto_uid)] if auto_uid else []):
@@ -4991,20 +5142,47 @@ async def _resolve_user_promo_identity(
     # 6. Active API key strictly of this user.
     has_key_in_db = False
     try:
-        kq = await db.execute(
-            select(models.ApiKey.id)
-            .where(
-                models.ApiKey.user_id == current_user_obj.id,
-                models.ApiKey.is_active == True,  # noqa: E712
-                _func.lower(models.ApiKey.exchange).like(f"%{ex}%"),
+        if is_universal:
+            kq = await db.execute(
+                select(models.ApiKey.id)
+                .where(
+                    models.ApiKey.user_id == current_user_obj.id,
+                    models.ApiKey.is_active == True,  # noqa: E712
+                )
+                .limit(1)
             )
-            .limit(1)
-        )
+        elif len(ex_list) > 1:
+            key_guards = [
+                _func.lower(models.ApiKey.exchange).like(f"%{e}%") for e in ex_list
+            ]
+            kq = await db.execute(
+                select(models.ApiKey.id)
+                .where(
+                    models.ApiKey.user_id == current_user_obj.id,
+                    models.ApiKey.is_active == True,  # noqa: E712
+                    or_(*key_guards),
+                )
+                .limit(1)
+            )
+        else:
+            kq = await db.execute(
+                select(models.ApiKey.id)
+                .where(
+                    models.ApiKey.user_id == current_user_obj.id,
+                    models.ApiKey.is_active == True,  # noqa: E712
+                    _func.lower(models.ApiKey.exchange).like(f"%{ex}%"),
+                )
+                .limit(1)
+            )
         has_key_in_db = kq.scalars().first() is not None
     except Exception as e:
         logger.debug(f"promo identity key lookup failed: {e}")
 
     wallet = (settings_wallets + node_wallets or [None])[0]
+    # For universal or wallet-based identities, fallback to user-bound identifier
+    if is_universal and not known_uids and (has_key_in_db or wallet):
+        known_uids.append(f"user_{current_user_obj.id}")
+
     has_key = bool(has_key_in_db or known_uids)
     return {
         "node_uuids": node_uuids,
@@ -5293,6 +5471,26 @@ async def get_promo_status(
     if isinstance(quests_cfg, dict):
         quests_cfg = [quests_cfg]
 
+    def _quest_sort_key(q):
+        if not isinstance(q, dict):
+            return 999
+        tid = q.get("nft_token_id")
+        if tid is not None:
+            try:
+                return int(tid)
+            except (ValueError, TypeError):
+                pass
+        qt = q.get("quest_type")
+        if qt == "telemetry_pass":
+            return 0
+        if qt == "api_volume":
+            return 1
+        if qt == "node_runner":
+            return 2
+        return int(q.get("reward") or 999)
+
+    quests_cfg = sorted(quests_cfg, key=_quest_sort_key)
+
     owned_nodes: List[models.HubNode] = []
     if user_node_uuids:
         try:
@@ -5315,6 +5513,31 @@ async def get_promo_status(
     for nu in user_node_uuids:
         if nu not in physical_uuids and nu not in central_uuids:
             central_uuids.append(nu)
+
+    is_universal_exchange = not target_exchange or target_exchange.lower().strip() in (
+        "all",
+        "universal",
+        "*",
+        "any",
+    )
+    exchange_guard = []
+    if not is_universal_exchange:
+        ex_items = [
+            e.strip().lower() for e in target_exchange.split(",") if e.strip()
+        ]
+        if len(ex_items) > 1:
+            exchange_guard = [
+                or_(
+                    *[
+                        models.HubTelemetryReport.exchange_id.ilike(f"%{e}%")
+                        for e in ex_items
+                    ]
+                )
+            ]
+        elif len(ex_items) == 1:
+            exchange_guard = [
+                models.HubTelemetryReport.exchange_id.ilike(f"%{ex_items[0]}%")
+            ]
 
     async def _sum_volumes(
         uuids: List[str], exclude_source_uuids: Optional[List[str]] = None
@@ -5346,7 +5569,7 @@ async def get_promo_status(
                 models.HubTelemetryReport.node_uuid.in_(uuids),
                 models.HubTelemetryReport.source_node_uuid.in_(uuids),
             ),
-            models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+            *exchange_guard,
             models.HubTelemetryReport.verification_status != "REJECTED",
             _live_trade_mode_filter(),
             *source_guard,
@@ -5358,7 +5581,7 @@ async def get_promo_status(
                 models.HubTelemetryReport.node_uuid.in_(uuids),
                 models.HubTelemetryReport.source_node_uuid.in_(uuids),
             ),
-            models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+            *exchange_guard,
             models.HubTelemetryReport.verification_status == "VERIFIED",
             _live_trade_mode_filter(),
             *source_guard,
@@ -5391,7 +5614,7 @@ async def get_promo_status(
                     models.HubTelemetryReport.node_uuid.in_(physical_uuids),
                     models.HubTelemetryReport.source_node_uuid.in_(physical_uuids),
                 ),
-                models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+                *exchange_guard,
                 models.HubTelemetryReport.verification_status != "REJECTED",
                 _live_trade_mode_filter(),
                 models.HubTelemetryReport.created_at >= window_ago,
@@ -5559,6 +5782,13 @@ async def get_promo_status(
                 and recent_trade_exists
                 and (remaining_slots > 0 or is_claimed)
             )
+        else:
+            all_met = (
+                has_key
+                and vol_met
+                and has_wallet
+                and (remaining_slots > 0 or is_claimed)
+            )
 
         quests_progress.append(
             schemas.PromoQuestProgress(
@@ -5572,6 +5802,16 @@ async def get_promo_status(
                 is_claimed=is_claimed,
                 requirements=reqs,
                 all_requirements_met=all_met and not is_claimed,
+                reward_type=q.get("reward_type", "token"),
+                nft_contract_address=q.get("nft_contract_address"),
+                nft_chain_id=q.get("nft_chain_id", 42161),
+                nft_token_id=q.get("nft_token_id"),
+                nft_name=q.get("nft_name"),
+                nft_image_url=q.get("nft_image_url"),
+                nft_multiplier=q.get("nft_multiplier"),
+                nft_nominal=q.get("nft_nominal"),
+                nft_max_supply=q.get("nft_max_supply"),
+                nft_color_theme=q.get("nft_color_theme") or q.get("color_theme"),
             )
         )
 
@@ -5683,10 +5923,26 @@ async def claim_promo_quest(
 
     exchange_uid = user_uids[0] if user_uids else None
     if not exchange_uid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No {target_exchange.upper()} UID found. Please connect your {target_exchange.upper()} API key.",
+        is_univ = not target_exchange or target_exchange.lower().strip() in (
+            "all",
+            "universal",
+            "*",
+            "any",
         )
+        if (is_univ or "hyperliquid" in target_exchange.lower()) and (
+            identity["has_key"] or identity["has_wallet"] or current_user_obj
+        ):
+            wallet_candidate = identity["wallet"] or (node.wallet_address if node else None)
+            exchange_uid = (
+                f"user_{current_user_obj.id}"
+                if current_user_obj
+                else f"wallet_{wallet_candidate}"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No {target_exchange.upper()} UID found. Please connect your {target_exchange.upper()} API key.",
+            )
 
     master_uid = str(exchange_uid)
 
@@ -5695,6 +5951,31 @@ async def claim_promo_quest(
     # mined THROUGH the physical server (source_node_uuid), even when
     # attributed to the wallet node.
     from sqlalchemy import func
+
+    is_universal_exchange = not target_exchange or target_exchange.lower().strip() in (
+        "all",
+        "universal",
+        "*",
+        "any",
+    )
+    exchange_guard = []
+    if not is_universal_exchange:
+        ex_items = [
+            e.strip().lower() for e in target_exchange.split(",") if e.strip()
+        ]
+        if len(ex_items) > 1:
+            exchange_guard = [
+                or_(
+                    *[
+                        models.HubTelemetryReport.exchange_id.ilike(f"%{e}%")
+                        for e in ex_items
+                    ]
+                )
+            ]
+        elif len(ex_items) == 1:
+            exchange_guard = [
+                models.HubTelemetryReport.exchange_id.ilike(f"%{ex_items[0]}%")
+            ]
 
     owned_claim_nodes: List[models.HubNode] = []
     if user_node_uuids:
@@ -5774,7 +6055,7 @@ async def claim_promo_quest(
                 models.HubTelemetryReport.node_uuid.in_(quest_uuids),
                 models.HubTelemetryReport.source_node_uuid.in_(quest_uuids),
             ),
-            models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+            *exchange_guard,
             models.HubTelemetryReport.verification_status == "VERIFIED",
             _live_trade_mode_filter(),
             *central_source_guard,
@@ -5795,7 +6076,7 @@ async def claim_promo_quest(
                     models.HubTelemetryReport.node_uuid.in_(quest_uuids),
                     models.HubTelemetryReport.source_node_uuid.in_(quest_uuids),
                 ),
-                models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+                *exchange_guard,
                 models.HubTelemetryReport.verification_status != "REJECTED",
                 _live_trade_mode_filter(),
                 *central_source_guard,
@@ -5855,7 +6136,7 @@ async def claim_promo_quest(
                     models.HubTelemetryReport.node_uuid.in_(physical_uuids),
                     models.HubTelemetryReport.source_node_uuid.in_(physical_uuids),
                 ),
-                models.HubTelemetryReport.exchange_id.ilike(f"%{target_exchange}%"),
+                *exchange_guard,
                 models.HubTelemetryReport.verification_status != "REJECTED",
                 _live_trade_mode_filter(),
                 models.HubTelemetryReport.created_at >= window_ago,
@@ -5927,6 +6208,11 @@ async def claim_promo_quest(
             detail="Campaign reward pool exhausted.",
         )
 
+    reward_type = target_quest.get("reward_type", "token")
+    nft_token_id = target_quest.get("nft_token_id")
+    nft_name = target_quest.get("nft_name") or f"Genesis Pass #{nft_token_id or 1}"
+    claim_status = "reserved" if reward_type == "nft" else "credited"
+
     # Create PromoClaim record (bound to master UID + wallet, credited
     # to the user's primary node so the card aggregate shows it).
     claim_record = models.PromoClaim(
@@ -5938,42 +6224,46 @@ async def claim_promo_quest(
         or "0x0000000000000000000000000000000000000000",
         reward_amount=reward,
         verified_volume=verified_volume,
-        status="credited",
+        status=claim_status,
     )
     db.add(claim_record)
 
-    # Credit HubNode total_mined
-    target_node.total_mined = float(target_node.total_mined or 0.0) + reward
-
-    # Record in MiningLedger
-    today = datetime.now(timezone.utc).date()
-    ledger_stmt = select(models.MiningLedger).where(
-        models.MiningLedger.node_uuid == target_node.node_uuid,
-        models.MiningLedger.epoch_date == today,
-    )
-    ledger_entry = (await db.execute(ledger_stmt)).scalars().first()
-    if ledger_entry:
-        ledger_entry.total_reward = float(ledger_entry.total_reward or 0.0) + reward
-        ledger_entry.welcome_bonus = float(ledger_entry.welcome_bonus or 0.0) + reward
+    if reward_type == "nft":
+        success_msg = f"NFT Pass #{nft_token_id or 1} ({nft_name}) successfully reserved! Your wallet {wallet_addr_to_check} has been registered for the Thirdweb Airdrop on Arbitrum One."
     else:
-        new_ledger = models.MiningLedger(
-            node_uuid=target_node.node_uuid,
-            epoch_date=today,
-            total_reward=reward,
-            welcome_bonus=reward,
-            base_reward=0.0,
-            referral_bonus=0.0,
+        # Credit HubNode total_mined & MiningLedger only for token rewards
+        target_node.total_mined = float(target_node.total_mined or 0.0) + reward
+        today = datetime.now(timezone.utc).date()
+        ledger_stmt = select(models.MiningLedger).where(
+            models.MiningLedger.node_uuid == target_node.node_uuid,
+            models.MiningLedger.epoch_date == today,
         )
-        db.add(new_ledger)
+        ledger_entry = (await db.execute(ledger_stmt)).scalars().first()
+        if ledger_entry:
+            ledger_entry.total_reward = float(ledger_entry.total_reward or 0.0) + reward
+            ledger_entry.welcome_bonus = float(ledger_entry.welcome_bonus or 0.0) + reward
+        else:
+            new_ledger = models.MiningLedger(
+                node_uuid=target_node.node_uuid,
+                epoch_date=today,
+                total_reward=reward,
+                welcome_bonus=reward,
+                base_reward=0.0,
+                referral_bonus=0.0,
+            )
+            db.add(new_ledger)
+        success_msg = f"Successfully claimed {reward:,.0f} $DEPTH!"
 
     await db.commit()
 
     return schemas.PromoClaimResponse(
         success=True,
-        message=f"Successfully claimed {reward:,.0f} $DEPTH!",
+        message=success_msg,
         reward_amount=reward,
         quest_type=payload.quest_type,
         claimed_at=datetime.now(timezone.utc),
+        reward_type=reward_type,
+        nft_token_id=nft_token_id,
     )
 
 
@@ -6060,6 +6350,114 @@ async def create_or_update_promo_campaign_admin(
     await db.commit()
     await db.refresh(campaign)
     return campaign
+
+
+@router.get("/promo/admin/claims/export")
+async def export_promo_claims_admin(
+    campaign_id: str,
+    quest_type: Optional[str] = None,
+    format: str = "thirdweb",
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: export claimed promo wallets in Thirdweb CSV format.
+
+    Strictly restricted to Central Federation Hub (IS_CENTRAL_HUB=true).
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Promo claims can only be exported on the Central Federation Hub.",
+        )
+    await _verify_admin_access_async(authorization, db)
+
+    camp_stmt = select(models.PromoCampaign).where(
+        models.PromoCampaign.id == campaign_id
+    )
+    camp_res = await db.execute(camp_stmt)
+    campaign = camp_res.scalars().first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    quest_token_map = {}
+    for q in campaign.quests or []:
+        qt = q.get("quest_type")
+        tid = q.get("nft_token_id", 1)
+        quest_token_map[qt] = tid
+
+    stmt = select(models.PromoClaim).where(
+        models.PromoClaim.campaign_id == campaign_id,
+        models.PromoClaim.status != "rejected",
+    )
+    if quest_type:
+        stmt = stmt.where(models.PromoClaim.quest_type == quest_type)
+    stmt = stmt.order_by(models.PromoClaim.claimed_at.asc())
+    claims_res = await db.execute(stmt)
+    claims = claims_res.scalars().all()
+
+    import io
+    import csv
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Thirdweb Edition Drop Airdrop CSV: address,tokenId,quantity
+    writer.writerow(["address", "tokenId", "quantity"])
+    for c in claims:
+        token_id = quest_token_map.get(c.quest_type, 1)
+        writer.writerow([c.wallet_address, token_id, 1])
+
+    csv_data = output.getvalue()
+    filename = f"thirdweb_airdrop_{campaign_id}_{quest_type or 'all'}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/promo/admin/claims")
+async def list_promo_claims_admin(
+    campaign_id: str,
+    quest_type: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: list all claims for a campaign.
+
+    Strictly restricted to Central Federation Hub (IS_CENTRAL_HUB=true).
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Promo claims can only be viewed on the Central Federation Hub.",
+        )
+    await _verify_admin_access_async(authorization, db)
+
+    stmt = select(models.PromoClaim).where(
+        models.PromoClaim.campaign_id == campaign_id,
+        models.PromoClaim.status != "rejected",
+    )
+    if quest_type:
+        stmt = stmt.where(models.PromoClaim.quest_type == quest_type)
+    stmt = stmt.order_by(models.PromoClaim.claimed_at.desc())
+    claims_res = await db.execute(stmt)
+    claims = claims_res.scalars().all()
+
+    return [
+        {
+            "id": c.id,
+            "campaign_id": c.campaign_id,
+            "quest_type": c.quest_type,
+            "wallet_address": c.wallet_address,
+            "exchange_uid": c.exchange_uid,
+            "reward_amount": c.reward_amount,
+            "verified_volume": c.verified_volume,
+            "status": c.status,
+            "claimed_at": c.claimed_at.isoformat() if c.claimed_at else None,
+        }
+        for c in claims
+    ]
 
 
 @router.post(

@@ -15,6 +15,7 @@ import {
 	useMultiAccountBalances,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { isUnifiedAccountExchange } from "@/lib/exchanges";
 import { useAccountStore } from "@/stores/accountStore";
 import { useAiCopilotStore } from "@/stores/aiCopilotStore";
 import type { AccountBalance } from "@/types/api";
@@ -53,7 +54,7 @@ export const AppHeader = () => {
 			(acc, bal) => {
 				const existing = acc[bal.apiKeyId];
 				if (existing) {
-					if (bal.exchange === "bybit" || bal.exchange === "okx") {
+					if (isUnifiedAccountExchange(bal.exchange)) {
 						if (bal.marketType === "futures_usdtm") {
 							acc[bal.apiKeyId] = {
 								...bal,

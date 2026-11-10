@@ -232,6 +232,7 @@ class ApiKeyCreate(ApiKeyBase):
     api_key: str
     api_secret: str
     api_password: Optional[str] = None
+    builder_fee_rate: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_snake,
@@ -484,6 +485,7 @@ class ExchangeSettings(BaseModel):
     binance: Optional[ExchangePlatformSettings] = None
     binance_futures: Optional[ExchangePlatformSettings] = None
     binance_spot: Optional[ExchangePlatformSettings] = None
+    hyperliquid: Optional[ExchangePlatformSettings] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -3172,6 +3174,11 @@ class MiningStatusResponse(BaseModel):
     daily_history: List[MiningDailyHistoryItem] = Field(default_factory=list)
     epoch_number: int = 1
     launch_date: Optional[str] = None
+    nft_pass_type: Optional[str] = None
+    nft_multiplier_bonus: float = 0.0
+    nft_token_id: Optional[int] = None
+    nft_contract_address: Optional[str] = None
+    nft_name: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -3263,6 +3270,11 @@ class LocalMiningStatusResponse(BaseModel):
     daily_history: List[MiningDailyHistoryItem] = Field(default_factory=list)
     epoch_number: int = 1
     launch_date: Optional[str] = None
+    nft_pass_type: Optional[str] = None
+    nft_multiplier_bonus: float = 0.0
+    nft_token_id: Optional[int] = None
+    nft_contract_address: Optional[str] = None
+    nft_name: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -3646,6 +3658,16 @@ class PromoQuestProgress(BaseModel):
     is_claimed: bool
     requirements: Dict[str, Any]
     all_requirements_met: bool
+    reward_type: Optional[str] = "token"  # "token" | "nft"
+    nft_contract_address: Optional[str] = None
+    nft_chain_id: Optional[int] = None
+    nft_token_id: Optional[int] = None
+    nft_name: Optional[str] = None
+    nft_image_url: Optional[str] = None
+    nft_multiplier: Optional[str] = None
+    nft_nominal: Optional[float] = None
+    nft_max_supply: Optional[int] = None
+    nft_color_theme: Optional[str] = None
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -3678,6 +3700,8 @@ class PromoClaimResponse(BaseModel):
     reward_amount: float
     quest_type: str
     claimed_at: datetime
+    reward_type: Optional[str] = "token"
+    nft_token_id: Optional[int] = None
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

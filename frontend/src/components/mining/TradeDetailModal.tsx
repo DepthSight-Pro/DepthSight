@@ -23,6 +23,7 @@ import {
 	TrendingDown,
 	Zap,
 	Code2,
+	Sparkles,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import type { MiningAnalyticsTradeItem } from "@/types/api";
@@ -60,6 +61,11 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
 	const isLong = trade.direction?.toUpperCase() === "LONG";
 	const isVerified = trade.verificationStatus === "VERIFIED";
 	const isPending = trade.verificationStatus === "PENDING";
+
+	const nftPassType = trade.nftPassType || (trade.marketContext as Record<string, unknown> | undefined)?.nft_pass_type as string | undefined;
+	const nftBonus = Number(trade.nftMultiplierBonus ?? (trade.marketContext as Record<string, unknown> | undefined)?.nft_multiplier_bonus ?? 0);
+	const effectiveMult = trade.miningMultiplier ?? (1.0 + nftBonus);
+	const baseMult = Math.max(0, Number((effectiveMult - nftBonus).toFixed(2)));
 
 	return (
 		<Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -134,13 +140,17 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
 							<div>
 								<div className="text-xs text-muted-foreground">Entry Price</div>
 								<div className="font-mono font-medium text-foreground">
-									${trade.entryPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+									{trade.entryPrice != null
+										? `$${trade.entryPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
+										: "—"}
 								</div>
 							</div>
 							<div>
 								<div className="text-xs text-muted-foreground">Exit Price</div>
 								<div className="font-mono font-medium text-foreground">
-									${trade.exitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+									{trade.exitPrice != null
+										? `$${trade.exitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
+										: "—"}
 								</div>
 							</div>
 							<div>
@@ -234,10 +244,28 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
 									)}
 								</div>
 							</div>
-							<div>
+							<div className={nftBonus > 0 ? "sm:col-span-2" : ""}>
 								<div className="text-xs text-muted-foreground">Multiplier</div>
 								<div className="font-mono font-medium text-foreground">
-									{trade.miningMultiplier != null && trade.miningMultiplier > 1 ? (
+									{nftBonus > 0 ? (
+										<div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+											<span className="text-amber-400 font-bold">x{effectiveMult.toFixed(2)}</span>
+											<span className="text-xs text-muted-foreground">
+												(Base {baseMult.toFixed(1)}x +{" "}
+												<span className="text-purple-400 font-semibold">
+													+{nftBonus.toFixed(1)}x {nftPassType || "NFT Pass"}
+												</span>
+												)
+											</span>
+											<Badge
+												variant="outline"
+												className="text-[10px] px-1.5 py-0 border-purple-500/30 text-purple-400 bg-purple-500/10 font-bold inline-flex items-center gap-1"
+											>
+												<Sparkles className="w-2.5 h-2.5" />
+												NFT Active
+											</Badge>
+										</div>
+									) : trade.miningMultiplier != null && trade.miningMultiplier > 1 ? (
 										<span className="text-amber-400 font-bold">x{trade.miningMultiplier}</span>
 									) : (
 										<span>x{trade.miningMultiplier != null ? trade.miningMultiplier : 1}</span>

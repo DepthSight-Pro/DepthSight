@@ -2163,11 +2163,27 @@ class TradingController:
         """True if the instance's symbol coverage includes the given symbol."""
         if not symbol:
             return False
-        symbol_upper = str(symbol).upper()
         if (config_dict.get("symbol_selection_mode") or "STATIC").upper() == "DYNAMIC":
             return True
+
+        def _norm(s: str) -> str:
+            res = (
+                str(s)
+                .upper()
+                .replace("/", "")
+                .replace(":USDT", "")
+                .replace(":USDC", "")
+                .replace("-", "")
+            )
+            if res.endswith("USDC"):
+                res = res[:-4] + "USDT"
+            if res.startswith("K") and len(res) > 5 and res.endswith("USDT"):
+                res = "1000" + res[1:]
+            return res
+
+        norm_sym = _norm(symbol)
         return any(
-            str(s).upper() == symbol_upper
+            _norm(s) == norm_sym
             for s in config_dict.get("symbols") or []
             if str(s)
         )
@@ -3393,19 +3409,52 @@ class TradingController:
         assigned_config_id = None
         entry_client_id = f"adopted-{uuid.uuid4().hex[:8]}"
 
+        def _norm_sym(s: str) -> str:
+            res = (
+                str(s or "")
+                .upper()
+                .replace("/", "")
+                .replace(":USDT", "")
+                .replace(":USDC", "")
+                .replace("-", "")
+            )
+            if res.endswith("USDC"):
+                res = res[:-4] + "USDT"
+            if res.startswith("K") and len(res) > 5 and res.endswith("USDT"):
+                res = "1000" + res[1:]
+            return res
+
+        norm_symbol = _norm_sym(symbol)
+
         # 1. Look up currently running strategy instances that cover this symbol
         async with self.instances_lock:
+            # Pass 1: exact symbol match among running instances
             for cfg_id, (instance, cfg_dict) in self.running_strategy_instances.items():
-                if self._instance_covers_symbol(cfg_dict, symbol):
+                inst_syms = [_norm_sym(s) for s in cfg_dict.get("symbols") or [] if s]
+                if norm_symbol in inst_syms:
                     assigned_config_id = self._source_config_id(cfg_dict) or cfg_id
                     assigned_strategy_name = (
                         instance.NAME or cfg_dict.get("name") or "VisualBuilderStrategy"
                     )
                     logger.info(
-                        f"Adopt:{symbol}: Matched running strategy instance '{assigned_strategy_name}' (config_id={assigned_config_id})."
+                        f"Adopt:{symbol}: Matched exact running strategy instance '{assigned_strategy_name}' (config_id={assigned_config_id})."
                     )
                     break
-            else:
+
+            # Pass 2: DYNAMIC mode running instances
+            if not assigned_config_id:
+                for cfg_id, (instance, cfg_dict) in self.running_strategy_instances.items():
+                    if (cfg_dict.get("symbol_selection_mode") or "STATIC").upper() == "DYNAMIC":
+                        assigned_config_id = self._source_config_id(cfg_dict) or cfg_id
+                        assigned_strategy_name = (
+                            instance.NAME or cfg_dict.get("name") or "VisualBuilderStrategy"
+                        )
+                        logger.info(
+                            f"Adopt:{symbol}: Matched dynamic running strategy instance '{assigned_strategy_name}' (config_id={assigned_config_id})."
+                        )
+                        break
+
+            if not assigned_config_id:
                 logger.info(
                     f"Adopt:{symbol}: No running strategy instance covers symbol {symbol} (running_count={len(self.running_strategy_instances)})."
                 )
@@ -3418,22 +3467,12 @@ class TradingController:
                         db, user_id=self.user_id
                     )
 
-                    def _norm(s: str) -> str:
-                        return (
-                            str(s)
-                            .upper()
-                            .replace("/", "")
-                            .replace(":USDT", "")
-                            .replace("-", "")
-                        )
-
-                    norm_symbol = _norm(symbol)
                     matched_config = None
 
                     # Pass 1: exact normalized symbol match, prioritize matching api_key_id
                     for sc in user_configs:
                         symbols = sc.symbols if isinstance(sc.symbols, list) else []
-                        sc_syms = [_norm(s) for s in symbols if s]
+                        sc_syms = [_norm_sym(s) for s in symbols if s]
                         if norm_symbol in sc_syms:
                             cfg_data = (
                                 sc.config_data
@@ -4000,12 +4039,23 @@ class TradingController:
                 if getattr(internal_pos, "mode", "live") == "paper":
                     continue
                 sym_upper = str(internal_pos.symbol).upper()
-                if sym_upper not in exchange_positions_map:
-                    to_close.append((position_key, internal_pos.symbol))
-                else:
+                if sym_upper in exchange_positions_map:
                     to_update.append(
                         (internal_pos.symbol, exchange_positions_map.pop(sym_upper))
                     )
+                else:
+                    alt_sym = None
+                    if sym_upper.endswith("USDT"):
+                        alt_sym = sym_upper[:-4] + "USDC"
+                    elif sym_upper.endswith("USDC"):
+                        alt_sym = sym_upper[:-4] + "USDT"
+
+                    if alt_sym and alt_sym in exchange_positions_map:
+                        to_update.append(
+                            (internal_pos.symbol, exchange_positions_map.pop(alt_sym))
+                        )
+                    else:
+                        to_close.append((position_key, internal_pos.symbol))
 
             # exchange_positions_map now contains only ORPHANS
             to_adopt = list(exchange_positions_map.items())
@@ -12170,6 +12220,33 @@ class TradingController:
 
                         # Federated Trade-Mining Telemetry
                         try:
+                            # 1. Testnet and paper trades must NEVER participate in trade mining
+                            is_paper = (
+                                getattr(position_to_process_copy, "mode", "live") == "paper"
+                                or str(trade_mode_for_db).lower() == "paper"
+                            )
+                            pos_market_type = getattr(
+                                position_to_process_copy,
+                                "market_type",
+                                "futures_usdtm",
+                            )
+                            executor_obj = self.market_executors.get(
+                                pos_market_type
+                            ) or self.executors.get(
+                                position_to_process_copy.mode or "live"
+                            )
+                            exch_id = (
+                                getattr(executor_obj, "exchange_id", None)
+                                or getattr(self, "api_key_name", None)
+                                or "bybit"
+                            )
+                            clean_exch = str(exch_id).lower().replace("_testnet", "")
+                            is_testnet = bool(
+                                getattr(executor_obj, "sandbox", False)
+                                or getattr(config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet") == "testnet"
+                                or str(exch_id).lower().endswith("_testnet")
+                            )
+
                             app_config = await crud.get_config(db, user_id=self.user_id)
                             mining_on = bool(
                                 app_config and app_config.is_mining_enabled
@@ -12181,22 +12258,30 @@ class TradingController:
                                 notifs.get("shareTelemetry")
                                 or notifs.get("share_telemetry")
                             )
+
+                            if is_paper or is_testnet:
+                                logger.info(
+                                    f"{log_prefix} Skipping trade telemetry: trade is on {'paper' if is_paper else 'testnet'} ({exch_id})."
+                                )
+                                share_enabled = False
+
                             if share_enabled:
                                 mining_config = await self._get_mining_config_from_hub()
                                 is_mining_enabled = True
+                                # Default to only official mining broker partner exchanges:
                                 eligible_exchanges = [
                                     "weex",
                                     "okx",
                                     "bybit",
-                                    "binance",
+                                    "bitget",
                                     "weex_futures",
                                     "okx_futures",
                                     "bybit_futures",
-                                    "binance_futures",
+                                    "bitget_futures",
                                     "weex_spot",
                                     "okx_spot",
                                     "bybit_spot",
-                                    "binance_spot",
+                                    "bitget_spot",
                                 ]
                                 if mining_config:
                                     is_mining_enabled = mining_config.get(
@@ -12209,32 +12294,20 @@ class TradingController:
                                         or eligible_exchanges
                                     )
 
-                                pos_market_type = getattr(
-                                    position_to_process_copy,
-                                    "market_type",
-                                    "futures_usdtm",
-                                )
-                                executor_obj = self.market_executors.get(
-                                    pos_market_type
-                                ) or self.executors.get(
-                                    position_to_process_copy.mode or "live"
-                                )
-                                exch_id = (
-                                    getattr(executor_obj, "exchange_id", None)
-                                    or getattr(self, "api_key_name", None)
-                                    or "bybit"
-                                )
                                 market_type_norm = (
                                     "spot"
                                     if "spot" in str(pos_market_type).lower()
                                     else "futures"
                                 )
 
-                                lookup_key = f"{exch_id}_{market_type_norm}"
+                                lookup_key = f"{clean_exch}_{market_type_norm}"
+                                eligible_clean = [
+                                    str(e).lower().replace("_testnet", "")
+                                    for e in eligible_exchanges
+                                ]
                                 is_eligible = (
-                                    (exch_id in eligible_exchanges)
-                                    or (lookup_key in eligible_exchanges)
-                                    or True
+                                    (clean_exch in eligible_clean)
+                                    or (lookup_key in eligible_clean)
                                 )
 
                                 if is_mining_enabled and is_eligible:

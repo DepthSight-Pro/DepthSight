@@ -185,7 +185,7 @@
 		"partnerTitle": "Earn 10% from Your Audience's Trade Mining",
 		"partnerDescription": "You don't need to connect an exchange or trade yourself. Simply connect your Web3 wallet (MetaMask), activate mining, and copy your referral link for your audience.",
 		"step1Title": "Generate API Key",
-		"step1Desc": "On Binance, Bybit, OKX, Bitget, or WEEX with read and trade permissions.",
+		"step1Desc": "On Binance, Bybit, OKX, Bitget, WEEX, or Hyperliquid with read and trade permissions.",
 		"step2Title": "Connect to DepthSight",
 		"step2Desc": "Keys are Fernet-encrypted at rest and stored in secure multi-tenant isolation.",
 		"step3Title": "Connect Wallet & Activate Mining",

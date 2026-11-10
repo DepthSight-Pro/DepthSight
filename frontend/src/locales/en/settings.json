@@ -46,6 +46,37 @@
 				"exchangeRequired": "Exchange is required",
 				"apiKeyRequired": "API key is required",
 				"apiSecretRequired": "API secret is required"
+			},
+			"hyperliquidTier": {
+				"title": " Mining Mode (Builder Fee)",
+				"subtitle": "Select your builder fee rate. 30% of collected fees fund token buyback and convert directly into trade mining points.",
+				"lowCost": {
+					"title": "Low-Cost",
+					"badge": "Low Fee",
+					"rate": "0.01%",
+					"power": "1x Mining",
+					"desc": "Minimal platform fee (1 bp). Ideal for scalpers and high-frequency trading strategies."
+				},
+				"standard": {
+					"title": "Standard",
+					"badge": "Recommended",
+					"rate": "0.05%",
+					"power": "5x Mining",
+					"desc": "Optimal balance (5 bps). Sweet spot between trade fee overhead and  mining rewards."
+				},
+				"degen": {
+					"title": "Max Mining",
+					"badge": "Max Farm",
+					"rate": "0.10%",
+					"power": "10x Mining",
+					"desc": "Maximum speed (10 bps). Maximizes daily  emission allocation and token buyback."
+				},
+				"calculator": {
+					"volumeLabel": "Daily volume:",
+					"feePaidLabel": "Platform fee paid:",
+					"pointsEarnedLabel": "Daily mining points:",
+					"burnNotice": "30% of builder fees fund the reward pool and token Buyback & Burn."
+				}
 			}
 		},
 		"deleteModalTitle": "Delete API Key: {{name}}",
@@ -107,7 +138,6 @@
 		"riskPerTradeDesc": "Percentage of the total balance to risk on a single trade.",
 		"leverageLabel": "Leverage",
 		"leverageDesc": "The leverage to use for backtesting.",
-
 		"adaptive": {
 			"title": "Adaptive Risk Manager (Symbol-Strategy)",
 			"description": "Automatically adjusts risk for each trading pair based on its recent performance to limit losses from underperforming strategies.",

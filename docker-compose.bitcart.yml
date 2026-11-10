@@ -36,17 +36,19 @@ services:
       DB_PASSWORD: ${BITCART_DB_PASSWORD:-bitcart_default_pass_123}
       REDIS_HOST: bitcart_redis
       REDIS_PORT: 6379
-      BITCART_CRYPTOS: btc,ltc,trx,bnb,matic
-      BTC_HOST: bitcart_btc
-      BTC_PORT: 5000
-      LTC_HOST: bitcart_ltc
-      LTC_PORT: 5001
-      TRX_HOST: bitcart_trx
-      TRX_PORT: 5009
+      # Active cryptos: only BNB (USDT BEP-20)
+      BITCART_CRYPTOS: bnb
+      # BITCART_CRYPTOS: btc,ltc,trx,bnb,matic
+      # BTC_HOST: bitcart_btc
+      # BTC_PORT: 5000
+      # LTC_HOST: bitcart_ltc
+      # LTC_PORT: 5001
+      # TRX_HOST: bitcart_trx
+      # TRX_PORT: 5009
       BNB_HOST: bitcart_bnb
       BNB_PORT: 5006
-      MATIC_HOST: bitcart_matic
-      MATIC_PORT: 5008
+      # MATIC_HOST: bitcart_matic
+      # MATIC_PORT: 5008
       BITCART_DAEMON_USER: electrum
       BITCART_DAEMON_PASS: electrumz
       BITCART_ADMIN_URL: ${BITCART_ADMIN_URL:-http://localhost:8081}
@@ -81,17 +83,19 @@ services:
       DB_PASSWORD: ${BITCART_DB_PASSWORD:-bitcart_default_pass_123}
       REDIS_HOST: bitcart_redis
       REDIS_PORT: 6379
-      BITCART_CRYPTOS: btc,ltc,trx,bnb,matic
-      BTC_HOST: bitcart_btc
-      BTC_PORT: 5000
-      LTC_HOST: bitcart_ltc
-      LTC_PORT: 5001
-      TRX_HOST: bitcart_trx
-      TRX_PORT: 5009
+      # Active cryptos: only BNB (USDT BEP-20)
+      BITCART_CRYPTOS: bnb
+      # BITCART_CRYPTOS: btc,ltc,trx,bnb,matic
+      # BTC_HOST: bitcart_btc
+      # BTC_PORT: 5000
+      # LTC_HOST: bitcart_ltc
+      # LTC_PORT: 5001
+      # TRX_HOST: bitcart_trx
+      # TRX_PORT: 5009
       BNB_HOST: bitcart_bnb
       BNB_PORT: 5006
-      MATIC_HOST: bitcart_matic
-      MATIC_PORT: 5008
+      # MATIC_HOST: bitcart_matic
+      # MATIC_PORT: 5008
       BITCART_DAEMON_USER: electrum
       BITCART_DAEMON_PASS: electrumz
       BITCART_FIAT_PROVIDER: bitfinex
@@ -109,62 +113,62 @@ services:
       - bitcart_redis
     restart: always
 
-  bitcart_btc:
-    image: bitcart/bitcart-btc:stable
-    container_name: bitcart_btc
-    dns:
-      - 8.8.8.8
-    environment:
-      BITCART_DAEMON_USER: electrum
-      BITCART_DAEMON_PASS: electrumz
-      BITCART_NETWORK: mainnet
-      NETWORK: mainnet
-      ELECTRUM_AUTO_CONNECT: "true"
-    volumes:
-      - ./bitcart_btc_data:/home/electrum/.electrum
-    networks:
-      - default
-      - depthsight_network
-    restart: always
+#  bitcart_btc:
+#    image: bitcart/bitcart-btc:stable
+#    container_name: bitcart_btc
+#    dns:
+#      - 8.8.8.8
+#    environment:
+#      BITCART_DAEMON_USER: electrum
+#      BITCART_DAEMON_PASS: electrumz
+#      BITCART_NETWORK: mainnet
+#      NETWORK: mainnet
+#      ELECTRUM_AUTO_CONNECT: "true"
+#    volumes:
+#      - ./bitcart_btc_data:/home/electrum/.electrum
+#    networks:
+#      - default
+#      - depthsight_network
+#    restart: always
 
-  bitcart_ltc:
-    image: bitcart/bitcart-ltc:stable
-    container_name: bitcart_ltc
-    dns:
-      - 8.8.8.8
-    environment:
-      BITCART_DAEMON_USER: electrum
-      BITCART_DAEMON_PASS: electrumz
-      BITCART_NETWORK: mainnet
-      LTC_NETWORK: mainnet
-      PORT: 5000
-      ELECTRUM_AUTO_CONNECT: "true"
-    volumes:
-      - ./bitcart_ltc_data:/home/electrum/.electrum
-    networks:
-      - default
-      - depthsight_network
-    restart: always
+#  bitcart_ltc:
+#    image: bitcart/bitcart-ltc:stable
+#    container_name: bitcart_ltc
+#    dns:
+#      - 8.8.8.8
+#    environment:
+#      BITCART_DAEMON_USER: electrum
+#      BITCART_DAEMON_PASS: electrumz
+#      BITCART_NETWORK: mainnet
+#      LTC_NETWORK: mainnet
+#      PORT: 5000
+#      ELECTRUM_AUTO_CONNECT: "true"
+#    volumes:
+#      - ./bitcart_ltc_data:/home/electrum/.electrum
+#    networks:
+#      - default
+#      - depthsight_network
+#    restart: always
 
-  bitcart_trx:
-    image: bitcart/bitcart-trx:stable
-    container_name: bitcart_trx
-    dns:
-      - 8.8.8.8
-    environment:
-      BITCART_DAEMON_USER: electrum
-      BITCART_DAEMON_PASS: electrumz
-      BITCART_NETWORK: mainnet
-      TRX_NETWORK: mainnet
-      TRX_SERVER: https://tron-rpc.publicnode.com
-      PORT: 5000
-      ELECTRUM_AUTO_CONNECT: "true"
-    volumes:
-      - ./bitcart_trx_data:/home/electrum/.electrum
-    networks:
-      - default
-      - depthsight_network
-    restart: always
+#  bitcart_trx:
+#    image: bitcart/bitcart-trx:stable
+#    container_name: bitcart_trx
+#    dns:
+#      - 8.8.8.8
+#    environment:
+#      BITCART_DAEMON_USER: electrum
+#      BITCART_DAEMON_PASS: electrumz
+#      BITCART_NETWORK: mainnet
+#      TRX_NETWORK: mainnet
+#      TRX_SERVER: https://tron-rpc.publicnode.com
+#      PORT: 5000
+#      ELECTRUM_AUTO_CONNECT: "true"
+#    volumes:
+#      - ./bitcart_trx_data:/home/electrum/.electrum
+#    networks:
+#      - default
+#      - depthsight_network
+#    restart: always
 
   bitcart_bnb:
     image: bitcart/bitcart-bnb:stable
@@ -186,25 +190,25 @@ services:
       - depthsight_network
     restart: always
 
-  bitcart_matic:
-    image: bitcart/bitcart-matic:stable
-    container_name: bitcart_matic
-    dns:
-      - 8.8.8.8
-    environment:
-      BITCART_DAEMON_USER: electrum
-      BITCART_DAEMON_PASS: electrumz
-      BITCART_NETWORK: mainnet
-      MATIC_NETWORK: mainnet
-      MATIC_SERVER: https://polygon-bor-rpc.publicnode.com
-      PORT: 5000
-      ELECTRUM_AUTO_CONNECT: "true"
-    volumes:
-      - ./bitcart_matic_data:/home/electrum/.electrum
-    networks:
-      - default
-      - depthsight_network
-    restart: always
+#  bitcart_matic:
+#    image: bitcart/bitcart-matic:stable
+#    container_name: bitcart_matic
+#    dns:
+#      - 8.8.8.8
+#    environment:
+#      BITCART_DAEMON_USER: electrum
+#      BITCART_DAEMON_PASS: electrumz
+#      BITCART_NETWORK: mainnet
+#      MATIC_NETWORK: mainnet
+#      MATIC_SERVER: https://polygon-bor-rpc.publicnode.com
+#      PORT: 5000
+#      ELECTRUM_AUTO_CONNECT: "true"
+#    volumes:
+#      - ./bitcart_matic_data:/home/electrum/.electrum
+#    networks:
+#      - default
+#      - depthsight_network
+#    restart: always
 
   bitcart_admin:
     image: bitcart/bitcart-admin:stable

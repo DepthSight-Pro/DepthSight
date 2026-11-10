@@ -60,12 +60,16 @@ class CcxtExecutor:
             if self.exchange_id in ["binance", "bybit"]:
                 exchange_options["defaultSubType"] = "linear"
                 exchange_options["fetchMarkets"] = ["linear"]
+            elif self.exchange_id == "hyperliquid":
+                exchange_options["defaultSubType"] = "swap"
+                exchange_options["fetchMarkets"] = {"types": ["swap", "spot"]}
             else:
                 exchange_options["defaultSubType"] = "swap"
                 exchange_options["fetchMarkets"] = ["swap"]
         elif "spot" in self.market_type:
             exchange_options["defaultType"] = "spot"
-            # exchange_options['fetchMarkets'] = ['spot'] # Can cause KeyErrors in some sandbox environments
+            if self.exchange_id == "hyperliquid":
+                exchange_options["fetchMarkets"] = {"types": ["spot", "swap"]}
 
         # Inject Bybit Broker ID if configured
         if self.exchange_id == "bybit":
@@ -100,10 +104,11 @@ class CcxtExecutor:
                 exchange_options["broker"] = broker_id
                 logger.info(f"CcxtExecutor: Using Bitget Broker ID: {broker_id}")
 
-        # Unpack packed secret and passphrase if it's JSON
+        # Unpack packed secret, passphrase, uid, and builder_fee_rate if it's JSON
         import json
 
         uid = kwargs.get("uid") or kwargs.get("api_uid")
+        builder_fee_rate = kwargs.get("builder_fee_rate") or kwargs.get("feeRate")
         try:
             parsed_secret = json.loads(api_secret)
             if isinstance(parsed_secret, dict) and "secret" in parsed_secret:
@@ -112,8 +117,53 @@ class CcxtExecutor:
                     kwargs["password"] = parsed_secret["password"]
                 if "uid" in parsed_secret and not uid:
                     uid = parsed_secret["uid"]
+                if "builder_fee_rate" in parsed_secret and not builder_fee_rate:
+                    builder_fee_rate = parsed_secret["builder_fee_rate"]
         except Exception:
             pass
+
+        # If builder_fee_rate still not set, check kwargs["password"] for rate format
+        if not builder_fee_rate and kwargs.get("password"):
+            pw = str(kwargs.get("password")).strip()
+            if "%" in pw or pw in ["0.01", "0.05", "0.1", "0.10"]:
+                builder_fee_rate = pw
+
+        # Configure Hyperliquid Builder Fee / options
+        if self.exchange_id == "hyperliquid":
+            builder_address = getattr(config, "HYPERLIQUID_BUILDER_ADDRESS", None)
+            if builder_address:
+                raw_rate = builder_fee_rate or getattr(
+                    config, "HYPERLIQUID_BUILDER_FEE_RATE", "0.05%"
+                )
+                rate_str = str(raw_rate).strip()
+                if not rate_str.endswith("%"):
+                    try:
+                        val = float(rate_str)
+                        if val < 0.01:
+                            val = val * 100
+                        rate_str = f"{val:g}%"
+                    except ValueError:
+                        rate_str = "0.05%"
+
+                # Compute feeInt in tenths of bps (0.01% -> 10, 0.05% -> 50, 0.10% -> 100)
+                try:
+                    num_pct = float(rate_str.rstrip("%"))
+                    fee_int = int(round(num_pct * 1000))
+                except Exception:
+                    fee_int = 50
+
+                exchange_options["builder"] = builder_address
+                exchange_options["feeRate"] = rate_str
+                exchange_options["feeInt"] = fee_int
+                exchange_options["builderFee"] = True
+                exchange_options["approvedBuilderFee"] = True
+                logger.info(
+                    f"CcxtExecutor: Using Hyperliquid Builder Address: {builder_address} (feeRate: {rate_str}, feeInt: {fee_int})"
+                )
+            else:
+                # Completely disable builder fee so CCXT does not attach its default builder address
+                exchange_options["approvedBuilderFee"] = False
+                exchange_options["builderFee"] = False
 
         # Sanitize credentials
         api_key = str(api_key or "").strip()
@@ -125,6 +175,10 @@ class CcxtExecutor:
             "enableRateLimit": True,
             "options": exchange_options,
         }
+        if self.exchange_id == "hyperliquid":
+            # Hyperliquid uses walletAddress (Ethereum address) and privateKey (Agent key)
+            exchange_config["walletAddress"] = api_key
+            exchange_config["privateKey"] = api_secret
         if session is not None:
             exchange_config["session"] = session
 
@@ -190,6 +244,14 @@ class CcxtExecutor:
                 )
         else:
             self._exchange_pro = None
+
+        if self.exchange_id == "hyperliquid":
+            async def _noop_handle_builder_fee():
+                return True
+
+            self._exchange.handle_builder_fee_approval = _noop_handle_builder_fee
+            if self._exchange_pro:
+                self._exchange_pro.handle_builder_fee_approval = _noop_handle_builder_fee
 
         logger.info(
             f"CcxtExecutor initialized for {self.exchange_id} (Sandbox: {self.sandbox}, Market: {self.market_type})"
@@ -715,13 +777,13 @@ class CcxtExecutor:
         ]
         top_volume_spot = top_volume_futures_usdtm
 
-        # Index every USDT market by legacy symbol so the hardcoded top-volume
+        # Index every USDT/USDC market by legacy symbol so the hardcoded top-volume
         # safety net can still recover precision for pairs that the swap/quote
         # filter below drops. Without this those entries carry no tick_size.
         by_base: Dict[str, Dict[str, Any]] = {}
         for _m in raw_markets.values():
             base = _m.get("base", "")
-            if base and _m.get("quote") == "USDT":
+            if base and _m.get("quote") in ("USDT", "USDC"):
                 by_base.setdefault((base + "USDT").upper(), _m)
 
         if "futures" in market_type:
@@ -729,7 +791,8 @@ class CcxtExecutor:
             for ccxt_symbol, info in raw_markets.items():
                 if not info.get("swap"):
                     continue
-                if info.get("quote") != "USDT":
+                quote = info.get("quote")
+                if quote not in ("USDT", "USDC"):
                     continue
                 base = info.get("base", "")
                 entry = {
@@ -737,7 +800,7 @@ class CcxtExecutor:
                     "pair": ccxt_symbol,
                     "status": "TRADING" if info.get("active") else "INACTIVE",
                     "contractType": "PERPETUAL",
-                    "quoteAsset": "USDT",
+                    "quoteAsset": quote,
                     "isSpotTradingAllowed": False,
                     "baseAsset": base,
                 }
@@ -768,7 +831,8 @@ class CcxtExecutor:
             for ccxt_symbol, info in raw_markets.items():
                 if info.get("type") != "spot":
                     continue
-                if info.get("quote") != "USDT":
+                quote = info.get("quote")
+                if quote not in ("USDT", "USDC"):
                     continue
                 base = info.get("base", "")
                 entry = {
@@ -777,7 +841,7 @@ class CcxtExecutor:
                     "status": "TRADING" if info.get("active") else "INACTIVE",
                     "isSpotTradingAllowed": True,
                     "baseAsset": base,
-                    "quoteAsset": "USDT",
+                    "quoteAsset": quote,
                 }
                 entry.update(self._symbol_filters(info))
                 symbols_by_name[entry["symbol"]] = entry
@@ -833,6 +897,14 @@ class CcxtExecutor:
             if len(clean_cid) > 32:
                 clean_cid = clean_cid[:32]
             return clean_cid
+        elif self.exchange_id == "hyperliquid":
+            import hashlib
+
+            clean_hex = "".join(c for c in cid_str if c in "0123456789abcdefABCDEF")
+            if cid_str.startswith("0x") and len(clean_hex) == 32:
+                return cid_str
+            hex_hash = hashlib.md5(cid_str.encode("utf-8")).hexdigest()
+            return f"0x{hex_hash}"
         return cid_str
 
     async def place_order(
@@ -1116,6 +1188,38 @@ class CcxtExecutor:
                 if ticker and ticker.get("price"):
                     price = float(ticker["price"])
 
+            if self.exchange_id == "hyperliquid" and ccxt_type == "market" and price is None:
+                # Hyperliquid on-chain protocol does not have pure unbounded market orders;
+                # CCXT calculates the max slippage boundary IOC limit price (default 5%) based on the reference price.
+                if stop_price is not None:
+                    try:
+                        price = float(stop_price)
+                    except (ValueError, TypeError):
+                        price = None
+                if price is None:
+                    signal_details = kwargs.get("signal_details") or {}
+                    est_price = (
+                        signal_details.get("signal_last_price")
+                        or kwargs.get("comparison_price")
+                        or kwargs.get("current_price")
+                    )
+                    if est_price is not None:
+                        try:
+                            price = float(est_price)
+                        except (ValueError, TypeError):
+                            price = None
+                if price is None:
+                    ticker = await self.get_ticker_price(symbol)
+                    if ticker and ticker.get("price"):
+                        try:
+                            price = float(ticker["price"])
+                        except (ValueError, TypeError):
+                            price = None
+                if price is not None:
+                    params.setdefault(
+                        "slippage", getattr(config, "HYPERLIQUID_MARKET_SLIPPAGE", "0.05")
+                    )
+
             request_amount = self._amount_for_exchange_request(ccxt_symbol, quantity)
             logger.info(
                 f"CCXT: Placing order {symbol} {side} {order_type} Qty={quantity} Price={price} Params={params}"
@@ -1235,7 +1339,9 @@ class CcxtExecutor:
                 order["type"] = ccxt_type
             if not order.get("amount") and request_amount is not None:
                 order["amount"] = request_amount
-            if not order.get("clientOrderId") and params.get("clientOrderId"):
+            if raw_cid:
+                order["clientOrderId"] = raw_cid
+            elif not order.get("clientOrderId") and params.get("clientOrderId"):
                 order["clientOrderId"] = params.get("clientOrderId")
 
             # Map CCXT unified order to Binance-like response for Controller
@@ -1330,13 +1436,19 @@ class CcxtExecutor:
                 params["type"] = "spot"
 
             if origClientOrderId:
-                if not order_id_to_use:
-                    order_id_to_use = origClientOrderId
-                    params["clientOrderId"] = origClientOrderId
-                elif self.exchange_id not in {"okx", "weex"}:
-                    # On OKX and WEEX, passing clientOrderId in params causes CCXT
-                    # to override/discard orderId (algoId), breaking trigger order cancellation.
-                    params["clientOrderId"] = origClientOrderId
+                if self.exchange_id == "hyperliquid":
+                    cloid = self.format_client_order_id(origClientOrderId)
+                    if not order_id_to_use:
+                        order_id_to_use = cloid
+                        params["clientOrderId"] = cloid
+                else:
+                    if not order_id_to_use:
+                        order_id_to_use = origClientOrderId
+                        params["clientOrderId"] = origClientOrderId
+                    elif self.exchange_id not in {"okx", "weex"}:
+                        # On OKX and WEEX, passing clientOrderId in params causes CCXT
+                        # to override/discard orderId (algoId), breaking trigger order cancellation.
+                        params["clientOrderId"] = origClientOrderId
 
             if not order_id_to_use:
                 raise ValueError(
@@ -2432,6 +2544,13 @@ class CcxtExecutor:
         """Converts Binance format (BTCUSDT) to CCXT format (BTC/USDT or BTC/USDT:USDT)."""
         symbol_upper = symbol.upper().strip()
         if "/" in symbol_upper:
+            if self.exchange_id == "hyperliquid":
+                if "USDT" in symbol_upper:
+                    symbol_upper = symbol_upper.replace("USDT", "USDC")
+                parts = symbol_upper.split("/")
+                base_part = parts[0]
+                if base_part.startswith("1000"):
+                    symbol_upper = f"K{base_part[4:]}/{parts[1]}"
             if self.supports_positions and ":" not in symbol_upper:
                 quote = symbol_upper.split("/", 1)[1].split(":", 1)[0]
                 return f"{symbol_upper}:{quote}"
@@ -2439,6 +2558,23 @@ class CcxtExecutor:
         if symbol_upper.endswith("-SWAP"):
             symbol_upper = symbol_upper[: -len("-SWAP")]
         symbol_upper = symbol_upper.replace("-", "").replace("_", "")
+        if self.exchange_id == "hyperliquid":
+            if symbol_upper.endswith("USDC"):
+                base = symbol_upper[:-4]
+            elif symbol_upper.endswith("USDT"):
+                base = symbol_upper[:-4]
+            else:
+                base = symbol_upper
+            if base.startswith("1000"):
+                base = "K" + base[4:]
+            if self.supports_positions:
+                return f"{base}/USDC:USDC"
+            return f"{base}/USDC"
+        if symbol_upper.endswith("USDC"):
+            base = symbol_upper[:-4]
+            if self.supports_positions:
+                return f"{base}/USDC:USDC"
+            return f"{base}/USDC"
         if symbol_upper.endswith("USDT"):
             base = symbol_upper[:-4]
             if self.supports_positions:
@@ -2456,7 +2592,12 @@ class CcxtExecutor:
     def _to_legacy_symbol(symbol: Optional[str]) -> str:
         if not symbol:
             return ""
-        return symbol.replace("/", "").replace(":USDT", "").replace(":USDC", "").upper()
+        sym = symbol.replace("/", "").replace(":USDT", "").replace(":USDC", "").upper()
+        if sym.endswith("USDC"):
+            sym = sym[:-4] + "USDT"
+        if sym.startswith("K") and len(sym) > 5 and sym.endswith("USDT"):
+            sym = "1000" + sym[1:]
+        return sym
 
     @staticmethod
     def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -2739,9 +2880,9 @@ class CcxtExecutor:
         order_data = {
             "s": self._to_legacy_symbol(raw_symbol),
             "c": ccxt_order.get("clientOrderId") or "",
-            "S": ccxt_order.get("side", "").upper(),
-            "o": ccxt_order.get("type", "").upper(),
-            "ot": ccxt_order.get("type", "").upper(),
+            "S": str(ccxt_order.get("side") or "").upper(),
+            "o": str(ccxt_order.get("type") or "").upper(),
+            "ot": str(ccxt_order.get("type") or "").upper(),
             "f": "GTC",
             "q": str(amount),
             "p": str(ccxt_order.get("price", "0")),

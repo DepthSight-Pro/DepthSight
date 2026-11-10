@@ -12,6 +12,7 @@ import {
   Share2, 
   UserPlus, 
   ShieldCheck, 
+  ShieldAlert, 
   Lock, 
   Loader2,
   Globe,
@@ -39,8 +40,21 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/use-toast";
-import { useGetMiningStatus, useActivateMining, useDeactivateMining, useGetMiningReferrals, useGetMiningTrades, useGetPromoStatus, useWalletStatus, type LocalMiningStatusResponse } from "@/lib/api";
+import { 
+  useGetMiningStatus, 
+  useActivateMining, 
+  useDeactivateMining, 
+  useGetMiningReferrals, 
+  useGetMiningTrades, 
+  useGetPromoStatus, 
+  useWalletStatus, 
+  useRefreshNftStatus,
+  type LocalMiningStatusResponse,
+  type MiningTradeItem,
+} from "@/lib/api";
+import type { PromoStatusResponse, MiningAnalyticsTradeItem } from "@/types/api";
 import { NodeWalletModal } from "@/components/mining/NodeWalletModal";
+import { TradeDetailModal } from "@/components/mining/TradeDetailModal";
 import { PromoBanner } from "@/components/mining/PromoBanner";
 import { PromoQuestsTab } from "@/components/mining/PromoQuestsTab";
 import { MiningRateCard } from "@/components/mining/MiningRateCard";
@@ -147,9 +161,37 @@ const MiningHub: React.FC = () => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("ALL");
   const [selectedExchangeFilter, setSelectedExchangeFilter] = useState<string>("all");
   const [tradesSearch, setTradesSearch] = useState<string>("");
+  const [selectedTradeForModal, setSelectedTradeForModal] = useState<MiningTradeItem | null>(null);
 
   const { data: status, isLoading, refetch } = useGetMiningStatus();
   const { data: walletStatus } = useWalletStatus();
+  const refreshNft = useRefreshNftStatus();
+
+  const handleRefreshNft = () => {
+    refreshNft.mutate(undefined, {
+      onSuccess: (data) => {
+        if (data.has_nft) {
+          toast({
+            title: t("nftPassDetected", "Genesis NFT Pass Active!"),
+            description: `${data.name || data.tier || "Genesis Pass"} (+${data.bonus_multiplier}x boost) verified on Arbitrum One.`,
+          });
+        } else {
+          toast({
+            title: t("nftPassNotFound", "No Genesis Pass Found"),
+            description: data.message || t("nftPassNotFoundDesc", "No Token #1 or #2 found in this wallet on Arbitrum One."),
+          });
+        }
+        refetch();
+      },
+      onError: (err) => {
+        toast({
+          title: t("common:error", "Error"),
+          description: err.message || "Failed to check Arbitrum One NFT balance",
+          variant: "destructive",
+        });
+      },
+    });
+  };
   const { data: promoStatus } = useGetPromoStatus({
     nodeUuid: status?.nodeUuid || status?.node_uuid,
   });
@@ -201,6 +243,7 @@ const MiningHub: React.FC = () => {
       maxRate: number;
       multiplier: number;
       isBoosted: boolean;
+      isPenalty: boolean;
       rawKeys: string[];
     }>();
 
@@ -208,14 +251,16 @@ const MiningHub: React.FC = () => {
       const norm = normalizeExchangeKey(raw) || raw.split("_")[0].toLowerCase();
       const rate = rates[raw] ?? rates[norm] ?? 0.30;
       const isBitgetPromo = Boolean(promoStatus?.hasActiveCampaign && norm === (promoStatus?.exchangeId?.toLowerCase() || "bitget"));
-      const mult = multipliers[raw] ?? multipliers[norm] ?? (isBitgetPromo ? (promoStatus?.rebateMultiplier || 2.0) : 1.0);
+      const rawMult = multipliers[raw] ?? multipliers[norm];
+      const mult = rawMult !== undefined ? rawMult : (isBitgetPromo ? (promoStatus?.rebateMultiplier || 2.0) : 1.0);
 
       const existing = map.get(norm) || {
         baseKey: norm,
         label: exchangeLabels[norm] || norm.toUpperCase(),
         maxRate: 0,
-        multiplier: 1.0,
-        isBoosted: false,
+        multiplier: mult,
+        isBoosted: mult > 1.0,
+        isPenalty: mult < 0,
         rawKeys: [],
       };
 
@@ -232,7 +277,11 @@ const MiningHub: React.FC = () => {
       if (rate > existing.maxRate) {
         existing.maxRate = rate;
       }
-      if (mult > existing.multiplier) {
+      if (mult < 0) {
+        existing.multiplier = mult;
+        existing.isPenalty = true;
+        existing.isBoosted = false;
+      } else if (!existing.isPenalty && mult > existing.multiplier) {
         existing.multiplier = mult;
       }
       if (existing.multiplier > 1.0) {
@@ -253,6 +302,15 @@ const MiningHub: React.FC = () => {
 
     return Array.from(map.values());
   }, [stats, promoStatus]);
+
+  const isBitgetPenalty = useMemo(() => {
+    const multipliers: Record<string, number> = stats?.exchangeMultipliers || stats?.exchange_multipliers || {};
+    const bitgetMult = multipliers["bitget"] ?? multipliers["bitget_futures"] ?? multipliers["bitget_spot"];
+    if (bitgetMult !== undefined && bitgetMult < 0) return true;
+    if (promoStatus?.rebateMultiplier !== undefined && promoStatus.rebateMultiplier < 0) return true;
+    if (groupedExchanges.some((e) => (e.baseKey === "bitget" || e.baseKey === promoStatus?.exchangeId?.toLowerCase()) && e.isPenalty)) return true;
+    return false;
+  }, [stats, promoStatus, groupedExchanges]);
 
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
 
@@ -553,6 +611,47 @@ const MiningHub: React.FC = () => {
                   </span>
                   <KeyRound className="w-3 h-3 text-muted-foreground/60 dark:text-white/40 group-hover:text-foreground dark:group-hover:text-white transition-colors" />
                 </button>
+
+                {/* Genesis NFT Pass Status Badge */}
+                {boundAddress && (
+                  <div className="flex items-center gap-1.5">
+                    {status?.nftPassType || status?.nft_pass_type ? (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/40 bg-purple-500/10 dark:bg-purple-950/30 px-2.5 py-1 text-[11px] shadow-sm animate-fade-in">
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                        <span className="font-semibold text-purple-600 dark:text-purple-300">
+                          {status?.nftName || status?.nft_name || status?.nftPassType || status?.nft_pass_type}
+                        </span>
+                        <span className="font-mono font-bold text-amber-500 dark:text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 text-[10px]">
+                          +{((status?.nftMultiplierBonus ?? status?.nft_multiplier_bonus) || 0).toFixed(1)}x NFT
+                        </span>
+                        <a
+                          href={`https://arbiscan.io/token/${status?.nftContractAddress || status?.nft_contract_address || "0x29ce393672507c185a5E9Bc2e721E8009e3520C8"}?a=${boundAddress}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-muted-foreground/70 hover:text-purple-400 transition-colors ml-0.5"
+                          title="View on Arbiscan (Arbitrum One)"
+                        >
+                          <ArrowUpRight className="w-3 h-3" />
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-border/80 dark:border-white/10 bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground">
+                        <Sparkles className="w-3 h-3 text-muted-foreground/50" />
+                        <span>{t("noNftPass", "No NFT Pass")}</span>
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleRefreshNft}
+                      disabled={refreshNft.isPending}
+                      className="p-1 rounded-lg border border-border/80 dark:border-white/10 hover:bg-muted dark:hover:bg-white/[0.06] text-muted-foreground hover:text-foreground transition-all disabled:opacity-50"
+                      title={t("refreshNftTooltip", "Force re-verify Arbitrum One NFT balance")}
+                    >
+                      <RefreshCw className={`w-3 h-3 ${refreshNft.isPending ? "animate-spin text-[#00D4FF]" : ""}`} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -648,8 +747,32 @@ const MiningHub: React.FC = () => {
             
             {/* Card 1: Today's Est. Reward */}
             <div className="bg-card dark:bg-[#0B0F19]/80 px-5 py-3.5 transition-colors hover:bg-muted/50 dark:hover:bg-[#0B0F19] space-y-0.5">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500 font-semibold">
-                {t("todayEstReward", "Today's Est. Reward")}
+              <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500 font-semibold">
+                <span>{t("todayEstReward", "Today's Est. Reward")}</span>
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="Estimated reward info"
+                        className="inline-flex items-center justify-center text-muted-foreground/60 hover:text-cyan-400 transition-colors cursor-help p-0.5 -mr-1 rounded-sm focus:outline-hidden"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="max-w-[280px] p-3 text-xs leading-relaxed bg-[#0B0F19]/95 border-cyan-500/30 text-slate-200 shadow-xl backdrop-blur-md font-sans normal-case tracking-normal"
+                    >
+                      <p>
+                        {t(
+                          "todayEstRewardReferralHint",
+                          "Предварительный расчет предполагает чистый аккаунт без рефералки. Если аккаунт зарегистрирован под чужой рефералкой, фактическая ставка рибейта и итоговая награда могут быть меньше. Подробнее — в описании конкретной биржи ниже."
+                        )}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               <div className="mt-0.5 font-display text-base sm:text-lg font-bold tabular text-foreground dark:text-white font-mono">
                 {yourEpochReward >= 1000
@@ -710,10 +833,17 @@ const MiningHub: React.FC = () => {
           </div>
         </div>
 
-      {promoStatus?.hasActiveCampaign && (
+      {(promoStatus?.hasActiveCampaign || isBitgetPenalty) && (
         <PromoBanner
-          promoStatus={promoStatus}
+          promoStatus={
+            promoStatus ||
+            ({
+              hasActiveCampaign: true,
+              campaignName: "Bitget Launch Airdrop",
+            } as PromoStatusResponse)
+          }
           onOpenQuests={() => setActiveSubTab("quests")}
+          isPenalty={isBitgetPenalty}
         />
       )}
 
@@ -773,7 +903,10 @@ const MiningHub: React.FC = () => {
       </Tabs>
 
       {activeSubTab === "quests" && promoStatus?.hasActiveCampaign ? (
-        <PromoQuestsTab promoStatus={promoStatus} />
+        <PromoQuestsTab
+          promoStatus={promoStatus}
+          eligibleExchanges={stats?.eligibleExchanges || stats?.eligible_exchanges}
+        />
       ) : activeSubTab === "referrals" ? (
         <div className="space-y-6">
           {/* Summary Stat Cards */}
@@ -1135,7 +1268,12 @@ const MiningHub: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {tradesData.items.map((trd) => (
-                      <tr key={trd.id} className="hover:bg-white/[0.02] transition-colors">
+                      <tr
+                        key={trd.id}
+                        onClick={() => setSelectedTradeForModal(trd)}
+                        className="hover:bg-white/[0.04] cursor-pointer transition-colors group"
+                        title={t("clickToInspectTrade", "Click to inspect trade telemetry details")}
+                      >
                         <td className="py-3 px-2 font-mono font-bold text-white">
                           <div>
                             {trd.username ? (
@@ -1217,7 +1355,22 @@ const MiningHub: React.FC = () => {
                           )}
                         </td>
                         <td className="py-3 px-2 text-right font-mono font-bold text-amber-400">
-                          +{trd.rewardTokens.toFixed(2)} $DEPTH
+                          <div className="flex flex-col items-end">
+                            <span>+{trd.rewardTokens.toFixed(2)} $DEPTH</span>
+                            {trd.nftMultiplierBonus && trd.nftMultiplierBonus > 0 ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 mt-0.5 shadow-sm"
+                                title={`Genesis Pass Boost: ${trd.nftPassType || "Genesis Pass"} (+${trd.nftMultiplierBonus.toFixed(1)}x boost)`}
+                              >
+                                <Sparkles className="h-2.5 w-2.5 text-purple-400" />
+                                +{trd.nftMultiplierBonus.toFixed(1)}x NFT
+                              </span>
+                            ) : trd.miningMultiplier && trd.miningMultiplier > 1 ? (
+                              <span className="text-[10px] text-white/40 font-normal">
+                                {trd.miningMultiplier.toFixed(1)}x mult
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="py-3 px-2 text-right text-white/50 font-mono text-[11px]">
                           {new Date(trd.createdAt).toLocaleString()}
@@ -1327,57 +1480,109 @@ const MiningHub: React.FC = () => {
                         const isBitget = exItem.baseKey === "bitget";
                         const isOkx = exItem.baseKey === "okx";
                         const isBybit = exItem.baseKey === "bybit";
+                        const isHyperliquid = exItem.baseKey === "hyperliquid" || exItem.baseKey === "hl";
 
-                        const tooltipExtra = isBitget
+                        const tooltipExtra = exItem.isPenalty
+                          ? isBitget
+                            ? t("rebateRateTooltipBitgetPenalty", "⚠️ GTM Penalty & Burn Mode Active (-2.0x): Bitget has breached partnership agreements with DepthSight and failed joint GTM marketing commitments. An active penalty multiplier of -2.0x (Token Burning) is enforced on depthsight.pro for Bitget volume. Immediately migrate your trading to Bybit, OKX, or WEEX to prevent token burns.")
+                            : t("rebateRateTooltipPenalty", `⚠️ Penalty & Burn Mode Active: An active penalty multiplier of ${exItem.multiplier}x (Token Burning) is enforced due to partner agreement breaches with DepthSight. Migrate your trading to Bybit, OKX, or WEEX on depthsight.pro to prevent token burns.`, { multiplier: exItem.multiplier })
+                          : isBitget
                           ? t("rebateRateTooltipBitget", "Base broker rate from clean accounts is 35%, if the account is under a referral — 8%. Active 2.0x Mining Multiplier earns 2x $DEPTH token yield per USDT rebate.")
                           : isOkx
                           ? t("rebateRateTooltipOkx", "Base broker rate from clean accounts is 30%; if the account is under a referral, it is 7.5%.")
                           : isBybit
                           ? t("rebateRateTooltipBybit", "Base broker rate from clean accounts is 50%; if the account is under a referral, it is 10%.")
+                          : isHyperliquid
+                          ? t("rebateRateTooltipHyperliquid", "On-chain DEX mining via Hyperliquid Builder Fee. The builder fee (0.01% - 0.10%) funds $DEPTH token buyback (30%) and converts into mining points. Verified transparently via Hyperliquid L1 node.")
                           : exItem.isBoosted
                           ? `${exItem.multiplier}x Trade Mining Reward Multiplier active for ${exItem.label}.`
                           : t("rebateRateTooltipDefault", "Base broker rebate rate. Mining rewards are distributed proportionally to verified trading volume and fees.");
+
+                        const cardBorderClass = exItem.isPenalty
+                          ? "border-rose-500/60 dark:border-rose-500/50 bg-rose-500/10 dark:bg-rose-950/20 hover:border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.2)]"
+                          : exItem.isBoosted
+                          ? "border-amber-500/50 dark:border-amber-500/40 bg-amber-500/10 hover:border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
+                          : "border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.03] hover:border-cyan-500/40 hover:bg-muted dark:hover:bg-white/[0.06]";
 
                         return (
                           <TooltipProvider key={exItem.baseKey} delayDuration={150}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div className={`group flex items-center gap-2 border ${exItem.isBoosted ? "border-amber-500/50 dark:border-amber-500/40 bg-amber-500/10 hover:border-amber-500/70 shadow-[0_0_12px_rgba(245,158,11,0.15)]" : "border-border/80 dark:border-white/10 bg-card dark:bg-white/[0.03] hover:border-cyan-500/40 hover:bg-muted dark:hover:bg-white/[0.06]"} transition-all px-3 py-2 rounded-xl text-xs cursor-help backdrop-blur-md`}>
+                                <div className={`group flex items-center gap-2 border ${cardBorderClass} transition-all px-3 py-2 rounded-xl text-xs cursor-help backdrop-blur-md`}>
                                   <ExchangeBadge exchange={exItem.baseKey} size="xs" />
                                   <span className="font-mono font-bold uppercase text-foreground dark:text-white/90 text-xs tracking-wide">{exItem.label}</span>
-                                  {exItem.isBoosted && (
+                                  {exItem.isPenalty && (
+                                    <Badge className="bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/40 text-[10px] font-mono font-extrabold flex items-center gap-1 animate-pulse rounded-md px-1.5 py-0.5 shadow-sm">
+                                      💀 {exItem.multiplier}x {t("penaltyModeBadge", "BURN")}
+                                    </Badge>
+                                  )}
+                                  {exItem.isBoosted && !exItem.isPenalty && (
                                     <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-[10px] font-mono font-extrabold flex items-center gap-1 animate-pulse rounded-md px-1.5 py-0.5 shadow-sm">
                                       🔥 {exItem.multiplier}x
                                     </Badge>
                                   )}
-                                  <Info className="h-3 w-3 text-muted-foreground/60 dark:text-white/40 group-hover:text-cyan-500 dark:group-hover:text-cyan-400 transition-colors ml-0.5" />
+                                  <Info className={`h-3 w-3 ${exItem.isPenalty ? "text-rose-500/70 group-hover:text-rose-400" : "text-muted-foreground/60 dark:text-white/40 group-hover:text-cyan-500 dark:group-hover:text-cyan-400"} transition-colors ml-0.5`} />
                                 </div>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-xs text-xs p-3.5 shadow-2xl bg-popover/95 dark:bg-[#0c121e] text-popover-foreground dark:text-white/90 border border-border dark:border-white/15 rounded-xl backdrop-blur-xl space-y-2.5">
+                              <TooltipContent side="top" className={`max-w-xs text-xs p-3.5 shadow-2xl bg-popover/95 dark:bg-[#0c121e] text-popover-foreground dark:text-white/90 border ${exItem.isPenalty ? "border-rose-500/40" : "border-border dark:border-white/15"} rounded-xl backdrop-blur-xl space-y-2.5`}>
                                 <div className="flex items-center justify-between border-b border-border/80 dark:border-white/10 pb-1.5">
                                   <div className="flex items-center gap-2 font-bold text-foreground dark:text-white">
                                     <ExchangeBadge exchange={exItem.baseKey} size="xs" />
                                     <span>{exItem.label}</span>
                                   </div>
-                                  {exItem.isBoosted && (
+                                  {exItem.isPenalty && (
+                                    <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono font-extrabold">
+                                      💀 {exItem.multiplier}x {t("penaltyModeTitle", "GTM PENALTY / BURN")}
+                                    </span>
+                                  )}
+                                  {exItem.isBoosted && !exItem.isPenalty && (
                                     <span className="text-[10px] text-amber-600 dark:text-amber-400 font-mono font-extrabold">
                                       🔥 {exItem.multiplier}x BOOST
                                     </span>
                                   )}
                                 </div>
-                                <div className="space-y-1.5 text-[11px] font-mono">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-muted-foreground dark:text-white/60 font-sans">{t("futuresRebate", "Futures Rebate")}:</span>
-                                    <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.futuresRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
+                                {isHyperliquid ? (
+                                  <div className="space-y-1.5 text-[11px] font-mono">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground dark:text-white/60 font-sans">{t("hyperliquidModel", "Fee Model")}:</span>
+                                      <span className="text-cyan-600 dark:text-cyan-300 font-bold">Builder Fee (0.01% - 0.10%)</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground dark:text-white/60 font-sans">{t("hyperliquidBuyback", "To Buyback & Pool")}:</span>
+                                      <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.generalRate ?? exItem.maxRate ?? 0.3) * 100).toFixed(0)}%</span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-muted-foreground dark:text-white/60 font-sans">{t("spotRebate", "Spot Rebate")}:</span>
-                                    <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.spotRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
+                                ) : (
+                                  <div className="space-y-1.5 text-[11px] font-mono">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground dark:text-white/60 font-sans">{t("futuresRebate", "Futures Rebate")}:</span>
+                                      <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.futuresRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground dark:text-white/60 font-sans">{t("spotRebate", "Spot Rebate")}:</span>
+                                      <span className="text-cyan-600 dark:text-cyan-300 font-bold">{((exItem.spotRate ?? exItem.maxRate) * 100).toFixed(0)}%</span>
+                                    </div>
                                   </div>
-                                </div>
+                                )}
                                 <p className="text-[10.5px] text-muted-foreground dark:text-white/70 leading-relaxed pt-1.5 border-t border-border/60 dark:border-white/5">
                                   {tooltipExtra}
                                 </p>
+                                {exItem.isPenalty ? (
+                                  <div className="pt-2 border-t border-rose-500/25 flex items-center justify-between text-[9.5px] font-mono">
+                                    <div className="flex items-center gap-1.5 text-rose-400 font-bold tracking-tight">
+                                      <ShieldAlert className="h-3 w-3 text-rose-500 shrink-0" />
+                                      <span>{t("protocolEnforcement", "DepthSight Protocol Enforcement")}</span>
+                                    </div>
+                                    <span className="text-white font-bold bg-rose-500/20 border border-rose-500/40 px-1.5 py-0.5 rounded tracking-wide shadow-sm">
+                                      depthsight.pro
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="pt-1.5 border-t border-border/40 dark:border-white/5 flex items-center justify-between text-[9px] font-mono text-muted-foreground/80 dark:text-white/40">
+                                    <span>DepthSight Network</span>
+                                    <span className="text-cyan-500 dark:text-cyan-400 font-medium">depthsight.pro</span>
+                                  </div>
+                                )}
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
@@ -1587,6 +1792,12 @@ const MiningHub: React.FC = () => {
         isOpen={isWalletModalOpen}
         onClose={() => setIsWalletModalOpen(false)}
         onWalletActivated={() => handleActivate()}
+      />
+
+      <TradeDetailModal
+        trade={selectedTradeForModal as unknown as MiningAnalyticsTradeItem | null}
+        isOpen={Boolean(selectedTradeForModal)}
+        onClose={() => setSelectedTradeForModal(null)}
       />
     </div>
   );

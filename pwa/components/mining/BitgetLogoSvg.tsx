@@ -1,16 +1,19 @@
 import React from "react";
 
-export const BitgetLogoSvg: React.FC<{ className?: string }> = ({ className = "w-full h-full" }) => (
+export const BitgetLogoSvg: React.FC<{ className?: string; isMuted?: boolean }> = ({
+	className = "w-full h-full",
+	isMuted = false,
+}) => (
 	<svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
 		<g clipPath="url(#clip0_bitget_logo_pwa)">
-			<circle cx="100" cy="100" r="100" fill="#00F0FF" />
+			<circle cx="100" cy="100" r="100" fill={isMuted ? "#27272A" : "#00F0FF"} />
 			<path
 				d="M93.1911 80.4883H128.212L164.039 116.086C166.37 118.402 166.382 122.168 164.063 124.496L118.117 170.674H82.0405L92.9473 160.07L132.992 120.278L93.4556 80.4854"
-				fill="black"
+				fill={isMuted ? "#E4E4E7" : "black"}
 			/>
 			<path
 				d="M107.585 120.188H72.5635L36.7367 84.5904C34.4061 82.2747 34.3942 78.5083 36.7129 76.1807L82.6588 30H118.735L107.829 40.6036L67.7835 80.396L107.32 120.188"
-				fill="black"
+				fill={isMuted ? "#E4E4E7" : "black"}
 			/>
 		</g>
 		<defs>
@@ -20,3 +23,4 @@ export const BitgetLogoSvg: React.FC<{ className?: string }> = ({ className = "w
 		</defs>
 	</svg>
 );
+

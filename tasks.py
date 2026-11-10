@@ -81,7 +81,6 @@ configure_runtime_dependencies(
 # It is best to set up logging when starting the worker.
 
 # --- 3. Setup Celery application ---
-# --- 3. Setup Celery application ---
 from api.celery_app import (
     celery_app,
     redis_client_for_tasks,
@@ -3904,6 +3903,32 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     stamped = 1.0
                 return stamped
 
+            # Batch verify on-chain Genesis NFT Passes for all active epoch nodes
+            from api.nft_verifier import batch_verify_wallet_nfts
+
+            active_node_ids = {r.node_uuid for r in reports if r.node_uuid}
+            node_wallet_map = {}
+            if active_node_ids:
+                node_w_res = await session.execute(
+                    select(models.HubNode.node_uuid, models.HubNode.wallet_address).where(
+                        models.HubNode.node_uuid.in_(active_node_ids)
+                    )
+                )
+                for _nid, _w in node_w_res.all():
+                    if _w:
+                        node_wallet_map[_nid] = _w
+
+            unique_wallets = list({w for w in node_wallet_map.values() if w})
+            nft_holdings = {}
+            if unique_wallets:
+                try:
+                    nft_holdings = await batch_verify_wallet_nfts(unique_wallets)
+                except Exception as nft_err:
+                    logger.warning(
+                        f"[MINING] NFT batch verification failed: {nft_err}",
+                        exc_info=True,
+                    )
+
             node_stats = {}
             for report in reports:
                 node_id = report.node_uuid
@@ -3912,12 +3937,40 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 node_rebate = report.estimated_rebate_usdt or 0.0
                 mult = _resolve_report_mult(report)
                 safe_mult = max(0.0, mult)
-                weighted_pts = node_rebate * safe_mult
+
+                # NFT Pass additive bonus: +0.5x (Core) or +1.0x (Apex)
+                node_wallet = node_wallet_map.get(node_id)
+                nft_data = (
+                    nft_holdings.get(node_wallet.lower()) if node_wallet else None
+                )
+                nft_bonus = (
+                    float(nft_data.get("bonus_multiplier", 0.0)) if nft_data else 0.0
+                )
+                nft_type = nft_data.get("pass_type") if nft_data else None
+
+                # Effective multiplier for personal mining is strictly ADDITIVE:
+                effective_mult = safe_mult + nft_bonus
+                weighted_pts = node_rebate * effective_mult
+                unboosted_pts = node_rebate * safe_mult
+
+                # Stamp multiplier & NFT info onto the report
+                report.mining_multiplier = effective_mult
+                _m_ctx = (
+                    report.market_context
+                    if isinstance(report.market_context, dict)
+                    else {}
+                )
+                report.market_context = {
+                    **_m_ctx,
+                    "nft_pass_type": nft_type,
+                    "nft_multiplier_bonus": nft_bonus,
+                }
 
                 if node_id not in node_stats:
                     node_stats[node_id] = {
                         "total_rebate": 0.0,
                         "weighted_points": 0.0,
+                        "unboosted_points": 0.0,
                         "trades_count": 0,
                         # Unique closed trades: partial closes / DCA produce
                         # several REPORTS for one logical trade, so counting
@@ -3926,6 +3979,7 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                     }
                 node_stats[node_id]["total_rebate"] += node_rebate
                 node_stats[node_id]["weighted_points"] += weighted_pts
+                node_stats[node_id]["unboosted_points"] += unboosted_pts
                 if report.broker_trade_id:
                     node_stats[node_id]["trade_ids"].add(report.broker_trade_id)
                 else:
@@ -3953,7 +4007,9 @@ async def _async_process_mining_epoch(force_yesterday_date=None):
                 referrer_uuid = await _resolve_referrer(node_id)
 
                 if referrer_uuid:
-                    ref_pts = base_pts * config.referral_mining_boost
+                    # Referral points are strictly isolated from the downline's personal NFT boost!
+                    unboosted_pts = stats.get("unboosted_points", base_pts)
+                    ref_pts = unboosted_pts * config.referral_mining_boost
 
                     if referrer_uuid not in node_points:
                         node_points[referrer_uuid] = {

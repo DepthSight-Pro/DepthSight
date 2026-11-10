@@ -65,7 +65,7 @@ import {
 	maxDrawdownPct,
 	summarizeTrades,
 } from "@/lib/analytics";
-import { exchangeMeta, normalizeExchangeKey } from "@/lib/exchanges";
+import { exchangeMeta, normalizeExchangeKey, isUnifiedAccountExchange } from "@/lib/exchanges";
 import { resolveStrategyTimeframe } from "@/lib/strategyMeta";
 import { cn } from "@/lib/utils";
 import { useAccountStore } from "@/stores/accountStore";
@@ -405,13 +405,28 @@ const Index = () => {
 			(acc, bal) => {
 				const existing = acc[bal.apiKeyId];
 				if (existing) {
-					acc[bal.apiKeyId] = {
-						...existing,
-						balance: existing.balance + bal.balance,
-						availableBalance: existing.availableBalance + bal.availableBalance,
-						unrealizedPnl: existing.unrealizedPnl + bal.unrealizedPnl,
-						totalEquity: existing.totalEquity + bal.totalEquity,
-					};
+					if (isUnifiedAccountExchange(bal.exchange)) {
+						if (bal.marketType === "futures_usdtm") {
+							acc[bal.apiKeyId] = {
+								...bal,
+								assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
+							};
+						} else {
+							acc[bal.apiKeyId] = {
+								...existing,
+								assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
+							};
+						}
+					} else {
+						acc[bal.apiKeyId] = {
+							...existing,
+							balance: existing.balance + bal.balance,
+							availableBalance: existing.availableBalance + bal.availableBalance,
+							unrealizedPnl: existing.unrealizedPnl + bal.unrealizedPnl,
+							totalEquity: existing.totalEquity + bal.totalEquity,
+							assets: [...(existing.assets ?? []), ...(bal.assets ?? [])],
+						};
+					}
 				} else {
 					acc[bal.apiKeyId] = bal;
 				}
@@ -693,17 +708,30 @@ const Index = () => {
 
 	// KPI Aggregates (real data only, live marks overlay when available)
 	// Equity is scoped to the selected exchange + market (account selector).
-	const scopedBalanceAccounts = useMemo(
-		() =>
-			(balanceAccounts || []).filter((b) =>
-				matchesScope({
-					apiKeyId: b.apiKeyId,
-					exchange: b.exchange,
-					marketType: b.marketType,
-				}),
-			),
-		[balanceAccounts, matchesScope],
-	);
+	const scopedBalanceAccounts = useMemo(() => {
+		const raw = (balanceAccounts || []).filter((b) =>
+			matchesScope({
+				apiKeyId: b.apiKeyId,
+				exchange: b.exchange,
+				marketType: b.marketType,
+			}),
+		);
+		// Deduplicate unified exchanges if both spot and futures match
+		const byKey: Record<number, AccountBalance[]> = {};
+		for (const b of raw) {
+			(byKey[b.apiKeyId] = byKey[b.apiKeyId] || []).push(b);
+		}
+		const dedup: AccountBalance[] = [];
+		for (const items of Object.values(byKey)) {
+			if (items.length > 1 && isUnifiedAccountExchange(items[0].exchange)) {
+				const fut = items.find((i) => i.marketType === "futures_usdtm");
+				dedup.push(fut || items[0]);
+			} else {
+				dedup.push(...items);
+			}
+		}
+		return dedup;
+	}, [balanceAccounts, matchesScope]);
 
 	const totalEquity = useMemo(() => {
 		if (scopeActive) {

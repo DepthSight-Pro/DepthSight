@@ -1,44 +1,9 @@
 import React, { useState } from "react";
-
-const normalizeExchangeKey = (raw?: string | null): string => {
-	if (!raw) return "";
-	return String(raw)
-		.trim()
-		.toLowerCase()
-		.replace(/_(futures|spot|usdtm|swap|linear|usdm|testnet)$/, "")
-		.replace(/_testnet$/, "");
-};
-
-const getBaseUrl = (): string => {
-	const base = import.meta.env.BASE_URL || "/";
-	return base.endsWith("/") ? base : `${base}/`;
-};
-
-const BASE_PATH = getBaseUrl();
-
-const exchangeLogos: Record<string, string> = {
-	binance: `${BASE_PATH}logos/binance.svg`,
-	bybit: `${BASE_PATH}logos/bybit.svg`,
-	okx: `${BASE_PATH}logos/okx.svg`,
-	bitget: `${BASE_PATH}logos/bitget.svg`,
-	gate: `${BASE_PATH}logos/gate.svg`,
-	gateio: `${BASE_PATH}logos/gate.svg`,
-	gate_io: `${BASE_PATH}logos/gate.svg`,
-	bingx: `${BASE_PATH}logos/bingx.svg`,
-	weex: `${BASE_PATH}logos/weex.svg`,
-};
-
-const exchangeLabels: Record<string, string> = {
-	binance: "Binance",
-	bybit: "Bybit",
-	okx: "OKX",
-	bitget: "Bitget",
-	gate: "Gate.io",
-	gateio: "Gate.io",
-	gate_io: "Gate.io",
-	bingx: "BingX",
-	weex: "WEEX",
-};
+import {
+	exchangeLabels,
+	exchangeLogos,
+	normalizeExchangeKey,
+} from "../lib/exchanges";
 
 export const ExchangeBadge: React.FC<{
 	exchange?: string | null;

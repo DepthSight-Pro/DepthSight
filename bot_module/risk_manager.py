@@ -800,7 +800,7 @@ class RiskManager:
             return False
 
     async def update_balance(self) -> bool:
-        """Updates the current USDT balance from the executor (thread-safe)."""
+        """Updates the current balance (USDT or USDC) from the executor (thread-safe)."""
         log_prefix = "[RiskManager:UpdateBalance]"
         async with self._balance_lock:
             try:
@@ -813,15 +813,34 @@ class RiskManager:
                     )
                     return False  # Failed to get balances
 
-                usdt_balance_data = balances.get("USDT")
-                if usdt_balance_data:
+                quote_asset_name = "USDT"
+                quote_balance_data = balances.get("USDT")
+                if not quote_balance_data and balances.get("USDC"):
+                    quote_asset_name = "USDC"
+                    quote_balance_data = balances.get("USDC")
+                elif quote_balance_data and balances.get("USDC"):
                     try:
-                        free_bal = float(usdt_balance_data.get("free", 0))
-                        locked_bal = float(usdt_balance_data.get("locked", 0))
-                        current_total_usdt = free_bal + locked_bal
+                        usdt_val = float(quote_balance_data.get("free", 0) or 0) + float(
+                            quote_balance_data.get("locked", 0) or 0
+                        )
+                        usdc_data = balances.get("USDC")
+                        usdc_val = float(usdc_data.get("free", 0) or 0) + float(
+                            usdc_data.get("locked", 0) or 0
+                        )
+                        if usdt_val <= 1e-9 and usdc_val > 1e-9:
+                            quote_asset_name = "USDC"
+                            quote_balance_data = usdc_data
+                    except (ValueError, TypeError):
+                        pass
+
+                if quote_balance_data:
+                    try:
+                        free_bal = float(quote_balance_data.get("free", 0))
+                        locked_bal = float(quote_balance_data.get("locked", 0))
+                        current_total_quote = free_bal + locked_bal
                     except (ValueError, TypeError) as e:
                         logger.error(
-                            f"{log_prefix} Error converting USDT balance data to float: {e}. Data: {usdt_balance_data}"
+                            f"{log_prefix} Error converting {quote_asset_name} balance data to float: {e}. Data: {quote_balance_data}"
                         )
                         return False
 
@@ -829,36 +848,36 @@ class RiskManager:
                     # Suppose the balance should not drop by more than 90% in one call if it was not close to zero
                     if (
                         self.stats.current_balance > 10
-                        and current_total_usdt < self.stats.current_balance * 0.1
-                        and current_total_usdt < self.min_balance_threshold / 2
+                        and current_total_quote < self.stats.current_balance * 0.1
+                        and current_total_quote < self.min_balance_threshold / 2
                     ):
                         logger.warning(
-                            f"{log_prefix} Detected anomalously low new balance (${current_total_usdt:.2f}) compared to previous (${self.stats.current_balance:.2f}). "
+                            f"{log_prefix} Detected anomalously low new balance (${current_total_quote:.2f}) compared to previous (${self.stats.current_balance:.2f}). "
                             f"This might be a temporary API issue. NOT UPDATING BALANCE THIS TIME."
                         )
                         # Retry logic can be added here or the update can simply be skipped
                         return False  # Return False to signal a possible data issue
 
                     if (
-                        abs(current_total_usdt - self.stats.current_balance) > 1e-9
+                        abs(current_total_quote - self.stats.current_balance) > 1e-9
                     ):  # 1e-9 for float comparison
                         logger.info(
-                            f"{log_prefix} Balance updated: Previous=${self.stats.current_balance:.2f}, New=${current_total_usdt:.2f} (Free: {free_bal:.2f}, Locked: {locked_bal:.2f})"
+                            f"{log_prefix} Balance updated ({quote_asset_name}): Previous=${self.stats.current_balance:.2f}, New=${current_total_quote:.2f} (Free: {free_bal:.2f}, Locked: {locked_bal:.2f})"
                         )
-                        self.stats.current_balance = current_total_usdt
+                        self.stats.current_balance = current_total_quote
                     else:
                         logger.debug(
-                            f"{log_prefix} Balance unchanged: ${self.stats.current_balance:.2f}"
+                            f"{log_prefix} Balance unchanged ({quote_asset_name}): ${self.stats.current_balance:.2f}"
                         )
                     self.stats.current_balance_ts = time.time()
                     return True
                 else:
                     logger.warning(
-                        f"{log_prefix} USDT balance data not found in account info from executor. Current known balance: ${self.stats.current_balance:.2f}"
+                        f"{log_prefix} Neither USDT nor USDC balance data found in account info from executor. Current known balance: ${self.stats.current_balance:.2f}"
                     )
-                    # If there is no USDT but there are other assets, this could also be a problem for a USDT bot.
+                    # If there is no USDT/USDC but there are other assets, this could also be a problem for a USD-settled bot.
                     # If self.stats.current_balance is already 0 or very small, then this might be normal.
-                    return False  # If there is no USDT, consider the update failed for the USDT bot
+                    return False  # If there is no USDT/USDC, consider the update failed
             except Exception as e:
                 logger.error(
                     f"{log_prefix} Unexpected error updating balance: {e}",
@@ -1673,14 +1692,14 @@ class RiskManager:
                         "the signal instead of sizing it against a zero balance."
                     )
                     return False, None, 0.0, "PAPER_BALANCE_FETCH_FAILED"
-                usdt_balance_data = paper_balances.get("USDT")
-                if not usdt_balance_data:
+                quote_balance_data = paper_balances.get("USDT") or paper_balances.get("USDC")
+                if not quote_balance_data:
                     logger.error(
-                        f"{log_prefix} Paper wallet has no USDT entry for user "
+                        f"{log_prefix} Paper wallet has no USDT/USDC entry for user "
                         f"{self.user_id} (assets: {sorted(paper_balances)})."
                     )
                     return False, None, 0.0, "PAPER_BALANCE_FETCH_FAILED"
-                current_balance_val = float(usdt_balance_data["free"])
+                current_balance_val = float(quote_balance_data["free"])
                 if current_balance_val <= 1e-9:
                     logger.warning(
                         f"{log_prefix} Paper wallet balance is $0.00 for user "
@@ -1711,10 +1730,14 @@ class RiskManager:
             if executor_override is not None and executor_override is not self.executor:
                 try:
                     balances = await executor_override.get_account_balance()
-                    usdt_balance_data = balances.get("USDT") if balances else None
-                    if usdt_balance_data:
-                        free_bal = float(usdt_balance_data.get("free", 0.0) or 0.0)
-                        locked_bal = float(usdt_balance_data.get("locked", 0.0) or 0.0)
+                    quote_balance_data = (
+                        (balances.get("USDT") or balances.get("USDC"))
+                        if balances
+                        else None
+                    )
+                    if quote_balance_data:
+                        free_bal = float(quote_balance_data.get("free", 0.0) or 0.0)
+                        locked_bal = float(quote_balance_data.get("locked", 0.0) or 0.0)
                         current_balance_val = free_bal + locked_bal
                         balance_updated_successfully = current_balance_val > 0
                     else:

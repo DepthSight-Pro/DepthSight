@@ -6,7 +6,13 @@
 import { apiClient } from "@/lib/apiClient";
 import type { Kline, KlineInterval } from "./binanceService";
 
-export type KlineExchangeSource = "binance" | "bybit" | "okx" | "bitget" | "weex";
+export type KlineExchangeSource =
+	| "binance"
+	| "bybit"
+	| "okx"
+	| "bitget"
+	| "weex"
+	| "hyperliquid";
 
 /**
  * Normalizes position/apiKey exchange names ("bybit", "okx_futures", "WEEX_USDTM"...)
@@ -23,9 +29,11 @@ export function normalizeKlineExchange(
 		base === "bybit" ||
 		base === "okx" ||
 		base === "bitget" ||
-		base === "weex"
+		base === "weex" ||
+		base === "hyperliquid" ||
+		base === "hl"
 	) {
-		return base;
+		return base === "hl" ? "hyperliquid" : (base as KlineExchangeSource);
 	}
 	return "binance";
 }

@@ -9,18 +9,22 @@ import {
   Check, 
   Lock, 
   ShieldCheck, 
+  ShieldAlert, 
   Loader2,
   Share2,
   Globe,
   Wallet,
   Info,
   X,
+  Sparkles,
+  RefreshCw,
+  ExternalLink,
 } from "lucide-react";
 import { api } from "../services/api";
 import { Logo } from "../components/ui/logo";
 import { NodeWalletBottomSheet } from "../components/NodeWalletBottomSheet";
 import { PromoBannerPwa } from "../components/mining/PromoBannerPwa";
-import { PromoCampaignModal } from "../components/mining/PromoCampaignModal";
+import { PromoCampaignModal, type PromoModalStatus } from "../components/mining/PromoCampaignModal";
 import { ExchangeBadge } from "../components/ExchangeBadge";
 
 
@@ -31,6 +35,8 @@ interface MiningStatus {
   node_name?: string;
   referrerReferralCode?: string;
   referrer_referral_code?: string;
+  eligibleExchanges?: string[];
+  eligible_exchanges?: string[];
   stats?: Record<string, unknown>;
   nodeReferralCode?: string;
   node_referral_code?: string;
@@ -58,6 +64,18 @@ interface MiningStatus {
   is_global_mining_enabled?: boolean;
   hasWelcomeBonus?: boolean;
   has_welcome_bonus?: boolean;
+  walletAddress?: string;
+  wallet_address?: string;
+  nftPassType?: string;
+  nft_pass_type?: string;
+  nftMultiplierBonus?: number;
+  nft_multiplier_bonus?: number;
+  nftTokenId?: number;
+  nft_token_id?: number;
+  nftContractAddress?: string;
+  nft_contract_address?: string;
+  nftName?: string;
+  nft_name?: string;
   [key: string]: unknown;
 }
 
@@ -76,8 +94,9 @@ const toMiningStatus = (res: unknown): MiningStatus | null => {
   return payload as MiningStatus;
 };
 
-interface PromoStatus {
-  [key: string]: unknown;
+interface PromoStatus extends PromoModalStatus {
+  rebateMultiplier?: number;
+  isPenalty?: boolean;
 }
 
 const MiningScreen: React.FC = () => {
@@ -91,6 +110,7 @@ const MiningScreen: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [isPromoModalOpen, setIsPromoModalOpen] = useState(false);
+  const [isRefreshingNft, setIsRefreshingNft] = useState(false);
   const [selectedExchangeDetail, setSelectedExchangeDetail] = useState<{
     baseKey: string;
     label: string;
@@ -100,6 +120,7 @@ const MiningScreen: React.FC = () => {
     maxRate: number;
     multiplier: number;
     isBoosted: boolean;
+    isPenalty?: boolean;
   } | null>(null);
 
   const fetchStatus = () => {
@@ -125,6 +146,18 @@ const MiningScreen: React.FC = () => {
         }
       })
       .finally(() => setLoading(false));
+  };
+
+  const handleRefreshNft = () => {
+    setIsRefreshingNft(true);
+    api.refreshNftStatus()
+      .then((res) => {
+        if (res && res.has_nft) {
+          fetchStatus();
+        }
+      })
+      .catch((err) => console.error("NFT refresh error", err))
+      .finally(() => setIsRefreshingNft(false));
   };
 
   useEffect(() => {
@@ -177,19 +210,22 @@ const MiningScreen: React.FC = () => {
       maxRate: number;
       multiplier: number;
       isBoosted: boolean;
+      isPenalty: boolean;
     }>();
 
     for (const raw of rawList) {
       const norm = String(raw).trim().toLowerCase().replace(/_(futures|spot|usdtm|swap|linear|usdm)$/, "");
       const rate = rates[raw] ?? rates[norm] ?? 0.30;
-      const mult = multipliers[raw] ?? multipliers[norm] ?? (norm.includes("bitget") ? 2.0 : 1.0);
+      const rawMult = multipliers[raw] ?? multipliers[norm];
+      const mult = rawMult !== undefined ? rawMult : (norm.includes("bitget") ? 2.0 : 1.0);
 
       const existing = map.get(norm) || {
         baseKey: norm,
         label: norm.toUpperCase(),
         maxRate: 0,
-        multiplier: 1.0,
-        isBoosted: false,
+        multiplier: mult,
+        isBoosted: mult > 1.0,
+        isPenalty: mult < 0,
       };
 
       const rawLower = raw.toLowerCase();
@@ -202,7 +238,13 @@ const MiningScreen: React.FC = () => {
       }
 
       if (rate > existing.maxRate) existing.maxRate = rate;
-      if (mult > existing.multiplier) existing.multiplier = mult;
+      if (mult < 0) {
+        existing.multiplier = mult;
+        existing.isPenalty = true;
+        existing.isBoosted = false;
+      } else if (!existing.isPenalty && mult > existing.multiplier) {
+        existing.multiplier = mult;
+      }
       if (existing.multiplier > 1.0) existing.isBoosted = true;
 
       map.set(norm, existing);
@@ -216,7 +258,17 @@ const MiningScreen: React.FC = () => {
     return Array.from(map.values());
   }, [stats]);
 
+  const isBitgetPenalty = useMemo(() => {
+    const multipliers = (stats?.exchange_multipliers as Record<string, number> | undefined) || {};
+    const bitgetMult = multipliers["bitget"] ?? multipliers["bitget_futures"] ?? multipliers["bitget_spot"];
+    if (bitgetMult !== undefined && bitgetMult < 0) return true;
+    if (typeof promoStatus?.rebateMultiplier === "number" && promoStatus.rebateMultiplier < 0) return true;
+    if (groupedExchanges.some((e) => e.baseKey.includes("bitget") && e.isPenalty)) return true;
+    return false;
+  }, [stats, promoStatus, groupedExchanges]);
+
   const [isWalletOpen, setIsWalletOpen] = useState(false);
+  const [showEstRewardHint, setShowEstRewardHint] = useState(false);
 
   const handleActivate = () => {
     setIsActivating(true);
@@ -431,11 +483,69 @@ const MiningScreen: React.FC = () => {
         </div>
       </div>
 
+      {/* Genesis NFT Pass Status Card */}
+      {(miningStatus?.walletAddress || miningStatus?.wallet_address || miningStatus?.nftPassType || miningStatus?.nft_pass_type) && (
+        <div className="rounded-2xl border border-[hsl(var(--border))] bg-gradient-to-br from-[hsl(var(--card))] via-[hsl(var(--card))]/90 to-purple-950/25 p-4 space-y-2.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles className="w-4 h-4 text-purple-400 shrink-0 animate-pulse" />
+              <h3 className="text-xs font-semibold text-foreground truncate flex items-center gap-1.5">
+                <span>{miningStatus?.nftName || miningStatus?.nft_name || miningStatus?.nftPassType || miningStatus?.nft_pass_type || "Genesis Pass"}</span>
+                {(miningStatus?.nftPassType || miningStatus?.nft_pass_type) && (
+                  <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-500 dark:text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">
+                    +{(num(miningStatus?.nftMultiplierBonus ?? miningStatus?.nft_multiplier_bonus, 0)).toFixed(1)}x NFT Boost
+                  </span>
+                )}
+              </h3>
+            </div>
+            <button
+              onClick={handleRefreshNft}
+              disabled={isRefreshingNft}
+              className="p-1 rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))] text-[hsl(var(--muted-foreground))] hover:text-foreground transition flex items-center gap-1 text-[11px] disabled:opacity-50 shrink-0"
+              title="Refresh Arbitrum One NFT status"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRefreshingNft ? "animate-spin text-[hsl(var(--primary))]" : ""}`} />
+            </button>
+          </div>
+
+          {(miningStatus?.nftPassType || miningStatus?.nft_pass_type) ? (
+            <div className="text-[11px] text-[hsl(var(--muted-foreground))] space-y-1">
+              <p className="leading-snug">
+                Additive <span className="font-bold text-amber-500 dark:text-amber-400">+{(num(miningStatus?.nftMultiplierBonus ?? miningStatus?.nft_multiplier_bonus, 0)).toFixed(1)}x</span> boost active for all your personal trades on Arbitrum One.
+              </p>
+              <div className="flex items-center gap-2 pt-0.5">
+                <a
+                  href={`https://arbiscan.io/token/${miningStatus?.nftContractAddress || miningStatus?.nft_contract_address || "0x29ce393672507c185a5E9Bc2e721E8009e3520C8"}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-purple-400 hover:underline flex items-center gap-1 font-mono text-[10px]"
+                >
+                  <span>Arbiscan (Token #{miningStatus?.nftTokenId ?? miningStatus?.nft_token_id ?? 1})</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[11px] text-[hsl(var(--muted-foreground))] flex items-center justify-between">
+              <span>No Genesis Pass found on Arbitrum One.</span>
+              <button
+                onClick={handleRefreshNft}
+                disabled={isRefreshingNft}
+                className="text-[11px] text-purple-400 hover:underline font-medium"
+              >
+                Re-check
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Active Partner Exchange Multiplier Promo Banner */}
-      {promoStatus?.hasActiveCampaign && (
+      {(promoStatus?.hasActiveCampaign || isBitgetPenalty) && (
         <PromoBannerPwa
-          promoStatus={promoStatus}
+          promoStatus={promoStatus || { hasActiveCampaign: true, campaignName: "Bitget Launch Airdrop" }}
           onOpenQuests={() => setIsPromoModalOpen(true)}
+          isPenalty={isBitgetPenalty}
         />
       )}
 
@@ -453,14 +563,44 @@ const MiningScreen: React.FC = () => {
         </div>
 
         {/* Expected Reward Card */}
-        <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 flex flex-col justify-between h-[110px]">
-          <span className="text-[10px] font-bold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
-            {t("mining.todayEstReward", "Est. Daily Reward")}
-          </span>
+        <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 flex flex-col justify-between h-[110px] relative">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-[hsl(var(--muted-foreground))] uppercase tracking-wider">
+              {t("mining.todayEstReward", "Est. Daily Reward")}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowEstRewardHint(!showEstRewardHint)}
+              aria-label="Estimated reward info"
+              className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] p-0.5"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <div className="text-lg font-bold truncate text-[hsl(var(--primary))]">
             ~{yourEpochReward >= 1000 ? Math.round(yourEpochReward).toLocaleString("en-US").replace(/,/g, " ") : yourEpochReward.toFixed(2)} <span className="text-xs text-[hsl(var(--muted-foreground))]">$DEPTH</span>
           </div>
         </div>
+
+        {/* Est Reward Referral Warning Hint banner */}
+        {showEstRewardHint && (
+          <div className="col-span-2 p-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-xs text-foreground flex items-start gap-2 animate-in fade-in">
+            <Info className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div className="flex-1 text-[11px] leading-relaxed">
+              {t(
+                "mining.todayEstRewardReferralHint",
+                "Предварительный расчет предполагает чистый аккаунт без рефералки. Если аккаунт зарегистрирован под чужой рефералкой, фактическая ставка рибейта и итоговая награда могут быть меньше. Подробнее — в описании конкретной биржи ниже."
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowEstRewardHint(false)}
+              className="text-[hsl(var(--muted-foreground))] hover:text-foreground p-0.5"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Rebates Card */}
         <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 flex flex-col justify-between h-[110px]">
@@ -559,7 +699,9 @@ const MiningScreen: React.FC = () => {
                       type="button"
                       onClick={() => setSelectedExchangeDetail(exItem)}
                       className={`group flex items-center gap-2 border px-3 py-2 rounded-xl text-xs transition-all active:scale-95 text-left cursor-pointer ${
-                        exItem.isBoosted
+                        exItem.isPenalty
+                          ? "border-rose-500/60 bg-rose-500/10 hover:border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.15)]"
+                          : exItem.isBoosted
                           ? "border-amber-500/50 bg-amber-500/10 hover:border-amber-500/70 shadow-sm"
                           : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:border-[hsl(var(--primary))]/40"
                       }`}
@@ -568,12 +710,17 @@ const MiningScreen: React.FC = () => {
                       <span className="font-mono font-bold uppercase tracking-wide text-[hsl(var(--foreground))] text-xs">
                         {exItem.label}
                       </span>
-                      {exItem.isBoosted && (
+                      {exItem.isPenalty && (
+                        <span className="bg-rose-500/20 text-rose-500 border border-rose-500/40 text-[10px] font-mono font-extrabold flex items-center gap-1 rounded-md px-1.5 py-0.5 animate-pulse">
+                          💀 {exItem.multiplier}x {t("mining.penaltyBadge", "BURN")}
+                        </span>
+                      )}
+                      {exItem.isBoosted && !exItem.isPenalty && (
                         <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono font-extrabold flex items-center gap-1 rounded-md px-1.5 py-0.5 animate-pulse">
                           🔥 {exItem.multiplier}x
                         </span>
                       )}
-                      <Info className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))] ml-0.5 group-hover:text-[hsl(var(--primary))] transition-colors" />
+                      <Info className={`w-3.5 h-3.5 ${exItem.isPenalty ? "text-rose-500/70" : "text-[hsl(var(--muted-foreground))]"} ml-0.5 group-hover:text-[hsl(var(--primary))] transition-colors`} />
                     </button>
                   ))}
                 </div>
@@ -731,6 +878,13 @@ const MiningScreen: React.FC = () => {
         promoStatus={promoStatus}
         onRefresh={fetchStatus}
         nodeUuid={miningStatus?.nodeUuid || miningStatus?.node_uuid}
+        eligibleExchanges={
+          Array.isArray(miningStatus?.eligibleExchanges)
+            ? miningStatus.eligibleExchanges
+            : Array.isArray(miningStatus?.eligible_exchanges)
+            ? miningStatus.eligible_exchanges
+            : undefined
+        }
       />
 
       {/* Exchange Rebate Detail Modal */}
@@ -750,7 +904,12 @@ const MiningScreen: React.FC = () => {
                 <span className="font-mono font-bold uppercase text-base tracking-wide">
                   {selectedExchangeDetail.label}
                 </span>
-                {selectedExchangeDetail.isBoosted && (
+                {selectedExchangeDetail.isPenalty && (
+                  <span className="bg-rose-500/20 text-rose-500 border border-rose-500/40 text-[10px] font-mono font-extrabold rounded-md px-1.5 py-0.5">
+                    💀 {selectedExchangeDetail.multiplier}x BURN
+                  </span>
+                )}
+                {selectedExchangeDetail.isBoosted && !selectedExchangeDetail.isPenalty && (
                   <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-mono font-extrabold rounded-md px-1.5 py-0.5">
                     🔥 {selectedExchangeDetail.multiplier}x BOOST
                   </span>
@@ -767,37 +926,82 @@ const MiningScreen: React.FC = () => {
             </div>
 
             {/* Rebates rates */}
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-              <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
-                <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
-                  {t("mining.futuresRebate", "Futures Rebate")}
+            {selectedExchangeDetail.baseKey === "hyperliquid" || selectedExchangeDetail.baseKey === "hl" ? (
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
+                  <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
+                    {t("mining.hyperliquidModel", "Fee Model")}
+                  </div>
+                  <div className="text-sm font-bold text-[hsl(var(--primary))] mt-0.5 truncate">
+                    Builder Fee
+                  </div>
                 </div>
-                <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
-                  {((selectedExchangeDetail.futuresRate ?? selectedExchangeDetail.maxRate) * 100).toFixed(0)}%
+                <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
+                  <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
+                    {t("mining.hyperliquidBuyback", "To Buyback & Pool")}
+                  </div>
+                  <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
+                    {((selectedExchangeDetail.generalRate ?? selectedExchangeDetail.maxRate ?? 0.3) * 100).toFixed(0)}%
+                  </div>
                 </div>
               </div>
-              <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
-                <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
-                  {t("mining.spotRebate", "Spot Rebate")}
+            ) : (
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
+                  <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
+                    {t("mining.futuresRebate", "Futures Rebate")}
+                  </div>
+                  <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
+                    {((selectedExchangeDetail.futuresRate ?? selectedExchangeDetail.maxRate) * 100).toFixed(0)}%
+                  </div>
                 </div>
-                <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
-                  {((selectedExchangeDetail.spotRate ?? selectedExchangeDetail.maxRate) * 100).toFixed(0)}%
+                <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]">
+                  <div className="text-[10px] font-sans text-[hsl(var(--muted-foreground))] uppercase">
+                    {t("mining.spotRebate", "Spot Rebate")}
+                  </div>
+                  <div className="text-base font-bold text-[hsl(var(--primary))] mt-0.5">
+                    {((selectedExchangeDetail.spotRate ?? selectedExchangeDetail.maxRate) * 100).toFixed(0)}%
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Detail tooltip / description text */}
-            <div className="p-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
-              {selectedExchangeDetail.baseKey === "bitget"
+            <div className={`p-3 rounded-xl border ${selectedExchangeDetail.isPenalty ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : "border-[hsl(var(--border))] bg-[hsl(var(--secondary))]/50 text-[hsl(var(--muted-foreground))]"} text-xs leading-relaxed`}>
+              {selectedExchangeDetail.isPenalty
+                ? selectedExchangeDetail.baseKey === "bitget"
+                  ? t("mining.bitgetPenaltyTip", "⚠️ GTM Penalty & Burn Mode Active (-2.0x): Bitget has breached partnership agreements with DepthSight and failed joint GTM marketing commitments. An active -2.0x token burning penalty is enforced on depthsight.pro. Immediately migrate to Bybit, OKX, or WEEX to prevent token burns.")
+                  : t("mining.exchangePenaltyTip", "⚠️ Penalty & Burn Mode Active ({multiplier}x): Partnership agreements breached with DepthSight. A token burning penalty is enforced. Immediately migrate to Bybit or OKX on depthsight.pro to prevent token burns.", { multiplier: selectedExchangeDetail.multiplier })
+                : selectedExchangeDetail.baseKey === "bitget"
                 ? t("mining.bitgetRebateTip", "Base rate from clean accounts: 35%, if under referral: 8%. 2.0x Mining Multiplier for $DEPTH tokens!")
                 : selectedExchangeDetail.baseKey === "okx"
                 ? t("mining.okxRebateTip", "Base rate from clean accounts: 30%, if under referral: 7.5%.")
                 : selectedExchangeDetail.baseKey === "bybit"
                 ? t("mining.bybitRebateTip", "Base rate from clean accounts: 50%, if under referral: 10%.")
+                : selectedExchangeDetail.baseKey === "hyperliquid" || selectedExchangeDetail.baseKey === "hl"
+                ? t("mining.hyperliquidRebateTip", "On-chain DEX mining via Hyperliquid Builder Fee. The builder fee (0.01% - 0.10%) funds $DEPTH token buyback (30%) and converts into mining points. Verified transparently via Hyperliquid L1 node.")
                 : selectedExchangeDetail.isBoosted
                 ? `${selectedExchangeDetail.multiplier}x Trade Mining Reward Multiplier active for ${selectedExchangeDetail.label}.`
                 : t("mining.supportedExchangesRebateNote", "Rewards are directly tied to the fee rebate generated: the higher the exchange rebate rate, the higher your $DEPTH reward accordingly.")}
             </div>
+
+            {/* Protocol Enforcement Branding Bar */}
+            {selectedExchangeDetail.isPenalty ? (
+              <div className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 flex items-center justify-between text-[10px] font-mono">
+                <div className="flex items-center gap-1.5 text-rose-400 font-bold">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span>{t("mining.protocolEnforcement", "DepthSight Protocol Enforcement")}</span>
+                </div>
+                <span className="text-white font-bold bg-rose-500/20 border border-rose-500/40 px-2 py-0.5 rounded shadow-sm">
+                  depthsight.pro
+                </span>
+              </div>
+            ) : (
+              <div className="px-1 flex items-center justify-between text-[9px] font-mono text-[hsl(var(--muted-foreground))]">
+                <span>DepthSight DePIN</span>
+                <span className="text-[hsl(var(--primary))] font-medium">depthsight.pro</span>
+              </div>
+            )}
 
             {/* Close Button */}
             <button

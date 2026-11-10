@@ -1,8 +1,9 @@
 // pwa/components/mining/PromoBannerPwa.tsx
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Lock } from "lucide-react";
+import { ArrowRight, Lock, Gift, Globe } from "lucide-react";
 import { BitgetLogoSvg } from "./BitgetLogoSvg";
+import { exchangeLabels, exchangeLogos, normalizeExchangeKey } from "../../lib/exchanges";
 
 interface PromoQuestSlots {
 	totalSlots?: number;
@@ -10,7 +11,7 @@ interface PromoQuestSlots {
 	[key: string]: unknown;
 }
 
-interface PromoBannerStatus {
+export interface PromoBannerStatus {
 	hasActiveCampaign?: boolean;
 	quests?: PromoQuestSlots[];
 	distributed?: number;
@@ -18,23 +19,81 @@ interface PromoBannerStatus {
 	remainingPool?: number;
 	campaignName?: string;
 	description?: string;
+	exchangeId?: string;
 	isAdminPreview?: boolean;
+	isPenalty?: boolean;
+	rebateMultiplier?: number;
 	[key: string]: unknown;
 }
 
-interface PromoBannerPwaProps {
+export interface PromoBannerPwaProps {
 	promoStatus: PromoBannerStatus | null;
 	onOpenQuests: () => void;
+	isPenalty?: boolean;
 }
 
 export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 	promoStatus,
 	onOpenQuests,
+	isPenalty = false,
 }) => {
 	const { t } = useTranslation("pwa-common");
 
-	if (!promoStatus?.hasActiveCampaign) {
+	const isPenaltyMode = Boolean(
+		isPenalty ||
+		promoStatus?.isPenalty ||
+		(typeof promoStatus?.rebateMultiplier === "number" && promoStatus.rebateMultiplier < 0)
+	);
+
+	if (!promoStatus?.hasActiveCampaign && !isPenaltyMode) {
 		return null;
+	}
+
+	if (isPenaltyMode) {
+		return (
+			<div
+				onClick={onOpenQuests}
+				role="button"
+				tabIndex={0}
+				className="group relative cursor-pointer overflow-hidden rounded-2xl border border-white/10 dark:border-white/10 bg-[#0c1017]/90 dark:bg-[#0c1017]/90 p-3.5 sm:p-4 transition-all duration-300 active:scale-[0.98] hover:border-white/20 shadow-md"
+			>
+				<div className="relative flex items-center justify-between gap-3">
+					{/* Left: Icon & Text */}
+					<div className="flex items-center gap-3 min-w-0">
+						<div className="relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] p-1.5 shadow-sm">
+							<BitgetLogoSvg isMuted className="h-full w-full" />
+						</div>
+
+						<div className="min-w-0">
+							<div className="flex flex-wrap items-center gap-1.5">
+								<h3 className="text-xs sm:text-sm font-bold text-white tracking-tight leading-snug">
+									{promoStatus?.campaignName || t("mining.promoBannerRevokedTitle", "Bitget Launch Airdrop")}
+								</h3>
+								<span className="text-[11px] sm:text-xs font-bold text-rose-500 tracking-wide flex items-center gap-1">
+									• {t("mining.promoBannerRevokedStatus", "PARTNERSHIP REVOKED")}
+								</span>
+								<span className="rounded-full border border-white/15 bg-white/[0.06] px-2 py-0.5 text-[8.5px] sm:text-[9.5px] font-mono font-bold uppercase tracking-wider text-zinc-300">
+									{t("mining.promoBannerRevokedBadge", "REVOKED / SLA BREACH")}
+								</span>
+							</div>
+							<p className="mt-1 text-[11px] text-zinc-400 leading-snug line-clamp-2">
+								{t(
+									"mining.promoBannerRevokedSubtitle",
+									"This event has been permanently suspended due to unilateral partner SLA failure. All promotional rewards for Bitget API volume have been cancelled."
+								)}
+							</p>
+						</div>
+					</div>
+
+					{/* Right: Circular Arrow Action */}
+					<div className="shrink-0 pl-1">
+						<div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-white/15 bg-white/[0.04] text-zinc-400 transition-all group-hover:bg-white/[0.08] group-hover:text-white">
+							<ArrowRight className="h-4 w-4" />
+						</div>
+					</div>
+				</div>
+			</div>
+		);
 	}
 
 	const totalSlots =
@@ -60,38 +119,55 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 			<div className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 rounded-full bg-[radial-gradient(circle,rgba(0,240,255,0.12)_0%,rgba(29,162,180,0.04)_50%,transparent_70%)]" />
 
 			{/* Top Header: Logo + Title + Status Badge */}
-			<div className="flex items-start gap-3">
-				<div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-1.5 shadow-sm dark:shadow-[0_0_15px_rgba(0,240,255,0.35)]">
-					<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(0,240,255,0.4)]" />
-				</div>
+			{(() => {
+				const isUniversal = promoStatus.exchangeId === "all";
+				const targetExKey = isUniversal ? "all" : normalizeExchangeKey(promoStatus.exchangeId as string | undefined);
+				const targetExLogo = targetExKey && targetExKey !== "all" ? exchangeLogos[targetExKey] : null;
+				const targetExLabel = isUniversal
+					? "All Supported Exchanges"
+					: (targetExKey ? exchangeLabels[targetExKey] : null) || (promoStatus.exchangeId as string) || "Partner";
 
-				<div className="min-w-0 flex-1">
-					<div className="flex flex-wrap items-center gap-1.5">
-						<h3 className="text-sm font-bold text-foreground dark:text-white tracking-tight leading-snug">
-							{promoStatus.campaignName ||
-								t("mining.promoBannerTitle", "Bitget Launch Airdrop")}
-						</h3>
-						{promoStatus.isAdminPreview ? (
-							<span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-500 dark:text-amber-400">
-								<Lock className="h-2 w-2" />
-								{t("mining.adminPreviewBadge", "ADMIN PREVIEW")}
-							</span>
-						) : (
-							<span className="inline-flex items-center gap-1 rounded-full border border-[#00F0FF]/40 bg-[#1DA2B4]/15 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-cyan-600 dark:text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.3)] animate-pulse">
-								<span className="h-1.5 w-1.5 rounded-full bg-cyan-600 dark:bg-[#00F0FF]" />
-								{t("mining.liveBadge", "LIVE")}
-							</span>
-						)}
-					</div>
-					<p className="mt-1 text-[11px] text-muted-foreground leading-tight line-clamp-2">
-						{promoStatus.description ||
-							t(
-								"mining.promoBannerSubtitle",
-								"Connect Bitget API keys & trade to earn up to 25,000 $DEPTH per quest.",
+				return (
+					<div className="flex items-start gap-3">
+						<div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-2 shadow-sm dark:shadow-[0_0_15px_rgba(0,240,255,0.35)]">
+							{isUniversal ? (
+								<Globe className="h-5 w-5 text-cyan-400" />
+							) : targetExKey === "bitget" ? (
+								<BitgetLogoSvg className="h-full w-full drop-shadow-[0_2px_8px_rgba(0,240,255,0.4)]" />
+							) : targetExLogo ? (
+								<img src={targetExLogo} alt={targetExLabel} className="h-full w-full object-contain" />
+							) : (
+								<Gift className="h-5 w-5 text-cyan-400" />
 							)}
-					</p>
-				</div>
-			</div>
+						</div>
+
+						<div className="min-w-0 flex-1">
+							<div className="flex flex-wrap items-center gap-1.5">
+								<h3 className="text-sm font-bold text-foreground dark:text-white tracking-tight leading-snug">
+									{promoStatus.campaignName || `${targetExLabel} Launch Airdrop`}
+								</h3>
+								{promoStatus.isAdminPreview ? (
+									<span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-500 dark:text-amber-400">
+										<Lock className="h-2 w-2" />
+										{t("mining.adminPreviewBadge", "ADMIN PREVIEW")}
+									</span>
+								) : (
+									<span className="inline-flex items-center gap-1 rounded-full border border-[#00F0FF]/40 bg-[#1DA2B4]/15 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-cyan-600 dark:text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.3)] animate-pulse">
+										<span className="h-1.5 w-1.5 rounded-full bg-cyan-600 dark:bg-[#00F0FF]" />
+										{t("mining.liveBadge", "LIVE")}
+									</span>
+								)}
+							</div>
+							<p className="mt-1 text-[11px] text-muted-foreground leading-tight line-clamp-2">
+								{promoStatus.description ||
+									(isUniversal
+										? "Connect any supported exchange API key & trade to earn exclusive Genesis NFT Passes and $DEPTH rewards."
+										: `Connect ${targetExLabel} API keys & trade to earn up to 25,000 $DEPTH per quest.`)}
+							</p>
+						</div>
+					</div>
+				);
+			})()}
 
 			{/* Bottom Metrics Bar (Variant 2: Slots · Pool · Claimed) */}
 			<div className="mt-3.5 pt-3 border-t border-border/60 dark:border-white/10 flex items-center justify-between gap-2">

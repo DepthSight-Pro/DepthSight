@@ -234,6 +234,7 @@ def create_exchange_executor(
     api_secret: str,
     session,
     market_type: str | None = None,
+    **kwargs,
 ):
     """Create an exchange executor while keeping legacy BinanceExecutor mocks working."""
     if is_binance_exchange(exchange) and BinanceExecutor is not _BINANCE_ADAPTER_CLASS:
@@ -242,6 +243,7 @@ def create_exchange_executor(
             api_secret=api_secret,
             session=session,
             market_type=market_type or "futures_usdtm",
+            **kwargs,
         )
     return _create_exchange_executor(
         exchange=exchange,
@@ -249,6 +251,7 @@ def create_exchange_executor(
         api_secret=api_secret,
         session=session,
         market_type=market_type,
+        **kwargs,
     )
 
 
@@ -344,11 +347,15 @@ async def fetch_api_key_market_balance(
                 )
 
     assets = _asset_balances_from_exchange_response(balances)
-    usdt = (balances or {}).get("USDT", {}) if isinstance(balances, dict) else {}
-    free_usdt = _balance_float(usdt, "free")
-    locked_usdt = _balance_float(usdt, "locked")
-    wallet_balance = free_usdt + locked_usdt
-    unrealized_pnl = _balance_float(usdt, "unrealized_pnl")
+    quote_asset = (
+        ((balances or {}).get("USDT") or (balances or {}).get("USDC") or {})
+        if isinstance(balances, dict)
+        else {}
+    )
+    free_quote = _balance_float(quote_asset, "free")
+    locked_quote = _balance_float(quote_asset, "locked")
+    wallet_balance = free_quote + locked_quote
+    unrealized_pnl = _balance_float(quote_asset, "unrealized_pnl")
     total_equity = wallet_balance + unrealized_pnl
 
     return schemas.AccountBalance(
@@ -357,9 +364,9 @@ async def fetch_api_key_market_balance(
         exchange=key_obj.exchange,
         market_type=market_type,
         balance=wallet_balance,
-        available_balance=free_usdt,
+        available_balance=free_quote,
         unrealized_pnl=unrealized_pnl,
-        margin_used=locked_usdt if market_type == MARKET_TYPE_FUTURES else 0.0,
+        margin_used=locked_quote if market_type == MARKET_TYPE_FUTURES else 0.0,
         total_equity=total_equity,
         assets=assets,
     )
@@ -370,7 +377,7 @@ def get_deduplicated_balances_for_totals(
 ) -> list[schemas.AccountBalance]:
     """
     Deduplicates accounts for summing totals.
-    For unified account exchanges (Bybit, OKX), if both spot and futures_usdtm
+    For unified account exchanges (Bybit, OKX, Hyperliquid), if both spot and futures_usdtm
     balances are fetched for the same API key, we only keep futures_usdtm to
     avoid double counting the unified wallet balance.
     """
@@ -382,7 +389,13 @@ def get_deduplicated_balances_for_totals(
     for key_id, key_accounts in by_key.items():
         if len(key_accounts) > 1:
             first_acc = key_accounts[0]
-            if first_acc.exchange in {"bybit", "okx"}:
+            exch = (first_acc.exchange or "").lower()
+            if (
+                exch in {"bybit", "okx", "hyperliquid", "hl"}
+                or exch.startswith("bybit_")
+                or exch.startswith("okx_")
+                or exch.startswith("hyperliquid_")
+            ):
                 futures_acc = next(
                     (a for a in key_accounts if a.market_type == MARKET_TYPE_FUTURES),
                     None,

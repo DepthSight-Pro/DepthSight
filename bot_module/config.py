@@ -69,6 +69,8 @@ BYBIT_BROKER_ID = "Gt001094"
 WEEX_BROKER_ID = "b-WEEX111159"
 OKX_BROKER_ID = "bb39c7c267cfBCDE"
 BITGET_BROKER_ID = "78e7v"
+HYPERLIQUID_BUILDER_ADDRESS = ""
+HYPERLIQUID_BUILDER_FEE_RATE = os.environ.get("HYPERLIQUID_BUILDER_FEE_RATE", "0.05%")
 
 # --- NEW BLOCK: Loading ALL keys from .env ---
 # Mainnet Keys
@@ -556,7 +558,7 @@ DEFAULT_MAX_DRAWDOWN_PERCENT = 20.0
 # Maximum number of consecutive losing trades after which trading stops
 DEFAULT_MAX_CONSECUTIVE_LOSSES = 10
 # Minimum balance in USD, upon reaching which trading stops
-MIN_BALANCE_THRESHOLD_USD = 5
+MIN_BALANCE_THRESHOLD_USD = 3
 # Minimum required Reward/Risk Ratio for signal approval
 RISK_MANAGER_MIN_RR_RATIO = 1.0
 # Maximum allowed distance to stop-loss as a percentage of the entry price

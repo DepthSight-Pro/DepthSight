@@ -41,6 +41,7 @@ export function normalizeExchangeKey(
 		}
 	}
 	if (raw === "gateio" || raw === "gate_io") return "gate";
+	if (raw === "hl") return "hyperliquid";
 	if (
 		raw === "binance" ||
 		raw === "bybit" ||
@@ -48,7 +49,8 @@ export function normalizeExchangeKey(
 		raw === "bitget" ||
 		raw === "weex" ||
 		raw === "gate" ||
-		raw === "bingx"
+		raw === "bingx" ||
+		raw === "hyperliquid"
 	) {
 		return raw;
 	}

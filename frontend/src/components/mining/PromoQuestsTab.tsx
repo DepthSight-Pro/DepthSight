@@ -1,12 +1,14 @@
 // frontend/src/components/mining/PromoQuestsTab.tsx
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Clock, ShieldCheck, Sparkles, Server, Loader2 } from "lucide-react";
+import { Check, Clock, ShieldCheck, Sparkles, Server, Loader2, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import { useClaimPromoQuest } from "@/lib/api";
 import type { PromoClaimResponse, PromoQuestProgress, PromoStatusResponse } from "@/types/api";
 import { BitgetLogoSvg } from "./PromoBanner";
+import { exchangeLabels, exchangeLogos, normalizeExchangeKey, getActiveExchangesList } from "@/lib/exchanges";
+import { getNftPassImageUrl, getQuestColorTheme } from "@/lib/nftAssets";
 
 const toNumber = (value: unknown, fallback = 0): number => {
 	if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -16,11 +18,20 @@ const toNumber = (value: unknown, fallback = 0): number => {
 
 interface PromoQuestsTabProps {
 	promoStatus: PromoStatusResponse;
+	eligibleExchanges?: string[];
 }
 
-export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) => {
+export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eligibleExchanges }) => {
 	const { t } = useTranslation(["mining", "common"]);
 	const { mutate: claimQuest, isPending: isClaiming } = useClaimPromoQuest();
+	const isUniversal = promoStatus.exchangeId === "all";
+	const targetExKey = isUniversal ? "all" : normalizeExchangeKey(promoStatus.exchangeId);
+	const targetExLogo = targetExKey && targetExKey !== "all" ? exchangeLogos[targetExKey] : null;
+	const targetExLabel = isUniversal
+		? t("promoUniversalExchanges", "All Exchanges")
+		: (targetExKey ? exchangeLabels[targetExKey] : null) || promoStatus.exchangeId || "Partner";
+
+	const exchangesListStr = getActiveExchangesList(eligibleExchanges);
 
 	if (!promoStatus?.hasActiveCampaign) {
 		return null;
@@ -36,13 +47,22 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 			},
 			{
 				onSuccess: (res: PromoClaimResponse) => {
+					const isNft = quest.rewardType === "nft";
 					toast({
-						title: t("questClaimSuccessTitle", "🎉 Reward Claimed Successfully!"),
+						title: isNft
+							? t("questClaimSuccessTitleNft", "🎉 NFT Pass Voucher Reserved!")
+							: t("questClaimSuccessTitle", "🎉 Reward Claimed Successfully!"),
 						description:
 							res?.message ||
-							t("questClaimSuccessDesc", "Successfully claimed {{amount}} $DEPTH to your node balance!", {
-								amount: quest.reward.toLocaleString(),
-							}),
+							(isNft
+								? t(
+										"questClaimSuccessDescNft",
+										"Successfully reserved {{name}} on Arbitrum One! Batch airdrop will be sent directly to your verified wallet.",
+										{ name: quest.nftName || `NFT Pass #${quest.nftTokenId ?? 1}` }
+								  )
+								: t("questClaimSuccessDesc", "Successfully claimed {{amount}} $DEPTH to your node balance!", {
+										amount: quest.reward.toLocaleString(),
+								  })),
 					});
 				},
 				onError: (err: Error) => {
@@ -67,7 +87,10 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 					<div className="flex items-center gap-2.5">
 						<span className="text-xl">🎁</span>
 						<h2 className="text-xl font-black text-white">
-							{promoStatus.campaignName || t("promoQuestsTitle", "Bitget Launch Quests")}
+							{promoStatus.campaignName ||
+								(isUniversal
+									? t("promoQuestsTitle", "Promotional Airdrop Quests")
+									: t("promoQuestsTitleWithEx", "{{exchange}} Launch Quests", { exchange: targetExLabel }))}
 						</h2>
 						{promoStatus.isAdminPreview && (
 							<span className="rounded-full border border-amber-500/40 bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-300">
@@ -76,11 +99,32 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 						)}
 					</div>
 					<p className="mt-1 text-xs sm:text-sm text-white/60 max-w-xl">
-						{promoStatus.description ||
-							t(
-								"promoQuestsDescription",
-								"Complete quests to earn $DEPTH tokens from the 10M promotional airdrop pool. Each quest is granted once per unique Bitget master account UID."
-							)}
+						{(() => {
+							const isLegacyCampaignDesc = Boolean(
+								!promoStatus.description ||
+								((isUniversal || targetExKey !== "bitget") && /bitget/i.test(promoStatus.description))
+							);
+							if (!isLegacyCampaignDesc && promoStatus.description) {
+								return promoStatus.description;
+							}
+							return isUniversal
+								? t(
+										"promoQuestsDescriptionUniversal",
+										"Выполняйте квесты, чтобы получить токены $DEPTH из промо-пула аирдропа на {{pool}}M. Награда за каждый квест выдается один раз на уникальный аккаунт поддерживаемой биржи ({{exchanges}}).",
+										{
+											pool: ((promoStatus.totalPool || 10_000_000) / 1_000_000).toFixed(0),
+											exchanges: exchangesListStr,
+										}
+								  )
+								: t(
+										"promoQuestsDescriptionWithEx",
+										"Выполняйте квесты, чтобы получить токены $DEPTH из промо-пула аирдропа на {{pool}}M. Каждый квест выдается один раз на уникальный мастер-UID аккаунта {{exchange}}.",
+										{
+											pool: ((promoStatus.totalPool || 10_000_000) / 1_000_000).toFixed(0),
+											exchange: targetExLabel,
+										}
+								  );
+						})()}
 					</p>
 				</div>
 
@@ -99,13 +143,27 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 				</div>
 			</div>
 
-			{/* Quests Grid */}
-			<div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-				{promoStatus.quests?.map((quest) => {
-					const isApi = quest.questType === "api_volume";
-					const reqs = quest.requirements || {};
-					const claimedPercent =
-						quest.totalSlots > 0 ? Math.min(100, (quest.claimedSlots / quest.totalSlots) * 100) : 0;
+			{/* Quests Grid (Supports 1, 2, or 3 Quests - Sorted by Token #0 -> #1 -> #2) */}
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+				{(() => {
+					const questsList = promoStatus.quests || [];
+					const sortedQuests = [...questsList].sort((a, b) => {
+						const getOrder = (q: PromoQuestProgress) => {
+							if (q.nftTokenId !== undefined && q.nftTokenId !== null) return Number(q.nftTokenId);
+							if (q.questType === "telemetry_pass") return 0;
+							if (q.questType === "api_volume") return 1;
+							if (q.questType === "node_runner") return 2;
+							return q.reward || 0;
+						};
+						return getOrder(a) - getOrder(b);
+					});
+
+					return sortedQuests.map((quest) => {
+						const isNode = quest.questType === "node_runner";
+						const isApi = !isNode;
+						const reqs = quest.requirements || {};
+						const claimedPercent =
+							quest.totalSlots > 0 ? Math.min(100, (quest.claimedSlots / quest.totalSlots) * 100) : 0;
 
 				const nodeAgeDays = toNumber(reqs.nodeAgeDays, 0);
 				const minNodeAgeDays = toNumber(reqs.minNodeAgeDays, 14);
@@ -146,7 +204,15 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 										}`}
 									>
 										{isApi ? (
-											<BitgetLogoSvg className="h-full w-full drop-shadow-[0_1px_4px_rgba(29,162,180,0.5)]" />
+											isUniversal ? (
+												<Globe className="h-5 w-5 text-cyan-400" />
+											) : targetExKey === "bitget" ? (
+												<BitgetLogoSvg className="h-full w-full drop-shadow-[0_1px_4px_rgba(29,162,180,0.5)]" />
+											) : targetExLogo ? (
+												<img src={targetExLogo} alt={targetExLabel} className="h-full w-full object-contain" />
+											) : (
+												<BitgetLogoSvg className="h-full w-full drop-shadow-[0_1px_4px_rgba(29,162,180,0.5)]" />
+											)
 										) : (
 											<Server className="h-5 w-5" />
 										)}
@@ -189,29 +255,124 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 
 								{/* Titles & Reward Pill */}
 								<h3 className="text-lg font-bold text-white tracking-tight">
-									{isApi
-										? t("questApiPioneerTitle", quest.title)
-										: t("questNodeRunnerTitle", quest.title)}
+									{(() => {
+										const isLegacyBitgetTitle =
+											quest.title === "Bitget API Pioneer" ||
+											quest.title === "bitget_api_pioneer";
+										if (quest.title?.trim() && !isLegacyBitgetTitle) {
+											return quest.title;
+										}
+										return isApi
+											? (isUniversal
+												? t("questApiPioneerTitle", "API Volume Pioneer")
+												: t("questApiPioneerTitleWithEx", "{{exchange}} API Pioneer", { exchange: targetExLabel }))
+											: (isUniversal
+												? t("questNodeRunnerTitle", "Node Runner Veteran")
+												: t("questNodeRunnerTitleWithEx", "{{exchange}} Node Runner Veteran", { exchange: targetExLabel }));
+									})()}
 								</h3>
 								<p className="mt-0.5 text-xs text-muted-foreground">
-									{isApi
-										? t("questApiPioneerDesc", quest.description, {
-												threshold: volumeThreshold.toLocaleString(),
-										  })
-										: t("questNodeRunnerDesc", quest.description, {
-												threshold: volumeThreshold.toLocaleString(),
-										  })}
+									{(() => {
+										const rawDesc = quest.description?.trim() || "";
+										const isGeneratedDesc = Boolean(
+											!rawDesc ||
+											/^(connect (your|an|the)|rewards users|run an active node|запустите активную ноду|подключите)/i.test(rawDesc) ||
+											((isUniversal || targetExKey !== "bitget") && /bitget/i.test(rawDesc)) ||
+											rawDesc.includes("$5 000") ||
+											rawDesc.includes("$1 000") ||
+											rawDesc.includes("$5,000") ||
+											rawDesc.includes("$1,000")
+										);
+										if (!isGeneratedDesc && rawDesc) {
+											return rawDesc;
+										}
+										return isApi
+											? (isUniversal
+												? t("questApiPioneerDescUniversal", "Подключите API-ключ любой поддерживаемой биржи ({{exchanges}}) и совершите верифицированный объем торгов от ${{threshold}}.", {
+														exchanges: exchangesListStr,
+														threshold: volumeThreshold.toLocaleString(),
+												  })
+												: t("questApiPioneerDescWithEx", "Подключите ваш API-ключ {{exchange}} и совершите верифицированный объем торгов от ${{threshold}}.", {
+														exchange: targetExLabel,
+														threshold: volumeThreshold.toLocaleString(),
+												  }))
+											: (isUniversal
+												? t("questNodeRunnerDescUniversal", "Запустите активную ноду от {{days}} дней с привязанным кошельком, торгуйте на поддерживаемых биржах ({{exchanges}}) и наберите объем от ${{threshold}} на своем сервере.", {
+														days: minNodeAgeDays,
+														exchanges: exchangesListStr,
+														threshold: volumeThreshold.toLocaleString(),
+												  })
+												: t("questNodeRunnerDescWithEx", "Запустите активную ноду от {{days}} дней с привязанным кошельком, торгуйте на {{exchange}} и наберите объем от ${{threshold}} на своем сервере.", {
+														days: minNodeAgeDays,
+														exchange: targetExLabel,
+														threshold: volumeThreshold.toLocaleString(),
+												  }));
+									})()}
 								</p>
 
-								<div className="my-4 inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5">
-									<span className="text-base">💰</span>
-									<span className="text-sm font-black text-amber-400 font-mono">
-										{quest.reward.toLocaleString()} $DEPTH
-									</span>
-									<span className="text-[11px] text-muted-foreground">
-										{quest.isClaimed ? t("questClaimedLabel", "claimed") : t("questRewardLabel", "reward")}
-									</span>
-								</div>
+								{quest.rewardType === "nft" ? (
+									(() => {
+										const defaultTheme = quest.nftTokenId === 2 ? "purple" : quest.nftTokenId === 0 ? "cyan" : "gold";
+										const qTheme = getQuestColorTheme(quest.nftColorTheme, defaultTheme);
+										const passImgUrl = getNftPassImageUrl(quest.nftTokenId ?? (isApi ? 1 : 2), quest.nftImageUrl);
+										const isNoBoost = quest.nftTokenId === 0 || quest.nftMultiplier === "1.0x" || quest.nftMultiplier === "1x" || quest.nftMultiplier === "None";
+
+										return (
+											<div className={`my-4 rounded-xl border p-3.5 shadow-lg relative overflow-hidden group transition-all duration-300 ${qTheme.borderClass} ${qTheme.glowClass} ${qTheme.bgGradientClass}`}>
+												<div className="flex gap-3.5 items-center">
+													<div className="relative h-24 w-16 shrink-0 rounded-lg overflow-hidden border shadow-md bg-black" style={{ borderColor: `${qTheme.color}80` }}>
+														<img
+															src={passImgUrl}
+															alt={quest.nftName || "NFT Genesis Pass"}
+															className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+															onError={(e) => {
+																const target = e.currentTarget;
+																const fallback = getNftPassImageUrl(quest.nftTokenId ?? (isApi ? 1 : 2));
+																if (target.src !== fallback) target.src = fallback;
+															}}
+														/>
+														<div className="absolute top-1 left-1 rounded bg-black/80 px-1 py-0.5 text-[8px] font-mono font-bold text-white border border-white/20">
+															#{quest.nftTokenId ?? (isApi ? 1 : 2)}
+														</div>
+													</div>
+													<div className="min-w-0 flex-1 space-y-1">
+														<div className="flex items-center gap-1.5 flex-wrap">
+															<span className={`rounded-full border px-2 py-0.5 text-[9px] font-mono font-bold ${qTheme.badgeClass}`}>
+																ERC-1155 Pass
+															</span>
+															<span className="rounded-full border border-blue-500/40 bg-blue-500/20 px-2 py-0.5 text-[9px] font-bold text-blue-300">
+																Arbitrum One
+															</span>
+															<span className={`rounded-full border px-2 py-0.5 text-[9px] font-black font-mono ${qTheme.badgeClass}`}>
+																{isNoBoost ? "1:1 Voucher" : `${quest.nftMultiplier || (quest.nftTokenId === 2 ? "2.0x" : "1.5x")} Boost`}
+															</span>
+														</div>
+														<h4 className="text-xs sm:text-sm font-black text-white truncate">
+															{quest.nftName || (quest.nftTokenId === 2 ? "DepthSight Apex Syndicate Pass" : quest.nftTokenId === 0 ? "DepthSight Genesis Pass" : "DepthSight Core Syndicate Pass")}
+														</h4>
+														<div className="text-[11px] text-white/70 font-mono flex items-center gap-1.5 flex-wrap">
+															<span className={`font-bold ${qTheme.accentTextClass}`}>
+																{(quest.nftNominal || quest.reward).toLocaleString()} $DEPTH
+															</span>
+															<span className="text-white/40">• 1:1 at TGE</span>
+															<span className="text-white/40">• Supply: {quest.nftMaxSupply || quest.totalSlots}</span>
+														</div>
+													</div>
+												</div>
+											</div>
+										);
+									})()
+								) : (
+									<div className="my-4 inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5">
+										<span className="text-base">💰</span>
+										<span className="text-sm font-black text-amber-400 font-mono">
+											{quest.reward.toLocaleString()} $DEPTH
+										</span>
+										<span className="text-[11px] text-muted-foreground">
+											{quest.isClaimed ? t("questClaimedLabel", "claimed") : t("questRewardLabel", "reward")}
+										</span>
+									</div>
+								)}
 
 								{/* Slots Progress Bar */}
 								<div className="mb-4 space-y-1.5">
@@ -224,7 +385,9 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 									<div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/20">
 										<div
 											className={`h-full rounded-full transition-all duration-500 ${
-												isApi
+												quest.rewardType === "nft"
+													? "bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-400"
+													: isApi
 													? "bg-gradient-to-r from-[#1DA2B4] to-[#00F0FF]"
 													: "bg-gradient-to-r from-blue-500 to-cyan-400"
 											}`}
@@ -248,9 +411,13 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 												{reqs.hasExchangeKey ? "✓" : "○"}
 											</span>
 											<span>
-												{t("questReqApiKey", "{{exchange}} API Key connected (Master UID)", {
-													exchange: (promoStatus.exchangeId || "Bitget").toUpperCase(),
-												})}
+												{isUniversal
+													? t("questReqApiKeyUniversal", "Активный API-ключ биржи ({{exchanges}}) или кошелек подключен", {
+															exchanges: exchangesListStr,
+													  })
+													: t("questReqApiKey", "API-ключ {{exchange}} подключен (Master UID)", {
+															exchange: targetExLabel.toUpperCase(),
+													  })}
 											</span>
 										</div>
 										{reqs.exchangeUid ? (
@@ -408,22 +575,34 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 									<Button
 										disabled
 										variant="outline"
-										className="w-full border-[#1DA2B4]/40 bg-[#1DA2B4]/10 text-[#00F0FF] cursor-default font-semibold"
+										className={`w-full cursor-default font-semibold ${
+											quest.rewardType === "nft"
+												? "border-purple-500/40 bg-purple-500/10 text-purple-300"
+												: "border-[#1DA2B4]/40 bg-[#1DA2B4]/10 text-[#00F0FF]"
+										}`}
 									>
 										<Check className="mr-2 h-4 w-4" />
-										{t("questRewardClaimedBtn", "Reward Claimed — {{amount}} $DEPTH Added", {
-											amount: quest.reward.toLocaleString(),
-										})}
+										{quest.rewardType === "nft"
+											? `✓ Pass #${quest.nftTokenId ?? (isApi ? 1 : 2)} Reserved (Thirdweb Airdrop Voucher)`
+											: t("questRewardClaimedBtn", "Reward Claimed — {{amount}} $DEPTH Added", {
+													amount: quest.reward.toLocaleString(),
+											  })}
 									</Button>
 								) : quest.allRequirementsMet ? (
 									<Button
 										onClick={() => handleClaim(quest)}
 										disabled={isClaiming}
-										className="w-full bg-gradient-to-r from-[#1DA2B4] to-[#00F0FF] text-slate-950 font-bold shadow-[0_4px_20px_rgba(0,240,255,0.4)] hover:opacity-95 hover:shadow-[0_6px_25px_rgba(0,240,255,0.6)] animate-pulse"
+										className={`w-full font-bold shadow-lg hover:opacity-95 animate-pulse ${
+											quest.rewardType === "nft"
+												? "bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-400 text-white shadow-[0_4px_20px_rgba(168,85,247,0.4)]"
+												: "bg-gradient-to-r from-[#1DA2B4] to-[#00F0FF] text-slate-950 shadow-[0_4px_20px_rgba(0,240,255,0.4)] hover:shadow-[0_6px_25px_rgba(0,240,255,0.6)]"
+										}`}
 									>
 										<Sparkles className="mr-2 h-4 w-4" />
 										{isClaiming
 											? t("questClaiming", "Processing...")
+											: quest.rewardType === "nft"
+											? `💎 Reserve Pass #${quest.nftTokenId ?? (isApi ? 1 : 2)} (${(quest.nftNominal || quest.reward).toLocaleString()} $DEPTH)`
 											: t("questClaimBtn", "🎉 Claim {{amount}} $DEPTH", {
 													amount: quest.reward.toLocaleString(),
 											  })}
@@ -449,14 +628,23 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus }) =
 							</div>
 						</div>
 					);
-				})}
+				});
+			})()}
 			</div>
 
 			{/* Footer Security Notes */}
 			<div className="glass flex flex-wrap items-center justify-center gap-6 sm:gap-8 rounded-2xl border border-white/10 px-6 py-4 text-xs text-white/60 text-center">
 				<div className="flex items-center gap-2">
 					<ShieldCheck className="h-4 w-4 text-[#00F0FF]" />
-					<span>{t("questFootnoteUid", "One claim per unique Bitget master UID")}</span>
+					<span>
+						{isUniversal
+							? t("questFootnoteUidUniversal", "Один клейм на уникальный аккаунт поддерживаемой биржи ({{exchanges}})", {
+									exchanges: exchangesListStr,
+							  })
+							: t("questFootnoteUid", "One claim per unique {{exchange}} master UID", {
+									exchange: targetExLabel.toUpperCase(),
+							  })}
+					</span>
 				</div>
 				<div className="flex items-center gap-2">
 					<Clock className="h-4 w-4 text-[#00F0FF]" />

@@ -130,13 +130,30 @@ export const MiningRateCard: React.FC<MiningRateCardProps> = ({
             </div>
           </div>
 
-          <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 font-mono text-[10px] rounded-md px-2 py-0.5 flex items-center gap-1.5 shadow-sm">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
-            </span>
-            ~{currentTodayReward.toFixed(1)} DEPTH/{dayUnit}
-          </Badge>
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge className="bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20 font-mono text-[10px] rounded-md px-2 py-0.5 flex items-center gap-1.5 shadow-sm cursor-help">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+                  </span>
+                  ~{currentTodayReward.toFixed(1)} DEPTH/{dayUnit}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                className="max-w-[280px] p-2.5 text-xs leading-relaxed bg-[#0B0F19]/95 border-cyan-500/30 text-slate-200 shadow-xl backdrop-blur-md"
+              >
+                <p>
+                  {t(
+                    "todayEstRewardReferralHint",
+                    "Предварительный расчет предполагает чистый аккаунт без рефералки. Если аккаунт зарегистрирован под чужой рефералкой, фактическая ставка рибейта и итоговая награда могут быть меньше. Подробнее — в описании конкретной биржи ниже."
+                  )}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         {/* 14-Day Rate Bar Chart */}

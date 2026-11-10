@@ -1162,17 +1162,22 @@ class DataConsumer:
                         # More robust check for spot symbols
                         is_spot = s_data.get("isSpotTradingAllowed", False)
                         if s_data.get("status") == "TRADING" and is_spot:
-                            new_symbols_set.add(s_data["symbol"])
+                            if s_data.get("symbol"):
+                                new_symbols_set.add(s_data["symbol"])
+                            if s_data.get("pair"):
+                                new_symbols_set.add(s_data["pair"])
 
                 elif market_type_to_fetch == "futures_usdtm":
                     for s_data in symbols_from_api:
                         if (
                             s_data.get("status") == "TRADING"
                             and s_data.get("contractType") == "PERPETUAL"
-                            and s_data.get("quoteAsset") == "USDT"
-                            and "pair" in s_data
+                            and s_data.get("quoteAsset") in ("USDT", "USDC")
                         ):
-                            new_symbols_set.add(s_data["pair"])
+                            if s_data.get("pair"):
+                                new_symbols_set.add(s_data["pair"])
+                            if s_data.get("symbol"):
+                                new_symbols_set.add(s_data["symbol"])
 
                 self._valid_symbols_cache[market_type_to_fetch] = new_symbols_set
                 self._valid_symbols_cache_last_update[market_type_to_fetch] = (

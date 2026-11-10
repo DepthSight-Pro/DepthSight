@@ -1699,10 +1699,14 @@ async def create_api_key_for_user(
 
     import json
 
+    extra_data = {}
     if getattr(key_data, "api_password", None):
-        packed_secret = json.dumps(
-            {"secret": key_data.api_secret, "password": key_data.api_password}
-        )
+        extra_data["password"] = key_data.api_password
+    if getattr(key_data, "builder_fee_rate", None):
+        extra_data["builder_fee_rate"] = key_data.builder_fee_rate
+
+    if extra_data:
+        packed_secret = json.dumps({"secret": key_data.api_secret, **extra_data})
         encrypted_secret = security.encrypt_data(packed_secret)
     else:
         encrypted_secret = security.encrypt_data(key_data.api_secret)
@@ -2409,9 +2413,9 @@ async def _evaluate_saved_report(db: AsyncSession, db_report) -> None:
             db_report.is_mining_eligible = True
             db_report.estimated_rebate_usdt = _estimate_rebate(probe, cfg)
 
-        # Weex/Bybit/OKX/Bitget are verifiable on the hub -> let the verifier confirm.
+        # Weex/Bybit/OKX/Bitget/Hyperliquid are verifiable on the hub -> let the verifier confirm.
         exch = (db_report.exchange_id or "").lower()
-        is_verifiable = any(ex in exch for ex in ("weex", "bybit", "okx", "bitget"))
+        is_verifiable = any(ex in exch for ex in ("weex", "bybit", "okx", "bitget", "hyperliquid"))
         db_report.verification_status = "PENDING" if is_verifiable else "SKIPPED"
         await db.commit()
     except Exception as e:
@@ -2426,8 +2430,16 @@ async def save_hub_telemetry_report(
     db: AsyncSession,
     payload: dict,
     attribution_node_uuid: str,
-) -> None:
+) -> Optional[models.HubTelemetryReport]:
     from api.models import HubTelemetryReport
+
+    trade_mode = str(payload.get("trade_mode") or "LIVE").upper()
+    exch_id = str(payload.get("exchange_id") or "").lower()
+    if trade_mode != "LIVE" or "testnet" in exch_id or "demo" in exch_id:
+        logger.info(
+            f"[crud] Skipping saving non-live / testnet telemetry report: {exch_id} ({trade_mode})"
+        )
+        return None
 
     db_report = HubTelemetryReport(
         symbol=payload.get("symbol"),

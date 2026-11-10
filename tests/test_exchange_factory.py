@@ -28,6 +28,12 @@ def test_exchange_id_normalization():
     assert normalize_exchange_id("weex") == "weex"
     assert normalize_exchange_id("weex_futures") == "weex"
     assert normalize_exchange_id("weex_spot") == "weex_spot"
+    assert normalize_exchange_id("hyperliquid") == "hyperliquid"
+    assert normalize_exchange_id("hyperliquid_futures") == "hyperliquid"
+    assert normalize_exchange_id("hyperliquid_swap") == "hyperliquid"
+    assert normalize_exchange_id("hl") == "hyperliquid"
+    assert normalize_exchange_id("hyperliquid_testnet") == "hyperliquid_testnet"
+    assert normalize_exchange_id("hyperliquid_spot") == "hyperliquid_spot"
 
 
 def test_supported_exchanges_are_explicit():
@@ -42,6 +48,7 @@ def test_supported_exchanges_are_explicit():
     assert "bingx" in supported_exchange_ids()
     assert "okx" in supported_exchange_ids()
     assert "weex" in supported_exchange_ids()
+    assert "hyperliquid" in supported_exchange_ids()
 
 
 def test_factory_returns_ccxt_adapter_for_existing_exchange():
@@ -234,3 +241,49 @@ def test_factory_returns_ccxt_for_weex_spot():
     assert executor.exchange_id == "weex"
     assert executor.market_type == "spot"
     assert executor.supports_positions is False
+
+
+def test_factory_returns_ccxt_for_hyperliquid(monkeypatch=None):
+    from bot_module import config
+
+    if monkeypatch:
+        monkeypatch.setattr(config, "ACTIVE_TRADING_ENVIRONMENT", "mainnet")
+    else:
+        config.ACTIVE_TRADING_ENVIRONMENT = "mainnet"
+
+    session = Mock()
+    session.closed = False
+
+    executor = create_exchange_executor(
+        exchange="hyperliquid",
+        api_key="0x1234567890abcdef1234567890abcdef12345678",
+        api_secret="0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+        session=session,
+    )
+
+    assert isinstance(executor, CcxtExecutor)
+    assert executor.exchange_id == "hyperliquid"
+    assert executor.market_type == "futures_usdtm"
+    assert executor.supports_positions is True
+    assert executor.sandbox is False
+    assert executor._exchange.walletAddress == "0x1234567890abcdef1234567890abcdef12345678"
+    assert executor._exchange.privateKey == "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+
+
+def test_factory_returns_ccxt_for_hyperliquid_testnet():
+    session = Mock()
+    session.closed = False
+
+    executor = create_exchange_executor(
+        exchange="hyperliquid_testnet",
+        api_key="0x1234567890abcdef1234567890abcdef12345678",
+        api_secret="0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+        session=session,
+    )
+
+    assert isinstance(executor, CcxtExecutor)
+    assert executor.exchange_id == "hyperliquid"
+    assert executor.sandbox is True
+    assert executor._exchange.urls["test"]["public"] == "https://api.hyperliquid-testnet.xyz"
+    assert executor._normalize_symbol("BTCUSDT") == "BTC/USDC:USDC"
+    assert executor._normalize_symbol("BTC/USDC") == "BTC/USDC:USDC"

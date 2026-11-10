@@ -49,6 +49,8 @@ const PRESET_EXCHANGES = [
 	{ id: "okx_spot", name: "OKX Spot" },
 	{ id: "bitget_futures", name: "Bitget Futures" },
 	{ id: "bitget_spot", name: "Bitget Spot" },
+	{ id: "hyperliquid_futures", name: "Hyperliquid Perps" },
+	{ id: "hyperliquid_spot", name: "Hyperliquid Spot" },
 ];
 
 // Broker XLSX importers live in closed-source hub_private and may be absent
@@ -202,6 +204,9 @@ const AdminMiningPage: React.FC = () => {
 		bybit_spot: 0.30,
 		binance_futures: 0.25,
 		binance_spot: 0.20,
+		hyperliquid_futures: 0.50,
+		hyperliquid_spot: 0.50,
+		hyperliquid: 0.50,
 	});
 	const [exchangeMultipliers, setExchangeMultipliers] = useState<Record<string, number>>({
 		bitget_futures: 2.0,
@@ -212,6 +217,8 @@ const AdminMiningPage: React.FC = () => {
 		bybit: 1.0,
 		okx: 1.0,
 		weex: 1.0,
+		hyperliquid_futures: 1.0,
+		hyperliquid: 1.0,
 	});
 	const [customExchange, setCustomExchange] = useState("");
 
@@ -652,59 +659,126 @@ const AdminMiningPage: React.FC = () => {
 										</div>
 									)}
 
-									{/* Exchange Specific Mining Multipliers (Partner Farming Boost) */}
+									{/* Exchange Specific Mining Multipliers (Partner Farming Boost / GTM Penalty) */}
 									{eligibleExchanges.length > 0 && (
 										<div className="space-y-3 p-4 border rounded-xl bg-card/40">
 											<div>
 												<p className="font-bold text-sm flex items-center gap-2">
 													<Flame className="h-4 w-4 text-amber-500" />
-													Exchange Mining Multipliers (Token Farming Boost)
+													Exchange Mining Multipliers (Farming Boost / GTM Penalty)
 												</p>
 												<p className="text-xs text-muted-foreground mt-0.5">
-													Configure trade mining reward multipliers per exchange (e.g., 2.0x for Bitget) to steer user volume. Weights points in daily pool; daily emission remains fixed without inflation.
+													Configure trade mining reward multipliers per exchange. Use positive values (e.g. 2.0x) for partner boost, or negative values (e.g. -2.0x) to activate GTM penalty & burn mode for partners who failed marketing obligations.
 												</p>
 											</div>
 
 											<div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
 												{eligibleExchanges.map((ex) => {
-													const mult = exchangeMultipliers[ex] ?? (ex.toLowerCase().includes("bitget") ? 2.0 : 1.0);
+													const mult = exchangeMultipliers[ex] !== undefined ? exchangeMultipliers[ex] : (ex.toLowerCase().includes("bitget") ? 2.0 : 1.0);
 													const isBoosted = mult > 1.0;
+													const isPenalty = mult < 0;
 													return (
 														<div
 															key={ex}
-															className={`flex items-center justify-between p-2.5 border rounded-lg bg-background/50 text-xs transition-colors ${
-																isBoosted ? "border-amber-500/40 bg-amber-500/5 shadow-sm" : ""
+															className={`flex flex-col gap-2 p-3 border rounded-lg bg-background/50 text-xs transition-colors ${
+																isPenalty
+																	? "border-rose-500/50 bg-rose-500/10 shadow-[0_0_12px_rgba(244,63,94,0.15)]"
+																	: isBoosted
+																	? "border-amber-500/40 bg-amber-500/5 shadow-sm"
+																	: "border-border/60"
 															}`}
 														>
-															<div className="flex items-center gap-2">
-																<span className="font-mono font-semibold">{ex}</span>
-																{isBoosted && (
-																	<Badge
-																		variant="outline"
-																		className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-500 border-amber-500/30 animate-pulse"
-																	>
-																		🔥 {mult}x BOOST
-																	</Badge>
-																)}
+															<div className="flex items-center justify-between">
+																<div className="flex items-center gap-2">
+																	<span className="font-mono font-semibold">{ex}</span>
+																	{isPenalty && (
+																		<Badge
+																			variant="outline"
+																			className="text-[10px] font-mono font-bold bg-rose-500/20 text-rose-500 border-rose-500/40 animate-pulse"
+																		>
+																			💀 {mult}x BURN
+																		</Badge>
+																	)}
+																	{isBoosted && !isPenalty && (
+																		<Badge
+																			variant="outline"
+																			className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-500 border-amber-500/30 animate-pulse"
+																		>
+																			🔥 {mult}x BOOST
+																		</Badge>
+																	)}
+																	{!isBoosted && !isPenalty && (
+																		<Badge
+																			variant="outline"
+																			className="text-[10px] font-mono text-muted-foreground border-border/40"
+																		>
+																			1.0x NORMAL
+																		</Badge>
+																	)}
+																</div>
+																<div className="flex items-center gap-1.5">
+																	<Input
+																		type="number"
+																		step="0.1"
+																		min="-10.0"
+																		max="10.0"
+																		value={mult}
+																		onChange={(e) =>
+																			setExchangeMultipliers({
+																				...exchangeMultipliers,
+																				[ex]: parseFloat(e.target.value) || 0,
+																			})
+																		}
+																		className={`w-20 h-7 text-xs font-mono font-bold text-right ${
+																			isPenalty
+																				? "text-rose-500 border-rose-500/40"
+																				: isBoosted
+																				? "text-amber-500"
+																				: ""
+																		}`}
+																	/>
+																	<span className="font-bold text-muted-foreground w-4 text-right">
+																		x
+																	</span>
+																</div>
 															</div>
-															<div className="flex items-center gap-2">
-																<Input
-																	type="number"
-																	step="0.1"
-																	min="0.1"
-																	max="10.0"
-																	value={mult}
-																	onChange={(e) =>
-																		setExchangeMultipliers({
-																			...exchangeMultipliers,
-																			[ex]: parseFloat(e.target.value) || 1.0,
-																		})
-																	}
-																	className="w-20 h-8 text-xs font-mono font-bold text-right"
-																/>
-																<span className="font-bold text-muted-foreground w-6 text-right">
-																	x
-																</span>
+
+															{/* Quick preset buttons */}
+															<div className="flex items-center gap-1.5 pt-1.5 border-t border-border/30">
+																<span className="text-[10px] text-muted-foreground font-medium">Quick presets:</span>
+																<button
+																	type="button"
+																	onClick={() => setExchangeMultipliers({ ...exchangeMultipliers, [ex]: 2.0 })}
+																	className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+																		mult === 2.0
+																			? "bg-amber-500/20 text-amber-500 dark:text-amber-400 border border-amber-500/40 font-bold"
+																			: "bg-muted/40 hover:bg-muted text-muted-foreground"
+																	}`}
+																>
+																	+2.0x Boost
+																</button>
+																<button
+																	type="button"
+																	onClick={() => setExchangeMultipliers({ ...exchangeMultipliers, [ex]: 1.0 })}
+																	className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+																		mult === 1.0
+																			? "bg-primary/20 text-primary border border-primary/40 font-bold"
+																			: "bg-muted/40 hover:bg-muted text-muted-foreground"
+																	}`}
+																>
+																	1.0x Normal
+																</button>
+																<button
+																	type="button"
+																	onClick={() => setExchangeMultipliers({ ...exchangeMultipliers, [ex]: -2.0 })}
+																	className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+																		mult === -2.0
+																			? "bg-rose-500/20 text-rose-500 dark:text-rose-400 border border-rose-500/40 font-bold"
+																			: "bg-muted/40 hover:bg-rose-500/10 hover:text-rose-500 text-muted-foreground"
+																	}`}
+																>
+																	-2.0x Burn
+																</button>
 															</div>
 														</div>
 													);

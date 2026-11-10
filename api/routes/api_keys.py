@@ -63,6 +63,13 @@ async def add_api_key(
     existing_keys = await crud.get_api_keys_for_user(db, current_user.id)
     is_first_key = not existing_keys
 
+    # Enforce admin-only access for testnet API keys
+    if api_key_data.exchange.endswith("_testnet") and getattr(current_user, "role", "") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Testnet mode is only available for administrators.",
+        )
+
     # Create the API key with duplicate check
     try:
         db_api_key = await crud.create_api_key_for_user(
@@ -153,6 +160,22 @@ async def add_api_key(
                         await auto_resolve_bybit_uid(db, current_user.id)
                     except Exception:
                         pass
+                elif db_api_key.exchange in [
+                    "hyperliquid",
+                    "hyperliquid_testnet",
+                    "hyperliquid_futures",
+                    "hyperliquid_spot",
+                ]:
+                    try:
+                        hl_settings = current_exchange_settings.setdefault("hyperliquid", {})
+                        hl_settings["wallet_address"] = api_key_data.api_key.strip()
+                        fee_rate = getattr(api_key_data, "builder_fee_rate", None) or api_key_data.api_password
+                        if fee_rate:
+                            hl_settings["builder_fee_rate"] = str(fee_rate).strip()
+                        config.exchange_settings = current_exchange_settings
+                        await db.commit()
+                    except Exception as hl_err:
+                        logger.debug(f"Failed to record hyperliquid wallet address: {hl_err}")
                 elif db_api_key.exchange in [
                     "bitget",
                     "bitget_futures",
