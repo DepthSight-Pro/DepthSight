@@ -6,6 +6,7 @@ import time
 import hashlib
 import httpx
 import random
+import re
 from datetime import date, datetime, timezone, timedelta, time as dt_time
 from typing import List, Dict, Optional, Literal, Any
 from fastapi import (
@@ -27,7 +28,7 @@ from sqlalchemy.future import select
 from .database import get_db
 from . import schemas, crud, models
 from .auth import get_current_user
-from .depthsight_api import limiter, get_limit_value, APP_VERSION
+from .rate_limiter import limiter, get_limit_value
 from .plans import plans_config
 from .audit_logger import audit_logger, AuditEventType, get_client_ip as audit_client_ip
 
@@ -42,6 +43,8 @@ from .wallet_auth import (
 )
 
 logger = logging.getLogger(__name__)
+
+APP_VERSION = os.getenv("APP_VERSION", "1.0.1")
 
 HUB_ADMIN_API_KEY = os.getenv("HUB_ADMIN_API_KEY")
 
@@ -3564,20 +3567,50 @@ async def refresh_node_nft_status(
     On-demand force refresh of the node's Arbitrum One ERC-1155 NFT Pass status.
     """
     node = await _verify_node_credentials(db, x_node_uuid, x_node_secret)
-    if not node.wallet_address:
+    wallet = node.wallet_address
+    if not wallet and node.node_referral_code:
+        user_res = await db.execute(
+            select(models.User.id).where(
+                models.User.referral_code == node.node_referral_code
+            )
+        )
+        uid = user_res.scalar()
+        if uid:
+            u_cfg = await crud.get_config_model(db, uid)
+            if u_cfg and u_cfg.exchange_settings:
+                from bot_module.node_identity import primary_wallet_address
+
+                u_wallet = primary_wallet_address(u_cfg.exchange_settings)
+                if u_wallet:
+                    wallet = u_wallet
+                    node.wallet_address = u_wallet
+                    try:
+                        await db.commit()
+                    except Exception:
+                        pass
+
+    if not wallet:
         return {
             "success": False,
             "has_nft": False,
+            "hasNft": False,
             "message": "No wallet address bound to this node. Please bind your EVM wallet first.",
             "token_id": None,
+            "tokenId": None,
             "bonus_multiplier": 0.0,
+            "bonusMultiplier": 0.0,
         }
 
     from api.nft_verifier import verify_wallet_nft
-    nft_info = await verify_wallet_nft(node.wallet_address, force_refresh=True)
+
+    nft_info = await verify_wallet_nft(wallet, force_refresh=True)
     return {
         "success": True,
-        "wallet": node.wallet_address,
+        "wallet": wallet,
+        "tier": nft_info.get("pass_type"),
+        "hasNft": nft_info.get("has_nft", False),
+        "tokenId": nft_info.get("token_id"),
+        "bonusMultiplier": float(nft_info.get("bonus_multiplier", 0.0)),
         **nft_info,
     }
 
@@ -5043,15 +5076,17 @@ async def _resolve_user_promo_identity(
         logger.debug(f"promo identity settings lookup failed: {e}")
 
     # 2. Auto-resolved UID via exchange API (user's own keys).
-    auto_uid: Optional[str] = None
-    if not is_universal and len(ex_list) == 1:
-        try:
-            auto_uid = await _lookup_user_exchange_uid(db, current_user_obj.id, ex)
-        except Exception as e:
-            logger.debug(f"promo identity auto-resolve failed: {e}")
+    if not is_universal and ex_list:
+        for single_ex in ex_list:
+            try:
+                auto_uid = await _lookup_user_exchange_uid(db, current_user_obj.id, single_ex)
+                if auto_uid and str(auto_uid) not in settings_uids:
+                    settings_uids.append(str(auto_uid))
+            except Exception as e:
+                logger.debug(f"promo identity auto-resolve failed for {single_ex}: {e}")
 
     known_uids: List[str] = []
-    for u in settings_uids + ([str(auto_uid)] if auto_uid else []):
+    for u in settings_uids:
         if u and u not in known_uids:
             known_uids.append(u)
 
@@ -5059,15 +5094,17 @@ async def _resolve_user_promo_identity(
     # UID-based discovery + UID collection run to a fixpoint (max 3 rounds):
     # a node found by UID may carry another UID linking a further node.
     node_uuids: List[str] = []
-    uid_col = None
-    if "bitget" in ex:
-        uid_col = models.HubNode.bitget_uid
-    elif "bybit" in ex:
-        uid_col = models.HubNode.bybit_uid
-    elif "okx" in ex:
-        uid_col = models.HubNode.okx_uid
-    elif "weex" in ex:
-        uid_col = models.HubNode.weex_uid
+    uid_cols = []
+    target_exchanges = ex_list if ex_list else (["bitget", "bybit", "okx", "weex"] if is_universal else [ex])
+    for target_e in target_exchanges:
+        if "bitget" in target_e and models.HubNode.bitget_uid not in uid_cols:
+            uid_cols.append(models.HubNode.bitget_uid)
+        if "bybit" in target_e and models.HubNode.bybit_uid not in uid_cols:
+            uid_cols.append(models.HubNode.bybit_uid)
+        if "okx" in target_e and models.HubNode.okx_uid not in uid_cols:
+            uid_cols.append(models.HubNode.okx_uid)
+        if "weex" in target_e and models.HubNode.weex_uid not in uid_cols:
+            uid_cols.append(models.HubNode.weex_uid)
 
     try:
         if getattr(current_user_obj, "referral_code", None):
@@ -5095,27 +5132,27 @@ async def _resolve_user_promo_identity(
         queried_uids: set = set()
         for _round in range(3):
             new_uids = [u for u in known_uids if u not in queried_uids]
-            if uid_col is not None and new_uids:
+            if uid_cols and new_uids:
+                col_clauses = [col.in_(new_uids) for col in uid_cols]
                 uq = await db.execute(
-                    select(models.HubNode.node_uuid).where(uid_col.in_(new_uids))
+                    select(models.HubNode.node_uuid).where(
+                        or_(*col_clauses) if len(col_clauses) > 1 else col_clauses[0]
+                    )
                 )
                 for nu in uq.scalars().all():
                     if nu and nu not in node_uuids:
                         node_uuids.append(nu)
                 queried_uids.update(new_uids)
-            if not node_uuids or uid_col is None:
+            if not node_uuids or not uid_cols:
                 break
             # Extra UIDs stored on owned nodes (user traded via another client).
-            nq = await db.execute(
-                select(uid_col).where(models.HubNode.node_uuid.in_(node_uuids))
-            )
-            added = False
-            for uv in nq.scalars().all():
-                if uv and str(uv) not in known_uids:
-                    known_uids.append(str(uv))
-                    added = True
-            if not added:
-                break
+            for col in uid_cols:
+                nq = await db.execute(
+                    select(col).where(models.HubNode.node_uuid.in_(node_uuids))
+                )
+                for uv in nq.scalars().all():
+                    if uv and str(uv) not in known_uids:
+                        known_uids.append(str(uv))
     except Exception as e:
         logger.debug(f"promo identity node lookup failed: {e}")
 
@@ -5834,8 +5871,10 @@ async def get_promo_status(
 
 
 @router.post("/promo/claim", response_model=schemas.PromoClaimResponse)
+@limiter.limit(get_limit_value("promo_claim"))
 async def claim_promo_quest(
     payload: schemas.PromoClaimRequest,
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_node_uuid: Optional[str] = Header(None, alias="X-Node-UUID"),
     node_uuid: Optional[str] = None,
@@ -5848,6 +5887,12 @@ async def claim_promo_quest(
     stmt = select(models.PromoCampaign).where(
         models.PromoCampaign.id == payload.campaign_id
     )
+    try:
+        bind = db.get_bind()
+        if bind and getattr(bind.dialect, "name", "") == "postgresql":
+            stmt = stmt.with_for_update()
+    except Exception:
+        pass
     res = await db.execute(stmt)
     campaign = res.scalars().first()
     if not campaign:
@@ -5929,7 +5974,8 @@ async def claim_promo_quest(
             "*",
             "any",
         )
-        if (is_univ or "hyperliquid" in target_exchange.lower()) and (
+        is_multi = len([e.strip() for e in (target_exchange or "").split(",") if e.strip()]) > 1
+        if (is_univ or is_multi or "hyperliquid" in target_exchange.lower()) and (
             identity["has_key"] or identity["has_wallet"] or current_user_obj
         ):
             wallet_candidate = identity["wallet"] or (node.wallet_address if node else None)
@@ -5944,7 +5990,7 @@ async def claim_promo_quest(
                 detail=f"No {target_exchange.upper()} UID found. Please connect your {target_exchange.upper()} API key.",
             )
 
-    master_uid = str(exchange_uid)
+    master_uid = str(exchange_uid).strip().lower()
 
     # Quest volume context: api_volume counts central (non-physical) volume
     # only, node_runner counts physical-server volume only — including trades
@@ -6024,13 +6070,23 @@ async def claim_promo_quest(
 
     # Wallet requirement for all quests: strictly the user's wallet,
     # with legacy fallback to the explicitly passed node wallet.
-    wallet_addr_to_check = identity["wallet"] or (
+    raw_wallet = identity["wallet"] or (
         node.wallet_address if (node and legacy_node_used) else None
     )
-    if not wallet_addr_to_check:
+    if not raw_wallet or not str(raw_wallet).strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A linked and verified EVM wallet address is required to claim quest rewards.",
+        )
+
+    wallet_addr_to_check = str(raw_wallet).strip().lower()
+    if (
+        not re.match(r"^0x[0-9a-f]{40}$", wallet_addr_to_check)
+        or wallet_addr_to_check == "0x0000000000000000000000000000000000000000"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or empty EVM wallet address. Please re-bind a valid MetaMask/EVM wallet.",
         )
 
     # Verify trading volume (strictly broker-verified) in quest context.
@@ -6153,11 +6209,15 @@ async def claim_promo_quest(
     # Anti-fraud compound check (per quest_type): any of the user's UIDs
     # or wallet already claimed -> 409. Node uuid is intentionally NOT
     # used: one user = many nodes, one claim per (UID, wallet).
-    anti_fraud_filters = [models.PromoClaim.exchange_uid.in_(user_uids)]
+    normalized_user_uids = [str(u).strip().lower() for u in user_uids if u]
+    anti_fraud_filters = []
+    if normalized_user_uids:
+        anti_fraud_filters.append(
+            func.lower(models.PromoClaim.exchange_uid).in_(normalized_user_uids)
+        )
     if wallet_addr_to_check:
         anti_fraud_filters.append(
-            func.lower(models.PromoClaim.wallet_address)
-            == func.lower(wallet_addr_to_check)
+            func.lower(models.PromoClaim.wallet_address) == wallet_addr_to_check
         )
 
     claim_check = (
@@ -6220,8 +6280,7 @@ async def claim_promo_quest(
         quest_type=payload.quest_type,
         node_uuid=target_node.node_uuid,
         exchange_uid=master_uid,
-        wallet_address=wallet_addr_to_check
-        or "0x0000000000000000000000000000000000000000",
+        wallet_address=wallet_addr_to_check,
         reward_amount=reward,
         verified_volume=verified_volume,
         status=claim_status,
@@ -6254,7 +6313,17 @@ async def claim_promo_quest(
             db.add(new_ledger)
         success_msg = f"Successfully claimed {reward:,.0f} $DEPTH!"
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as err:
+        await db.rollback()
+        logger.warning(
+            f"[PROMO_CLAIM] Concurrent/duplicate claim prevented by database constraint: {err}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Reward already claimed for this account UID, wallet, or node.",
+        )
 
     return schemas.PromoClaimResponse(
         success=True,
@@ -6352,11 +6421,59 @@ async def create_or_update_promo_campaign_admin(
     return campaign
 
 
+@router.delete(
+    "/promo/admin/campaigns/{campaign_id}",
+    response_model=schemas.PromoCampaignDeleteResponse,
+)
+async def delete_promo_campaign_admin(
+    campaign_id: str,
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: delete a promo campaign and its associated claims.
+
+    Strictly restricted to Central Federation Hub (IS_CENTRAL_HUB=true).
+    """
+    if os.getenv("IS_CENTRAL_HUB", "false").lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Promo campaigns can only be managed on the Central Federation Hub.",
+        )
+    await _verify_admin_access_async(authorization, db)
+
+    stmt = select(models.PromoCampaign).where(models.PromoCampaign.id == campaign_id)
+    res = await db.execute(stmt)
+    campaign = res.scalars().first()
+
+    if not campaign:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Campaign '{campaign_id}' not found.",
+        )
+
+    from sqlalchemy import delete
+
+    # Delete any claims associated with this campaign first (FK integrity)
+    delete_claims_stmt = delete(models.PromoClaim).where(
+        models.PromoClaim.campaign_id == campaign_id
+    )
+    await db.execute(delete_claims_stmt)
+
+    await db.delete(campaign)
+    await db.commit()
+
+    return schemas.PromoCampaignDeleteResponse(
+        success=True,
+        message=f"Campaign '{campaign_id}' deleted successfully.",
+    )
+
+
 @router.get("/promo/admin/claims/export")
 async def export_promo_claims_admin(
-    campaign_id: str,
+    campaign_id: Optional[str] = None,
     quest_type: Optional[str] = None,
     format: str = "thirdweb",
+    token: Optional[str] = None,
     authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -6369,26 +6486,40 @@ async def export_promo_claims_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Promo claims can only be exported on the Central Federation Hub.",
         )
-    await _verify_admin_access_async(authorization, db)
+    auth_header = authorization or (f"Bearer {token}" if token else None)
+    await _verify_admin_access_async(auth_header, db)
 
-    camp_stmt = select(models.PromoCampaign).where(
-        models.PromoCampaign.id == campaign_id
-    )
-    camp_res = await db.execute(camp_stmt)
-    campaign = camp_res.scalars().first()
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    clean_campaign_id = campaign_id.strip() if campaign_id else None
 
-    quest_token_map = {}
-    for q in campaign.quests or []:
-        qt = q.get("quest_type")
-        tid = q.get("nft_token_id", 1)
-        quest_token_map[qt] = tid
+    # Base preset mapping (token0 -> 0, token1 -> 1, token2 -> 2)
+    quest_token_map: dict[str, int] = {
+        "telemetry_pass": 0,
+        "api_volume": 1,
+        "api_pioneer": 1,
+        "node_runner": 2,
+    }
+
+    if clean_campaign_id:
+        camp_stmt = select(models.PromoCampaign).where(
+            models.PromoCampaign.id == clean_campaign_id
+        )
+        camp_res = await db.execute(camp_stmt)
+        campaign = camp_res.scalars().first()
+        if campaign and campaign.quests:
+            for q in campaign.quests:
+                qt = q.get("quest_type")
+                tid = q.get("nft_token_id")
+                if tid is not None:
+                    try:
+                        quest_token_map[qt] = int(tid)
+                    except (ValueError, TypeError):
+                        pass
 
     stmt = select(models.PromoClaim).where(
-        models.PromoClaim.campaign_id == campaign_id,
         models.PromoClaim.status != "rejected",
     )
+    if clean_campaign_id:
+        stmt = stmt.where(models.PromoClaim.campaign_id == clean_campaign_id)
     if quest_type:
         stmt = stmt.where(models.PromoClaim.quest_type == quest_type)
     stmt = stmt.order_by(models.PromoClaim.claimed_at.asc())
@@ -6404,11 +6535,17 @@ async def export_promo_claims_admin(
     # Thirdweb Edition Drop Airdrop CSV: address,tokenId,quantity
     writer.writerow(["address", "tokenId", "quantity"])
     for c in claims:
-        token_id = quest_token_map.get(c.quest_type, 1)
+        default_tid = (
+            0
+            if c.quest_type == "telemetry_pass"
+            else (2 if c.quest_type == "node_runner" else 1)
+        )
+        token_id = quest_token_map.get(c.quest_type, default_tid)
         writer.writerow([c.wallet_address, token_id, 1])
 
     csv_data = output.getvalue()
-    filename = f"thirdweb_airdrop_{campaign_id}_{quest_type or 'all'}.csv"
+    filename_camp = clean_campaign_id or "all"
+    filename = f"thirdweb_airdrop_{filename_camp}_{quest_type or 'all'}.csv"
     return Response(
         content=csv_data,
         media_type="text/csv",
@@ -6418,8 +6555,9 @@ async def export_promo_claims_admin(
 
 @router.get("/promo/admin/claims")
 async def list_promo_claims_admin(
-    campaign_id: str,
+    campaign_id: Optional[str] = None,
     quest_type: Optional[str] = None,
+    token: Optional[str] = None,
     authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -6432,12 +6570,14 @@ async def list_promo_claims_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Promo claims can only be viewed on the Central Federation Hub.",
         )
-    await _verify_admin_access_async(authorization, db)
+    auth_header = authorization or (f"Bearer {token}" if token else None)
+    await _verify_admin_access_async(auth_header, db)
 
     stmt = select(models.PromoClaim).where(
-        models.PromoClaim.campaign_id == campaign_id,
         models.PromoClaim.status != "rejected",
     )
+    if campaign_id and campaign_id.strip():
+        stmt = stmt.where(models.PromoClaim.campaign_id == campaign_id.strip())
     if quest_type:
         stmt = stmt.where(models.PromoClaim.quest_type == quest_type)
     stmt = stmt.order_by(models.PromoClaim.claimed_at.desc())

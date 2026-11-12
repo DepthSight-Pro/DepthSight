@@ -2483,6 +2483,22 @@ include_application_routers(
 )
 
 
+@app.api_route(
+    "/api/hub/promo/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+    include_in_schema=False,
+)
+async def redirect_legacy_promo_hub(request: Request, path: str = ""):
+    """Redirect unversioned /api/hub/promo/... to canonical /api/v1/hub/promo/..."""
+    query = f"?{request.url.query}" if request.url.query else ""
+    target_url = f"/api/v1/hub/promo/{path}{query}"
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(
+        url=target_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT
+    )
+
+
 if __name__ == "__main__":
     if UVICORN_INSTALLED_API_DEPTHSIGHT and uvicorn:
         uvicorn.run(app, host="127.0.0.1", port=8000)

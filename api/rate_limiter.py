@@ -31,6 +31,7 @@ LIMITS_CONFIG = {
     "hub_like": "60/minute",
     "hub_comments": "30/minute",
     "hub_messages": "30/minute",
+    "promo_claim": "10/minute",
 }
 
 

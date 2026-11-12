@@ -120,7 +120,7 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 	}
 
 	const handleClaim = async (quest: PromoQuest) => {
-		if (!promoStatus?.campaignId || claimingType) return;
+		if (!promoStatus?.campaignId || claimingType || quest.isClaimed) return;
 
 		setClaimingType(quest.questType);
 		try {
@@ -152,14 +152,28 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 		}
 	};
 
-	const isUniversal = promoStatus.exchangeId === "all";
-	const targetExKey = isUniversal ? "all" : normalizeExchangeKey(promoStatus.exchangeId);
+	const rawExchangeId = (promoStatus.exchangeId || "").trim().toLowerCase();
+	const parsedExchanges =
+		!rawExchangeId || rawExchangeId === "all"
+			? []
+			: rawExchangeId
+					.split(",")
+					.map((s) => normalizeExchangeKey(s) || s.trim().toLowerCase())
+					.filter(Boolean);
+
+	const isMulti = parsedExchanges.length > 1;
+	const isUniversal = rawExchangeId === "all" || isMulti;
+	const targetExKey = isUniversal ? (isMulti ? null : "all") : normalizeExchangeKey(rawExchangeId);
 	const targetExLogo = targetExKey && targetExKey !== "all" ? exchangeLogos[targetExKey] : null;
 	const targetExLabel = isUniversal
-		? t("mining.promoUniversalExchanges", "All Supported Exchanges")
+		? isMulti
+			? parsedExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+			: t("mining.promoUniversalExchanges", "All Supported Exchanges")
 		: (targetExKey ? exchangeLabels[targetExKey] : null) || promoStatus.exchangeId || "Partner";
 	const exchangeName = targetExLabel.toUpperCase();
-	const exchangesListStr = getActiveExchangesList(eligibleExchanges);
+	const exchangesListStr = isMulti
+		? parsedExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+		: getActiveExchangesList(eligibleExchanges);
 	const isLegacyCampaignDesc = Boolean(
 		!promoStatus.description ||
 		((isUniversal || targetExKey !== "bitget") && /bitget/i.test(promoStatus.description))

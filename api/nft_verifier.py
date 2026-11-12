@@ -42,6 +42,13 @@ TOKEN_CONFIGS = {
         "nominal": 25000.0,
         "multiplier_label": "1.5x",
     },
+    0: {
+        "pass_type": "genesis",
+        "name": "DepthSight Genesis Pass",
+        "bonus_multiplier": 0.0,
+        "nominal": 10000.0,
+        "multiplier_label": "1.0x",
+    },
 }
 
 _MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -86,10 +93,16 @@ async def query_erc1155_balance(
         ],
     }
 
+    rpc_headers = {
+        "User-Agent": "DepthSight/1.0 (Arbitrum ERC-1155 Verifier)",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
     for rpc_url in ARBITRUM_RPCS:
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                res = await client.post(rpc_url, json=payload)
+                res = await client.post(rpc_url, json=payload, headers=rpc_headers)
                 if res.status_code == 200:
                     data = res.json()
                     raw_hex = data.get("result")
@@ -110,8 +123,8 @@ async def verify_wallet_nft(
     force_refresh: bool = False,
 ) -> Dict[str, Any]:
     """
-    Verifies if a wallet holds a DepthSight Genesis Pass (Token #1 or #2).
-    Token #2 takes priority if both are held.
+    Verifies if a wallet holds a DepthSight Genesis Pass (Token #1 or #2, or Token #0).
+    Token #2 takes priority, then Token #1, then Token #0.
     Returns:
         {
             "has_nft": bool,
@@ -171,6 +184,23 @@ async def verify_wallet_nft(
             "name": cfg["name"],
             "bonus_multiplier": cfg["bonus_multiplier"],
             "balance": bal_core,
+            "contract": NFT_CONTRACT_ADDRESS,
+            "chain_id": ARBITRUM_CHAIN_ID,
+        }
+        _MEMORY_CACHE[clean_wallet] = res
+        return res
+
+    # 3. Check Token #0 (Genesis Pass, 1:1 voucher)
+    bal_genesis = await query_erc1155_balance(clean_wallet, 0)
+    if bal_genesis > 0:
+        cfg = TOKEN_CONFIGS[0]
+        res = {
+            "has_nft": True,
+            "token_id": 0,
+            "pass_type": cfg["pass_type"],
+            "name": cfg["name"],
+            "bonus_multiplier": cfg["bonus_multiplier"],
+            "balance": bal_genesis,
             "contract": NFT_CONTRACT_ADDRESS,
             "chain_id": ARBITRUM_CHAIN_ID,
         }

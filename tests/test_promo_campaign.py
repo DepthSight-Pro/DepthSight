@@ -1682,3 +1682,271 @@ async def test_paper_volume_never_feeds_quests(
     )
     assert res_claim.status_code == 400
     assert "broker verification" in res_claim.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_promo_claims_export_admin(
+    db_session: AsyncSession,
+    promo_admin_user: models.User,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """Verifies Thirdweb CSV export for promo claims with token IDs and auth."""
+    admin_client: AsyncClient = await authenticated_client_factory(promo_admin_user)
+
+    # Insert 3 test claims (one for each tier: telemetry_pass=0, api_volume=1, node_runner=2)
+    node = models.HubNode(
+        node_uuid="export-test-node",
+        name="ExportNode",
+        secret_hash="secret",
+    )
+    db_session.add(node)
+    await db_session.commit()
+
+    claim0 = models.PromoClaim(
+        campaign_id=sample_campaign.id,
+        quest_type="telemetry_pass",
+        node_uuid=node.node_uuid,
+        exchange_uid="UID-000",
+        wallet_address="0x0000000000000000000000000000000000000001",
+        reward_amount=10000.0,
+        status="reserved",
+    )
+    claim1 = models.PromoClaim(
+        campaign_id=sample_campaign.id,
+        quest_type="api_volume",
+        node_uuid=node.node_uuid,
+        exchange_uid="UID-001",
+        wallet_address="0x0000000000000000000000000000000000000002",
+        reward_amount=5000.0,
+        status="credited",
+    )
+    claim2 = models.PromoClaim(
+        campaign_id=sample_campaign.id,
+        quest_type="node_runner",
+        node_uuid=node.node_uuid,
+        exchange_uid="UID-002",
+        wallet_address="0x0000000000000000000000000000000000000003",
+        reward_amount=25000.0,
+        status="credited",
+    )
+    db_session.add_all([claim0, claim1, claim2])
+    await db_session.commit()
+
+    # 1. Export via canonical route /api/v1/hub/promo/admin/claims/export
+    res = await admin_client.get(
+        f"/api/v1/hub/promo/admin/claims/export?campaign_id={sample_campaign.id}&format=thirdweb"
+    )
+    assert res.status_code == 200
+    assert "text/csv" in res.headers.get("content-type", "")
+    lines = res.text.strip().splitlines()
+    assert lines[0] == "address,tokenId,quantity"
+    assert "0x0000000000000000000000000000000000000001,0,1" in lines
+    assert "0x0000000000000000000000000000000000000002,1,1" in lines
+    assert "0x0000000000000000000000000000000000000003,2,1" in lines
+
+    # 2. Export via legacy route /api/hub/promo/admin/claims/export (redirects to /api/v1/hub/...)
+    res_legacy = await admin_client.get(
+        f"/api/hub/promo/admin/claims/export?campaign_id={sample_campaign.id}"
+    )
+    assert res_legacy.status_code == 307
+    assert "/api/v1/hub/promo/admin/claims/export" in res_legacy.headers.get("location", "")
+
+    # 3. Export specific quest_type
+    res_q0 = await admin_client.get(
+        f"/api/v1/hub/promo/admin/claims/export?campaign_id={sample_campaign.id}&quest_type=telemetry_pass"
+    )
+    assert res_q0.status_code == 200
+    q0_lines = res_q0.text.strip().splitlines()
+    assert len(q0_lines) == 2
+    assert q0_lines[1] == "0x0000000000000000000000000000000000000001,0,1"
+
+
+@pytest.mark.asyncio
+async def test_delete_promo_campaign_admin(
+    monkeypatch,
+    db_session: AsyncSession,
+    promo_admin_user: models.User,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """Admin-only endpoint to delete a campaign and its claims."""
+    monkeypatch.setenv("IS_CENTRAL_HUB", "true")
+    admin_client: AsyncClient = await authenticated_client_factory(promo_admin_user)
+
+    # Add a claim referencing the campaign
+    node = models.HubNode(
+        node_uuid="node-to-delete-test",
+        name="DeleteTestNode",
+        secret_hash="secret",
+    )
+    db_session.add(node)
+    await db_session.commit()
+
+    claim = models.PromoClaim(
+        campaign_id=sample_campaign.id,
+        quest_type="telemetry_pass",
+        node_uuid=node.node_uuid,
+        exchange_uid="UID-DEL-1",
+        wallet_address="0x0000000000000000000000000000000000000099",
+        reward_amount=10000.0,
+        status="credited",
+    )
+    db_session.add(claim)
+    await db_session.commit()
+
+    # Call DELETE endpoint
+    res = await admin_client.delete(
+        f"/api/v1/hub/promo/admin/campaigns/{sample_campaign.id}"
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+
+    # Verify campaign and claims are removed from DB
+    res_camp = await db_session.execute(
+        select(models.PromoCampaign).where(models.PromoCampaign.id == sample_campaign.id)
+    )
+    assert res_camp.scalars().first() is None
+
+    res_claim = await db_session.execute(
+        select(models.PromoClaim).where(models.PromoClaim.campaign_id == sample_campaign.id)
+    )
+    assert res_claim.scalars().first() is None
+
+    # Deleting non-existent returns 404
+    res_404 = await admin_client.delete(
+        "/api/v1/hub/promo/admin/campaigns/non_existent_id"
+    )
+    assert res_404.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_anti_fraud_casing_wallet_rejected(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    promo_admin_user: models.User,
+    sample_campaign: models.PromoCampaign,
+):
+    """
+    Verifies that claiming with mixed-case / checksummed wallet vs lowercase
+    wallet is normalized and rejected with 409 Conflict.
+    """
+    admin_client: AsyncClient = await authenticated_client_factory(promo_admin_user)
+    wallet_mixed = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+    wallet_lower = wallet_mixed.lower()
+
+    # Node 1 is registered with mixed-case wallet and trades
+    node1 = models.HubNode(
+        node_uuid="casing-node-1",
+        name="Node1",
+        secret_hash="secret",
+        bitget_uid="uid_casing_1",
+        wallet_address=wallet_mixed,
+        total_mined=0.0,
+    )
+    db_session.add(node1)
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=50000.0,
+            exit_price=51000.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="casing-node-1",
+            verification_status="VERIFIED",
+            is_verified=True,
+        )
+    )
+    await db_session.commit()
+
+    # Node 1 claims -> success
+    res1 = await admin_client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "api_volume"},
+        headers={"X-Node-UUID": "casing-node-1"},
+    )
+    assert res1.status_code == 200
+
+    # Node 2 with lowercase wallet tries to claim
+    node1.wallet_address = None
+    node2 = models.HubNode(
+        node_uuid="casing-node-2",
+        name="Node2",
+        secret_hash="secret",
+        bitget_uid="uid_casing_2",
+        wallet_address=wallet_lower,
+        total_mined=0.0,
+    )
+    db_session.add(node2)
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=50000.0,
+            exit_price=51000.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="casing-node-2",
+            verification_status="VERIFIED",
+            is_verified=True,
+        )
+    )
+    await db_session.commit()
+
+    res2 = await admin_client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "api_volume"},
+        headers={"X-Node-UUID": "casing-node-2"},
+    )
+    assert res2.status_code == 409
+    assert "already claimed" in res2.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_invalid_zero_address_wallet_rejected(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    promo_admin_user: models.User,
+    sample_campaign: models.PromoCampaign,
+):
+    """Verifies that an empty or zero EVM wallet address is rejected."""
+    admin_client: AsyncClient = await authenticated_client_factory(promo_admin_user)
+    zero_wallet = "0x0000000000000000000000000000000000000000"
+
+    node = models.HubNode(
+        node_uuid="zero-wallet-node",
+        name="ZeroNode",
+        secret_hash="secret",
+        bitget_uid="uid_zero",
+        wallet_address=zero_wallet,
+        total_mined=0.0,
+    )
+    db_session.add(node)
+    db_session.add(
+        models.HubTelemetryReport(
+            symbol="BTCUSDT",
+            direction="LONG",
+            entry_price=50000.0,
+            exit_price=51000.0,
+            trade_mode="live",
+            trade_volume_usdt=1500.0,
+            exchange_id="bitget_futures",
+            node_uuid="zero-wallet-node",
+            verification_status="VERIFIED",
+            is_verified=True,
+        )
+    )
+    await db_session.commit()
+
+    res = await admin_client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "api_volume"},
+        headers={"X-Node-UUID": "zero-wallet-node"},
+    )
+    assert res.status_code == 400
+    assert "Invalid or empty EVM wallet address" in res.json()["detail"]
+

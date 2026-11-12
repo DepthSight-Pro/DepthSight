@@ -3607,5 +3607,24 @@ export const useCreateOrUpdatePromoCampaign = () => {
 	});
 };
 
+export const useDeletePromoCampaign = () => {
+	const queryClient = useQueryClient();
+	return useMutation<{ success: boolean; message: string }, Error, string>({
+		mutationFn: async (campaignId: string) => {
+			const res = await apiClient<{ success: boolean; message: string }>(
+				`/hub/promo/admin/campaigns/${encodeURIComponent(campaignId)}`,
+				{
+					method: "DELETE",
+				},
+			);
+			return unwrapData(res);
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("adminPromoCampaigns") });
+			queryClient.invalidateQueries({ queryKey: authScopedQueryKey("promoStatus") });
+		},
+	});
+};
+
 
 

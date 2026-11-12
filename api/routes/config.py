@@ -1825,6 +1825,58 @@ async def format_mining_status_response(
             )
             referrer_referral_code = rn_res.scalar()
 
+    # Resolve wallet address and NFT pass holdings
+    user_wallet = None
+    config_model = await crud.get_config_model(db, current_user.id)
+    if config_model:
+        c_settings = dict(config_model.exchange_settings or {})
+        user_wallet = primary_wallet_address(c_settings)
+
+    if not user_wallet and hub_data:
+        user_wallet = hub_data.get("walletAddress") or hub_data.get("wallet_address")
+
+    source_dict = hub_data if isinstance(hub_data, dict) else {}
+    nft_pass_type = source_dict.get("nftPassType") or source_dict.get("nft_pass_type")
+    nft_multiplier_bonus = float(
+        source_dict.get("nftMultiplierBonus")
+        or source_dict.get("nft_multiplier_bonus")
+        or 0.0
+    )
+    nft_token_id = source_dict.get("nftTokenId") or source_dict.get("nft_token_id")
+    nft_contract_address = source_dict.get("nftContractAddress") or source_dict.get(
+        "nft_contract_address"
+    )
+    nft_name = source_dict.get("nftName") or source_dict.get("nft_name")
+
+    if user_wallet and not nft_pass_type:
+        from api.nft_verifier import verify_wallet_nft
+
+        try:
+            nft_res = await verify_wallet_nft(user_wallet)
+            if nft_res.get("has_nft"):
+                nft_pass_type = nft_res.get("pass_type")
+                nft_multiplier_bonus = float(nft_res.get("bonus_multiplier", 0.0))
+                nft_token_id = nft_res.get("token_id")
+                nft_contract_address = nft_res.get("contract")
+                nft_name = nft_res.get("name")
+        except Exception as e:
+            logger.debug(f"[MiningStatus] NFT check failed for {user_wallet}: {e}")
+
+    if hub_data is not None:
+        hub_data["nftPassType"] = nft_pass_type
+        hub_data["nft_pass_type"] = nft_pass_type
+        hub_data["nftMultiplierBonus"] = nft_multiplier_bonus
+        hub_data["nft_multiplier_bonus"] = nft_multiplier_bonus
+        hub_data["nftTokenId"] = nft_token_id
+        hub_data["nft_token_id"] = nft_token_id
+        hub_data["nftContractAddress"] = nft_contract_address
+        hub_data["nft_contract_address"] = nft_contract_address
+        hub_data["nftName"] = nft_name
+        hub_data["nft_name"] = nft_name
+        if user_wallet:
+            hub_data["walletAddress"] = user_wallet
+            hub_data["wallet_address"] = user_wallet
+
     if current_user.role == "admin":
         if is_central:
             stmt = (
@@ -2015,6 +2067,12 @@ async def format_mining_status_response(
                 daily_history=daily_history_objs,
                 epoch_number=epoch_number_val,
                 launch_date=launch_date_val,
+                wallet_address=user_wallet,
+                nft_pass_type=nft_pass_type,
+                nft_multiplier_bonus=nft_multiplier_bonus,
+                nft_token_id=nft_token_id,
+                nft_contract_address=nft_contract_address,
+                nft_name=nft_name,
             )
         }
     else:
@@ -2112,6 +2170,12 @@ async def format_mining_status_response(
                 daily_history=daily_history_objs,
                 epoch_number=epoch_number_val,
                 launch_date=launch_date_val,
+                wallet_address=user_wallet,
+                nft_pass_type=nft_pass_type,
+                nft_multiplier_bonus=nft_multiplier_bonus,
+                nft_token_id=nft_token_id,
+                nft_contract_address=nft_contract_address,
+                nft_name=nft_name,
             )
         }
 
@@ -2454,6 +2518,22 @@ async def get_local_mining_status(
                     }
                 )
 
+        clean_wallet = db_node.wallet_address or primary_wallet_address(settings)
+        if clean_wallet and not db_node.wallet_address:
+            db_node.wallet_address = clean_wallet
+            try:
+                await db.commit()
+            except Exception:
+                pass
+
+        from api.nft_verifier import verify_wallet_nft
+        nft_info = {}
+        if clean_wallet:
+            try:
+                nft_info = await verify_wallet_nft(clean_wallet)
+            except Exception as e:
+                logger.warning(f"[NFT] Failed to verify wallet {clean_wallet}: {e}")
+
         hub_data = {
             "isMiningEnabled": cfg.is_mining_enabled,
             "eligibleExchanges": cfg.eligible_exchanges,
@@ -2474,6 +2554,18 @@ async def get_local_mining_status(
             "hasWelcomeBonus": db_node.has_welcome_bonus,
             "dailyHistory": daily_history_items,
             "daily_history": daily_history_items,
+            "walletAddress": clean_wallet,
+            "wallet_address": clean_wallet,
+            "nftPassType": nft_info.get("pass_type"),
+            "nft_pass_type": nft_info.get("pass_type"),
+            "nftMultiplierBonus": float(nft_info.get("bonus_multiplier", 0.0)),
+            "nft_multiplier_bonus": float(nft_info.get("bonus_multiplier", 0.0)),
+            "nftTokenId": nft_info.get("token_id"),
+            "nft_token_id": nft_info.get("token_id"),
+            "nftContractAddress": nft_info.get("contract"),
+            "nft_contract_address": nft_info.get("contract"),
+            "nftName": nft_info.get("name"),
+            "nft_name": nft_info.get("name"),
         }
 
         return await format_mining_status_response(
@@ -3967,6 +4059,145 @@ async def deactivate_local_mining(
     await db.refresh(config)
 
     return {"data": {"success": True, "message": "Mining and telemetry deactivated"}}
+
+
+@config_router.post(
+    "/mining/nft/refresh",
+    response_model=schemas.ApiResponseData[schemas.NftRefreshResponse],
+    summary="Force refresh NFT pass status for user's bound wallet",
+)
+async def refresh_user_nft_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    On-demand force refresh of the user's Arbitrum One ERC-1155 NFT Pass status.
+    Resolves the bound EVM wallet, queries Arbitrum One RPCs, and returns verified status.
+    """
+    import os
+    from sqlalchemy import select
+    from .. import models, crud
+    from bot_module.node_identity import primary_wallet_address, primary_mining_node_uuid
+
+    # 1. Resolve user's bound wallet address
+    config = await crud.get_config_model(db, current_user.id)
+    settings = dict(config.exchange_settings or {}) if config else {}
+    wallet_address = primary_wallet_address(settings)
+
+    if not wallet_address:
+        node_uuid = primary_mining_node_uuid(settings)
+        if node_uuid:
+            stmt = select(models.HubNode.wallet_address).where(
+                models.HubNode.node_uuid == node_uuid
+            )
+            res = await db.execute(stmt)
+            wallet_address = res.scalar()
+        if not wallet_address and current_user.referral_code:
+            stmt = select(models.HubNode.wallet_address).where(
+                models.HubNode.node_referral_code == current_user.referral_code
+            )
+            res = await db.execute(stmt)
+            wallet_address = res.scalar()
+
+    if not wallet_address:
+        return {
+            "data": schemas.NftRefreshResponse(
+                success=False,
+                wallet=None,
+                has_nft=False,
+                token_id=None,
+                pass_type=None,
+                tier=None,
+                name=None,
+                bonus_multiplier=0.0,
+                balance=0,
+                message="No wallet address bound to this account. Please connect your EVM wallet first.",
+            )
+        }
+
+    is_central = os.getenv("IS_CENTRAL_HUB", "false").lower() == "true"
+
+    # 2. On a non-central node, attempt proxy to Central Hub first
+    if not is_central:
+        hub_url = get_federation_hub_url()
+        node_uuid, node_secret = await _resolve_proxy_node_identity(db, current_user)
+        if node_uuid and node_secret:
+            headers = {"X-Node-UUID": node_uuid, "X-Node-Secret": node_secret}
+            try:
+                session = _get_hub_http_session()
+                async with session.post(
+                    f"{hub_url}/mining/nft/refresh",
+                    headers=headers,
+                    timeout=10.0,
+                ) as resp:
+                    if resp.status == 200:
+                        hub_res = await resp.json()
+                        raw = (
+                            hub_res.get("data")
+                            if isinstance(hub_res, dict) and "data" in hub_res
+                            else hub_res
+                        )
+                        from api.nft_verifier import verify_wallet_nft
+
+                        try:
+                            await verify_wallet_nft(wallet_address, force_refresh=True)
+                        except Exception:
+                            pass
+                        return {
+                            "data": schemas.NftRefreshResponse.model_validate(raw)
+                        }
+            except Exception as e:
+                logger.error(f"Error refreshing NFT on Hub: {e}")
+
+    # 3. Direct verification via Arbitrum One RPCs
+    from api.nft_verifier import verify_wallet_nft
+
+    try:
+        nft_info = await verify_wallet_nft(wallet_address, force_refresh=True)
+    except Exception as e:
+        logger.error(f"Error querying Arbitrum RPCs for NFT: {e}")
+        nft_info = {
+            "has_nft": False,
+            "token_id": None,
+            "pass_type": None,
+            "name": None,
+            "bonus_multiplier": 0.0,
+            "balance": 0,
+            "message": f"Failed to query Arbitrum One RPCs: {e}",
+        }
+
+    # If wallet is on Central Hub, ensure wallet_address is synced on HubNode
+    if is_central:
+        try:
+            node_uuid = primary_mining_node_uuid(settings)
+            if node_uuid:
+                stmt = select(models.HubNode).where(
+                    models.HubNode.node_uuid == node_uuid
+                )
+                res = await db.execute(stmt)
+                db_node = res.scalars().first()
+                if db_node and not db_node.wallet_address:
+                    db_node.wallet_address = wallet_address
+                    await db.commit()
+        except Exception as sync_err:
+            logger.debug(f"Failed to sync wallet to HubNode: {sync_err}")
+
+    return {
+        "data": schemas.NftRefreshResponse(
+            success=True,
+            wallet=wallet_address,
+            has_nft=bool(nft_info.get("has_nft", False)),
+            token_id=nft_info.get("token_id"),
+            pass_type=nft_info.get("pass_type"),
+            tier=nft_info.get("pass_type"),
+            name=nft_info.get("name"),
+            bonus_multiplier=float(nft_info.get("bonus_multiplier", 0.0)),
+            balance=int(nft_info.get("balance", 0)),
+            contract=nft_info.get("contract"),
+            chain_id=nft_info.get("chain_id"),
+            message=nft_info.get("message"),
+        )
+    }
 
 
 @config_router.post(

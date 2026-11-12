@@ -3174,6 +3174,7 @@ class MiningStatusResponse(BaseModel):
     daily_history: List[MiningDailyHistoryItem] = Field(default_factory=list)
     epoch_number: int = 1
     launch_date: Optional[str] = None
+    wallet_address: Optional[str] = None
     nft_pass_type: Optional[str] = None
     nft_multiplier_bonus: float = 0.0
     nft_token_id: Optional[int] = None
@@ -3270,6 +3271,7 @@ class LocalMiningStatusResponse(BaseModel):
     daily_history: List[MiningDailyHistoryItem] = Field(default_factory=list)
     epoch_number: int = 1
     launch_date: Optional[str] = None
+    wallet_address: Optional[str] = None
     nft_pass_type: Optional[str] = None
     nft_multiplier_bonus: float = 0.0
     nft_token_id: Optional[int] = None
@@ -3280,6 +3282,54 @@ class LocalMiningStatusResponse(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
     )
+
+
+class NftRefreshResponse(BaseModel):
+    success: bool = True
+    wallet: Optional[str] = None
+    has_nft: bool = False
+    hasNft: bool = False
+    token_id: Optional[int] = None
+    tokenId: Optional[int] = None
+    pass_type: Optional[str] = None
+    passType: Optional[str] = None
+    tier: Optional[str] = None
+    name: Optional[str] = None
+    bonus_multiplier: float = 0.0
+    bonusMultiplier: float = 0.0
+    balance: int = 0
+    contract: Optional[str] = None
+    chain_id: Optional[int] = None
+    chainId: Optional[int] = None
+    message: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "has_nft" in data and "hasNft" not in data:
+                data["hasNft"] = data["has_nft"]
+            elif "hasNft" in data and "has_nft" not in data:
+                data["has_nft"] = data["hasNft"]
+            if "token_id" in data and "tokenId" not in data:
+                data["tokenId"] = data["token_id"]
+            elif "tokenId" in data and "token_id" not in data:
+                data["token_id"] = data["tokenId"]
+            if "bonus_multiplier" in data and "bonusMultiplier" not in data:
+                data["bonusMultiplier"] = data["bonus_multiplier"]
+            elif "bonusMultiplier" in data and "bonus_multiplier" not in data:
+                data["bonus_multiplier"] = data["bonusMultiplier"]
+            if "pass_type" in data and "passType" not in data:
+                data["passType"] = data["pass_type"]
+            elif "passType" in data and "pass_type" not in data:
+                data["pass_type"] = data["passType"]
+            if "chain_id" in data and "chainId" not in data:
+                data["chainId"] = data["chain_id"]
+            elif "chainId" in data and "chain_id" not in data:
+                data["chain_id"] = data["chainId"]
+            if "tier" not in data or not data["tier"]:
+                data["tier"] = data.get("pass_type") or data.get("passType")
+        return data
 
 
 class MiningActivatePayload(BaseModel):
@@ -3752,6 +3802,13 @@ class PromoNodeRelinkResponse(BaseModel):
     node_uuid: str
     referrer_node_uuid: str
     previous_referrer_node_uuid: Optional[str] = None
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoCampaignDeleteResponse(BaseModel):
+    success: bool
+    message: str
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

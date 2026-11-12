@@ -24,21 +24,35 @@ interface PromoQuestsTabProps {
 export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eligibleExchanges }) => {
 	const { t } = useTranslation(["mining", "common"]);
 	const { mutate: claimQuest, isPending: isClaiming } = useClaimPromoQuest();
-	const isUniversal = promoStatus.exchangeId === "all";
-	const targetExKey = isUniversal ? "all" : normalizeExchangeKey(promoStatus.exchangeId);
+	const rawExchangeId = (promoStatus.exchangeId || "").trim().toLowerCase();
+	const parsedExchanges =
+		!rawExchangeId || rawExchangeId === "all"
+			? []
+			: rawExchangeId
+					.split(",")
+					.map((s) => normalizeExchangeKey(s) || s.trim().toLowerCase())
+					.filter(Boolean);
+
+	const isMulti = parsedExchanges.length > 1;
+	const isUniversal = rawExchangeId === "all" || isMulti;
+	const targetExKey = isUniversal ? (isMulti ? null : "all") : normalizeExchangeKey(rawExchangeId);
 	const targetExLogo = targetExKey && targetExKey !== "all" ? exchangeLogos[targetExKey] : null;
 	const targetExLabel = isUniversal
-		? t("promoUniversalExchanges", "All Exchanges")
+		? isMulti
+			? parsedExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+			: t("promoUniversalExchanges", "All Exchanges")
 		: (targetExKey ? exchangeLabels[targetExKey] : null) || promoStatus.exchangeId || "Partner";
 
-	const exchangesListStr = getActiveExchangesList(eligibleExchanges);
+	const exchangesListStr = isMulti
+		? parsedExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+		: getActiveExchangesList(eligibleExchanges);
 
 	if (!promoStatus?.hasActiveCampaign) {
 		return null;
 	}
 
 	const handleClaim = (quest: PromoQuestProgress) => {
-		if (!promoStatus.campaignId) return;
+		if (!promoStatus.campaignId || isClaiming || quest.isClaimed) return;
 
 		claimQuest(
 			{

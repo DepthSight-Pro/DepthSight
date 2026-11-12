@@ -22,6 +22,7 @@ import {
 	Download,
 	Power,
 	Palette,
+	Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import {
 	useSystemStatus,
 	useGetAdminPromoCampaigns,
 	useCreateOrUpdatePromoCampaign,
+	useDeletePromoCampaign,
 	useGetHubMiningConfig,
 } from "@/lib/api";
 import type {
@@ -150,6 +152,7 @@ const AdminPromoPage: React.FC = () => {
 		refetch: refetchCampaigns,
 	} = useGetAdminPromoCampaigns();
 	const { mutate: saveCampaign, isPending: isSaving } = useCreateOrUpdatePromoCampaign();
+	const { mutate: deleteCampaign, isPending: isDeleting } = useDeletePromoCampaign();
 	const { data: hubConfig } = useGetHubMiningConfig(isCentralHub);
 
 	// Extract active mining exchanges from Hub config
@@ -324,29 +327,42 @@ const AdminPromoPage: React.FC = () => {
 	const handleExportThirdwebCsv = async (questType?: string) => {
 		try {
 			setIsExporting(true);
-			const token = localStorage.getItem("token") || "";
-			const url = `/api/hub/promo/admin/claims/export?campaign_id=${encodeURIComponent(formData.campaign_id)}${questType ? `&quest_type=${encodeURIComponent(questType)}` : ""}&format=thirdweb`;
+			const token = localStorage.getItem("authToken") || localStorage.getItem("token") || "";
+			const apiBase = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+			const targetCampaignId = formData.campaign_id || selectedCampaignId || "";
+			const params = new URLSearchParams();
+			if (targetCampaignId) {
+				params.append("campaign_id", targetCampaignId);
+			}
+			if (questType) {
+				params.append("quest_type", questType);
+			}
+			params.append("format", "thirdweb");
+			if (token) {
+				params.append("token", token);
+			}
+			const url = `${apiBase}/hub/promo/admin/claims/export?${params.toString()}`;
 			const res = await fetch(url, {
 				headers: {
-					Authorization: `Bearer ${token}`,
+					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
 			});
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({}));
-				throw new Error(err.detail || "Export failed");
+				throw new Error(err.detail || err.message || `Export failed with status ${res.status}`);
 			}
 			const blob = await res.blob();
 			const downloadUrl = window.URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = downloadUrl;
-			a.download = `thirdweb_airdrop_${formData.campaign_id}_${questType || "all"}.csv`;
+			a.download = `thirdweb_airdrop_${targetCampaignId || "all"}_${questType || "all"}.csv`;
 			document.body.appendChild(a);
 			a.click();
 			a.remove();
 			window.URL.revokeObjectURL(downloadUrl);
 			toast({
 				title: "CSV Exported Successfully",
-				description: `Downloaded Thirdweb Airdrop CSV for campaign ${formData.campaign_id}. Ready to upload at thirdweb.com!`,
+				description: `Downloaded Thirdweb Airdrop CSV for campaign ${targetCampaignId || "all"}. Ready to upload at thirdweb.com!`,
 			});
 		} catch (err: unknown) {
 			toast({
@@ -380,7 +396,23 @@ const AdminPromoPage: React.FC = () => {
 		}
 
 		const norm = normalizeExchangeKey(exKey) || exKey.toLowerCase();
-		const label = exchangeLabels[norm] || norm.toUpperCase();
+		const rawCurrent = (formData.target_exchange || "").trim().toLowerCase();
+		const isCurrentlyAll = rawCurrent === "all";
+
+		let nextList: string[];
+		if (isCurrentlyAll || !rawCurrent) {
+			nextList = [norm];
+		} else {
+			const currentList = rawCurrent
+				.split(",")
+				.map((s) => normalizeExchangeKey(s) || s.trim().toLowerCase())
+				.filter(Boolean);
+			if (currentList.includes(norm)) {
+				nextList = currentList.filter((e) => e !== norm);
+			} else {
+				nextList = [...currentList, norm];
+			}
+		}
 
 		const isDefaultName =
 			!formData.campaign_name ||
@@ -393,14 +425,43 @@ const AdminPromoPage: React.FC = () => {
 			formData.campaign_id.endsWith("_launch_2026") ||
 			formData.campaign_id.endsWith("_genesis_2026");
 
-		const newName = isDefaultName ? `${label} Launch Airdrop` : formData.campaign_name;
-		const newId = isDefaultId ? `${norm}_launch_2026` : formData.campaign_id;
+		let newName = formData.campaign_name;
+		let newId = formData.campaign_id;
+
+		if (nextList.length === 1) {
+			const label = exchangeLabels[nextList[0]] || nextList[0].toUpperCase();
+			if (isDefaultName) newName = `${label} Launch Airdrop`;
+			if (isDefaultId) newId = `${nextList[0]}_launch_2026`;
+		} else if (nextList.length > 1) {
+			if (isDefaultName) newName = "DepthSight Genesis Pass Airdrop";
+			if (isDefaultId) newId = "universal_genesis_2026";
+		}
 
 		setFormData({
 			...formData,
-			target_exchange: norm,
+			target_exchange: nextList.join(", "),
 			campaign_name: newName,
 			campaign_id: newId,
+		});
+	};
+
+	const handleSelectPresetExchanges = (exchanges: string[]) => {
+		const isDefaultName =
+			!formData.campaign_name ||
+			formData.campaign_name === "Trade Mining Launch Airdrop" ||
+			formData.campaign_name.endsWith("Launch Airdrop") ||
+			formData.campaign_name.endsWith("Airdrop");
+		const isDefaultId =
+			!formData.campaign_id ||
+			formData.campaign_id === "promo_launch_2026" ||
+			formData.campaign_id.endsWith("_launch_2026") ||
+			formData.campaign_id.endsWith("_genesis_2026");
+
+		setFormData({
+			...formData,
+			target_exchange: exchanges.join(", "),
+			campaign_name: isDefaultName ? "DepthSight Genesis Pass Airdrop" : formData.campaign_name,
+			campaign_id: isDefaultId ? "universal_genesis_2026" : formData.campaign_id,
 		});
 	};
 
@@ -440,6 +501,39 @@ const AdminPromoPage: React.FC = () => {
 		);
 	};
 
+	const handleDeleteCampaign = (camp: PromoCampaignAdmin, e?: React.MouseEvent) => {
+		if (e) e.stopPropagation();
+		const confirmed = window.confirm(
+			`Are you sure you want to delete campaign "${camp.name}" (ID: ${camp.id})?\n\nThis will permanently delete the campaign and all its claim records from the database.`
+		);
+		if (!confirmed) return;
+
+		deleteCampaign(camp.id, {
+			onSuccess: () => {
+				toast({
+					title: "Campaign Deleted",
+					description: `Campaign "${camp.name}" (${camp.id}) was permanently deleted.`,
+				});
+				refetchCampaigns();
+				if (selectedCampaignId === camp.id) {
+					const remaining = (campaigns || []).filter((c) => c.id !== camp.id);
+					if (remaining.length > 0) {
+						handleSelectCampaign(remaining[0]);
+					} else {
+						handleCreateNew();
+					}
+				}
+			},
+			onError: (err: Error) => {
+				toast({
+					title: "Failed to Delete Campaign",
+					description: err?.message || "Error deleting campaign",
+					variant: "destructive",
+				});
+			},
+		});
+	};
+
 	const handleCreateNew = () => {
 		setSelectedCampaignId("new_universal_genesis");
 		setFormData({
@@ -462,13 +556,31 @@ const AdminPromoPage: React.FC = () => {
 			return;
 		}
 
-		const isUniv = formData.target_exchange === "all";
-		const targetExKey = isUniv
-			? "all"
-			: normalizeExchangeKey(formData.target_exchange) || formData.target_exchange?.toLowerCase() || "exchange";
+		const rawTarget = (formData.target_exchange || "").trim().toLowerCase();
+		let cleanExchangeId = "all";
+		if (rawTarget && rawTarget !== "all") {
+			if (rawTarget.includes(",")) {
+				const list = rawTarget
+					.split(",")
+					.map((s) => normalizeExchangeKey(s) || s.trim().toLowerCase())
+					.filter(Boolean);
+				cleanExchangeId = list.length > 0 ? list.join(", ") : "all";
+			} else {
+				cleanExchangeId = normalizeExchangeKey(rawTarget) || rawTarget;
+			}
+		}
+
+		const isMulti = cleanExchangeId.includes(",");
+		const isUniv = cleanExchangeId === "all" || isMulti;
+		const targetExKey = isUniv ? (isMulti ? null : "all") : normalizeExchangeKey(cleanExchangeId) || cleanExchangeId;
 		const targetExLabel = isUniv
-			? "Universal (All Exchanges)"
-			: exchangeLabels[targetExKey] || formData.target_exchange || "Exchange";
+			? isMulti
+				? cleanExchangeId
+						.split(",")
+						.map((s) => exchangeLabels[normalizeExchangeKey(s) || s.trim()] || s.trim().toUpperCase())
+						.join(", ")
+				: "Universal (All Exchanges)"
+			: (targetExKey ? exchangeLabels[targetExKey] : null) || cleanExchangeId || "Exchange";
 
 		// Transform form data to match backend PromoCampaignCreateOrUpdate schema
 		// Quests list order: 10k Genesis Pass (#0) -> 25k Core Syndicate Pass (#1) -> 50k Apex Syndicate Pass (#2)
@@ -483,7 +595,9 @@ const AdminPromoPage: React.FC = () => {
 				((isUniv || targetExKey !== "bitget") && /bitget/i.test(q.description))
 			);
 			const telemDesc = isGeneratedTelemDesc
-				? (isUniv
+				? (isMulti
+					? `Connect ${targetExLabel} and achieve $${(q.min_volume_usd || 10000).toLocaleString()} verified trading volume.`
+					: isUniv
 					? `Connect any supported exchange and achieve $${(q.min_volume_usd || 10000).toLocaleString()} verified trading volume.`
 					: `Connect your ${targetExLabel} and achieve $${(q.min_volume_usd || 10000).toLocaleString()} verified trading volume.`)
 				: q.description;
@@ -518,7 +632,9 @@ const AdminPromoPage: React.FC = () => {
 				((isUniv || targetExKey !== "bitget") && /bitget/i.test(q.description))
 			);
 			const apiDesc = isGeneratedApiDesc
-				? (isUniv
+				? (isMulti
+					? `Connect an API key from ${targetExLabel} and achieve $${(q.min_volume_usd || 1000).toLocaleString()} verified trading volume.`
+					: isUniv
 					? `Connect an API key of any supported exchange and achieve $${(q.min_volume_usd || 1000).toLocaleString()} verified trading volume.`
 					: `Connect your ${targetExLabel} API key and achieve $${(q.min_volume_usd || 1000).toLocaleString()} verified trading volume.`)
 				: q.description;
@@ -581,7 +697,7 @@ const AdminPromoPage: React.FC = () => {
 		const apiPayload: PromoCampaignUpsertPayload = {
 			id: formData.campaign_id,
 			name: formData.campaign_name,
-			exchange_id: targetExKey,
+			exchange_id: cleanExchangeId,
 			total_pool: formData.total_pool,
 			admin_only: formData.admin_only,
 			is_active: formData.is_active,
@@ -608,6 +724,7 @@ const AdminPromoPage: React.FC = () => {
 						formData.is_active ? (formData.admin_only ? "Preview Mode (Admins Only)" : "LIVE (Public)") : "Disabled"
 					}`,
 				});
+				setFormData((prev) => ({ ...prev, target_exchange: cleanExchangeId }));
 				refetchCampaigns();
 			},
 			onError: (err: Error) => {
@@ -681,13 +798,25 @@ const AdminPromoPage: React.FC = () => {
 		(nodeQuest.enabled !== false ? (nodeQuest.reward || 0) * (nodeQuest.total_slots || 0) : 0) +
 		(telemQuest.enabled !== false ? (telemQuest.reward || 0) * (telemQuest.total_slots || 0) : 0);
 
-	const isUniversal = formData.target_exchange === "all";
+	const rawTargetExchange = (formData.target_exchange || "").trim().toLowerCase();
+	const parsedTargetExchanges =
+		!rawTargetExchange || rawTargetExchange === "all"
+			? []
+			: rawTargetExchange
+					.split(",")
+					.map((s) => normalizeExchangeKey(s) || s.trim().toLowerCase())
+					.filter(Boolean);
+
+	const isMulti = parsedTargetExchanges.length > 1;
+	const isUniversal = rawTargetExchange === "all" || isMulti;
 	const currentExKey = isUniversal
-		? "all"
-		: normalizeExchangeKey(formData.target_exchange) || formData.target_exchange?.toLowerCase();
+		? (isMulti ? null : "all")
+		: normalizeExchangeKey(rawTargetExchange) || rawTargetExchange;
 	const currentExLogo = isUniversal ? null : currentExKey ? exchangeLogos[currentExKey] : null;
 	const currentExLabel = isUniversal
-		? "Universal (All Exchanges)"
+		? isMulti
+			? parsedTargetExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+			: "Universal (All Exchanges)"
 		: (currentExKey ? exchangeLabels[currentExKey] : null) || formData.target_exchange || "Exchange";
 	const currentBrandColor = isUniversal
 		? "#00F0FF"
@@ -744,6 +873,22 @@ const AdminPromoPage: React.FC = () => {
 						<RefreshCw className={`h-4 w-4 ${isLoadingCampaigns ? "animate-spin" : ""}`} />
 						Refresh
 					</Button>
+					{campaigns?.some((c) => c.id === formData.campaign_id) && (
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								const current = campaigns.find((c) => c.id === formData.campaign_id);
+								if (current) handleDeleteCampaign(current);
+							}}
+							disabled={isDeleting}
+							className="flex items-center gap-1.5 border-rose-500/40 text-rose-300 hover:bg-rose-500/15 font-bold"
+							title={`Delete campaign ${formData.campaign_id}`}
+						>
+							<Trash2 className="h-4 w-4 text-rose-400" />
+							{isDeleting ? "Deleting..." : "Delete Campaign"}
+						</Button>
+					)}
 					<Button
 						onClick={handleSave}
 						disabled={isSaving}
@@ -778,15 +923,23 @@ const AdminPromoPage: React.FC = () => {
 					<div className="flex flex-wrap gap-2">
 						{campaigns && campaigns.length > 0 ? (
 							campaigns.map((c) => {
-								const exKey = normalizeExchangeKey(c.exchangeId) || c.exchangeId?.toLowerCase();
+								const isMultiEx = (c.exchangeId || "").includes(",");
+								const exKey = !isMultiEx ? (normalizeExchangeKey(c.exchangeId) || c.exchangeId?.toLowerCase()) : null;
 								const logo = exKey ? exchangeLogos[exKey] : null;
-								const exLabel = (exKey ? exchangeLabels[exKey] : null) || c.exchangeId || "Exchange";
+								const exLabel = isMultiEx
+									? c.exchangeId
+											.split(",")
+											.map((s) => exchangeLabels[normalizeExchangeKey(s) || s.trim().toLowerCase()] || s.trim().toUpperCase())
+											.join(", ")
+									: (exKey ? exchangeLabels[exKey] : null) || c.exchangeId || "Exchange";
 
 								return (
-									<button
+									<div
 										key={c.id}
+										role="button"
+										tabIndex={0}
 										onClick={() => handleSelectCampaign(c)}
-										className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all text-left ${
+										className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all text-left cursor-pointer ${
 											selectedCampaignId === c.id
 												? "border-primary bg-primary/10 text-primary shadow-sm"
 												: "border-border/60 bg-muted/30 hover:border-primary/40 text-muted-foreground"
@@ -840,8 +993,20 @@ const AdminPromoPage: React.FC = () => {
 												<Power className="h-3 w-3 mr-1" />
 												{c.isActive ? "Deactivate" : "Activate"}
 											</Button>
+											<Button
+												type="button"
+												size="sm"
+												variant="ghost"
+												onClick={(e) => handleDeleteCampaign(c, e)}
+												disabled={isDeleting}
+												className="h-6 px-1.5 text-[10px] font-bold text-rose-400 hover:text-rose-300 hover:bg-rose-500/20"
+												title={`Delete campaign ${c.id}`}
+											>
+												<Trash2 className="h-3 w-3 mr-0.5" />
+												Delete
+											</Button>
 										</div>
-									</button>
+									</div>
 								);
 							})
 						) : (
@@ -871,17 +1036,75 @@ const AdminPromoPage: React.FC = () => {
 						<CardContent className="space-y-4">
 							{/* Target Exchange Selector with Active Mining Highlights */}
 							<div className="space-y-2.5">
-								<div className="flex items-center justify-between">
-									<Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+									<Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 flex-wrap">
 										<Zap className="h-3.5 w-3.5 text-primary" />
 										Target Mining Exchange
+										{rawTargetExchange === "all" ? (
+											<span className="ml-1.5 rounded-full border border-cyan-400/40 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-mono font-bold text-cyan-300">
+												Universal (All)
+											</span>
+										) : parsedTargetExchanges.length > 0 ? (
+											<span className="ml-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-mono font-bold text-emerald-300">
+												{parsedTargetExchanges.length} выбрано: {parsedTargetExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")}
+											</span>
+										) : (
+											<span className="ml-1.5 rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-300">
+												Не выбрано
+											</span>
+										)}
 									</Label>
 									<span className="text-[11px] text-muted-foreground">
-										Currently active in Trade Mining:{" "}
+										В Trade Mining:{" "}
 										<span className="font-bold text-emerald-400 font-mono">
-											{activeMiningExchanges.length > 0 ? activeMiningExchanges.join(", ") : "weex, bybit, okx"}
+											weex, bybit, okx
+										</span>
+										{" "}•{" "}
+										<span className="font-bold text-rose-400 font-mono">
+											bitget (-2.0x burn)
 										</span>
 									</span>
+								</div>
+
+								{/* Quick Selection Presets */}
+								<div className="flex flex-wrap items-center gap-1.5 pt-0.5 pb-1">
+									<span className="text-[11px] font-semibold text-muted-foreground mr-1">Быстрый выбор:</span>
+									<button
+										type="button"
+										onClick={() => handleSelectPresetExchanges(["bybit", "okx", "weex"])}
+										className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1.5 ${
+											parsedTargetExchanges.length === 3 &&
+											parsedTargetExchanges.includes("bybit") &&
+											parsedTargetExchanges.includes("okx") &&
+											parsedTargetExchanges.includes("weex")
+												? "border-cyan-400/80 bg-cyan-500/20 text-cyan-200 shadow-[0_0_12px_rgba(0,240,255,0.3)] ring-1 ring-cyan-400"
+												: "border-border/60 bg-muted/30 hover:border-cyan-400/50 text-slate-300 hover:text-white"
+										}`}
+									>
+										<Sparkles className="h-3 w-3 text-cyan-400" />
+										Bybit + OKX + WEEX (Партнёры без штрафа)
+									</button>
+									<button
+										type="button"
+										onClick={() => handleSelectTargetExchange("all")}
+										className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center gap-1.5 ${
+											rawTargetExchange === "all"
+												? "border-primary bg-primary/20 text-primary ring-1 ring-primary shadow-sm"
+												: "border-border/60 bg-muted/30 hover:border-primary/40 text-slate-300 hover:text-white"
+										}`}
+									>
+										<Globe className="h-3 w-3 text-primary" />
+										Universal (Все)
+									</button>
+									{parsedTargetExchanges.length > 0 && rawTargetExchange !== "all" && (
+										<button
+											type="button"
+											onClick={() => setFormData({ ...formData, target_exchange: "" })}
+											className="px-2 py-1 rounded-lg text-[11px] font-medium border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-all"
+										>
+											Сбросить выбор
+										</button>
+									)}
 								</div>
 
 								{/* Selectable Exchange Cards */}
@@ -890,9 +1113,10 @@ const AdminPromoPage: React.FC = () => {
 										const isAll = ex === "all";
 										const norm = isAll ? "all" : normalizeExchangeKey(ex) || ex;
 										const isMiningActive = isAll ? true : activeMiningExchanges.includes(norm);
+										const isBitget = norm === "bitget";
 										const isSelected = isAll
-											? formData.target_exchange === "all"
-											: (normalizeExchangeKey(formData.target_exchange) || formData.target_exchange?.toLowerCase()) === norm;
+											? rawTargetExchange === "all"
+											: rawTargetExchange !== "all" && parsedTargetExchanges.includes(norm);
 										const logo = isAll ? null : exchangeLogos[norm];
 										const label = isAll ? "Universal (All)" : exchangeLabels[norm] || ex.toUpperCase();
 
@@ -904,23 +1128,38 @@ const AdminPromoPage: React.FC = () => {
 												className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 relative overflow-hidden ${
 													isSelected
 														? "border-primary bg-primary/15 text-primary ring-1 ring-primary shadow-sm"
+														: isBitget
+														? "border-rose-500/30 bg-rose-950/10 hover:border-rose-500/50 text-muted-foreground hover:text-foreground"
 														: "border-border/60 bg-muted/20 hover:border-primary/40 text-muted-foreground hover:text-foreground"
 												}`}
 											>
-												<div className="h-7 w-7 rounded-lg bg-card/80 border border-border/60 p-1 flex items-center justify-center shrink-0">
+												<div
+													className={`h-7 w-7 rounded-lg border p-1 flex items-center justify-center shrink-0 ${
+														isBitget ? "bg-rose-950/30 border-rose-500/40" : "bg-card/80 border-border/60"
+													}`}
+												>
 													{logo ? (
-														<img src={logo} alt={label} className="h-full w-full object-contain" />
+														<img
+															src={logo}
+															alt={label}
+															className={`h-full w-full object-contain ${isBitget ? "grayscale contrast-125" : ""}`}
+														/>
 													) : (
 														<Globe className="h-4 w-4 text-cyan-400" />
 													)}
 												</div>
 												<div className="min-w-0 flex-1">
-													<div className="text-xs font-bold truncate text-white">{label}</div>
+													<div className={`text-xs font-bold truncate ${isBitget ? "text-rose-200" : "text-white"}`}>{label}</div>
 													<div className="text-[9px] flex items-center gap-1 mt-0.5">
 														{isAll ? (
 															<span className="text-cyan-400 font-semibold flex items-center gap-0.5">
 																<span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
 																Multi-Exchange
+															</span>
+														) : isBitget ? (
+															<span className="text-rose-400 font-semibold flex items-center gap-0.5">
+																<span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+																Штраф (-2.0x)
 															</span>
 														) : isMiningActive ? (
 															<span className="text-emerald-400 font-semibold flex items-center gap-0.5">

@@ -73,13 +73,13 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 									• {t("mining.promoBannerRevokedStatus", "PARTNERSHIP REVOKED")}
 								</span>
 								<span className="rounded-full border border-white/15 bg-white/[0.06] px-2 py-0.5 text-[8.5px] sm:text-[9.5px] font-mono font-bold uppercase tracking-wider text-zinc-300">
-									{t("mining.promoBannerRevokedBadge", "REVOKED / SLA BREACH")}
+									{t("mining.promoBannerRevokedBadge", "REVOKED / PARTNERSHIP BREACH")}
 								</span>
 							</div>
 							<p className="mt-1 text-[11px] text-zinc-400 leading-snug line-clamp-2">
 								{t(
 									"mining.promoBannerRevokedSubtitle",
-									"This event has been permanently suspended due to unilateral partner SLA failure. All promotional rewards for Bitget API volume have been cancelled."
+									"This campaign has been permanently suspended due to partner's breach of agreed launch commitments. All promotional rewards have been reallocated."
 								)}
 							</p>
 						</div>
@@ -120,11 +120,21 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 
 			{/* Top Header: Logo + Title + Status Badge */}
 			{(() => {
-				const isUniversal = promoStatus.exchangeId === "all";
-				const targetExKey = isUniversal ? "all" : normalizeExchangeKey(promoStatus.exchangeId as string | undefined);
+				const rawExchangeId = ((promoStatus.exchangeId as string) || "").trim().toLowerCase();
+				const parsedExchanges = !rawExchangeId || rawExchangeId === "all"
+					? []
+					: rawExchangeId
+							.split(",")
+							.map((s) => normalizeExchangeKey(s) || s.trim().toLowerCase())
+							.filter(Boolean);
+				const isMulti = parsedExchanges.length > 1;
+				const isUniversal = rawExchangeId === "all" || isMulti;
+				const targetExKey = isUniversal ? (isMulti ? null : "all") : normalizeExchangeKey(rawExchangeId);
 				const targetExLogo = targetExKey && targetExKey !== "all" ? exchangeLogos[targetExKey] : null;
 				const targetExLabel = isUniversal
-					? "All Supported Exchanges"
+					? isMulti
+						? parsedExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+						: "All Supported Exchanges"
 					: (targetExKey ? exchangeLabels[targetExKey] : null) || (promoStatus.exchangeId as string) || "Partner";
 
 				return (

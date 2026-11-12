@@ -1,7 +1,11 @@
 import pytest
 from sqlalchemy import select
 from api import models, schemas
-from api.routes.config import activate_local_mining, format_mining_status_response
+from api.routes.config import (
+    activate_local_mining,
+    format_mining_status_response,
+    refresh_user_nft_status,
+)
 from api.hub_router import register_hub_node
 
 
@@ -249,3 +253,143 @@ async def test_format_mining_status_resolves_referrer_code_fallback(
     data = resp["data"]
     assert data.referrer_referral_code == "DSN-REF-FOUND"
     assert data.referrer_node_uuid == ref_node.node_uuid
+
+
+def test_nft_refresh_response_schema_compatibility():
+    """Verify NftRefreshResponse produces both snake_case and camelCase fields for frontends."""
+    res = schemas.NftRefreshResponse(
+        success=True,
+        wallet="0x1234567890123456789012345678901234567890",
+        has_nft=True,
+        token_id=2,
+        pass_type="apex",
+        name="DepthSight Apex Syndicate Pass",
+        bonus_multiplier=1.0,
+    )
+    d = res.model_dump()
+    assert d["has_nft"] is True
+    assert d["hasNft"] is True
+    assert d["token_id"] == 2
+    assert d["tokenId"] == 2
+    assert d["bonus_multiplier"] == 1.0
+    assert d["bonusMultiplier"] == 1.0
+    assert d["tier"] == "apex"
+
+
+@pytest.mark.asyncio
+async def test_refresh_user_nft_status_no_wallet(db_session):
+    """When user has no wallet bound, refresh returns success=False with helpful message."""
+    user = models.User(
+        username="no_wallet_user",
+        email="nowallet@test.com",
+        hashed_password="pw",
+        referral_code="REF-NOWALLET",
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    resp = await refresh_user_nft_status(db=db_session, current_user=user)
+    data = resp["data"]
+    assert data.success is False
+    assert data.has_nft is False
+    assert "No wallet address bound" in data.message
+
+
+@pytest.mark.asyncio
+async def test_refresh_user_nft_status_with_wallet(db_session, monkeypatch):
+    """When user has wallet bound, refresh queries verifier and returns pass details."""
+    monkeypatch.setenv("IS_CENTRAL_HUB", "true")
+    user = models.User(
+        username="nft_holder_user",
+        email="nftholder@test.com",
+        hashed_password="pw",
+        referral_code="REF-NFTHOLDER",
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    wallet_addr = "0x2222222222222222222222222222222222222222"
+    cfg = models.AppConfig(
+        user_id=user.id,
+        is_mining_enabled=True,
+        exchange_settings={
+            "bybit": {
+                "wallet_address": wallet_addr,
+                "wallet_configured": True,
+            }
+        },
+    )
+    db_session.add(cfg)
+    await db_session.commit()
+
+    mock_verified = {
+        "has_nft": True,
+        "token_id": 2,
+        "pass_type": "apex",
+        "name": "DepthSight Apex Syndicate Pass",
+        "bonus_multiplier": 1.0,
+        "balance": 1,
+        "contract": "0x29ce393672507c185a5E9Bc2e721E8009e3520C8",
+        "chain_id": 42161,
+        "message": None,
+    }
+
+    with monkeypatch.context() as m:
+        from unittest.mock import AsyncMock
+
+        m.setattr(
+            "api.nft_verifier.verify_wallet_nft",
+            AsyncMock(return_value=mock_verified),
+        )
+
+        resp = await refresh_user_nft_status(db=db_session, current_user=user)
+        data = resp["data"]
+        assert data.success is True
+        assert data.has_nft is True
+        assert data.hasNft is True
+        assert data.token_id == 2
+        assert data.tokenId == 2
+        assert data.bonus_multiplier == 1.0
+        assert data.bonusMultiplier == 1.0
+        assert data.name == "DepthSight Apex Syndicate Pass"
+        assert data.wallet == wallet_addr
+
+
+@pytest.mark.asyncio
+async def test_format_mining_status_includes_nft_fields(db_session, monkeypatch):
+    """format_mining_status_response must pass NFT fields to LocalMiningStatusResponse."""
+    monkeypatch.setenv("IS_CENTRAL_HUB", "true")
+
+    user = models.User(
+        username="nft_status_user",
+        email="nftstatus@test.com",
+        hashed_password="pw",
+        referral_code="REF-NFTSTATUS",
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    hub_data = {
+        "nftPassType": "apex",
+        "nftMultiplierBonus": 1.0,
+        "nftTokenId": 2,
+        "nftName": "DepthSight Apex Syndicate Pass",
+        "walletAddress": "0x1111111111111111111111111111111111111111",
+    }
+
+    resp = await format_mining_status_response(
+        db=db_session,
+        current_user=user,
+        is_enabled=True,
+        node_uuid="node-nft-status-uuid",
+        node_name="NodeNFT",
+        hub_data=hub_data,
+        registered=True,
+    )
+
+    data = resp["data"]
+    assert data.nft_pass_type == "apex"
+    assert data.nft_multiplier_bonus == 1.0
+    assert data.nft_token_id == 2
+    assert data.nft_name == "DepthSight Apex Syndicate Pass"
+    assert data.wallet_address == "0x1111111111111111111111111111111111111111"

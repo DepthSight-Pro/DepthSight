@@ -1407,7 +1407,7 @@ class PromoCampaign(Base):
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     exchange_id = Column(
-        String(50), default="bitget", nullable=False, server_default="bitget"
+        String(200), default="bitget", nullable=False, server_default="bitget"
     )
     total_pool = Column(Float, nullable=False)
     distributed = Column(Float, default=0.0, nullable=False, server_default="0.0")
