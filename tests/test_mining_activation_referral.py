@@ -311,6 +311,9 @@ async def test_refresh_user_nft_status_with_wallet(db_session, monkeypatch):
     wallet_addr = "0x2222222222222222222222222222222222222222"
     cfg = models.AppConfig(
         user_id=user.id,
+        risk_management={},
+        notifications={},
+        data_sources={},
         is_mining_enabled=True,
         exchange_settings={
             "bybit": {
