@@ -5344,17 +5344,41 @@ async def get_promo_public_stats(
             start_iso = campaign.ui_config.get("start_iso", start_iso)
             end_iso = campaign.ui_config.get("end_iso", end_iso)
 
-    # 2. Claimed slots across ALL time
-    web_claims_stmt = select(func.count(models.PromoClaim.id)).where(
-        models.PromoClaim.quest_type == "api_volume",
-        models.PromoClaim.status != "rejected",
+    # 2. Claimed slots across Bitget campaigns
+    web_claims_stmt = (
+        select(func.count(models.PromoClaim.id))
+        .join(
+            models.PromoCampaign,
+            models.PromoCampaign.id == models.PromoClaim.campaign_id,
+        )
+        .where(
+            models.PromoClaim.quest_type == "api_volume",
+            models.PromoClaim.status != "rejected",
+            models.PromoCampaign.exchange_id.ilike("%bitget%"),
+        )
     )
-    pro_claims_stmt = select(func.count(models.PromoClaim.id)).where(
-        models.PromoClaim.quest_type == "node_runner",
-        models.PromoClaim.status != "rejected",
+    pro_claims_stmt = (
+        select(func.count(models.PromoClaim.id))
+        .join(
+            models.PromoCampaign,
+            models.PromoCampaign.id == models.PromoClaim.campaign_id,
+        )
+        .where(
+            models.PromoClaim.quest_type == "node_runner",
+            models.PromoClaim.status != "rejected",
+            models.PromoCampaign.exchange_id.ilike("%bitget%"),
+        )
     )
-    total_claims_stmt = select(func.count(models.PromoClaim.id)).where(
-        models.PromoClaim.status != "rejected",
+    total_claims_stmt = (
+        select(func.count(models.PromoClaim.id))
+        .join(
+            models.PromoCampaign,
+            models.PromoCampaign.id == models.PromoClaim.campaign_id,
+        )
+        .where(
+            models.PromoClaim.status != "rejected",
+            models.PromoCampaign.exchange_id.ilike("%bitget%"),
+        )
     )
 
     slots_web_taken = int((await db.execute(web_claims_stmt)).scalar() or 0)
@@ -5376,11 +5400,19 @@ async def get_promo_public_stats(
     )
     telem_vol = float((await db.execute(telem_stmt)).scalar() or 0.0)
 
-    # B. From PromoClaim (verified_volume across both quests: Web + Pro Node)
-    claims_vol_stmt = select(
-        func.coalesce(func.sum(models.PromoClaim.verified_volume), 0.0)
-    ).where(
-        models.PromoClaim.status != "rejected",
+    # B. From PromoClaim (verified_volume on Bitget ONLY)
+    claims_vol_stmt = (
+        select(
+            func.coalesce(func.sum(models.PromoClaim.verified_volume), 0.0)
+        )
+        .join(
+            models.PromoCampaign,
+            models.PromoCampaign.id == models.PromoClaim.campaign_id,
+        )
+        .where(
+            models.PromoClaim.status != "rejected",
+            models.PromoCampaign.exchange_id.ilike("%bitget%"),
+        )
     )
     claims_vol = float((await db.execute(claims_vol_stmt)).scalar() or 0.0)
 
@@ -5422,6 +5454,280 @@ async def get_promo_public_stats(
             )
 
     return resp
+
+
+def _mask_wallet(addr: Optional[str]) -> str:
+    if not addr or len(addr) < 10:
+        return "0x????...????"
+    clean = addr.strip()
+    return f"{clean[:6]}...{clean[-4:]}"
+
+
+PROMO_TIERS = [
+    (15_000_000, 500.0),
+    (30_000_000, 1000.0),
+    (60_000_000, 2000.0),
+    (80_000_000, 3000.0),
+]
+
+
+def _get_promo_tier_and_pool(volume: float) -> tuple[int, float]:
+    tier = 0
+    pool = 0.0
+    for idx, (thresh, p) in enumerate(PROMO_TIERS, start=1):
+        if volume >= thresh:
+            tier = idx
+            pool = p
+    return tier, pool
+
+
+def _get_rank_reward_share(rank: int) -> float:
+    if rank == 1:
+        return 20.0
+    elif rank == 2:
+        return 15.0
+    elif rank == 3:
+        return 10.0
+    elif rank == 4:
+        return 8.0
+    elif rank == 5:
+        return 5.0
+    elif 6 <= rank <= 20:
+        return round(42.0 / 15.0, 2)  # ~2.8%
+    return 0.0
+
+
+@router.get(
+    "/promo/leaderboard",
+    response_model=schemas.PromoLeaderboardResponse,
+)
+async def get_promo_leaderboard(
+    authorization: Optional[str] = Header(None),
+    x_node_uuid: Optional[str] = Header(None, alias="X-Node-UUID"),
+    node_uuid: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns Top 20 participants ranked by verified Bitget futures volume.
+
+    Only displays masked wallet addresses (0x1a...4b9c) for privacy.
+    Includes current user rank and distance to Top 20 when authenticated.
+    """
+    CACHE_KEY = "promo:leaderboard:bitget:base"
+    CACHE_TTL_SEC = 60
+
+    redis_client = None
+    cached_base = None
+    try:
+        from .redis_client import get_redis_client
+
+        redis_client = await get_redis_client()
+        cached_raw = await redis_client.get(CACHE_KEY)
+        if cached_raw:
+            import json
+
+            cached_base = json.loads(cached_raw)
+    except Exception as cache_err:
+        logger.debug(f"Promo leaderboard cache lookup skipped/failed: {cache_err}")
+        redis_client = None
+
+    if cached_base is not None:
+        total_volume_usdt = float(cached_base.get("total_volume_usdt", 0.0))
+        tier_reached = int(cached_base.get("tier_reached", 0))
+        unlocked_pool_usdt = float(cached_base.get("unlocked_pool_usdt", 0.0))
+        sorted_wallets = cached_base.get("sorted_wallets", [])
+    else:
+        # 1. Fetch cumulative volumes per wallet
+        # A. From HubTelemetryReport joined with HubNode
+        telem_stmt = (
+            select(
+                models.HubNode.wallet_address,
+                func.coalesce(
+                    func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0
+                ).label("vol"),
+            )
+            .join(
+                models.HubTelemetryReport,
+                models.HubTelemetryReport.node_uuid == models.HubNode.node_uuid,
+            )
+            .where(
+                models.HubNode.wallet_address.is_not(None),
+                models.HubTelemetryReport.exchange_id.ilike("%bitget%"),
+                models.HubTelemetryReport.verification_status != "REJECTED",
+                _live_trade_mode_filter(),
+            )
+            .group_by(models.HubNode.wallet_address)
+        )
+        telem_res = await db.execute(telem_stmt)
+        wallet_volumes: Dict[str, float] = {}
+        for w, v in telem_res.all():
+            if w and v:
+                clean_w = str(w).strip().lower()
+                wallet_volumes[clean_w] = max(
+                    wallet_volumes.get(clean_w, 0.0), float(v)
+                )
+
+        # B. From PromoClaim (verified volumes on Bitget ONLY)
+        claims_stmt = (
+            select(
+                models.PromoClaim.wallet_address,
+                func.coalesce(
+                    func.sum(models.PromoClaim.verified_volume), 0.0
+                ).label("vol"),
+            )
+            .join(
+                models.PromoCampaign,
+                models.PromoCampaign.id == models.PromoClaim.campaign_id,
+            )
+            .where(
+                models.PromoClaim.wallet_address.is_not(None),
+                models.PromoClaim.status != "rejected",
+                models.PromoCampaign.exchange_id.ilike("%bitget%"),
+            )
+            .group_by(models.PromoClaim.wallet_address)
+        )
+        claims_res = await db.execute(claims_stmt)
+        for w, v in claims_res.all():
+            if w and v:
+                clean_w = str(w).strip().lower()
+                wallet_volumes[clean_w] = max(
+                    wallet_volumes.get(clean_w, 0.0), float(v)
+                )
+
+        # C. Total volume across campaign
+        telem_all_stmt = select(
+            func.coalesce(func.sum(models.HubTelemetryReport.trade_volume_usdt), 0.0)
+        ).where(
+            models.HubTelemetryReport.exchange_id.ilike("%bitget%"),
+            models.HubTelemetryReport.verification_status != "REJECTED",
+            _live_trade_mode_filter(),
+        )
+        telem_vol_all = float((await db.execute(telem_all_stmt)).scalar() or 0.0)
+        sum_wallet_vol = sum(wallet_volumes.values())
+        total_volume_usdt = max(telem_vol_all, sum_wallet_vol)
+
+        tier_reached, unlocked_pool_usdt = _get_promo_tier_and_pool(total_volume_usdt)
+
+        # Sort wallets descending by volume
+        sorted_wallets = sorted(
+            [{"wallet": w, "volume": v} for w, v in wallet_volumes.items()],
+            key=lambda item: item["volume"],
+            reverse=True,
+        )
+
+        if redis_client:
+            try:
+                import json
+
+                payload_to_cache = {
+                    "total_volume_usdt": total_volume_usdt,
+                    "tier_reached": tier_reached,
+                    "unlocked_pool_usdt": unlocked_pool_usdt,
+                    "sorted_wallets": sorted_wallets,
+                }
+                await redis_client.setex(
+                    CACHE_KEY, CACHE_TTL_SEC, json.dumps(payload_to_cache)
+                )
+            except Exception as cache_write_err:
+                logger.debug(
+                    f"Failed to set Redis cache for promo leaderboard: {cache_write_err}"
+                )
+
+    # 2. Resolve requesting user/node if authenticated
+    user_wallet: Optional[str] = None
+    try:
+        node, current_user_obj = await _resolve_requesting_node(
+            db,
+            x_node_uuid=x_node_uuid,
+            authorization=authorization,
+            node_uuid=node_uuid,
+        )
+        if current_user_obj:
+            user_identity = await _resolve_user_promo_identity(
+                db, current_user_obj, exchange_id="bitget"
+            )
+            raw_w = user_identity.get("wallet")
+            if raw_w:
+                user_wallet = str(raw_w).strip().lower()
+        if not user_wallet and node and node.wallet_address:
+            user_wallet = str(node.wallet_address).strip().lower()
+    except Exception as e:
+        logger.debug(f"Failed to resolve requesting user for leaderboard: {e}")
+
+    # 3. Format Top 20 entries
+    top_entries: List[schemas.PromoLeaderboardEntry] = []
+    user_entry: Optional[schemas.PromoLeaderboardEntry] = None
+    user_found_in_top = False
+    display_pool = max(unlocked_pool_usdt, 500.0)
+
+    for idx, item in enumerate(sorted_wallets[:20], start=1):
+        w = item["wallet"]
+        vol = float(item["volume"])
+        is_user = bool(user_wallet and w == user_wallet)
+        if is_user:
+            user_found_in_top = True
+        share_pct = _get_rank_reward_share(idx)
+        # Eligibility requirement: volume >= 1000 USDT to receive share
+        est_reward = (
+            round(display_pool * (share_pct / 100.0), 2) if vol >= 1000.0 else 0.0
+        )
+        entry = schemas.PromoLeaderboardEntry(
+            rank=idx,
+            wallet_address=_mask_wallet(w),
+            volume_usdt=round(vol, 2),
+            reward_share_pct=share_pct,
+            estimated_reward_usdt=est_reward,
+            is_current_user=is_user,
+        )
+        top_entries.append(entry)
+        if is_user:
+            user_entry = entry
+
+    # 4. Handle user ranking if outside top 20 or not in list
+    volume_to_top20: Optional[float] = None
+    if user_wallet:
+        if not user_found_in_top:
+            user_rank = None
+            user_vol = 0.0
+            for idx, item in enumerate(sorted_wallets, start=1):
+                if item["wallet"] == user_wallet:
+                    user_rank = idx
+                    user_vol = float(item["volume"])
+                    break
+
+            if user_rank is None:
+                user_rank = len(sorted_wallets) + 1
+                user_vol = 0.0
+
+            user_entry = schemas.PromoLeaderboardEntry(
+                rank=user_rank,
+                wallet_address=_mask_wallet(user_wallet),
+                volume_usdt=round(user_vol, 2),
+                reward_share_pct=0.0,
+                estimated_reward_usdt=0.0,
+                is_current_user=True,
+            )
+
+            # Distance to Top 20 threshold
+            if len(top_entries) >= 20:
+                threshold_vol = top_entries[-1].volume_usdt
+                volume_to_top20 = max(0.0, round(threshold_vol - user_vol + 1.0, 2))
+            else:
+                volume_to_top20 = max(0.0, round(1000.0 - user_vol, 2))
+        else:
+            volume_to_top20 = 0.0
+
+    return schemas.PromoLeaderboardResponse(
+        top=top_entries,
+        total_participants=len(sorted_wallets),
+        unlocked_pool_usdt=unlocked_pool_usdt,
+        total_volume_usdt=round(total_volume_usdt, 2),
+        tier_reached=tier_reached,
+        min_volume_threshold=1000.0,
+        my_entry=user_entry,
+        volume_to_top20=volume_to_top20,
+        updated_at=datetime.now(timezone.utc),
+    )
+
 
 
 @router.get("/promo/status", response_model=schemas.PromoStatusResponse)
@@ -5672,7 +5978,39 @@ async def get_promo_status(
 
         physical_node = max(physical_cands, key=_age_days)
 
-    # 4. Compute per-quest progress
+    # 4. Resolve all user claims across this campaign
+    user_claims_by_type: Dict[str, models.PromoClaim] = {}
+    legacy_wallet = None
+    if (
+        not identity["node_uuids"]
+        and not identity["uids"]
+        and not identity["has_key"]
+        and not identity["has_wallet"]
+        and node is not None
+    ):
+        legacy_wallet = getattr(node, "wallet_address", None) or None
+    claim_wallet = identity["wallet"] or legacy_wallet
+
+    user_claim_filters = []
+    if user_uids:
+        for u in user_uids:
+            user_claim_filters.append(models.PromoClaim.exchange_uid == str(u))
+    if claim_wallet:
+        user_claim_filters.append(
+            func.lower(models.PromoClaim.wallet_address)
+            == func.lower(claim_wallet)
+        )
+
+    if user_claim_filters:
+        claims_stmt = select(models.PromoClaim).where(
+            models.PromoClaim.campaign_id == campaign.id,
+            or_(*user_claim_filters),
+        )
+        claims_res = await db.execute(claims_stmt)
+        for cl in claims_res.scalars().all():
+            user_claims_by_type[cl.quest_type] = cl
+
+    # 5. Compute per-quest progress
     quests_progress = []
 
     for q in quests_cfg:
@@ -5691,42 +6029,7 @@ async def get_promo_status(
         claimed_slots = int(slot_res.scalar() or 0)
         remaining_slots = max(0, q_total_slots - claimed_slots)
 
-        is_claimed = False
-        # Legacy node wallet is considered only when the user has no owned
-        # identity at all (same condition as the fallback above) — never
-        # merge a чужой node's wallet into an identified user's view.
-        legacy_wallet = None
-        if (
-            not identity["node_uuids"]
-            and not identity["uids"]
-            and not identity["has_key"]
-            and not identity["has_wallet"]
-            and node is not None
-        ):
-            legacy_wallet = getattr(node, "wallet_address", None) or None
-        claim_wallet = identity["wallet"] or legacy_wallet
-        if user_uids or claim_wallet:
-            claim_filters = []
-            for u in user_uids:
-                claim_filters.append(models.PromoClaim.exchange_uid == str(u))
-            if claim_wallet:
-                claim_filters.append(
-                    func.lower(models.PromoClaim.wallet_address)
-                    == func.lower(claim_wallet)
-                )
-
-            if claim_filters:
-                claim_check_stmt = (
-                    select(models.PromoClaim.id)
-                    .where(
-                        models.PromoClaim.campaign_id == campaign.id,
-                        models.PromoClaim.quest_type == q_type,
-                        or_(*claim_filters),
-                    )
-                    .limit(1)
-                )
-                claim_res = await db.execute(claim_check_stmt)
-                is_claimed = claim_res.scalars().first() is not None
+        is_claimed = q_type in user_claims_by_type
 
         # Per-quest volume context:
         # node_runner counts physical-server volume only.
@@ -5737,11 +6040,27 @@ async def get_promo_status(
         # the claimed quest stops/caps at its threshold, and other non-node
         # quests count the remaining volume exceeding the consumed threshold.
         if q_type == "node_runner":
-            total_volume = physical_total
-            verified_volume = physical_verified
+            if is_claimed:
+                total_volume = min(physical_total, q_vol_threshold)
+                verified_volume = min(physical_verified, q_vol_threshold)
+            else:
+                total_volume = physical_total
+                verified_volume = physical_verified
         else:
-            total_volume = central_total
-            verified_volume = central_verified
+            if is_claimed:
+                total_volume = min(central_total, q_vol_threshold)
+                verified_volume = min(central_verified, q_vol_threshold)
+            else:
+                consumed_central_vol = sum(
+                    float(other_q.get("volume_threshold", 0.0))
+                    for other_q in quests_cfg
+                    if other_q.get("quest_type") != "node_runner"
+                    and other_q.get("quest_type") != q_type
+                    and other_q.get("quest_type") in user_claims_by_type
+                )
+                total_volume = max(0.0, central_total - consumed_central_vol)
+                verified_volume = max(0.0, central_verified - consumed_central_vol)
+
         vol_met = verified_volume >= q_vol_threshold
         total_vol_met = total_volume >= q_vol_threshold
         is_volume_verifying = total_vol_met and not vol_met
@@ -6123,6 +6442,39 @@ async def claim_promo_quest(
         )
         vol_res = await db.execute(verified_vol_stmt)
         verified_volume = float(vol_res.scalar() or 0.0)
+
+    # In non-node quests, volume consumed by other claimed non-node quests is deducted
+    consumed_vol = 0.0
+    if payload.quest_type != "node_runner":
+        other_non_node_types = [
+            q.get("quest_type")
+            for q in quests_cfg
+            if q.get("quest_type") != "node_runner"
+            and q.get("quest_type") != payload.quest_type
+        ]
+        if other_non_node_types:
+            other_claim_filters = []
+            for u in user_uids:
+                other_claim_filters.append(models.PromoClaim.exchange_uid == str(u))
+            if wallet_addr_to_check:
+                other_claim_filters.append(
+                    func.lower(models.PromoClaim.wallet_address)
+                    == func.lower(wallet_addr_to_check)
+                )
+            if other_claim_filters:
+                other_claims_stmt = select(models.PromoClaim.quest_type).where(
+                    models.PromoClaim.campaign_id == campaign.id,
+                    models.PromoClaim.quest_type.in_(other_non_node_types),
+                    or_(*other_claim_filters),
+                )
+                other_res = await db.execute(other_claims_stmt)
+                claimed_other_types = set(other_res.scalars().all())
+                consumed_vol = sum(
+                    float(q.get("volume_threshold", 0.0))
+                    for q in quests_cfg
+                    if q.get("quest_type") in claimed_other_types
+                )
+                verified_volume = max(0.0, verified_volume - consumed_vol)
 
     if verified_volume < vol_threshold:
         # Check if user has sufficient reported volume that is still pending verification
