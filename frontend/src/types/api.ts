@@ -1787,6 +1787,7 @@ export interface PromoStatusResponse {
 	isAdminPreview?: boolean;
 	isPenalty?: boolean;
 	totalPool?: number;
+	maxReward?: number;
 	distributed?: number;
 	remainingPool?: number;
 	/** Promo rebate multiplier for the active exchange (not yet returned by
@@ -1810,6 +1811,28 @@ export interface PromoClaimResponse {
 	rewardType?: "token" | "nft";
 	nftTokenId?: number;
 }
+
+export interface PromoLeaderboardEntry {
+	rank: number;
+	walletAddress: string;
+	volumeUsdt: number;
+	rewardSharePct: number;
+	estimatedRewardUsdt: number;
+	isCurrentUser?: boolean;
+}
+
+export interface PromoLeaderboardResponse {
+	top: PromoLeaderboardEntry[];
+	totalParticipants: number;
+	unlockedPoolUsdt: number;
+	totalVolumeUsdt: number;
+	tierReached: number;
+	minVolumeThreshold: number;
+	myEntry?: PromoLeaderboardEntry | null;
+	volumeToTop20?: number | null;
+	updatedAt: string;
+}
+
 
 export interface PromoCampaignAdmin {
 	id: string;

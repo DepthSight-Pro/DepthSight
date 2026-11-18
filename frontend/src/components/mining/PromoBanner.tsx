@@ -3,7 +3,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Lock, Gift, Globe } from "lucide-react";
 import type { PromoStatusResponse } from "@/types/api";
-import { exchangeLabels, exchangeLogos, normalizeExchangeKey } from "@/lib/exchanges";
+import { exchangeLabels, exchangeLogos, normalizeExchangeKey, getActiveExchangesList } from "@/lib/exchanges";
 
 interface PromoBannerProps {
 	promoStatus: PromoStatusResponse;
@@ -117,6 +117,16 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 			: "All Supported Exchanges"
 		: (targetExKey ? exchangeLabels[targetExKey] : null) || promoStatus.exchangeId || "Partner";
 
+	const exchangesListStr =
+		parsedExchanges.length > 0
+			? parsedExchanges.map((e) => exchangeLabels[e] || e.toUpperCase()).join(", ")
+			: getActiveExchangesList();
+
+	const maxReward =
+		Number(promoStatus.maxReward) ||
+		promoStatus.quests?.reduce((max, q) => Math.max(max, Number(q.reward || 0)), 0) ||
+		25_000;
+
 	return (
 		<div
 			onClick={onOpenQuests}
@@ -144,7 +154,12 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 					<div className="min-w-0">
 						<div className="flex flex-wrap items-center gap-2">
 							<h3 className="text-base font-bold text-foreground dark:text-white tracking-tight">
-								{promoStatus.campaignName || `${targetExLabel} Launch Airdrop — 10,000,000 $DEPTH`}
+								{promoStatus.campaignName ||
+									t("promoBannerTitle", {
+										name: targetExLabel,
+										pool: promoStatus.totalPool ? Number(promoStatus.totalPool).toLocaleString() : "10,000,000",
+										defaultValue: `${targetExLabel} Launch Airdrop`,
+									})}
 							</h3>
 							{promoStatus.isAdminPreview ? (
 								<span className="flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
@@ -161,8 +176,16 @@ export const PromoBanner: React.FC<PromoBannerProps> = ({ promoStatus, onOpenQue
 						<p className="mt-0.5 truncate text-xs text-slate-600 dark:text-slate-400">
 							{promoStatus.description ||
 								(isUniversal
-									? "Connect any supported exchange API key & trade to earn exclusive Genesis NFT Passes and $DEPTH rewards."
-									: `Connect ${targetExLabel} API keys & trade to earn up to 25,000 $DEPTH per quest.`)}
+									? t("promoBannerSubtitle", {
+											exchanges: exchangesListStr || targetExLabel,
+											maxReward: maxReward.toLocaleString(),
+											defaultValue: "Connect any supported exchange API key & trade to earn exclusive Genesis NFT Passes and $DEPTH rewards.",
+									  })
+									: t("promoBannerSubtitleWithEx", {
+											exchange: targetExLabel,
+											maxReward: maxReward.toLocaleString(),
+											defaultValue: `Connect ${targetExLabel} API keys & trade to earn up to 25,000 $DEPTH per quest.`,
+									  }))}
 						</p>
 					</div>
 				</div>

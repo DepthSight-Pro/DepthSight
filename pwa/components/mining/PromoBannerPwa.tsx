@@ -8,6 +8,8 @@ import { exchangeLabels, exchangeLogos, normalizeExchangeKey } from "../../lib/e
 interface PromoQuestSlots {
 	totalSlots?: number;
 	claimedSlots?: number;
+	reward?: number;
+	rewardAmount?: number;
 	[key: string]: unknown;
 }
 
@@ -23,6 +25,7 @@ export interface PromoBannerStatus {
 	isAdminPreview?: boolean;
 	isPenalty?: boolean;
 	rebateMultiplier?: number;
+	maxReward?: number;
 	[key: string]: unknown;
 }
 
@@ -137,6 +140,11 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 						: "All Supported Exchanges"
 					: (targetExKey ? exchangeLabels[targetExKey] : null) || (promoStatus.exchangeId as string) || "Partner";
 
+				const maxReward =
+					Number(promoStatus.maxReward) ||
+					promoStatus.quests?.reduce((max: number, q: PromoQuestSlots) => Math.max(max, Number(q.reward ?? q.rewardAmount ?? 0)), 0) ||
+					25_000;
+
 				return (
 					<div className="flex items-start gap-3">
 						<div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1DA2B4]/30 dark:border-[#00F0FF]/40 bg-[#1DA2B4]/15 dark:bg-[#1DA2B4]/20 p-2 shadow-sm dark:shadow-[0_0_15px_rgba(0,240,255,0.35)]">
@@ -154,7 +162,11 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 						<div className="min-w-0 flex-1">
 							<div className="flex flex-wrap items-center gap-1.5">
 								<h3 className="text-sm font-bold text-foreground dark:text-white tracking-tight leading-snug">
-									{promoStatus.campaignName || `${targetExLabel} Launch Airdrop`}
+									{promoStatus.campaignName ||
+										t("mining.promoBannerTitle", "{{name}} Launch Airdrop", {
+											name: targetExLabel,
+											pool: promoStatus.totalPool ? Number(promoStatus.totalPool).toLocaleString() : "",
+										})}
 								</h3>
 								{promoStatus.isAdminPreview ? (
 									<span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-500 dark:text-amber-400">
@@ -171,8 +183,14 @@ export const PromoBannerPwa: React.FC<PromoBannerPwaProps> = ({
 							<p className="mt-1 text-[11px] text-muted-foreground leading-tight line-clamp-2">
 								{promoStatus.description ||
 									(isUniversal
-										? "Connect any supported exchange API key & trade to earn exclusive Genesis NFT Passes and $DEPTH rewards."
-										: `Connect ${targetExLabel} API keys & trade to earn up to 25,000 $DEPTH per quest.`)}
+										? t("mining.promoBannerSubtitle", "Connect any supported exchange API key ({{exchanges}}) & trade to earn rewards.", {
+												exchanges: targetExLabel,
+												maxReward: maxReward.toLocaleString(),
+										  })
+										: t("mining.promoBannerSubtitleWithEx", "Connect {{exchange}} API keys & trade to earn up to {{maxReward}} $DEPTH per quest.", {
+												exchange: targetExLabel,
+												maxReward: maxReward.toLocaleString(),
+										  }))}
 							</p>
 						</div>
 					</div>

@@ -1,10 +1,10 @@
 // frontend/src/components/mining/PromoQuestsTab.tsx
-import React from "react";
+import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Clock, ShieldCheck, Sparkles, Server, Loader2, Globe } from "lucide-react";
+import { Check, Clock, ShieldCheck, Sparkles, Server, Loader2, Globe, Trophy, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
-import { useClaimPromoQuest } from "@/lib/api";
+import { useClaimPromoQuest, useGetPromoLeaderboard } from "@/lib/api";
 import type { PromoClaimResponse, PromoQuestProgress, PromoStatusResponse } from "@/types/api";
 import { BitgetLogoSvg } from "./PromoBanner";
 import { exchangeLabels, exchangeLogos, normalizeExchangeKey, getActiveExchangesList } from "@/lib/exchanges";
@@ -24,6 +24,8 @@ interface PromoQuestsTabProps {
 export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eligibleExchanges }) => {
 	const { t } = useTranslation(["mining", "common"]);
 	const { mutate: claimQuest, isPending: isClaiming } = useClaimPromoQuest();
+	const { data: leaderboardData, isLoading: isLoadingLeaderboard } = useGetPromoLeaderboard();
+	const [activeSubTab, setActiveSubTab] = useState<"quests" | "leaderboard">("quests");
 	const rawExchangeId = (promoStatus.exchangeId || "").trim().toLowerCase();
 	const parsedExchanges =
 		!rawExchangeId || rawExchangeId === "all"
@@ -157,8 +159,54 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 				</div>
 			</div>
 
+			{/* Subtab Navigation Pills */}
+			<div className="flex items-center gap-2 border-b border-white/10 pb-3">
+				<button
+					type="button"
+					onClick={() => setActiveSubTab("quests")}
+					className={`group relative flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-all ${
+						activeSubTab === "quests"
+							? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-[#00F0FF] border border-cyan-500/40 shadow-[0_0_15px_rgba(0,240,255,0.15)]"
+							: "text-white/60 hover:text-white hover:bg-white/[0.04] border border-transparent"
+					}`}
+				>
+					<Sparkles className={`h-4 w-4 transition-transform group-hover:scale-110 ${activeSubTab === "quests" ? "text-[#00F0FF]" : "text-white/50"}`} />
+					<span>{t("promoSubtabNftQuests", "NFT-квесты")}</span>
+					{promoStatus.quests && promoStatus.quests.length > 0 && (
+						<span className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+							activeSubTab === "quests"
+								? "bg-cyan-400/20 text-cyan-300 border border-cyan-400/30"
+								: "bg-white/10 text-white/60"
+						}`}>
+							{promoStatus.quests.length}
+						</span>
+					)}
+				</button>
+
+				<button
+					type="button"
+					onClick={() => setActiveSubTab("leaderboard")}
+					className={`group relative flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-semibold transition-all ${
+						activeSubTab === "leaderboard"
+							? "bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+							: "text-white/60 hover:text-white hover:bg-white/[0.04] border border-transparent"
+					}`}
+				>
+					<Trophy className={`h-4 w-4 transition-transform group-hover:scale-110 ${activeSubTab === "leaderboard" ? "text-amber-400" : "text-white/50"}`} />
+					<span>{t("promoSubtabLeaderboard", "Лидерборд")}</span>
+					<span className="flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-cyan-300">
+						<span className="relative flex h-1.5 w-1.5">
+							<span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+							<span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-500" />
+						</span>
+						Live
+					</span>
+				</button>
+			</div>
+
 			{/* Quests Grid (Supports 1, 2, or 3 Quests - Sorted by Token #0 -> #1 -> #2) */}
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+			{activeSubTab === "quests" && (
+				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 				{(() => {
 					const questsList = promoStatus.quests || [];
 					const sortedQuests = [...questsList].sort((a, b) => {
@@ -184,13 +232,15 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 				const tradeWindowDays = toNumber(reqs.tradeWindowDays ?? reqs.trade_window_days, 7);
 				const isPhysicalNodeOldEnough = Boolean(reqs.isPhysicalNode) && nodeAgeDays >= minNodeAgeDays;
 					const volumeThreshold = toNumber(reqs.volumeThreshold, 1000);
-					const totalVolume = toNumber(reqs.totalVolume ?? reqs.currentVolume ?? reqs.verifiedVolume, 0);
-					const verifiedVolume = toNumber(reqs.verifiedVolume, 0);
+					const rawTotalVolume = toNumber(reqs.totalVolume ?? reqs.currentVolume ?? reqs.verifiedVolume, 0);
+					const rawVerifiedVolume = toNumber(reqs.verifiedVolume, 0);
+					const totalVolume = quest.isClaimed ? Math.min(rawTotalVolume, volumeThreshold) : rawTotalVolume;
+					const verifiedVolume = quest.isClaimed ? Math.min(rawVerifiedVolume, volumeThreshold) : rawVerifiedVolume;
 					const isVolumeVerifying = Boolean(
 						reqs.isVolumeVerifying || (totalVolume >= volumeThreshold && verifiedVolume < volumeThreshold)
 					);
 					const isVolumeVerified = Boolean(
-						reqs.isVolumeVerified || verifiedVolume >= volumeThreshold
+						reqs.isVolumeVerified || verifiedVolume >= volumeThreshold || quest.isClaimed
 					);
 					const volumePercent = Math.min(100, (totalVolume / volumeThreshold) * 100);
 
@@ -645,6 +695,231 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 				});
 			})()}
 			</div>
+			)}
+
+			{/* ───────── LIVE LEADERBOARD (TOP 20) ───────── */}
+			{activeSubTab === "leaderboard" && (
+			<div className="glass relative rounded-2xl border border-white/10 shadow-xl overflow-hidden p-6 space-y-5">
+				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+					<div>
+						<div className="flex items-center gap-2.5">
+							<Trophy className="h-5 w-5 text-amber-400" />
+							<h3 className="text-lg font-black text-white">
+								{t("promoLeaderboardTitle", "Лидерборд по объемам (Top 20)")}
+							</h3>
+							<span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-cyan-300">
+								Live
+							</span>
+						</div>
+						<p className="mt-1 text-xs text-white/60 max-w-xl">
+							{t(
+								"promoLeaderboardSub",
+								"Топ-20 участников по объему фьючерсов (квалификация ≥ 1 000 USDT) делят разблокированный призовой фонд до 3 000 USDT. Рейтинг рассчитывается по привязанному кошельку Arbitrum One."
+							)}
+						</p>
+					</div>
+
+					<div className="flex items-center gap-3 shrink-0">
+						<div className="rounded-xl border border-white/10 bg-black/40 px-3.5 py-2 text-right backdrop-blur-md">
+							<div className="text-[10px] uppercase font-bold text-white/50">
+								{t("promoLeaderboardUnlockedPool", "Разблокированный пул")}
+							</div>
+							<div className="text-sm font-black font-mono text-[#00F0FF]">
+								${(leaderboardData?.unlockedPoolUsdt || 0).toLocaleString()} USDT
+							</div>
+						</div>
+						<div className="rounded-xl border border-white/10 bg-black/40 px-3.5 py-2 text-right backdrop-blur-md">
+							<div className="text-[10px] uppercase font-bold text-white/50">
+								{t("promoLeaderboardTotalParticipants", "Участников")}
+							</div>
+							<div className="text-sm font-black font-mono text-white">
+								{leaderboardData?.totalParticipants || (leaderboardData?.top?.length ?? 0)}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* Table / List */}
+				<div className="overflow-x-auto rounded-xl border border-white/10 bg-black/25">
+					<table className="w-full text-left text-xs">
+						<thead>
+							<tr className="border-b border-white/10 bg-white/[0.02] text-[11px] font-semibold text-white/50">
+								<th className="py-3 px-4 w-16">#</th>
+								<th className="py-3 px-4">{t("promoColWallet", "Кошелек (Arbitrum)")}</th>
+								<th className="py-3 px-4 text-right">{t("promoColVolume", "Объем фьючерсов")}</th>
+								<th className="py-3 px-4 text-right">{t("promoColShare", "Доля пула")}</th>
+								<th className="py-3 px-4 text-right">{t("promoColReward", "Расчетная награда")}</th>
+							</tr>
+						</thead>
+						<tbody className="divide-y divide-white/5">
+							{isLoadingLeaderboard ? (
+								<tr>
+									<td colSpan={5} className="py-8 text-center text-white/50">
+										<div className="flex items-center justify-center gap-2">
+											<Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+											<span>{t("promoLeaderboardLoading", "Загрузка лидерборда...")}</span>
+										</div>
+									</td>
+								</tr>
+							) : !leaderboardData?.top || leaderboardData.top.length === 0 ? (
+								<tr>
+									<td colSpan={5} className="py-8 text-center text-white/50">
+										{t("promoLeaderboardEmpty", "Лидерборд формируется. Совершите сделки на фьючерсах от $1 000, чтобы занять 1-е место!")}
+									</td>
+								</tr>
+							) : (
+								<>
+									{leaderboardData.top.map((entry) => {
+										const isTop1 = entry.rank === 1;
+										const isTop2 = entry.rank === 2;
+										const isTop3 = entry.rank === 3;
+										const isMe = Boolean(entry.isCurrentUser);
+
+										return (
+											<tr
+												key={entry.rank}
+												className={`transition-colors ${
+													isMe
+														? "bg-cyan-500/15 text-white font-semibold shadow-[inset_0_0_12px_rgba(0,240,255,0.15)]"
+														: isTop1
+														? "bg-amber-500/[0.08]"
+														: isTop2
+														? "bg-slate-400/[0.06]"
+														: isTop3
+														? "bg-amber-700/[0.06]"
+														: "hover:bg-white/[0.02]"
+												}`}
+											>
+												<td className="py-3 px-4 font-mono font-bold whitespace-nowrap">
+													{isTop1 ? (
+														<span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-amber-500/20 px-2 py-0.5 text-amber-300 border border-amber-500/30">
+															<span className="leading-none">🥇</span>
+															<span className="leading-none">1</span>
+														</span>
+													) : isTop2 ? (
+														<span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-slate-400/20 px-2 py-0.5 text-slate-200 border border-slate-400/30">
+															<span className="leading-none">🥈</span>
+															<span className="leading-none">2</span>
+														</span>
+													) : isTop3 ? (
+														<span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-amber-700/20 px-2 py-0.5 text-amber-400 border border-amber-700/30">
+															<span className="leading-none">🥉</span>
+															<span className="leading-none">3</span>
+														</span>
+													) : (
+														<span className="text-white/60">#{entry.rank}</span>
+													)}
+												</td>
+												<td className="py-3 px-4 font-mono">
+													<div className="flex items-center gap-2">
+														<span className={isMe ? "text-[#00F0FF] font-bold" : "text-white/90"}>
+															{entry.walletAddress}
+														</span>
+														{isMe && (
+															<span className="rounded bg-cyan-400/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-cyan-300 border border-cyan-400/40">
+																{t("promoYouBadge", "Вы")}
+															</span>
+														)}
+													</div>
+												</td>
+												<td className="py-3 px-4 text-right font-mono font-semibold text-white">
+													${entry.volumeUsdt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+												</td>
+												<td className="py-3 px-4 text-right font-mono text-white/60">
+													{entry.volumeUsdt >= 1000 ? `${entry.rewardSharePct}%` : "—"}
+												</td>
+												<td className="py-3 px-4 text-right font-mono font-bold text-[#00F0FF]">
+													{entry.volumeUsdt >= 1000 && entry.estimatedRewardUsdt > 0 ? (
+														leaderboardData.unlockedPoolUsdt > 0 ? (
+															`${entry.estimatedRewardUsdt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`
+														) : (
+															<div className="flex flex-col items-end leading-tight">
+																<span className="text-[#00F0FF]">
+																	~{entry.estimatedRewardUsdt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT*
+																</span>
+																<span className="text-[10px] text-white/50 font-normal">
+																	{t("promoLeaderboardTier1Unlock", "при открытии Тир-1 (15M)")}
+																</span>
+															</div>
+														)
+													) : (
+														<span className="text-white/40">0 USDT</span>
+													)}
+												</td>
+											</tr>
+										);
+									})}
+
+									{/* Current user sticky bottom row if rank > 20 */}
+									{leaderboardData.myEntry && leaderboardData.myEntry.rank > 20 && (
+										<>
+											<tr>
+												<td colSpan={5} className="py-2 text-center text-white/20 text-xs tracking-widest font-mono">
+													• • •
+												</td>
+											</tr>
+											<tr className="bg-cyan-500/20 border-t-2 border-cyan-500/50 text-white font-semibold shadow-[0_0_20px_rgba(0,240,255,0.2)]">
+												<td className="py-3 px-4 font-mono font-bold text-cyan-300">
+													#{leaderboardData.myEntry.rank}
+												</td>
+												<td className="py-3 px-4 font-mono">
+													<div className="flex items-center gap-2">
+														<span className="text-[#00F0FF] font-bold">
+															{leaderboardData.myEntry.walletAddress}
+														</span>
+														<span className="rounded bg-cyan-400/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-cyan-200 border border-cyan-400/50">
+															{t("promoYouBadge", "Вы")}
+														</span>
+													</div>
+												</td>
+												<td className="py-3 px-4 text-right font-mono font-bold text-white">
+													${leaderboardData.myEntry.volumeUsdt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+												</td>
+												<td className="py-3 px-4 text-right font-mono text-white/60">
+													—
+												</td>
+												<td className="py-3 px-4 text-right font-mono font-bold text-white/60">
+													0 USDT
+												</td>
+											</tr>
+										</>
+									)}
+								</>
+							)}
+						</tbody>
+					</table>
+				</div>
+
+				{/* Asterisk explanation footnote when pool is not yet unlocked */}
+				{leaderboardData && leaderboardData.unlockedPoolUsdt === 0 && (
+					<p className="text-[11px] text-white/40 italic px-1">
+						{t(
+							"promoLeaderboardAsteriskNote",
+							"* Награды рассчитываются от фонда 1-го уровня ($500) и активируются после достижения рубежа в 15 млн USDT совокупного объёма."
+						)}
+					</p>
+				)}
+
+				{/* Distance to Top 20 callout */}
+				{leaderboardData?.volumeToTop20 !== undefined && leaderboardData?.volumeToTop20 !== null && leaderboardData.volumeToTop20 > 0 && (
+					<div className="flex items-center justify-between rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-xs text-cyan-300 shadow-inner">
+						<div className="flex items-center gap-2">
+							<TrendingUp className="h-4 w-4 text-cyan-400 shrink-0" />
+							<span>
+								{t(
+									"promoVolumeToTop20Notice",
+									"До попадания в Top 20 осталось набрать ${{volume}} объёма на фьючерсах",
+									{ volume: leaderboardData.volumeToTop20.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+								)}
+							</span>
+						</div>
+						<span className="font-mono font-bold text-cyan-400 text-[11px] shrink-0 ml-2">
+							{t("promoTargetTop20", "Цель: Топ 20")}
+						</span>
+					</div>
+				)}
+			</div>
+			)}
 
 			{/* Footer Security Notes */}
 			<div className="glass flex flex-wrap items-center justify-center gap-6 sm:gap-8 rounded-2xl border border-white/10 px-6 py-4 text-xs text-white/60 text-center">

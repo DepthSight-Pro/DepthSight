@@ -311,11 +311,13 @@ export const PromoCampaignModal: React.FC<PromoCampaignModalProps> = ({
 
 						const volumeThreshold = reqs.volumeThreshold || 1000;
 						// Total reported volume vs verified volume
-						const totalVolume = reqs.totalVolume ?? reqs.verifiedVolume ?? 0;
-						const verifiedVolume = reqs.verifiedVolume ?? 0;
+						const rawTotalVolume = reqs.totalVolume ?? reqs.verifiedVolume ?? 0;
+						const rawVerifiedVolume = reqs.verifiedVolume ?? 0;
+						const totalVolume = quest.isClaimed ? Math.min(rawTotalVolume, volumeThreshold) : rawTotalVolume;
+						const verifiedVolume = quest.isClaimed ? Math.min(rawVerifiedVolume, volumeThreshold) : rawVerifiedVolume;
 						const isVolumeVerifying = Boolean(reqs.isVolumeVerifying);
 						const isVolumeVerified = Boolean(
-							reqs.isVolumeVerified ?? (verifiedVolume >= volumeThreshold),
+							quest.isClaimed || reqs.isVolumeVerified || (verifiedVolume >= volumeThreshold),
 						);
 						// Scale fills immediately with all reported trades (including pending verification)
 						const volumePercent = Math.min(

@@ -71,6 +71,7 @@ import type {
 	StrategyConfigCreatePayload,
 	StrategyConfigData,
 	PromoStatusResponse,
+	PromoLeaderboardResponse,
 	PromoClaimRequest,
 	PromoClaimResponse,
 	PromoCampaignAdmin,
@@ -3561,6 +3562,19 @@ export const useGetPromoStatus = (options?: { refetchInterval?: number; nodeUuid
 		refetchInterval: options?.refetchInterval ?? 15000,
 	});
 };
+
+export const useGetPromoLeaderboard = (options?: { refetchInterval?: number; nodeUuid?: string }) => {
+	return useQuery<PromoLeaderboardResponse, Error>({
+		queryKey: authScopedQueryKey("promoLeaderboard", options?.nodeUuid || ""),
+		queryFn: async () => {
+			const query = options?.nodeUuid ? `?node_uuid=${encodeURIComponent(options.nodeUuid)}` : "";
+			const res = await apiClient<PromoLeaderboardResponse>(`/hub/promo/leaderboard${query}`);
+			return unwrapData(res);
+		},
+		refetchInterval: options?.refetchInterval ?? 30000,
+	});
+};
+
 
 export const useClaimPromoQuest = () => {
 	const queryClient = useQueryClient();

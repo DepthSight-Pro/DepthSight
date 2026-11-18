@@ -1950,3 +1950,183 @@ async def test_invalid_zero_address_wallet_rejected(
     assert res.status_code == 400
     assert "Invalid or empty EVM wallet address" in res.json()["detail"]
 
+
+@pytest.mark.asyncio
+async def test_non_node_quests_volume_deduction_on_claim(
+    db_session: AsyncSession,
+    authenticated_client_factory,
+    sample_campaign: models.PromoCampaign,
+):
+    """Verify volume behavior between non-node quests:
+    1. Before claiming, central volume is shared across both non-node quests.
+    2. When one non-node quest is claimed, its volume stops at its threshold (e.g. 5,000),
+       and the remaining volume (total - 5,000) is what counts for the second quest (e.g. 7,355 - 5,000 = 2,355).
+    """
+    wallet = "0x955d00000000000000000000000000000000b97f"
+    user = models.User(
+        username="promo_multi_quest_user",
+        email="promo_multi_quest@example.com",
+        hashed_password="somehashedpassword",
+        is_active=True,
+        role="user",
+        referral_code="REF-MULTI-Q",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    sample_campaign.admin_only = False
+    sample_campaign.quests = [
+        {
+            "quest_type": "telemetry_pass",
+            "title": "DepthSight Genesis Pass",
+            "reward": 10000.0,
+            "total_slots": 500,
+            "volume_threshold": 5000.0,
+            "nft_token_id": 0,
+        },
+        {
+            "quest_type": "api_volume",
+            "title": "DepthSight Core Syndicate Pass",
+            "reward": 25000.0,
+            "total_slots": 150,
+            "volume_threshold": 25000.0,
+            "nft_token_id": 1,
+        },
+        {
+            "quest_type": "node_runner",
+            "title": "DepthSight Apex Syndicate Pass",
+            "reward": 50000.0,
+            "total_slots": 25,
+            "volume_threshold": 50000.0,
+            "nft_token_id": 2,
+        },
+    ]
+    await db_session.commit()
+
+    # User node & API key
+    node = models.HubNode(
+        node_uuid="multi-quest-node-1",
+        name="CentralNode",
+        secret_hash="secret",
+        bitget_uid="6234323332",
+        wallet_address=wallet,
+        node_referral_code="REF-MULTI-Q",
+        total_mined=0.0,
+    )
+    api_key = models.ApiKey(
+        user_id=user.id,
+        name="Multi Bitget Key",
+        encrypted_api_key="enc_key",
+        encrypted_api_secret="enc_secret",
+        key_prefix="bg...6234",
+        exchange="bitget",
+        is_active=True,
+    )
+    db_session.add_all([node, api_key])
+
+    # Add verified live central trade volume: $7,355.83
+    trade = models.HubTelemetryReport(
+        symbol="BTCUSDT",
+        direction="LONG",
+        entry_price=50000.0,
+        exit_price=51000.0,
+        trade_mode="live",
+        trade_volume_usdt=7355.83,
+        exchange_id="bitget_futures",
+        node_uuid="multi-quest-node-1",
+        verification_status="VERIFIED",
+        is_verified=True,
+    )
+    db_session.add(trade)
+    await db_session.commit()
+
+    client: AsyncClient = await authenticated_client_factory(user)
+
+    # 1. Check status BEFORE claim:
+    # Both non-node quests see the full 7355.83
+    res = await client.get("/api/v1/hub/promo/status")
+    assert res.status_code == 200
+    data = res.json()
+    q_genesis = next(q for q in data["quests"] if q["questType"] == "telemetry_pass")
+    q_core = next(q for q in data["quests"] if q["questType"] == "api_volume")
+
+    assert q_genesis["requirements"]["totalVolume"] == 7355.83
+    assert q_genesis["requirements"]["verifiedVolume"] == 7355.83
+    assert q_genesis["allRequirementsMet"] is True  # 7355.83 >= 5000.0
+    assert q_genesis["isClaimed"] is False
+
+    assert q_core["requirements"]["totalVolume"] == 7355.83
+    assert q_core["requirements"]["verifiedVolume"] == 7355.83
+    assert q_core["allRequirementsMet"] is False  # 7355.83 < 25000.0
+    assert q_core["isClaimed"] is False
+
+    # 2. Claim Genesis Pass ($5,000 threshold)
+    claim_res = await client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "telemetry_pass"},
+    )
+    assert claim_res.status_code == 200
+
+    # 3. Check status AFTER claim:
+    # Genesis Pass should stop at 5000.0
+    # Core Pass should have remaining volume: 7355.83 - 5000.0 = 2355.83!
+    res_after = await client.get("/api/v1/hub/promo/status")
+    assert res_after.status_code == 200
+    data_after = res_after.json()
+    q_genesis_after = next(q for q in data_after["quests"] if q["questType"] == "telemetry_pass")
+    q_core_after = next(q for q in data_after["quests"] if q["questType"] == "api_volume")
+
+    assert q_genesis_after["isClaimed"] is True
+    assert q_genesis_after["requirements"]["totalVolume"] == 5000.0
+    assert q_genesis_after["requirements"]["verifiedVolume"] == 5000.0
+
+    assert q_core_after["isClaimed"] is False
+    assert round(q_core_after["requirements"]["totalVolume"], 2) == 2355.83
+    assert round(q_core_after["requirements"]["verifiedVolume"], 2) == 2355.83
+    assert q_core_after["allRequirementsMet"] is False
+
+    # 4. Attempting to claim Core Pass fails due to insufficient volume (2355.83 < 25000)
+    claim_core_fail = await client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "api_volume"},
+    )
+    assert claim_core_fail.status_code == 400
+    assert "Volume requirement not met" in claim_core_fail.json()["detail"]
+    assert "2,355.83" in claim_core_fail.json()["detail"]
+
+    # 5. Add more volume: $23,000 more (total = 30,355.83)
+    trade_2 = models.HubTelemetryReport(
+        symbol="BTCUSDT",
+        direction="LONG",
+        entry_price=50000.0,
+        exit_price=51000.0,
+        trade_mode="live",
+        trade_volume_usdt=23000.0,
+        exchange_id="bitget_futures",
+        node_uuid="multi-quest-node-1",
+        verification_status="VERIFIED",
+        is_verified=True,
+    )
+    db_session.add(trade_2)
+    await db_session.commit()
+
+    # Core Pass now has 30355.83 - 5000 = 25355.83 >= 25000!
+    res_boosted = await client.get("/api/v1/hub/promo/status")
+    q_core_boosted = next(q for q in res_boosted.json()["quests"] if q["questType"] == "api_volume")
+    assert round(q_core_boosted["requirements"]["totalVolume"], 2) == 25355.83
+    assert q_core_boosted["allRequirementsMet"] is True
+
+    # Claim Core Pass succeeds!
+    claim_core_ok = await client.post(
+        "/api/v1/hub/promo/claim",
+        json={"campaign_id": sample_campaign.id, "quest_type": "api_volume"},
+    )
+    assert claim_core_ok.status_code == 200
+
+    # Both now claimed, Core stops at 25000
+    res_final = await client.get("/api/v1/hub/promo/status")
+    q_core_final = next(q for q in res_final.json()["quests"] if q["questType"] == "api_volume")
+    assert q_core_final["isClaimed"] is True
+    assert q_core_final["requirements"]["totalVolume"] == 25000.0
+

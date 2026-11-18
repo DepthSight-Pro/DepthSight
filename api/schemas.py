@@ -3824,3 +3824,29 @@ class PromoPublicStatsResponse(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoLeaderboardEntry(BaseModel):
+    rank: int
+    wallet_address: str
+    volume_usdt: float = 0.0
+    reward_share_pct: float = 0.0
+    estimated_reward_usdt: float = 0.0
+    is_current_user: bool = False
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class PromoLeaderboardResponse(BaseModel):
+    top: List[PromoLeaderboardEntry] = []
+    total_participants: int = 0
+    unlocked_pool_usdt: float = 0.0
+    total_volume_usdt: float = 0.0
+    tier_reached: int = 0
+    min_volume_threshold: float = 1000.0
+    my_entry: Optional[PromoLeaderboardEntry] = None
+    volume_to_top20: Optional[float] = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+

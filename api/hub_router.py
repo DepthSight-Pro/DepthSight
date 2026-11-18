@@ -5728,9 +5728,14 @@ async def get_promo_status(
                 claim_res = await db.execute(claim_check_stmt)
                 is_claimed = claim_res.scalars().first() is not None
 
-        # Per-quest volume context: quest 1 counts central (non-physical)
-        # volume only, quest 2 counts physical-server volume only.
-        # Unknown quest types default to the central context.
+        # Per-quest volume context:
+        # node_runner counts physical-server volume only.
+        # Non-node quests count central (non-physical) volume.
+        # Before claiming, volume counts toward all non-node quests simultaneously
+        # (allowing a user to complete Quest 2 directly and skip Quest 1).
+        # When a non-node quest is claimed, its required threshold is consumed:
+        # the claimed quest stops/caps at its threshold, and other non-node
+        # quests count the remaining volume exceeding the consumed threshold.
         if q_type == "node_runner":
             total_volume = physical_total
             verified_volume = physical_verified
@@ -6139,6 +6144,9 @@ async def claim_promo_quest(
             )
             total_vol_res = await db.execute(total_vol_stmt)
             total_volume = float(total_vol_res.scalar() or 0.0)
+
+        if payload.quest_type != "node_runner" and consumed_vol > 0:
+            total_volume = max(0.0, total_volume - consumed_vol)
 
         if total_volume >= vol_threshold:
             raise HTTPException(
