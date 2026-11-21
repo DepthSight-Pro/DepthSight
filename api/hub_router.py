@@ -5326,8 +5326,11 @@ async def get_promo_public_stats(
     camp_res = await db.execute(camp_stmt)
     campaign = camp_res.scalars().first()
 
-    slots_web_total = 1000
-    slots_pro_total = 200
+    slots_genesis_total = 500
+    slots_core_total = 150
+    slots_apex_total = 25
+    slots_web_total = 500
+    slots_pro_total = 175
     start_iso = "2026-10-20T00:00:00Z"
     end_iso = "2026-11-20T00:00:00Z"
 
@@ -5336,58 +5339,83 @@ async def get_promo_public_stats(
             campaign.quests if isinstance(campaign.quests, list) else [campaign.quests]
         )
         for q in quests_list:
-            if q.get("quest_type") == "api_volume":
-                slots_web_total = int(q.get("total_slots", 1000))
-            elif q.get("quest_type") == "node_runner":
-                slots_pro_total = int(q.get("total_slots", 200))
+            if not isinstance(q, dict):
+                continue
+            q_type = q.get("quest_type")
+            token_id = q.get("nft_token_id")
+            slots_val = q.get("total_slots")
+            if slots_val is not None:
+                try:
+                    slots_num = int(slots_val)
+                    if token_id == 0 or q_type in ["telemetry_pass", "genesis", "genesis_pass"]:
+                        slots_genesis_total = slots_num
+                    elif token_id == 1 or q_type in ["core", "core_pass", "core_syndicate"]:
+                        slots_core_total = slots_num
+                    elif token_id == 2 or q_type in ["apex", "apex_pass", "apex_syndicate"]:
+                        slots_apex_total = slots_num
+                    elif q_type == "api_volume":
+                        slots_web_total = slots_num
+                        if not any(isinstance(x, dict) and x.get("nft_token_id") == 0 for x in quests_list):
+                            slots_genesis_total = slots_num
+                        else:
+                            slots_core_total = slots_num
+                    elif q_type == "node_runner":
+                        slots_pro_total = slots_num
+                        if not any(isinstance(x, dict) and x.get("nft_token_id") == 2 for x in quests_list):
+                            slots_apex_total = slots_num
+                except (ValueError, TypeError):
+                    pass
+
         if campaign.ui_config:
             start_iso = campaign.ui_config.get("start_iso", start_iso)
             end_iso = campaign.ui_config.get("end_iso", end_iso)
 
-    # 2. Claimed slots across Bitget campaigns
-    web_claims_stmt = (
+    slots_total_supply = slots_genesis_total + slots_core_total + slots_apex_total
+
+    # 2. Claimed slots across promo campaigns
+    genesis_claims_stmt = (
         select(func.count(models.PromoClaim.id))
-        .join(
-            models.PromoCampaign,
-            models.PromoCampaign.id == models.PromoClaim.campaign_id,
-        )
         .where(
-            models.PromoClaim.quest_type == "api_volume",
+            models.PromoClaim.quest_type.in_(["api_volume", "genesis", "genesis_pass", "web_quest"]),
             models.PromoClaim.status != "rejected",
-            models.PromoCampaign.exchange_id.ilike("%bitget%"),
         )
     )
-    pro_claims_stmt = (
+    core_claims_stmt = (
         select(func.count(models.PromoClaim.id))
-        .join(
-            models.PromoCampaign,
-            models.PromoCampaign.id == models.PromoClaim.campaign_id,
-        )
         .where(
-            models.PromoClaim.quest_type == "node_runner",
+            models.PromoClaim.quest_type.in_(["core", "core_pass", "core_syndicate"]),
             models.PromoClaim.status != "rejected",
-            models.PromoCampaign.exchange_id.ilike("%bitget%"),
+        )
+    )
+    apex_claims_stmt = (
+        select(func.count(models.PromoClaim.id))
+        .where(
+            models.PromoClaim.quest_type.in_(["apex", "apex_pass", "node_runner", "apex_syndicate"]),
+            models.PromoClaim.status != "rejected",
         )
     )
     total_claims_stmt = (
         select(func.count(models.PromoClaim.id))
-        .join(
-            models.PromoCampaign,
-            models.PromoCampaign.id == models.PromoClaim.campaign_id,
-        )
         .where(
             models.PromoClaim.status != "rejected",
-            models.PromoCampaign.exchange_id.ilike("%bitget%"),
         )
     )
 
-    slots_web_taken = int((await db.execute(web_claims_stmt)).scalar() or 0)
-    slots_pro_taken = int((await db.execute(pro_claims_stmt)).scalar() or 0)
+    slots_genesis_taken = int((await db.execute(genesis_claims_stmt)).scalar() or 0)
+    slots_core_taken = int((await db.execute(core_claims_stmt)).scalar() or 0)
+    slots_apex_taken = int((await db.execute(apex_claims_stmt)).scalar() or 0)
     total_claims_taken = int((await db.execute(total_claims_stmt)).scalar() or 0)
 
-    # If test claims exist under general/other quest types, ensure they count toward web slots:
+    # Legacy mapping: web taken = genesis, pro taken = core + apex
+    slots_web_taken = slots_genesis_taken
+    slots_pro_taken = slots_core_taken + slots_apex_taken
+
+    # If test claims exist under general/other quest types, ensure they count toward web/genesis slots:
     if slots_web_taken == 0 and slots_pro_taken == 0 and total_claims_taken > 0:
         slots_web_taken = total_claims_taken
+        slots_genesis_taken = total_claims_taken
+
+    slots_total_taken = slots_genesis_taken + slots_core_taken + slots_apex_taken
 
     # 3. Cumulative Bitget volume across ALL time:
     # A. From HubTelemetryReport (LIVE only, excluding paper trades)
@@ -5439,6 +5467,14 @@ async def get_promo_public_stats(
         slots_pro_taken=slots_pro_taken,
         slots_web_total=slots_web_total,
         slots_pro_total=slots_pro_total,
+        slots_genesis_taken=slots_genesis_taken,
+        slots_genesis_total=slots_genesis_total,
+        slots_core_taken=slots_core_taken,
+        slots_core_total=slots_core_total,
+        slots_apex_taken=slots_apex_taken,
+        slots_apex_total=slots_apex_total,
+        slots_total_taken=slots_total_taken,
+        slots_total_supply=slots_total_supply,
         start_iso=start_iso,
         end_iso=end_iso,
         updated_at=datetime.now(timezone.utc),

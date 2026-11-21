@@ -3817,8 +3817,17 @@ class PromoPublicStatsResponse(BaseModel):
     volume_usdt: float = 0.0
     slots_web_taken: int = 0
     slots_pro_taken: int = 0
-    slots_web_total: int = 1000
-    slots_pro_total: int = 200
+    slots_web_total: int = 500
+    slots_pro_total: int = 175
+    # Tier breakdown for Genesis Pass (Stage 1: 500 / 150 / 25 = 675)
+    slots_genesis_taken: int = 0
+    slots_genesis_total: int = 500
+    slots_core_taken: int = 0
+    slots_core_total: int = 150
+    slots_apex_taken: int = 0
+    slots_apex_total: int = 25
+    slots_total_taken: int = 0
+    slots_total_supply: int = 675
     start_iso: Optional[str] = "2026-10-20T00:00:00Z"
     end_iso: Optional[str] = "2026-11-20T00:00:00Z"
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

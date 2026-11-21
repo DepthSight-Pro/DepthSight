@@ -193,7 +193,7 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 					}`}
 				>
 					<Trophy className={`h-4 w-4 transition-transform group-hover:scale-110 ${activeSubTab === "leaderboard" ? "text-amber-400" : "text-white/50"}`} />
-					<span>{t("promoSubtabLeaderboard", "Лидерборд")}</span>
+					<span>{t("promoSubtabLeaderboard", "Лидерборд Bitget")}</span>
 					<span className="flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-cyan-300">
 						<span className="relative flex h-1.5 w-1.5">
 							<span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
@@ -702,11 +702,15 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 			<div className="glass relative rounded-2xl border border-white/10 shadow-xl overflow-hidden p-6 space-y-5">
 				<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 					<div>
-						<div className="flex items-center gap-2.5">
-							<Trophy className="h-5 w-5 text-amber-400" />
+						<div className="flex items-center gap-2.5 flex-wrap">
+							<Trophy className="h-5 w-5 text-amber-400 shrink-0" />
 							<h3 className="text-lg font-black text-white">
-								{t("promoLeaderboardTitle", "Лидерборд по объемам (Top 20)")}
+								{t("promoLeaderboardTitle", "Лидерборд фьючерсов Bitget (Top 20)")}
 							</h3>
+							<div className="flex items-center gap-1.5 rounded-full border border-[#00F0FF]/40 bg-[#1DA2B4]/20 px-2.5 py-0.5 text-[10px] font-bold text-[#00F0FF] shadow-[0_0_10px_rgba(0,240,255,0.15)]">
+								<BitgetLogoSvg className="h-3.5 w-3.5" />
+								<span>{t("promoLeaderboardBitgetExclusive", "Bitget Exclusive")}</span>
+							</div>
 							<span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-cyan-300">
 								Live
 							</span>
@@ -714,7 +718,7 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 						<p className="mt-1 text-xs text-white/60 max-w-xl">
 							{t(
 								"promoLeaderboardSub",
-								"Топ-20 участников по объему фьючерсов (квалификация ≥ 1 000 USDT) делят разблокированный призовой фонд до 3 000 USDT. Рейтинг рассчитывается по привязанному кошельку Arbitrum One."
+								"Топ-20 участников по верифицированному объему фьючерсов на Bitget (квалификация ≥ 1 000 USDT) делят разблокированный призовой фонд до 3 000 USDT. В зачёт идёт только объём на бирже Bitget. Рейтинг рассчитывается по привязанному кошельку Arbitrum One."
 							)}
 						</p>
 					</div>
@@ -739,6 +743,24 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 					</div>
 				</div>
 
+				{/* Bitget Exclusive Callout Banner */}
+				<div className="flex items-start sm:items-center gap-3 rounded-xl border border-[#1DA2B4]/40 bg-[#1DA2B4]/10 p-3 text-xs text-[#00F0FF] backdrop-blur-sm">
+					<div className="h-7 w-7 rounded-lg border border-[#00F0FF]/30 bg-[#1DA2B4]/20 p-1 shrink-0 flex items-center justify-center">
+						<BitgetLogoSvg className="h-full w-full drop-shadow-[0_1px_4px_rgba(29,162,180,0.5)]" />
+					</div>
+					<div className="flex-1 text-[11.5px] leading-relaxed">
+						<span className="font-bold text-white">
+							{t("promoLeaderboardBitgetNotice", "Турнир проводится эксклюзивно на бирже Bitget.")}
+						</span>{" "}
+						<span className="text-white/70">
+							{t(
+								"promoLeaderboardBitgetNoticeDesc",
+								"В зачёт идёт только верифицированный объём фьючерсной торговли через подключённый API-ключ Bitget (объёмы других бирж в этом лидерборде не учитываются)."
+							)}
+						</span>
+					</div>
+				</div>
+
 				{/* Table / List */}
 				<div className="overflow-x-auto rounded-xl border border-white/10 bg-black/25">
 					<table className="w-full text-left text-xs">
@@ -746,7 +768,12 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 							<tr className="border-b border-white/10 bg-white/[0.02] text-[11px] font-semibold text-white/50">
 								<th className="py-3 px-4 w-16">#</th>
 								<th className="py-3 px-4">{t("promoColWallet", "Кошелек (Arbitrum)")}</th>
-								<th className="py-3 px-4 text-right">{t("promoColVolume", "Объем фьючерсов")}</th>
+								<th className="py-3 px-4 text-right">
+									<div className="inline-flex items-center gap-1.5 justify-end">
+										<BitgetLogoSvg className="h-3.5 w-3.5 inline-block shrink-0" />
+										<span>{t("promoColVolume", "Объем фьючерсов Bitget")}</span>
+									</div>
+								</th>
 								<th className="py-3 px-4 text-right">{t("promoColShare", "Доля пула")}</th>
 								<th className="py-3 px-4 text-right">{t("promoColReward", "Расчетная награда")}</th>
 							</tr>
@@ -895,7 +922,7 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 					<p className="text-[11px] text-white/40 italic px-1">
 						{t(
 							"promoLeaderboardAsteriskNote",
-							"* Награды рассчитываются от фонда 1-го уровня ($500) и активируются после достижения рубежа в 15 млн USDT совокупного объёма."
+							"* Награды рассчитываются от фонда 1-го уровня ($500) и активируются после достижения рубежа в 15 млн USDT совокупного объёма на Bitget."
 						)}
 					</p>
 				)}
@@ -908,7 +935,7 @@ export const PromoQuestsTab: React.FC<PromoQuestsTabProps> = ({ promoStatus, eli
 							<span>
 								{t(
 									"promoVolumeToTop20Notice",
-									"До попадания в Top 20 осталось набрать ${{volume}} объёма на фьючерсах",
+									"До попадания в Top 20 осталось набрать ${{volume}} объёма на фьючерсах Bitget",
 									{ volume: leaderboardData.volumeToTop20.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 								)}
 							</span>
