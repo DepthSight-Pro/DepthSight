@@ -31,15 +31,19 @@
         reverse_proxy api:8000
     }
 
+    handle /render-shared-trade/* {
+        reverse_proxy api:8000
+    }
+
     # Affiliate redirector
     handle /r/* {
         reverse_proxy api:8000
     }
 
-    # Social bots and link crawlers fetching shared backtests -> route to api
+    # Social bots and link crawlers fetching shared backtests or trades -> route to api
     @shared_bot {
-        path /s/*
-        header_regexp User-Agent "(?i)(bot|crawler|spider|scraper|preview|opengraph|metatags|facebookexternalhit|whatsapp|skypeuripreview|vkshare)"
+        path /s/* /t/*
+        header_regexp User-Agent "(?i)(bot|crawler|spider|scraper|preview|opengraph|metatags|facebookexternalhit|whatsapp|telegram|twitter|discord|skypeuripreview|vkshare)"
     }
     handle @shared_bot {
         reverse_proxy api:8000

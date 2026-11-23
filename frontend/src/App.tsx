@@ -68,6 +68,7 @@ import Research from "./pages/Research";
 import ResetPasswordPage from "./pages/ResetPassword";
 import Settings from "./pages/Settings";
 import SharedReportPage from "./pages/SharedReportPage";
+import { SharedTradePage } from "./pages/SharedTradePage";
 import Strategies from "./pages/Strategies";
 import StrategyEditorPage from "./pages/StrategyEditor";
 import SupportPage from "./pages/Support";
@@ -150,6 +151,10 @@ function App() {
 													<Route
 														path="/s/:publicSlug"
 														element={<SharedReportPage />}
+													/>
+													<Route
+														path="/t/:publicSlug"
+														element={<SharedTradePage />}
 													/>
 												</Route>
 

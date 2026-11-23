@@ -1004,6 +1004,56 @@ class SharedBacktestData(BaseModel):
     model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
 
 
+class TradeShareCreate(BaseModel):
+    """Schema for creating a public trade link request."""
+
+    pnl_display_mode: str = Field(default="PERCENT", alias="pnlDisplayMode")  # "PERCENT", "USD", "BOTH"
+    is_strategy_name_public: bool = Field(default=True, alias="isStrategyNamePublic")
+    is_quantity_public: bool = Field(default=False, alias="isQuantityPublic")
+    is_prices_public: bool = Field(default=True, alias="isPricesPublic")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TradeShareResponseData(BaseModel):
+    """Schema for the public trade link response."""
+
+    share_url: str = Field(alias="shareUrl")
+    public_slug: str = Field(alias="publicSlug")
+    referral_code: Optional[str] = Field(None, alias="referralCode")
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+
+class SharedTradeData(BaseModel):
+    """Schema for the public trade results page & OG image."""
+
+    id: int
+    trade_uuid: str = Field(alias="tradeUuid")
+    symbol: str
+    direction: str
+    exchange: Optional[str] = None
+    market_type: Optional[str] = Field(None, alias="marketType")
+    entry_price: Optional[float] = Field(None, alias="entryPrice")
+    exit_price: Optional[float] = Field(None, alias="exitPrice")
+    pnl: Optional[float] = None
+    roi_pct: Optional[float] = Field(None, alias="roiPct")
+    quantity: Optional[float] = None
+    timestamp_entry: Optional[datetime] = Field(None, alias="timestampEntry")
+    timestamp_close: datetime = Field(alias="timestampClose")
+    duration_seconds: Optional[int] = Field(None, alias="durationSeconds")
+    exit_reason: Optional[str] = Field(None, alias="exitReason")
+    strategy_name: Optional[str] = Field(None, alias="strategyName")
+    pnl_display_mode: str = Field(default="PERCENT", alias="pnlDisplayMode")
+    max_floating_profit: Optional[float] = Field(None, alias="maxFloatingProfit")
+    max_floating_loss: Optional[float] = Field(None, alias="maxFloatingLoss")
+    author_username: Optional[str] = Field(None, alias="authorUsername")
+    referral_code: Optional[str] = Field(None, alias="referralCode")
+    bonus_tokens: int = Field(default=1000, alias="bonusTokens")
+
+    model_config = ConfigDict(populate_by_name=True, alias_generator=to_camel)
+
+
 class PortfolioBacktestRunListItem(BaseModel):
     """Lightweight schema for the portfolio backtests list."""
 

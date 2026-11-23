@@ -66,6 +66,9 @@ import type {
 	PositionData,
 	ShareBacktestPayload,
 	ShareBacktestResponse,
+	ShareTradePayload,
+	ShareTradeResponse,
+	SharedTradeData,
 	SharedBacktestData,
 	StrategyConfig,
 	StrategyConfigCreatePayload,
@@ -1362,19 +1365,20 @@ export const useKlines = (
 		endTime?: number;
 		limit?: number;
 		runId?: string;
+		exchange?: string | null;
 	},
 	options?: { enabled?: boolean },
 ) => {
-	const { symbol, interval, startTime, endTime, limit, runId } = params;
+	const { symbol, interval, startTime, endTime, limit, runId, exchange } = params;
 
 	// The hook is active only if there is a symbol and an interval (and optionally runId)
 	const isHookEnabled = options?.enabled !== false && !!symbol && !!interval;
 
 	const queryResult = useQuery<BinanceKline[], Error>({
-		// Add runId to the request key so that the cache works correctly
+		// Add runId and exchange to the request key so that the cache works correctly
 		queryKey: [
 			"klines",
-			{ symbol, interval, startTime, endTime, limit, runId },
+			{ symbol, interval, startTime, endTime, limit, runId, exchange },
 		],
 
 		// --- Data source selection logic ---
@@ -1383,8 +1387,8 @@ export const useKlines = (
 				// If there is a runId, request data from our backend
 				return fetchBacktestKlines(runId, interval, startTime, endTime);
 			} else {
-				// Otherwise, as before, go to the Binance API
-				return fetchBinanceKlines(symbol, interval, startTime, endTime, limit);
+				// Otherwise, fetch from public API (direct client fetch first, backend fallback)
+				return fetchBinanceKlines(symbol, interval, startTime, endTime, limit, exchange);
 			}
 		},
 		enabled: isHookEnabled,
@@ -1393,7 +1397,7 @@ export const useKlines = (
 		retry: 1,
 	});
 	return queryResult;
-	};
+};
 
 /**
  * Exchange-aware klines via the unified GET /proxy/klines backend proxy.
@@ -2125,6 +2129,25 @@ export const useSharedBacktestData = (publicSlug: string | null) => {
 	return useQuery<SharedBacktestData, Error>({
 		queryKey: ["sharedBacktest", publicSlug],
 		queryFn: () => apiClient<SharedBacktestData>(`/shared/${publicSlug}`),
+		enabled: !!publicSlug,
+		staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+	});
+};
+
+export const useShareTrade = () => {
+	return useMutation<ShareTradeResponse, Error, ShareTradePayload>({
+		mutationFn: ({ tradeId, ...payload }) =>
+			apiClient<ShareTradeResponse>(`/trades/${tradeId}/share`, {
+				method: "POST",
+				body: JSON.stringify(payload),
+			}),
+	});
+};
+
+export const useSharedTradeData = (publicSlug: string | null) => {
+	return useQuery<SharedTradeData, Error>({
+		queryKey: ["sharedTrade", publicSlug],
+		queryFn: () => apiClient<SharedTradeData>(`/shared/trade/${publicSlug}`),
 		enabled: !!publicSlug,
 		staleTime: 5 * 60 * 1000, // Cache for 5 minutes
 	});

@@ -1,5 +1,6 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import os
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as redis
 import redis.exceptions as redis_exceptions
@@ -994,6 +995,78 @@ async def get_trades_history(
         # crud.get_trades_with_count returns SQLAlchemy models, they need validation
         validated_trades = [schemas.Trade.model_validate(t) for t in trades]
         return {"data": {"total": total_count, "trades": validated_trades}}
+
+
+@portfolio_router.post(
+    "/trades/{trade_id}/share",
+    response_model=schemas.ApiResponseData[schemas.TradeShareResponseData],
+    summary="Create public link to real trade",
+)
+async def create_shareable_trade_link(
+    trade_id: int,
+    share_data: schemas.TradeShareCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+    request: Request = None,
+):
+    """
+    Creates or updates a public link for a closed real trade.
+    Sets privacy options (% vs USD, hide quantity, hide strategy).
+    """
+    trade = await crud.get_trade_by_id(db, trade_id=trade_id, user_id=current_user.id)
+    if not trade:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade not found or you do not have permission to share it.",
+        )
+
+    shared_trade = await crud.create_or_update_shared_trade(
+        db, trade_id=trade_id, user_id=current_user.id, settings=share_data
+    )
+    await db.commit()
+    await db.refresh(shared_trade)
+
+    configured_frontend = os.getenv("FRONTEND_BASE_URL", "").strip()
+    if configured_frontend and not (
+        "localhost" in configured_frontend or "127.0.0.1" in configured_frontend
+    ):
+        frontend_url = configured_frontend.rstrip("/")
+    elif request:
+        origin = request.headers.get("origin")
+        if origin and not ("localhost" in origin or "127.0.0.1" in origin):
+            frontend_url = origin.rstrip("/")
+        else:
+            host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+            proto = (
+                request.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+            )
+            if host and not (
+                "localhost" in host or "127.0.0.1" in host or "api:8000" in host
+            ):
+                frontend_url = f"{proto}://{host}"
+            else:
+                frontend_url = "https://app.depthsight.pro"
+    else:
+        frontend_url = "https://app.depthsight.pro"
+
+    ref_code = current_user.referral_code or current_user.username
+    share_url = f"{frontend_url}/t/{shared_trade.public_slug}"
+    if ref_code:
+        share_url += f"?ref={ref_code}"
+
+    # Grant 'show_off' achievement if available
+    try:
+        await grant_achievement(db, current_user.id, "show_off")
+    except Exception:
+        pass
+
+    return {
+        "data": schemas.TradeShareResponseData(
+            shareUrl=share_url,
+            publicSlug=shared_trade.public_slug,
+            referralCode=ref_code,
+        )
+    }
 
 
 @portfolio_router.get(

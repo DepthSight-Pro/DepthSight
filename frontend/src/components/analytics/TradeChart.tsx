@@ -28,6 +28,7 @@ interface TradeChartProps {
 	runId?: string;
 	selectedTrade: TradeData | null;
 	tickSize?: number;
+	exchange?: string | null;
 }
 
 const chartColors = {
@@ -39,6 +40,13 @@ const chartColors = {
 };
 
 const TIME_FRAMES = ["5m", "15m", "1h", "4h"];
+
+const INTERVAL_SECONDS: Record<string, number> = {
+	"5m": 5 * 60,
+	"15m": 15 * 60,
+	"1h": 60 * 60,
+	"4h": 4 * 60 * 60,
+};
 
 const getPriceFormat = (tickSize?: number): PriceFormat => {
 	if (tickSize === undefined || tickSize <= 0) {
@@ -133,12 +141,14 @@ export const TradeChart = ({
 	runId,
 	selectedTrade,
 	tickSize,
+	exchange,
 }: TradeChartProps) => {
 	const { colors: chartColors } = useChartTheme();
 	const { t } = useTranslation("analytics");
 	const chartContainerRef = useRef<HTMLDivElement>(null);
 	const chartRef = useRef<IChartApi | null>(null);
-	const [interval, setInterval] = useState("15m");
+	const [interval, setInterval] = useState("5m");
+	const intervalSeconds = INTERVAL_SECONDS[interval] ?? INTERVAL_SECONDS["5m"];
 
 	const { timeRange, relevantTrades } = useMemo(() => {
 		if (!symbol || trades.length === 0) {
@@ -168,7 +178,8 @@ export const TradeChart = ({
 			allTimestamps.length > 0
 				? Math.max(...allTimestamps)
 				: 24 * 60 * 60 * 1000;
-		const padding = (maxTimestamp - minTimestamp) * 0.1 || 60 * 60 * 1000;
+		const duration = maxTimestamp - minTimestamp;
+		const padding = Math.max(duration * 2, intervalSeconds * 96 * 1000);
 
 		return {
 			timeRange: {
@@ -177,7 +188,9 @@ export const TradeChart = ({
 			},
 			relevantTrades: symbolTrades,
 		};
-	}, [trades, symbol]);
+	}, [trades, symbol, intervalSeconds]);
+
+	const effectiveExchange = exchange || selectedTrade?.exchange || trades[0]?.exchange;
 
 	const {
 		data: klines,
@@ -192,6 +205,7 @@ export const TradeChart = ({
 			endTime: timeRange?.endTime,
 			limit: 1000,
 			runId,
+			exchange: effectiveExchange,
 		},
 		{ enabled: !!symbol && !!timeRange },
 	);
@@ -329,7 +343,20 @@ export const TradeChart = ({
 			});
 		};
 
-		chart.timeScale().fitContent();
+		const targetTrade = selectedTrade ?? relevantTrades[0];
+		const targetEntryTs = targetTrade?.timestamp_entry ?? targetTrade?.timestamp_signal;
+		if (targetTrade && targetEntryTs && targetTrade.timestamp_close) {
+			const fromSec = (targetEntryTs > 1e12 ? targetEntryTs / 1000 : targetEntryTs) as UTCTimestamp;
+			const toSec = (targetTrade.timestamp_close > 1e12 ? targetTrade.timestamp_close / 1000 : targetTrade.timestamp_close) as UTCTimestamp;
+			const duration = Math.max(0, toSec - fromSec);
+			const padding = Math.max(duration * 1.5, intervalSeconds * 8);
+			chart.timeScale().setVisibleRange({
+				from: (fromSec - padding) as UTCTimestamp,
+				to: (toSec + padding) as UTCTimestamp,
+			});
+		} else {
+			chart.timeScale().fitContent();
+		}
 		syncExecutionOverlay();
 		const overlayTimer = window.setTimeout(syncExecutionOverlay, 0);
 		chart.timeScale().subscribeVisibleTimeRangeChange(syncExecutionOverlay);
@@ -349,27 +376,29 @@ export const TradeChart = ({
 			window.removeEventListener("resize", handleResize);
 			chart.remove();
 		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [klines, relevantTrades, tickSize]);
 
 	useEffect(() => {
+		const entryTs = selectedTrade?.timestamp_entry ?? selectedTrade?.timestamp_signal;
 		if (
 			selectedTrade &&
 			chartRef.current &&
-			selectedTrade.timestamp_signal &&
+			entryTs &&
 			selectedTrade.timestamp_close
 		) {
 			const chart = chartRef.current;
-			const from = (selectedTrade.timestamp_signal / 1000) as UTCTimestamp;
-			const to = (selectedTrade.timestamp_close / 1000) as UTCTimestamp;
-			const duration = to - from;
-			const padding = duration > 0 ? duration * 0.5 : 60 * 15;
+			const from = (entryTs > 1e12 ? entryTs / 1000 : entryTs) as UTCTimestamp;
+			const to = (selectedTrade.timestamp_close > 1e12 ? selectedTrade.timestamp_close / 1000 : selectedTrade.timestamp_close) as UTCTimestamp;
+			const duration = Math.max(0, to - from);
+			const padding = Math.max(duration * 1.5, intervalSeconds * 8);
 
 			chart.timeScale().setVisibleRange({
 				from: (from - padding) as UTCTimestamp,
 				to: (to + padding) as UTCTimestamp,
 			});
 		}
-	}, [selectedTrade]);
+	}, [selectedTrade, intervalSeconds]);
 
 	const renderChartContent = () => {
 		if (!symbol) {
@@ -426,7 +455,7 @@ export const TradeChart = ({
 					</CardTitle>
 					<ToggleGroup
 						type="single"
-						defaultValue="15m"
+						defaultValue="5m"
 						aria-label="Timeframe"
 						value={interval}
 						onValueChange={(value) => {

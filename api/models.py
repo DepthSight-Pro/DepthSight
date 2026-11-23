@@ -772,6 +772,41 @@ class SharedBacktest(Base):
     user = relationship("User")
 
 
+class SharedTrade(Base):
+    __tablename__ = "shared_trades"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    trade_id = Column(
+        Integer, ForeignKey("trades.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    # Unique, unpredictable identifier for public link
+    public_slug = Column(
+        String,
+        unique=True,
+        index=True,
+        nullable=False,
+        default=lambda: uuid.uuid4().hex[:12],
+    )
+
+    # Privacy and display settings: "PERCENT", "USD", "BOTH"
+    pnl_display_mode = Column(String(20), default="PERCENT", nullable=False)
+    is_strategy_name_public = Column(Boolean, default=True, nullable=False)
+    is_quantity_public = Column(Boolean, default=False, nullable=False)
+    is_prices_public = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(
+        Boolean, default=True, nullable=False
+    )  # For ability to deactivate the link
+
+    trade = relationship("Trade")
+    user = relationship("User")
+
+
 # New Gamification Models
 
 

@@ -8,12 +8,14 @@ import {
 	ChevronsRight,
 	LineChart,
 	Search,
+	Share2,
 	X,
 } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { ShareTradeDialog } from "./ShareTradeDialog";
 import {
 	Table,
 	TableBody,
@@ -51,6 +53,7 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 }) => {
 	const { t } = useTranslation("analytics");
 	const [searchSymbol, setSearchSymbol] = useState("");
+	const [tradeToShare, setTradeToShare] = useState<TradeData | null>(null);
 
 	// Filter trades by symbol
 	const filteredTrades = useMemo(() => {
@@ -242,15 +245,28 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 												{trade.exit_reason}
 											</TableCell>
 											<TableCell className="px-6 py-4 text-right whitespace-nowrap">
-												<Button
-													variant="outline"
-													size="sm"
-													className="px-4 py-2 text-xs font-bold transition-all hover:bg-primary hover:text-primary-foreground"
-													onClick={() => onTradeSelect?.(trade)}
-												>
-													<LineChart className="w-3.5 h-3.5 mr-1.5" />
-													{t("tradeHistory.analyze")}
-												</Button>
+												<div className="flex items-center justify-end gap-1.5">
+													<Button
+														variant="outline"
+														size="sm"
+														className="px-3 py-1.5 text-xs font-bold transition-all hover:bg-primary hover:text-primary-foreground"
+														onClick={() => onTradeSelect?.(trade)}
+														title={t("tradeHistory.analyze", "Analyze")}
+													>
+														<LineChart className="w-3.5 h-3.5 mr-1" />
+														{t("tradeHistory.analyze", "Analyze")}
+													</Button>
+													<Button
+														variant="outline"
+														size="sm"
+														className="px-2.5 py-1.5 text-xs font-bold transition-all border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+														onClick={() => setTradeToShare(trade)}
+														title={t("tradeHistory.share", "Share")}
+													>
+														<Share2 className="w-3.5 h-3.5 mr-1" />
+														{t("tradeHistory.share", "Share")}
+													</Button>
+												</div>
 											</TableCell>
 										</TableRow>
 									);
@@ -321,6 +337,11 @@ export const LiveTradeHistoryTable: React.FC<LiveTradeHistoryTableProps> = ({
 						</div>
 					</div>
 				)}
+			<ShareTradeDialog
+				open={!!tradeToShare}
+				onOpenChange={(open) => !open && setTradeToShare(null)}
+				trade={tradeToShare}
+			/>
 		</div>
 	);
 };

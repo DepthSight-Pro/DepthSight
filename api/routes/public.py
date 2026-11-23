@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, schemas
 from ..database import get_db
-from ..og_image_generator import generate_og_image
+from ..og_image_generator import generate_og_image, generate_trade_og_image
 from ..redis_client import get_redis_client
 
 
@@ -27,6 +27,9 @@ SOCIAL_BOT_USER_AGENTS = (
     "metatags",
     "facebookexternalhit",
     "whatsapp",
+    "telegram",
+    "twitter",
+    "discord",
     "skypeuripreview",
     "vkshare",
 )
@@ -108,6 +111,81 @@ async def get_shared_backtest_data(
         response_data["parameters"] = run_params
         response_data["strategyConfig"] = strategy_config
 
+    return {"data": response_data}
+
+
+@public_router.get(
+    "/api/v1/shared/trade/{public_slug}",
+    response_model=schemas.ApiResponseData[schemas.SharedTradeData],
+)
+async def get_shared_trade_data(
+    public_slug: str, db: AsyncSession = Depends(get_db)
+):
+    shared_trade = await crud.get_shared_trade_by_slug(db, public_slug=public_slug)
+    if not shared_trade or not shared_trade.trade:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade not found or access is closed.",
+        )
+
+    t = shared_trade.trade
+    user = shared_trade.user
+
+    # Calculate ROI %
+    roi_pct = None
+    if t.entry_price and t.exit_price and t.entry_price > 0:
+        direction_upper = (t.direction or "LONG").upper()
+        if direction_upper in ("LONG", "BUY"):
+            roi_pct = ((t.exit_price - t.entry_price) / t.entry_price) * 100.0
+        else:
+            roi_pct = ((t.entry_price - t.exit_price) / t.entry_price) * 100.0
+
+    # Calculate duration in seconds
+    duration_seconds = None
+    if t.timestamp_close and t.timestamp_entry:
+        duration_seconds = int((t.timestamp_close - t.timestamp_entry).total_seconds())
+
+    # Strategy display name
+    strat_name = None
+    if shared_trade.is_strategy_name_public:
+        strat_name = t.strategy_config_id or "Custom Strategy"
+
+    # Privacy filtering on PnL
+    pnl_mode = (shared_trade.pnl_display_mode or "PERCENT").upper()
+    pnl_out = t.pnl if pnl_mode in ("USD", "BOTH") else None
+    roi_out = roi_pct if pnl_mode in ("PERCENT", "BOTH") else None
+
+    # Privacy filtering on prices & quantity
+    entry_p = t.entry_price if shared_trade.is_prices_public else None
+    exit_p = t.exit_price if shared_trade.is_prices_public else None
+    qty_out = t.quantity if shared_trade.is_quantity_public else None
+
+    ref_code = user.referral_code or user.username if user else None
+
+    response_data = schemas.SharedTradeData(
+        id=t.id,
+        tradeUuid=t.trade_uuid,
+        symbol=t.symbol or "Asset",
+        direction=t.direction or "LONG",
+        exchange=getattr(t, "exchange", None) or "binance",
+        marketType=getattr(t, "market_type", None) or "futures",
+        entryPrice=entry_p,
+        exitPrice=exit_p,
+        pnl=pnl_out,
+        roiPct=roi_out,
+        quantity=qty_out,
+        timestampEntry=t.timestamp_entry,
+        timestampClose=t.timestamp_close,
+        durationSeconds=duration_seconds,
+        exitReason=t.exit_reason,
+        strategyName=strat_name,
+        pnlDisplayMode=pnl_mode,
+        maxFloatingProfit=t.max_floating_profit if shared_trade.is_prices_public else None,
+        maxFloatingLoss=t.max_floating_loss if shared_trade.is_prices_public else None,
+        authorUsername=user.username if user else None,
+        referralCode=ref_code,
+        bonusTokens=1000,
+    )
     return {"data": response_data}
 
 
@@ -315,5 +393,200 @@ async def get_shared_backtest_page_or_og(
 
     return RedirectResponse(
         url=f"{frontend_url.rstrip('/')}/s/{clean_slug}",
+        status_code=302,
+    )
+
+
+@public_router.get("/og-image/trade/{public_slug}.png")
+async def get_trade_og_image(
+    public_slug: str,
+    db: AsyncSession = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis_client),
+):
+    cache_key = f"og_image:trade:{public_slug}"
+    try:
+        cached = await redis_client.get(cache_key)
+        if cached:
+            return Response(
+                content=cached,
+                media_type="image/png",
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "X-Cache": "HIT",
+                },
+            )
+    except Exception as cache_err:
+        logger.warning(
+            "Redis cache check failed for og_image:trade:%s: %s",
+            public_slug,
+            cache_err,
+        )
+
+    data_response = await get_shared_trade_data(public_slug, db)
+    trade_data = data_response["data"]
+
+    try:
+        image_bytes = await generate_trade_og_image(trade_data)
+        try:
+            await redis_client.set(cache_key, image_bytes, ex=86400)
+        except Exception as cache_save_err:
+            logger.warning(
+                "Redis cache save failed for og_image:trade:%s: %s",
+                public_slug,
+                cache_save_err,
+            )
+
+        return Response(
+            content=image_bytes,
+            media_type="image/png",
+            headers={
+                "Cache-Control": "public, max-age=86400",
+                "X-Cache": "MISS",
+            },
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to generate Trade OG image for slug %s: %s",
+            public_slug,
+            e,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Could not generate trade image.")
+
+
+async def _render_shared_trade_html(
+    public_slug: str, request: Request, db: AsyncSession
+) -> HTMLResponse:
+    try:
+        data_response = await get_shared_trade_data(public_slug, db)
+        data = data_response["data"]
+
+        symbol = data.symbol or "Asset"
+        direction = (data.direction or "LONG").upper()
+        pnl_mode = data.pnl_display_mode or "PERCENT"
+
+        if pnl_mode == "USD" and data.pnl is not None:
+            pnl_str = f"{'+' if data.pnl >= 0 else ''}{data.pnl:,.2f} USD"
+        elif data.roi_pct is not None:
+            pnl_str = f"{'+' if data.roi_pct >= 0 else ''}{data.roi_pct:.2f}%"
+        elif data.pnl is not None:
+            pnl_str = f"{'+' if data.pnl >= 0 else ''}{data.pnl:,.2f} USD"
+        else:
+            pnl_str = "Closed"
+
+        title = f"DepthSight Real Trade: {pnl_str} on {symbol} ({direction})"
+        exit_reason = data.exit_reason or "Target Reached"
+        description = (
+            f"Closed via {exit_reason}. View verified live execution, order flow traces & chart on DepthSight Platform. "
+            f"Join & get {data.bonus_tokens:,} DepthSight bonus tokens!"
+        )
+
+        abs_base_url = _get_base_url(request)
+        image_url = f"{abs_base_url}/og-image/trade/{public_slug}.png"
+        page_url = f"{abs_base_url}/t/{public_slug}"
+
+        e_title = html.escape(title, quote=True)
+        e_description = html.escape(description, quote=True)
+        e_page_url = html.escape(page_url, quote=True)
+        e_image_url = html.escape(image_url, quote=True)
+        e_symbol = html.escape(symbol, quote=True)
+        e_direction = html.escape(direction, quote=True)
+        e_pnl_str = html.escape(pnl_str, quote=True)
+
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{e_title}</title>
+    <meta name="description" content="{e_description}" />
+
+    <!-- Open Graph / Telegram / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="DepthSight">
+    <meta property="og:url" content="{e_page_url}">
+    <meta property="og:title" content="{e_title}">
+    <meta property="og:description" content="{e_description}">
+    <meta property="og:image" content="{e_image_url}">
+    <meta property="og:image:secure_url" content="{e_image_url}">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@depthsight">
+    <meta name="twitter:url" content="{e_page_url}">
+    <meta name="twitter:title" content="{e_title}">
+    <meta name="twitter:description" content="{e_description}">
+    <meta name="twitter:image" content="{e_image_url}">
+</head>
+<body style="background-color: #090d16; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+    <div style="text-align: center; padding: 20px;">
+        <h1 style="color: #00D4FF;">{e_symbol} ({e_direction})</h1>
+        <p style="font-size: 1.4em; font-weight: bold;">{e_pnl_str}</p>
+        <p style="color: #8b949e;">Loading verified trade execution...</p>
+        <img src="{e_image_url}" alt="Trade Execution Card" style="max-width: 100%; border-radius: 12px; margin-top: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.6);">
+    </div>
+</body>
+</html>"""
+        return HTMLResponse(
+            content=html_content,
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error rendering shared trade page for slug %s: %s",
+            public_slug,
+            e,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=404, detail="Trade not found")
+
+
+@public_router.get("/render-shared-trade/{public_slug:path}", response_class=HTMLResponse)
+async def render_shared_trade(
+    public_slug: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    clean_slug = public_slug.strip("/")
+    return await _render_shared_trade_html(clean_slug, request, db)
+
+
+@public_router.get("/t/{public_slug:path}", response_class=HTMLResponse)
+async def get_shared_trade_page_or_og(
+    public_slug: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    clean_slug = public_slug.strip("/")
+    user_agent = request.headers.get("user-agent", "")
+    if _is_social_bot(user_agent):
+        return await _render_shared_trade_html(clean_slug, request, db)
+
+    # For standard browser requests hitting the API route directly,
+    # redirect to the frontend route /t/{public_slug}
+    configured_frontend = os.getenv("FRONTEND_BASE_URL", "").strip()
+    if configured_frontend and not (
+        "localhost" in configured_frontend or "127.0.0.1" in configured_frontend
+    ):
+        frontend_url = configured_frontend.rstrip("/")
+    else:
+        frontend_url = _get_base_url(request)
+
+    query_str = ""
+    try:
+        query_str = str(request.url.query)
+    except Exception:
+        qs = request.scope.get("query_string", b"")
+        if isinstance(qs, bytes):
+            query_str = qs.decode("latin-1")
+        elif isinstance(qs, str):
+            query_str = qs
+    target_url = f"{frontend_url.rstrip('/')}/t/{clean_slug}"
+    if query_str:
+        target_url += f"?{query_str}"
+
+    return RedirectResponse(
+        url=target_url,
         status_code=302,
     )

@@ -301,3 +301,119 @@ async def test_s_route_handles_bot_and_regular_browser():
     )
     assert user_resp.status_code == 302
     assert user_resp.headers["location"] == "https://app.depthsight.pro/s/my-slug"
+
+
+@pytest.mark.asyncio
+async def test_generate_trade_og_image_returns_png_bytes():
+    from api.og_image_generator import generate_trade_og_image
+    from api.schemas import SharedTradeData
+
+    class FakeBrowser:
+        async def new_page(self):
+            page = AsyncMock()
+            page.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\ntrade-image")
+            return page
+
+        async def close(self):
+            return None
+
+    class FakePlaywright:
+        chromium = AsyncMock()
+
+        async def __aenter__(self):
+            self.chromium.launch = AsyncMock(return_value=FakeBrowser())
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    trade_data = SharedTradeData(
+        id=1,
+        tradeUuid="test-uuid",
+        symbol="ETHUSDT",
+        direction="LONG",
+        entryPrice=3000.0,
+        exitPrice=3300.0,
+        pnl=300.0,
+        roiPct=10.0,
+        timestampClose=datetime.now(timezone.utc),
+        durationSeconds=3600,
+        exitReason="Take Profit",
+        pnlDisplayMode="BOTH",
+        referralCode="TEST_REF",
+        bonusTokens=1000,
+    )
+
+    with patch(
+        "api.og_image_generator.async_playwright", return_value=FakePlaywright()
+    ):
+        img = await generate_trade_og_image(trade_data)
+
+    assert img.startswith(b"\x89PNG\r\n\x1a\n")
+    assert img == b"\x89PNG\r\n\x1a\ntrade-image"
+
+
+@pytest.mark.asyncio
+async def test_t_route_handles_bot_and_regular_browser():
+    from api.routes.public import get_shared_trade_page_or_og
+    from api.schemas import SharedTradeData
+
+    trade_data = {
+        "data": SharedTradeData(
+            id=1,
+            tradeUuid="test-trade-slug",
+            symbol="BTCUSDT",
+            direction="LONG",
+            pnl=500.0,
+            roiPct=15.0,
+            timestampClose=datetime.now(timezone.utc),
+            exitReason="Take Profit",
+            pnlDisplayMode="PERCENT",
+            bonusTokens=1000,
+        )
+    }
+
+    bot_req = Request(
+        scope={
+            "type": "http",
+            "path": "/t/trade-slug",
+            "headers": [
+                (b"user-agent", b"TelegramBot (like TwitterBot)"),
+                (b"host", b"app.depthsight.pro"),
+                (b"x-forwarded-proto", b"https"),
+            ],
+        }
+    )
+
+    with patch(
+        "api.routes.public.get_shared_trade_data",
+        new_callable=AsyncMock,
+        return_value=trade_data,
+    ):
+        bot_resp = await get_shared_trade_page_or_og(
+            "trade-slug", bot_req, db=AsyncMock()
+        )
+        assert bot_resp.status_code == 200
+        assert b"DepthSight Real Trade" in bot_resp.body
+        assert b"og:image" in bot_resp.body
+
+    user_req = Request(
+        scope={
+            "type": "http",
+            "path": "/t/trade-slug",
+            "query_string": b"ref=TEST_REF",
+            "headers": [
+                (b"user-agent", b"Mozilla/5.0 Chrome/120.0.0.0"),
+                (b"host", b"app.depthsight.pro"),
+                (b"x-forwarded-proto", b"https"),
+            ],
+        }
+    )
+    user_resp = await get_shared_trade_page_or_og(
+        "trade-slug", user_req, db=AsyncMock()
+    )
+    assert user_resp.status_code == 302
+    assert (
+        "https://app.depthsight.pro/t/trade-slug?ref=TEST_REF"
+        == user_resp.headers["location"]
+    )

@@ -418,6 +418,45 @@ export interface SharedBacktestData {
 	strategyConfig?: StrategyConfigData;
 }
 
+export interface ShareTradePayload {
+	tradeId: number;
+	pnlDisplayMode: "PERCENT" | "USD" | "BOTH";
+	isStrategyNamePublic: boolean;
+	isQuantityPublic: boolean;
+	isPricesPublic: boolean;
+}
+
+export interface ShareTradeResponse {
+	shareUrl: string;
+	publicSlug: string;
+	referralCode?: string;
+}
+
+export interface SharedTradeData {
+	id: number;
+	tradeUuid: string;
+	symbol: string;
+	direction: "LONG" | "SHORT" | "BUY" | "SELL";
+	exchange?: string;
+	marketType?: string;
+	entryPrice?: number;
+	exitPrice?: number;
+	pnl?: number;
+	roiPct?: number;
+	quantity?: number;
+	timestampEntry?: string;
+	timestampClose: string;
+	durationSeconds?: number;
+	exitReason?: string;
+	strategyName?: string;
+	pnlDisplayMode: "PERCENT" | "USD" | "BOTH";
+	maxFloatingProfit?: number;
+	maxFloatingLoss?: number;
+	authorUsername?: string;
+	referralCode?: string;
+	bonusTokens: number;
+}
+
 // --- Updating ProgressInfoData to use the new trade type ---
 export interface ProgressKpiData {
 	progress: number;
